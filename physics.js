@@ -99,7 +99,10 @@ export class CarPhysics {
     this.cvtRatio = this.spec.cvtRange[1];
     this.throttleAmount = 0;  // for the engine sound
     this.engineLoad = 0;      // 0-1, how hard the engine is working
-    this.limiter = false;     // bouncing off the rev limiter
+    this.limiter = false;     // on the rev limiter or over-revving (dash shows red)
+    this.limiterCut = false;  // true during each ignition cut burst
+    this.onLimiter = false;   // bouncing off the limiter with the throttle down
+    this.limiterClock = 0;
     this.events = [];         // shift events for the sound to pick up
   }
 
@@ -251,20 +254,30 @@ export class CarPhysics {
         : s.launchRpm;
       targetRpm = Math.max(coupledRpm, slipRpm);
     }
-    this.rpm += (targetRpm - this.rpm) * Math.min(1, 18 * h);
+    // --- Rev limiter ---
+    // At the top of a gear the limiter cuts the ignition in fast bursts:
+    // the revs flicker just under the redline, the exhaust stutters
+    // "v-v-v-v", and the car simply can't go any faster in that gear.
+    const atLimit = throttle > 0 && this.shiftTimer <= 0 && coupledRpm >= s.redline - 20;
+    this.limiterClock = (this.limiterClock + h) % 0.08;
+    this.limiterCut = atLimit && this.limiterClock < 0.04;   // 40 ms cut, 40 ms fire
+    this.onLimiter = atLimit;
+    if (atLimit) targetRpm = this.limiterCut ? s.redline - 220 : s.redline;
+    this.rpm += (targetRpm - this.rpm) * Math.min(1, (atLimit ? 45 : 18) * h);
+    // Shown in red on the dash: on the limiter, or over-revved by a bad downshift
+    this.limiter = atLimit || this.rpm > s.redline + 50;
 
-    // Rev limiter: cuts the power above the redline, so the revs bounce
-    if (this.rpm >= s.redline) this.limiter = true;
-    else if (this.rpm < s.redline - 150) this.limiter = false;
+    // Air and rolling resistance
+    const resist = s.drag * this.vx * Math.abs(this.vx) + s.rolling * this.vx;
 
     let engineTorque = 0;
     if (this.shiftTimer > 0) {
       this.shiftTimer -= h;
       // Power is cut during a shift (an automatic keeps a little)
       engineTorque = this.transmission === 'auto' ? 0.4 * throttle * torqueAt(s.torqueCurve, this.rpm) : 0;
-    } else if (throttle && !this.limiter) {
+    } else if (throttle) {
       engineTorque = throttle * torqueAt(s.torqueCurve, this.rpm);
-    } else if (!throttle && coupledRpm > s.idleRpm + 200) {
+    } else if (coupledRpm > s.idleRpm + 200) {
       engineTorque = -s.engineBraking * (this.rpm / s.redline);   // engine braking
     }
     if (this.gear === -1 && this.vx < -s.maxReverseSpeed) engineTorque = Math.min(engineTorque, 0);
@@ -272,8 +285,14 @@ export class CarPhysics {
     let drive = (engineTorque * ratio * s.driveEfficiency) / s.wheelRadius;
     if (this.gear === -1) drive = -drive;
 
+    if (atLimit) {
+      // The limiter only lets through enough power to hold the speed
+      const hold = Math.max(0, Math.abs(resist));
+      drive = Math.sign(drive) * Math.min(Math.abs(drive), hold);
+    }
+
     this.throttleAmount = throttle;
-    this.engineLoad = clamp(engineTorque / 212, 0, 1);
+    this.engineLoad = atLimit ? (this.limiterCut ? 0 : 0.6) : clamp(engineTorque / 212, 0, 1);
 
     const brake = brakePedal * s.brakeForce + (c.handbrake ? s.handbrakeForce : 0);
 
@@ -291,8 +310,6 @@ export class CarPhysics {
     const wheelspinAmount = clamp((requestedPush / maxRear - 1) / 0.8, 0, 1);
     maxRearSide *= 1 - 0.65 * wheelspinAmount;
 
-    // Air and rolling resistance
-    const resist = s.drag * this.vx * Math.abs(this.vx) + s.rolling * this.vx;
     const forceX = drive - resist;
 
     let slideFront = 0;   // how far past their grip limit the tyres are, 0-1
