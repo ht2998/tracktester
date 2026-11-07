@@ -346,11 +346,14 @@ export class Hud {
     const tR = t.size / 2;
     // Engine health, only shown once a bad over-rev has damaged it
     if (engineHealth < 0.995) {
-      tg.fillStyle = engineHealth < 0.85 ? COLORS.redline : COLORS.ledAmber;
+      let text = `Engine ${Math.round(engineHealth * 100)}%`;
+      if (engineHealth <= 0) text = 'Engine failure';
+      else if (engineHealth < 0.1) text += ', oil leak';
+      tg.fillStyle = engineHealth < 0.5 ? COLORS.redline : COLORS.ledAmber;
       tg.font = `600 ${Math.round(tR * 0.13)}px ${FONT}`;
       tg.textAlign = 'center';
       tg.textBaseline = 'middle';
-      tg.fillText(`Engine ${Math.round(engineHealth * 100)}%`, tR, tR - tR * 0.28);
+      tg.fillText(text, tR, tR - tR * 0.28);
     }
     tg.fillStyle = limiter ? COLORS.redline : COLORS.ink;
     tg.font = `700 ${Math.round(tR * 0.42)}px ${FONT}`;
