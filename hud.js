@@ -347,14 +347,21 @@ export class Hud {
     this.speedo = new Dial({
       max: maxSpeed, major: 20, minor: 10, labelEvery: 40, caption: 'km/h',
     });
-    // Small engine-oil gauge: empty to full, red below 30%
+    // Small gauges, stacked: fuel on top (red below 12%), engine oil below (red below 30%)
+    this.fuelGauge = new Dial({
+      max: 100, major: 25, minor: 12.5, labelEvery: 100, redBelow: 12,
+      labels: { 0: 'E', 100: 'F' }, labelSize: 0.3,
+    });
     this.oilGauge = new Dial({
       max: 100, major: 25, minor: 12.5, labelEvery: 100, redBelow: 30,
       labels: { 0: 'E', 100: 'F' }, labelSize: 0.3,
     });
+    const smallGauges = document.createElement('div');
+    smallGauges.style.cssText = 'display:flex;flex-direction:column;gap:6px';
+    smallGauges.append(this.fuelGauge.canvas, this.oilGauge.canvas);
     const dash = document.createElement('div');
     dash.id = 'dash';
-    dash.append(this.tach.canvas, this.speedo.canvas, this.oilGauge.canvas);
+    dash.append(this.tach.canvas, this.speedo.canvas, smallGauges);
     document.body.appendChild(dash);
 
     // Side panel: an arrow on the right edge opens Gearbox and Assists
@@ -442,17 +449,25 @@ export class Hud {
     const tachSize = Math.round(Math.min(200, Math.max(120, short * 0.3)));
     this.tach.resize(tachSize);
     this.speedo.resize(Math.round(tachSize * 0.82));
+    this.fuelGauge.resize(Math.round(tachSize * 0.42));
     this.oilGauge.resize(Math.round(tachSize * 0.42));
   }
 
-  update({ speedKmh, rpm, gearLabel, limiter, transmission, engineHealth = 1, oilLevel = 1, assists = {}, time }) {
+  update({ speedKmh, rpm, gearLabel, limiter, transmission, engineHealth = 1, oilLevel = 1,
+           fuelLevel = 1, assists = {}, time }) {
     // --- Rev counter, with the gear in the gap at the bottom ---
     const t = this.tach;
     t.beginFrame();
     const tg = t.ctx;
     const tR = t.size / 2;
     // Engine health, only shown once a bad over-rev has damaged it
-    if (engineHealth < 0.995) {
+    if (fuelLevel <= 0 && engineHealth > 0) {
+      tg.fillStyle = COLORS.redline;
+      tg.font = `600 ${Math.round(tR * 0.13)}px ${FONT}`;
+      tg.textAlign = 'center';
+      tg.textBaseline = 'middle';
+      tg.fillText('Out of fuel', tR, tR - tR * 0.28);
+    } else if (engineHealth < 0.995) {
       let text = `Engine ${Math.round(engineHealth * 100)}%`;
       if (engineHealth <= 0) text = 'Engine failure';
       else if (engineHealth < 0.1) text += ', oil leak';
@@ -482,7 +497,8 @@ export class Hud {
     sg.fillText(String(Math.round(speedKmh)), sR, sR + sR * 0.62);
     s.drawNeedle(speedKmh);
 
-    // --- Oil gauge: needle turns red and the label flashes when critically low ---
+    // --- Small gauges: the needle turns red and the label flashes when low ---
+    this.drawSmallGauge(this.fuelGauge, 'Fuel', fuelLevel, 0.1, time);
     const o = this.oilGauge;
     o.beginFrame();
     const og = o.ctx;
@@ -513,6 +529,21 @@ export class Hud {
         input.setAttribute('aria-valuetext', text);
       }
     }
+  }
+
+  drawSmallGauge(dial, label, level, lowAt, time) {
+    dial.beginFrame();
+    const g = dial.ctx;
+    const R = dial.size / 2;
+    const low = level < lowAt;
+    if (!low || Math.floor(time * 3) % 2 === 0) {
+      g.fillStyle = low ? COLORS.redline : COLORS.inkSoft;
+      g.font = `600 ${Math.round(R * 0.3)}px ${FONT}`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText(label, R, R - R * 0.38);
+    }
+    dial.drawNeedle(level * 100, low ? COLORS.redline : COLORS.needle);
   }
 
   // Seven dots that fill up as the revs rise, then flash blue: time to shift
