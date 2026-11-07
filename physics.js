@@ -37,6 +37,7 @@ export const CATERHAM = {
   maxSteer: 0.55,         // radians of steering lock at low speed
   steerSpeed: 2.6,        // how fast the wheels turn, radians per second
   wheelRadius: 0.288,     // metres (195/50 R15)
+  trackHalf: 0.68,        // metres from the centre line to each wheel
 
   // --- Engine: Duratec-style 2.0 inline-4, naturally aspirated ---
   cylinders: 4,
@@ -83,6 +84,10 @@ export class CarPhysics {
   constructor(spec = CATERHAM) {
     this.spec = spec;
     this.transmission = 'manual';
+    // How grippy the ground is at a point: 1 = normal tarmac. The game sets
+    // this so that tyres rolling over oil (or later gravel, wet patches...)
+    // lose grip.
+    this.surfaceGrip = () => 1;
     this.reset();
   }
 
@@ -110,7 +115,10 @@ export class CarPhysics {
     this.onLimiter = false;   // bouncing off the limiter with the throttle down
     this.overRevLock = 0;     // seconds left of rear-wheel lock from a bad downshift
     this.overRevSeverity = 0;
-    this.engineHealth = 1;    // drops after big over-revs (1 = full power)
+    this.lastRearSlide = 0;
+    this.tractionControl = false;   // true while traction control is cutting power
+    this.engineHealth = 1;    // drops after big over-revs (1 = full power, 0 = blown)
+    this.engineBlown = false;
     this.limiterClock = 0;
     this.events = [];         // shift events for the sound to pick up
   }
@@ -169,11 +177,29 @@ export class CarPhysics {
       const severity = clamp((newRpm - s.redline) / 2500, 0.15, 1);
       this.overRevLock = Math.max(this.overRevLock, 0.25 + 0.35 * severity);
       this.overRevSeverity = Math.max(this.overRevSeverity, severity);
-      // Well past the redline, the engine gets damaged and loses power
-      const damage = clamp((newRpm - (s.redline + 800)) / 1500, 0, 1) * 0.12;
-      this.engineHealth = Math.max(0.5, this.engineHealth - damage);
+      // Engine damage depends on how far past what the engine can take it was
+      // forced: about 5% over is shrugged off, 10% over costs ~10% health,
+      // 25% over ~33%, and double the redline destroys the engine outright.
+      const overRatio = newRpm / s.redline;
+      const damage = clamp((overRatio - 1.03) * 1.5, 0, 1);
+      if (!this.engineBlown) {
+        this.engineHealth = Math.max(0, this.engineHealth - damage);
+        if (this.engineHealth <= 0) this.blowEngine();
+      }
       this.events.push({ type: 'overrev', severity, damage });
     }
+  }
+
+  // Health hits zero: something lets go inside. No more power until reset.
+  blowEngine() {
+    this.engineHealth = 0;
+    this.engineBlown = true;
+    this.events.push({ type: 'blown' });
+  }
+
+  // Leaking oil once the engine is badly damaged
+  get leakingOil() {
+    return this.engineHealth < 0.1;
   }
 
   startShift(newGear, direction) {
@@ -247,8 +273,17 @@ export class CarPhysics {
     const aero = s.downforce * this.vx * this.vx;
     const loadFront = (m * G * s.cgToRear) / L - transfer + aero * s.downforceFront;
     const loadRear = (m * G * s.cgToFront) / L + transfer + aero * (1 - s.downforceFront);
-    const maxFront = s.frontGrip * loadFront;
-    const maxRear = s.rearGrip * loadRear;
+    // The ground under each tyre (oil spots make it slippery)
+    const fx = Math.sin(this.heading), fz = Math.cos(this.heading);   // forward
+    const lx = fz, lz = -fx;                                            // left
+    const t = s.trackHalf;
+    const fxA = this.x + fx * s.cgToFront, fzA = this.z + fz * s.cgToFront;
+    const rxA = this.x - fx * s.cgToRear, rzA = this.z - fz * s.cgToRear;
+    const groundFront = (this.surfaceGrip(fxA + lx * t, fzA + lz * t) + this.surfaceGrip(fxA - lx * t, fzA - lz * t)) / 2;
+    const groundRear = (this.surfaceGrip(rxA + lx * t, rzA + lz * t) + this.surfaceGrip(rxA - lx * t, rzA - lz * t)) / 2;
+
+    const maxFront = s.frontGrip * loadFront * groundFront;
+    const maxRear = s.rearGrip * loadRear * groundRear;
 
     // W is always the accelerator and S always the brake, in any gear
     const throttle = c.throttle;
@@ -297,7 +332,9 @@ export class CarPhysics {
     // Well above the redline (a bad downshift) the engine is being dragged
     // round by the wheels: the limiter can't help, the fuel is simply cut.
     const overRevving = coupledRpm > s.redline + 150;
-    const atLimit = throttle > 0 && this.shiftTimer <= 0 && !overRevving && coupledRpm >= s.redline - 20;
+    const atLimit = !this.engineBlown && throttle > 0 && this.shiftTimer <= 0 && !overRevving
+      && coupledRpm >= s.redline - 20;
+    if (this.engineBlown) targetRpm = 0;   // a blown engine has stopped turning
     this.limiterClock = (this.limiterClock + h) % 0.08;
     this.limiterCut = atLimit && this.limiterClock < 0.04;   // 40 ms cut, 40 ms fire
     this.onLimiter = atLimit;
@@ -319,12 +356,15 @@ export class CarPhysics {
       // Power is cut during a shift (an automatic keeps a little)
       engineTorque = this.transmission === 'auto' ? 0.4 * throttle * torqueAt(s.torqueCurve, this.rpm) : 0;
     } else if (throttle && !overRevving) {
-      engineTorque = throttle * torqueAt(s.torqueCurve, this.rpm) * this.engineHealth;
+      // A damaged engine loses power: down to a quarter just before it dies
+      engineTorque = throttle * torqueAt(s.torqueCurve, this.rpm) * (0.25 + 0.75 * this.engineHealth);
     } else if (coupledRpm > s.idleRpm + 200) {
       engineTorque = -s.engineBraking * (this.rpm / s.redline);   // engine braking
     }
     // Handbrake: the rear wheels are locked, so the engine can't drive them
     if (c.handbrake) engineTorque = 0;
+    // Blown engine: no power at all, the car just coasts
+    if (this.engineBlown) engineTorque = 0;
     if (this.gear === -1 && this.vx < -s.maxReverseSpeed) engineTorque = Math.min(engineTorque, 0);
 
     let drive = (engineTorque * ratio * s.driveEfficiency) / s.wheelRadius;
@@ -354,6 +394,20 @@ export class CarPhysics {
 
     // The rear tyres share their grip between pushing the car and holding
     // the corner, so too much throttle in a corner makes the back step out.
+    // Traction control (automatic and CVT only): never send more power than
+    // the rear tyres can use, and cut it back further if the rear starts to
+    // slide. The manual has no driver aids: full power, your responsibility.
+    this.tractionControl = false;
+    if (this.transmission !== 'manual' && drive > 0) {
+      // Nearly full power in a straight line, less the more you steer
+      const share = 0.9 - 0.3 * Math.abs(c.steer) - 0.45 * clamp(this.lastRearSlide, 0, 1);
+      const tcLimit = maxRear * Math.max(0.3, share);
+      if (drive > tcLimit) {
+        drive = tcLimit;
+        this.tractionControl = true;
+      }
+    }
+
     const requestedPush = Math.abs(drive);   // before grip limits it (for wheelspin smoke)
     const rearPush = Math.min(Math.abs(drive), maxRear * s.maxPushShare);
     drive = Math.sign(drive) * rearPush;
@@ -438,6 +492,7 @@ export class CarPhysics {
     const frontTarget = slideFront * 0.4;   // understeer scrub: much lighter
     const smooth = Math.min(1, 10 * h);
     this.tyreSlip.rear += (rearTarget - this.tyreSlip.rear) * smooth;
+    this.lastRearSlide = slideRear;   // traction control watches this
     this.tyreSlip.front += (frontTarget - this.tyreSlip.front) * smooth;
   }
 }
