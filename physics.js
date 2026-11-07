@@ -40,6 +40,14 @@ export const CATERHAM = {
   wheelRadius: 0.288,     // metres (195/50 R15)
   trackHalf: 0.68,        // metres from the centre line to each wheel
 
+  // --- Tyres ---
+  tyreWearBase: 1 / 300000,  // wear per metre rolled in a straight line (Sports Medium)
+  tyreWearCorner: 0.00002,   // extra wear per metre at the grip limit, scaled by the tyre's load
+  tyreWearSkid: 0.0024,      // wear per metre of tyre actually sliding over the road
+  tyreWearFlat: 0.00003,     // extra wear per metre driving on a deflated tyre
+  flatSink: 0.085,           // metres a fully deflated tyre lets that corner drop
+  rollShareFront: 0.55,      // how much of the cornering weight shift the front takes
+
   // --- Fuel ---
   fuelCapacity: 36,       // litres
   fuelDensity: 0.745,     // kg per litre of petrol
@@ -77,6 +85,31 @@ export const CATERHAM = {
   shiftTime: { manual: 0.12, auto: 0.28 },     // seconds of power cut per shift
 };
 
+// Tyre compounds, GT7-style. grip: on dry tarmac compared with Sports Medium.
+// wear: how fast they wear compared with Sports Medium. Dirt and snow tyres
+// are poor on tarmac; they come into their own on dirt and snow surfaces.
+export const TYRES = {
+  CH: { name: 'Comfort Hard', group: 'Comfort', grip: 0.78, wear: 0.4 },
+  CM: { name: 'Comfort Medium', group: 'Comfort', grip: 0.82, wear: 0.5 },
+  CS: { name: 'Comfort Soft', group: 'Comfort', grip: 0.86, wear: 0.65 },
+  SH: { name: 'Sports Hard', group: 'Sports', grip: 0.93, wear: 0.75 },
+  SM: { name: 'Sports Medium', group: 'Sports', grip: 1.0, wear: 1.0 },
+  SS: { name: 'Sports Soft', group: 'Sports', grip: 1.06, wear: 1.3 },
+  RH: { name: 'Racing Hard', group: 'Racing', grip: 1.12, wear: 1.5 },
+  RM: { name: 'Racing Medium', group: 'Racing', grip: 1.18, wear: 2.0 },
+  RS: { name: 'Racing Soft', group: 'Racing', grip: 1.24, wear: 2.7 },
+  DIRT: { name: 'Dirt', group: 'Off-road', grip: 0.72, wear: 1.4 },
+  SNOW: { name: 'Snow', group: 'Off-road', grip: 0.6, wear: 2.2 },
+};
+
+// Wheel order used everywhere: front left, front right, rear left, rear right
+export const WHEEL_ORDER = [
+  { name: 'FL', front: true, side: 1 },
+  { name: 'FR', front: true, side: -1 },
+  { name: 'RL', front: false, side: 1 },
+  { name: 'RR', front: false, side: -1 },
+];
+
 export const TRANSMISSIONS = ['manual', 'auto', 'cvt'];
 export const TRANSMISSION_NAMES = { manual: 'Manual', auto: 'Automatic', cvt: 'CVT' };
 
@@ -99,6 +132,7 @@ export class CarPhysics {
     this.spec = spec;
     this.transmission = 'manual';
     // Driver aids, switchable from the side panel. Both on by default.
+    this.tyreCompound = 'SM';   // Sports Medium by default; survives a reset
     // Levels 0-5: 0 = off, 5 = strongest. Both start at 5.
     this.assists = { abs: 5, tcs: 5 };
     // How grippy the ground is at a point: 1 = normal tarmac. The game sets
@@ -135,6 +169,8 @@ export class CarPhysics {
     this.lastRearSlide = 0;
     this.launchTime = -1;     // seconds since pulling away began (-1 = not launching)
     this.lastWheelspin = 0;
+    this.latAccel = 0;        // sideways acceleration, for the weight shift onto the outer wheels
+    this.freshTyres();
     this.tractionControl = false;   // true while traction control is cutting power
     this.absActive = false;         // true while ABS is easing the brakes
     this.absSteerLoss = 0;          // steering grip given up at lower ABS levels
@@ -151,6 +187,39 @@ export class CarPhysics {
     this.knock = 0;           // 0-1, rod knock from oil starvation (for the sound)
     this.limiterClock = 0;
     this.events = [];         // shift events for the sound to pick up
+  }
+
+  // --- Tyres ---
+  // A fresh set of the current compound: no wear, normal pressure
+  freshTyres() {
+    this.tyres = WHEEL_ORDER.map(() => ({ wear: 0, pressure: 1, leak: 0 }));
+    this.wheelLoad = [0, 0, 0, 0];
+    this.tyreSink = [0, 0, 0, 0];   // how far each corner sits lower (flat tyres), metres
+    this.flatDrag = 0;
+  }
+
+  setTyres(id) {
+    if (!TYRES[id]) return;
+    this.tyreCompound = id;
+    this.freshTyres();
+  }
+
+  // A sharp object went into this tyre: a slow puncture.
+  // rate: share of the air lost per second at first (it slows as it empties)
+  puncture(wheel, rate) {
+    const t = this.tyres[wheel];
+    if (!t || t.pressure <= 0) return;
+    t.leak = Math.max(t.leak, rate);
+    this.events.push({ type: 'puncture', wheel });
+  }
+
+  // How much grip one tyre has, from its compound, wear and pressure
+  tyreGrip(i) {
+    const t = this.tyres[i];
+    const compound = TYRES[this.tyreCompound];
+    const wearGrip = 1 - 0.35 * Math.pow(t.wear, 1.4);          // worn tyres grip less
+    const pressureGrip = 0.5 + 0.5 * Math.pow(t.pressure, 0.6);  // a flat still grips, badly
+    return compound.grip * wearGrip * pressureGrip;
   }
 
   // An assist's level, 0 (off) to 5 (strongest)
@@ -361,8 +430,41 @@ export class CarPhysics {
     const groundFront = (this.surfaceGrip(fxA + lx * t, fzA + lz * t) + this.surfaceGrip(fxA - lx * t, fzA - lz * t)) / 2;
     const groundRear = (this.surfaceGrip(rxA + lx * t, rzA + lz * t) + this.surfaceGrip(rxA - lx * t, rzA - lz * t)) / 2;
 
-    const maxFront = s.frontGrip * loadFront * groundFront;
-    const maxRear = s.rearGrip * loadRear * groundRear;
+    // --- Each tyre's load: cornering shifts weight onto the outer wheels ---
+    const shift = (m * this.latAccel * s.cgHeight) / (2 * s.trackHalf);
+    const loads = this.wheelLoad;
+    WHEEL_ORDER.forEach((w, i) => {
+      const axle = w.front ? loadFront : loadRear;
+      const share = w.front ? s.rollShareFront : 1 - s.rollShareFront;
+      loads[i] = Math.max(0, axle / 2 - w.side * shift * share);
+    });
+    // Each axle's grip is its two tyres' grip, weighted by how much load each
+    // carries, so a worn or flat OUTER tyre in a corner hurts the most.
+    // Deflated tyres also go soft and squirmy (slower to respond).
+    const axleTyre = (a, b) => {
+      const la = loads[a] + 1e-6, lb = loads[b] + 1e-6;
+      const grip = (la * this.tyreGrip(a) + lb * this.tyreGrip(b)) / (la + lb);
+      const firm = (p) => 0.35 + 0.65 * Math.pow(p, 0.8);
+      const soft = (la * firm(this.tyres[a].pressure) + lb * firm(this.tyres[b].pressure)) / (la + lb);
+      return { grip, soft };
+    };
+    const tyreFront = axleTyre(0, 1);
+    const tyreRear = axleTyre(2, 3);
+    const kFront = s.frontStiffness * tyreFront.soft;
+    const kRear = s.rearStiffness * tyreRear.soft;
+
+    // A deflated tyre drags, which also pulls the car towards that side
+    let flatDrag = 0;
+    let flatPull = 0;
+    WHEEL_ORDER.forEach((w, i) => {
+      const drag = 0.03 * Math.pow(1 - this.tyres[i].pressure, 1.5) * loads[i];
+      flatDrag += drag;
+      flatPull += drag * w.side * s.trackHalf;
+    });
+    this.flatDrag = flatDrag;
+
+    const maxFront = s.frontGrip * loadFront * groundFront * tyreFront.grip;
+    const maxRear = s.rearGrip * loadRear * groundRear * tyreRear.grip;
 
     // W is always the accelerator and S always the brake, in any gear
     const throttle = c.throttle;
@@ -470,7 +572,7 @@ export class CarPhysics {
 
     // Air and rolling resistance
     const resist = s.drag * this.vx * Math.abs(this.vx) + s.rolling * this.vx
-      + Math.sign(this.vx) * Math.min(1, Math.abs(this.vx)) * s.rollingBase;
+      + Math.sign(this.vx) * Math.min(1, Math.abs(this.vx)) * (s.rollingBase + this.flatDrag);
 
     let engineTorque = 0;
     if (this.shiftTimer > 0) {
@@ -598,23 +700,27 @@ export class CarPhysics {
 
     let slideFront = 0;   // how far past their grip limit the tyres are, 0-1
     let slideRear = 0;
+    let useFront = 0;     // how hard each axle is cornering, as a share of its grip
+    let useRear = 0;
 
     if (this.vx > 3) {
       // --- Moving forwards at speed: full tyre model ---
       const slipFront = Math.atan2(this.vy + s.cgToFront * this.yawRate, this.vx) - d;
       const slipRear = Math.atan2(this.vy - s.cgToRear * this.yawRate, this.vx);
-      const sideFront = clamp(-s.frontStiffness * slipFront, -maxFrontSide, maxFrontSide);
-      const sideRear = clamp(-s.rearStiffness * slipRear, -maxRearSide, maxRearSide);
+      const sideFront = clamp(-kFront * slipFront, -maxFrontSide, maxFrontSide);
+      const sideRear = clamp(-kRear * slipRear, -maxRearSide, maxRearSide);
+      useFront = Math.abs(sideFront) / Math.max(1, maxFront);
+      useRear = Math.abs(sideRear) / Math.max(1, maxRear);
 
       // Past the grip limit the tyres slide sideways (and smoke)
-      const peakFront = maxFrontSide / s.frontStiffness;
-      const peakRear = maxRearSide / s.rearStiffness;
+      const peakFront = maxFrontSide / kFront;
+      const peakRear = maxRearSide / kRear;
       slideFront = clamp((Math.abs(slipFront) - peakFront) / 0.2, 0, 1);
       slideRear = clamp((Math.abs(slipRear) - peakRear) / 0.12, 0, 1);
 
       const ax = forceX / m - (sideFront * Math.sin(d)) / m + this.vy * this.yawRate;
       const ay = (sideFront * Math.cos(d) + sideRear) / m - this.vx * this.yawRate;
-      const yawAccel = (s.cgToFront * sideFront * Math.cos(d) - s.cgToRear * sideRear) / s.inertia
+      const yawAccel = (s.cgToFront * sideFront * Math.cos(d) - s.cgToRear * sideRear + flatPull) / s.inertia
         - s.yawDamping * this.yawRate;
 
       this.vx += ax * h;
@@ -667,5 +773,53 @@ export class CarPhysics {
     this.tyreSlip.rear += (rearTarget - this.tyreSlip.rear) * smooth;
     this.lastRearSlide = slideRear;   // traction control watches this
     this.tyreSlip.front += (frontTarget - this.tyreSlip.front) * smooth;
+
+    // Sideways acceleration (smoothed), for next step's weight shift
+    this.latAccel += (this.vx * this.yawRate - this.latAccel) * Math.min(1, 8 * h);
+
+    this.updateTyres(h, { useFront, useRear, slideFront, slideRear, wheelspinAmount, handbrake: c.handbrake, m, L });
+  }
+
+  // --- Tyre wear, pressure and how low each corner sits ---
+  updateTyres(h, { useFront, useRear, slideFront, slideRear, wheelspinAmount, handbrake, m, L }) {
+    const s = this.spec;
+    const compound = TYRES[this.tyreCompound];
+    const speed = Math.hypot(this.vx, this.vy);
+    const dist = speed * h;
+    const staticFront = (m * G * s.cgToRear) / L / 2;
+    const staticRear = (m * G * s.cgToFront) / L / 2;
+
+    WHEEL_ORDER.forEach((w, i) => {
+      const t = this.tyres[i];
+      const loadShare = this.wheelLoad[i] / (w.front ? staticFront : staticRear);
+
+      // How fast this tyre's rubber is sliding over the road
+      // (understeer scrub at the front is much gentler than a sideways slide)
+      let slip = speed * (w.front ? 0.25 * slideFront : slideRear);
+      if (!w.front) slip = Math.max(slip, wheelspinAmount * 15);    // spinning up
+      if (this.wheelsLocked) slip = Math.max(slip, speed * 0.3);    // brakes locked: flat-spotting
+      if (handbrake && !w.front) slip = Math.max(slip, speed * 0.3); // handbrake: rears locked
+
+      const use = w.front ? useFront : useRear;
+      let wear = s.tyreWearBase * dist                              // straight line: all equal
+        + s.tyreWearCorner * loadShare * use * use * dist          // cornering: the loaded outer tyre most
+        + s.tyreWearSkid * Math.sqrt(Math.max(loadShare, 0)) * slip * h
+        + s.tyreWearFlat * (1 - t.pressure) * (1 - t.pressure) * dist;   // driving on a flat chews it up
+      t.wear = Math.min(1, t.wear + wear * compound.wear);
+
+      // Slow puncture: air escapes, more slowly as the tyre empties
+      if (t.leak > 0 && t.pressure > 0) {
+        t.pressure -= t.leak * (0.3 + 0.7 * t.pressure) * h;
+        if (t.pressure <= 0.02) { t.pressure = 0; t.leak = 0; }
+      }
+
+      // A soft tyre lets its corner sit lower, more so when it's carrying weight
+      this.tyreSink[i] = s.flatSink * Math.pow(1 - t.pressure, 1.2) * (0.6 + 0.4 * clamp(loadShare, 0, 2));
+    });
+  }
+
+  // How fast air is hissing out of the tyres right now (for the sound)
+  get tyreHiss() {
+    return this.tyres.reduce((sum, t) => sum + (t.pressure > 0 ? t.leak * t.pressure : 0), 0);
   }
 }
