@@ -13,6 +13,8 @@ import { EngineSound } from './sound.js';
 import { TyreSmoke } from './smoke.js';
 import { Hud } from './hud.js';
 import { OilSlicks } from './oil.js';
+import { SkidMarks } from './skids.js';
+import { EngineDebris } from './debris.js';
 
 // ---------------------------------------------------------------------
 // QUALITY SETTINGS
@@ -377,7 +379,12 @@ const physics = new CarPhysics();
 
 // Oil dripped by a badly damaged engine. Tyres on oil lose grip.
 const oil = new OilSlicks(scene);
-physics.surfaceGrip = (x, z) => oil.gripAt(x, z);
+// Rubber from skidding tyres. Oil wins if both are on the same spot.
+const skids = new SkidMarks(scene);
+physics.surfaceGrip = (x, z) => {
+  const onOil = oil.gripAt(x, z);
+  return onOil < 1 ? onOil : skids.gripAt(x, z);
+};
 
 // Tyre smoke, puffed from each tyre's contact patch when it loses traction
 const smoke = new TyreSmoke(scene, { maxParticles: QUALITY.smokeParticles, puffsPerSecond: QUALITY.smokeRate });
@@ -393,6 +400,11 @@ const engineSmoke = new TyreSmoke(scene, {
 });
 engineSmoke.setViewport(renderer.domElement.height, camera.fov);
 const ENGINE_BAY = new THREE.Vector3(0, 0.62, 0.95);
+
+// Sparks and flying metal when the engine blows
+const debris = new EngineDebris(scene, { maxSparks: isMobile ? 140 : 220, chunkCount: isMobile ? 8 : 12 });
+debris.setViewport(renderer.domElement.height, camera.fov);
+let debrisPending = false;   // set when the engine blows, fired once the engine bay position is known
 const engineBayWorld = new THREE.Vector3();
 
 const SMOKE_POINTS = [
@@ -402,6 +414,7 @@ const SMOKE_POINTS = [
   { id: 'fr', local: new THREE.Vector3(TRACK_HALF, 0.12, FRONT_AXLE), axle: 'front' },
 ];
 const smokeWorld = new THREE.Vector3();
+const skidWorld = new THREE.Vector3();
 const carVelocity = new THREE.Vector3();
 
 function updateSmoke(dt) {
@@ -416,11 +429,28 @@ function updateSmoke(dt) {
   }
   smoke.update(dt);
 
+  // Skid marks: each tyre marks the tarmac while it slides, spins or locks
+  const moving = Math.abs(physics.vx) > 1;
+  const locked = physics.wheelsLocked ? 0.85 : 0;
+  const rearSkid = Math.max(physics.tyreSlip.rear, locked, physics.handbrakeOn && moving ? 0.7 : 0);
+  const frontSkid = Math.max(Math.min(1, physics.tyreSlip.front * 2.5), locked);
+  for (const p of SMOKE_POINTS) {
+    skidWorld.set(p.local.x, 0, p.local.z);
+    carModel.car.localToWorld(skidWorld);
+    skids.update(p.id, skidWorld.x, skidWorld.z, p.axle === 'rear' ? rearSkid : frontSkid);
+  }
+
   // Engine smoke: pours out once blown
   engineBayWorld.copy(ENGINE_BAY);
   carModel.car.localToWorld(engineBayWorld);
   engineSmoke.emitFrom('engine', engineBayWorld, physics.engineBlown ? 1 : 0, carVelocity, dt);
   engineSmoke.update(dt);
+
+  if (debrisPending) {
+    debris.burst(engineBayWorld, carVelocity, physics.heading);
+    debrisPending = false;
+  }
+  debris.update(dt);
 
   // Oil: drips below 10% health, pours once the engine has blown
   // (stops once the oil has all run out: there's nothing left to leak)
@@ -510,6 +540,7 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
   smoke.setViewport(renderer.domElement.height, camera.fov);
   engineSmoke.setViewport(renderer.domElement.height, camera.fov);
+  debris.setViewport(renderer.domElement.height, camera.fov);
 });
 
 // ---------------------------------------------------------------------
@@ -525,6 +556,7 @@ renderer.setAnimationLoop(() => {
   if (wasTapped('reset')) {
     physics.reset();   // also repairs the engine
     oil.clear();
+    debris.clear();
   }
   if (wasTapped('reverse')) physics.toggleReverse();
   if (wasTapped('shiftUp')) physics.shiftUp();
@@ -542,7 +574,10 @@ renderer.setAnimationLoop(() => {
     const e = physics.events.shift();
     if (e.type === 'shift') engineSound.playShift(physics.transmission === 'cvt' ? 'cvt' : e.style);
     if (e.type === 'grind') engineSound.playGrind();
-    if (e.type === 'blown') engineSound.playClunk();
+    if (e.type === 'blown') {
+      engineSound.playClunk();
+      debrisPending = true;
+    }
   }
 
   // Move the car model to where the physics says it is
