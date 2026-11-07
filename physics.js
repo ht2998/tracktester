@@ -10,15 +10,17 @@
 const G = 9.81;   // gravity, m/s²
 const RPM_PER_RADS = 60 / (2 * Math.PI);
 
-// Test car: a light, rear-wheel-drive Caterham-style car with a V6
+// Test car: modelled on the Caterham Seven 420 (Ford Duratec 2.0 inline-4).
+// Real figures: 210 bhp at 7,600 rpm, 203 Nm at 6,300 rpm, 560 kg,
+// 5-speed manual, 195/50 R15 tyres, 0-60 mph in 3.8 s, 219 km/h top speed.
 export const CATERHAM = {
-  mass: 600,              // kg
-  inertia: 750,           // how hard it is to spin the car (kg·m²)
+  mass: 560,              // kg
+  inertia: 680,           // how hard it is to spin the car (kg·m²)
   cgToFront: 1.15,        // metres from the centre of mass to the front axle
   cgToRear: 1.05,         // metres from the centre of mass to the rear axle
-  frontGrip: 1.10,        // tyre grip (1.0 = ordinary road tyre on dry tarmac)
-  rearGrip: 1.25,         // a bit more at the back keeps the car stable
-  maxPushShare: 0.75,     // most of the rear grip the engine can use for pushing
+  frontGrip: 1.15,        // tyre grip (1.0 = ordinary road tyre on dry tarmac)
+  rearGrip: 1.32,         // sticky track-day tyres; a bit more at the back keeps it stable
+  maxPushShare: 0.92,     // most of the rear grip the engine can use for pushing
   cgHeight: 0.38,         // metres: weight shifts back when accelerating, forward when braking
   downforce: 0.55,        // N per (m/s)²: small, but presses the tyres down at speed
   downforceFront: 0.45,   // share of the downforce on the front axle
@@ -27,32 +29,36 @@ export const CATERHAM = {
   rearStiffness: 42000,   // how sharply the rear tyres respond
   maxReverseSpeed: 6,     // m/s
   brakeForce: 8500,       // N
-  handbrakeForce: 2500,   // N
+  handbrakeLockGrip: 0.85,// braking from locked rear tyres, as a share of their grip
   handbrakeRearGrip: 0.35,// rear grip left while the handbrake is on
-  drag: 0.42,             // air resistance
-  rolling: 15,            // rolling resistance
+  drag: 0.56,             // air resistance (a Seven is a brick: tuned for 219 km/h)
+  rollingBase: 85,        // N of tyre rolling resistance
+  rolling: 2,             // extra rolling resistance per m/s
   maxSteer: 0.55,         // radians of steering lock at low speed
   steerSpeed: 2.6,        // how fast the wheels turn, radians per second
-  wheelRadius: 0.3,       // metres
+  wheelRadius: 0.288,     // metres (195/50 R15)
 
-  // --- Engine: naturally aspirated V6, about 170 hp ---
-  cylinders: 6,
-  idleRpm: 850,
-  redline: 7200,          // rev limiter cuts in here
-  launchRpm: 3200,        // revs held while the clutch slips pulling away
-  engineBraking: 40,      // Nm of drag when you lift off the throttle
-  // Torque curve: [rpm, Nm]
-  torqueCurve: [[800, 95], [1500, 140], [2500, 175], [3500, 198], [4500, 212],
-                [5500, 205], [6500, 186], [7200, 168], [7600, 0]],
+  // --- Engine: Duratec-style 2.0 inline-4, naturally aspirated ---
+  cylinders: 4,
+  idleRpm: 900,
+  redline: 7600,          // rev limiter cuts in here (peak power)
+  launchRpm: 4500,        // revs held while the clutch slips pulling away
+  engineBraking: 38,      // Nm of drag when you lift off the throttle
+  peakTorque: 203,
+  cvtTargetRpm: 6600,     // where the CVT holds the revs at full throttle
+  // Torque curve: [rpm, Nm]  (203 Nm at 6,300; 197 Nm = 210 bhp at 7,600)
+  torqueCurve: [[800, 110], [1500, 138], [2500, 158], [3500, 172], [4500, 184],
+                [5500, 195], [6300, 203], [7000, 201], [7600, 197], [8000, 120], [8300, 0]],
 
-  // --- Gearbox ---
-  gears: [3.3, 2.2, 1.65, 1.3, 1.08, 0.92],   // 6 forward gears
-  reverseGear: 3.2,
-  finalDrive: 4.1,
+  // --- Gearbox: 5-speed manual ---
+  gears: [3.136, 1.888, 1.33, 1.0, 0.814],
+  reverseGear: 3.76,
+  finalDrive: 3.62,
   driveEfficiency: 0.9,
-  cvtRange: [3.2, 14],    // CVT's lowest and highest overall ratio
+  cvtRange: [2.9, 12],    // CVT's lowest and highest overall ratio
   // Automatic upshift speeds (km/h) at full throttle, 1->2, 2->3 ...
-  autoUpshiftKmh: [50, 80, 108, 138, 165],
+  // (just under where each gear hits 7,600 rpm: 73, 121, 171; 5th is a cruising gear)
+  autoUpshiftKmh: [70, 117, 166, 232],
   shiftTime: { manual: 0.12, auto: 0.28 },     // seconds of power cut per shift
 };
 
@@ -102,6 +108,9 @@ export class CarPhysics {
     this.limiter = false;     // on the rev limiter or over-revving (dash shows red)
     this.limiterCut = false;  // true during each ignition cut burst
     this.onLimiter = false;   // bouncing off the limiter with the throttle down
+    this.overRevLock = 0;     // seconds left of rear-wheel lock from a bad downshift
+    this.overRevSeverity = 0;
+    this.engineHealth = 1;    // drops after big over-revs (1 = full power)
     this.limiterClock = 0;
     this.events = [];         // shift events for the sound to pick up
   }
@@ -122,9 +131,10 @@ export class CarPhysics {
     if (this.gear > 0) this.gear = this.bestAutoGear(1);
   }
 
-  // --- Reverse (R): only engages when the car is almost stopped ---
+  // --- Reverse (R) for automatic and CVT: only when almost stopped ---
+  // (a manual selects reverse by shifting down from 1st instead)
   toggleReverse() {
-    if (Math.abs(this.vx) > 1) return false;
+    if (this.transmission === 'manual' || Math.abs(this.vx) > 1) return false;
     const toReverse = this.gear !== -1;
     this.gear = toReverse ? -1 : 1;
     const style = this.transmission === 'manual' ? 'manual' : 'auto';
@@ -142,11 +152,28 @@ export class CarPhysics {
   }
 
   shiftDown() {
-    if (this.transmission !== 'manual' || this.gear <= 1) return;
-    // Refuse a downshift that would over-rev the engine
-    const newRpm = this.wheelRpm() * this.spec.gears[this.gear - 2] * this.spec.finalDrive;
-    if (newRpm > this.spec.redline + 300) return;
+    if (this.transmission !== 'manual' || this.gear === -1) return;
+    const s = this.spec;
+    if (this.gear === 1) {
+      // Down from 1st is reverse, but only when (almost) stopped.
+      // Try it while rolling and the gears grind and refuse.
+      if (Math.abs(this.vx) <= 1) this.startShift(-1, 'down');
+      else this.events.push({ type: 'grind' });
+      return;
+    }
+    // No protection: a downshift at too high a speed over-revs the engine
+    const newRpm = this.wheelRpm() * s.gears[this.gear - 2] * s.finalDrive;
     this.startShift(this.gear - 1, 'down');
+    if (newRpm > s.redline + 300) {
+      // The sudden engine braking briefly locks the rear wheels
+      const severity = clamp((newRpm - s.redline) / 2500, 0.15, 1);
+      this.overRevLock = Math.max(this.overRevLock, 0.25 + 0.35 * severity);
+      this.overRevSeverity = Math.max(this.overRevSeverity, severity);
+      // Well past the redline, the engine gets damaged and loses power
+      const damage = clamp((newRpm - (s.redline + 800)) / 1500, 0, 1) * 0.12;
+      this.engineHealth = Math.max(0.5, this.engineHealth - damage);
+      this.events.push({ type: 'overrev', severity, damage });
+    }
   }
 
   startShift(newGear, direction) {
@@ -197,9 +224,18 @@ export class CarPhysics {
     // At speed the wheels also turn in more gradually, like a driver easing
     // the wheel instead of yanking it, but still straighten up quickly.
     const speedFactor = 1 + Math.abs(this.vx) / 9;
-    const steerLimit = s.maxSteer / speedFactor;
+    let steerLimit = s.maxSteer / speedFactor;
+    // Countersteer: steering against a slide gets extra lock (enough to point
+    // the front wheels where the car is actually going) at full speed, so
+    // slides can be caught. Turning into a corner stays gentle at speed.
+    const countersteering = c.steer * this.yawRate < 0 && Math.abs(this.yawRate) > 0.05;
+    if (countersteering) {
+      const slideAngle = Math.abs(Math.atan2(this.vy, Math.max(Math.abs(this.vx), 1)));
+      steerLimit = Math.min(s.maxSteer, steerLimit + slideAngle);
+    }
     const target = c.steer * steerLimit;
-    const turningIn = Math.abs(target) > Math.abs(this.steer) && Math.sign(target) === Math.sign(this.steer || target);
+    const turningIn = !countersteering && Math.abs(target) > Math.abs(this.steer)
+      && Math.sign(target) === Math.sign(this.steer || target);
     const rate = turningIn ? s.steerSpeed / Math.pow(speedFactor, 1.5) : s.steerSpeed;
     this.steer += clamp(target - this.steer, -rate * h, rate * h);
     const d = this.steer;
@@ -235,7 +271,7 @@ export class CarPhysics {
       ratio = s.reverseGear * s.finalDrive;
     } else if (this.transmission === 'cvt') {
       // CVT: holds the revs where they're needed and slides the ratio
-      const targetRpm = s.idleRpm + 300 + throttle * (5600 - s.idleRpm);
+      const targetRpm = s.idleRpm + 300 + throttle * (s.cvtTargetRpm - s.idleRpm);
       const wanted = clamp(targetRpm / Math.max(this.wheelRpm(), 1), s.cvtRange[0], s.cvtRange[1]);
       this.cvtRatio += (wanted - this.cvtRatio) * Math.min(1, 4 * h);
       ratio = this.cvtRatio;
@@ -250,7 +286,7 @@ export class CarPhysics {
     let targetRpm = Math.max(coupledRpm, s.idleRpm);
     if (canSlip && throttle) {
       const slipRpm = this.transmission === 'cvt'
-        ? s.idleRpm + 300 + throttle * (5600 - s.idleRpm)
+        ? s.idleRpm + 300 + throttle * (s.cvtTargetRpm - s.idleRpm)
         : s.launchRpm;
       targetRpm = Math.max(coupledRpm, slipRpm);
     }
@@ -258,28 +294,37 @@ export class CarPhysics {
     // At the top of a gear the limiter cuts the ignition in fast bursts:
     // the revs flicker just under the redline, the exhaust stutters
     // "v-v-v-v", and the car simply can't go any faster in that gear.
-    const atLimit = throttle > 0 && this.shiftTimer <= 0 && coupledRpm >= s.redline - 20;
+    // Well above the redline (a bad downshift) the engine is being dragged
+    // round by the wheels: the limiter can't help, the fuel is simply cut.
+    const overRevving = coupledRpm > s.redline + 150;
+    const atLimit = throttle > 0 && this.shiftTimer <= 0 && !overRevving && coupledRpm >= s.redline - 20;
     this.limiterClock = (this.limiterClock + h) % 0.08;
     this.limiterCut = atLimit && this.limiterClock < 0.04;   // 40 ms cut, 40 ms fire
     this.onLimiter = atLimit;
     if (atLimit) targetRpm = this.limiterCut ? s.redline - 220 : s.redline;
+    // Past about 1,900 rpm over the redline the locked rear tyres skid instead
+    // of turning the engine any faster
+    targetRpm = Math.min(targetRpm, s.redline + 1900);
     this.rpm += (targetRpm - this.rpm) * Math.min(1, (atLimit ? 45 : 18) * h);
     // Shown in red on the dash: on the limiter, or over-revved by a bad downshift
     this.limiter = atLimit || this.rpm > s.redline + 50;
 
     // Air and rolling resistance
-    const resist = s.drag * this.vx * Math.abs(this.vx) + s.rolling * this.vx;
+    const resist = s.drag * this.vx * Math.abs(this.vx) + s.rolling * this.vx
+      + Math.sign(this.vx) * Math.min(1, Math.abs(this.vx)) * s.rollingBase;
 
     let engineTorque = 0;
     if (this.shiftTimer > 0) {
       this.shiftTimer -= h;
       // Power is cut during a shift (an automatic keeps a little)
       engineTorque = this.transmission === 'auto' ? 0.4 * throttle * torqueAt(s.torqueCurve, this.rpm) : 0;
-    } else if (throttle) {
-      engineTorque = throttle * torqueAt(s.torqueCurve, this.rpm);
+    } else if (throttle && !overRevving) {
+      engineTorque = throttle * torqueAt(s.torqueCurve, this.rpm) * this.engineHealth;
     } else if (coupledRpm > s.idleRpm + 200) {
       engineTorque = -s.engineBraking * (this.rpm / s.redline);   // engine braking
     }
+    // Handbrake: the rear wheels are locked, so the engine can't drive them
+    if (c.handbrake) engineTorque = 0;
     if (this.gear === -1 && this.vx < -s.maxReverseSpeed) engineTorque = Math.min(engineTorque, 0);
 
     let drive = (engineTorque * ratio * s.driveEfficiency) / s.wheelRadius;
@@ -292,9 +337,20 @@ export class CarPhysics {
     }
 
     this.throttleAmount = throttle;
-    this.engineLoad = atLimit ? (this.limiterCut ? 0 : 0.6) : clamp(engineTorque / 212, 0, 1);
+    this.engineLoad = atLimit ? (this.limiterCut ? 0 : 0.6) : clamp(engineTorque / s.peakTorque, 0, 1);
 
-    const brake = brakePedal * s.brakeForce + (c.handbrake ? s.handbrakeForce : 0);
+    // Handbrake: locked rear tyres skid, which slows the car about as hard as
+    // the rear tyres can grip (they're sliding, so a bit less than full grip)
+    let brake = brakePedal * s.brakeForce + (c.handbrake ? s.handbrakeLockGrip * maxRear : 0);
+
+    // A bad downshift briefly locks the rear wheels with engine braking
+    let lockGripLoss = 0;
+    if (this.overRevLock > 0) {
+      this.overRevLock -= h;
+      brake += this.overRevSeverity * 0.35 * maxRear;
+      lockGripLoss = 0.18 * this.overRevSeverity;
+      if (this.overRevLock <= 0) this.overRevSeverity = 0;
+    }
 
     // The rear tyres share their grip between pushing the car and holding
     // the corner, so too much throttle in a corner makes the back step out.
@@ -302,7 +358,8 @@ export class CarPhysics {
     const rearPush = Math.min(Math.abs(drive), maxRear * s.maxPushShare);
     drive = Math.sign(drive) * rearPush;
     let maxRearSide = Math.sqrt(Math.max(0, maxRear * maxRear - rearPush * rearPush));
-    if (c.handbrake) maxRearSide *= s.handbrakeRearGrip;
+    if (c.handbrake) maxRearSide *= s.handbrakeRearGrip;   // like driving on ice
+    maxRearSide *= 1 - lockGripLoss;
     // When the engine overpowers the rear tyres (low gears, full throttle) they
     // spin, and spinning tyres lose most of their sideways grip: that's what
     // lets the car swing round into a donut. At high speed in a tall gear the
@@ -374,10 +431,10 @@ export class CarPhysics {
     this.wheelSpin += (this.vx / s.wheelRadius) * h;
 
     // --- Tyre smoke: how hard each axle is losing traction ---
-    // Rear: sliding sideways, spinning up under power, or locked by the handbrake.
+    // Only when the tyres actually skid: sliding sideways, or spinning up under
+    // power. A straight-line handbrake stop doesn't smoke.
     const wheelspin = wheelspinAmount * 0.35;   // a straight-line launch only smokes lightly
-    const locked = c.handbrake && Math.abs(this.vx) > 2 ? 0.7 : 0;
-    const rearTarget = Math.max(slideRear, wheelspin, locked);
+    const rearTarget = Math.max(slideRear, wheelspin);
     const frontTarget = slideFront * 0.4;   // understeer scrub: much lighter
     const smooth = Math.min(1, 10 * h);
     this.tyreSlip.rear += (rearTarget - this.tyreSlip.rear) * smooth;
