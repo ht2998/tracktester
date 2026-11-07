@@ -38,9 +38,10 @@ export class TyreSmoke {
   //   sizeScale  - how big the puffs grow
   //   rise       - how fast puffs float upwards
   //   lifeScale  - how long puffs hang around
+  //   wind       - breeze that carries puffs away, m/s ({ x, z })
   constructor(scene, {
     maxParticles = 400, puffsPerSecond = 30, color = 0xdcdcdc,
-    thickness = 1, sizeScale = 1, rise = 1, lifeScale = 1,
+    thickness = 1, sizeScale = 1, rise = 1, lifeScale = 1, wind = { x: 0, z: 0 },
   } = {}) {
     this.max = maxParticles;
     this.rate = puffsPerSecond;   // per source, at full strength
@@ -49,6 +50,7 @@ export class TyreSmoke {
     this.sizeScale = sizeScale;
     this.rise = rise;
     this.lifeScale = lifeScale;
+    this.wind = wind;
 
     this.pos = new Float32Array(this.max * 3);
     this.size = new Float32Array(this.max);
@@ -139,9 +141,11 @@ export class TyreSmoke {
       this.vel[i * 3] *= drag;
       this.vel[i * 3 + 2] *= drag;
       this.vel[i * 3 + 1] *= Math.max(0, 1 - 0.5 * dt);
-      this.pos[i * 3] += this.vel[i * 3] * dt;
+      // The breeze takes over as the puff drifts away from the source
+      const carried = Math.min(1, t * 3);
+      this.pos[i * 3] += (this.vel[i * 3] + this.wind.x * carried) * dt;
       this.pos[i * 3 + 1] += this.vel[i * 3 + 1] * dt;
-      this.pos[i * 3 + 2] += this.vel[i * 3 + 2] * dt;
+      this.pos[i * 3 + 2] += (this.vel[i * 3 + 2] + this.wind.z * carried) * dt;
 
       // Grows quickly then slowly, fades in fast and out gently
       const grow = 1 - (1 - t) * (1 - t);
