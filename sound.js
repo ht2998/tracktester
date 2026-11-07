@@ -360,10 +360,64 @@ export class EngineSound {
 
     let volume = 0.5 + 0.25 * rev + 0.35 * load;
     if (car.shiftTimer > 0) volume *= 0.55;   // ignition cut during a shift
+    if (car.engineBlown) volume = 0;          // a dead engine makes no noise
     // (the limiter's stutter is made by the pulses themselves)
     this.engineGain.gain.setTargetAtTime(volume, t, 0.02);
 
     this.echo.update(listenerPos);
+  }
+
+  // Engine failure: a heavy CLUNK, as if something just smashed inside
+  playClunk() {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+
+    // The heavy hit: a deep thud that drops in pitch
+    const thud = ctx.createOscillator();
+    thud.type = 'sine';
+    thud.frequency.setValueAtTime(95, t);
+    thud.frequency.exponentialRampToValueAtTime(28, t + 0.45);
+    const thudGain = ctx.createGain();
+    thudGain.gain.setValueAtTime(0.0001, t);
+    thudGain.gain.exponentialRampToValueAtTime(1.0, t + 0.008);
+    thudGain.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+    thud.connect(thudGain).connect(this.out);
+    thud.start(t);
+    thud.stop(t + 0.6);
+
+    // The metal: a few clashing tones that ring out unevenly
+    for (const [freq, level, length] of [[312, 0.22, 0.5], [471, 0.16, 0.4], [689, 0.12, 0.3], [1043, 0.08, 0.25]]) {
+      const ring = ctx.createOscillator();
+      ring.type = 'square';
+      ring.frequency.setValueAtTime(freq, t);
+      ring.frequency.exponentialRampToValueAtTime(freq * 0.93, t + length);
+      const ringFilter = ctx.createBiquadFilter();
+      ringFilter.type = 'bandpass';
+      ringFilter.frequency.value = freq * 1.5;
+      ringFilter.Q.value = 3;
+      const ringGain = ctx.createGain();
+      ringGain.gain.setValueAtTime(0.0001, t);
+      ringGain.gain.exponentialRampToValueAtTime(level, t + 0.005);
+      ringGain.gain.exponentialRampToValueAtTime(0.001, t + length);
+      ring.connect(ringFilter).connect(ringGain).connect(this.out);
+      ring.start(t);
+      ring.stop(t + length + 0.05);
+    }
+
+    // Debris: a short crunchy burst of noise
+    const crunch = ctx.createBufferSource();
+    crunch.buffer = this.noise;
+    const crunchFilter = ctx.createBiquadFilter();
+    crunchFilter.type = 'lowpass';
+    crunchFilter.frequency.value = 1800;
+    const crunchGain = ctx.createGain();
+    crunchGain.gain.setValueAtTime(0.0001, t);
+    crunchGain.gain.exponentialRampToValueAtTime(0.6, t + 0.004);
+    crunchGain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+    crunch.connect(crunchFilter).connect(crunchGain).connect(this.out);
+    crunch.start(t, Math.random());
+    crunch.stop(t + 0.3);
   }
 
   // Gear grind: trying to select reverse while still rolling
