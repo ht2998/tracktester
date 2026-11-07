@@ -434,6 +434,8 @@ function updateSmoke(dt) {
   const locked = physics.wheelsLocked ? 0.85 : 0;
   const rearSkid = Math.max(physics.tyreSlip.rear, locked, physics.handbrakeOn && moving ? 0.7 : 0);
   const frontSkid = Math.max(Math.min(1, physics.tyreSlip.front * 2.5), locked);
+  // Tyre squeal follows the same skid measure as the marks
+  engineSound.setSqueal(Math.max(rearSkid, frontSkid), Math.hypot(physics.vx, physics.vy));
   for (const p of SMOKE_POINTS) {
     skidWorld.set(p.local.x, 0, p.local.z);
     carModel.car.localToWorld(skidWorld);
