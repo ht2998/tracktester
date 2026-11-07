@@ -1,1 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
+  <!-- Keep this site out of search engines and AI crawlers -->
+  <meta name="robots" content="noindex, nofollow, noarchive, noimageindex">
+
+  <title>Track Tester</title>
+
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      background: #9ec9ef;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    /* The 3D scene fills the whole screen */
+    #game {
+      position: fixed;
+      inset: 0;
+      touch-action: none; /* stops the page scrolling while you drag on a phone */
+    }
+    /* Small label in the corner */
+    #info {
+      position: fixed;
+      left: 12px;
+      top: 12px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.45);
+      color: #fff;
+      font-size: 13px;
+      line-height: 1.4;
+      pointer-events: none;
+    }
+    #info b { font-size: 15px; }
+  </style>
+
+  <!-- Tells the browser where to download the Three.js 3D library from -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="game"></div>
+  <div id="info">
+    <b>Track Tester</b><br>
+    Rendering test<br>
+    Drag to look around · scroll or pinch to zoom
+  </div>
+
+  <!-- Loads the game code -->
+  <script type="module" src="rendering.js"></script>
+</body>
+</html>
