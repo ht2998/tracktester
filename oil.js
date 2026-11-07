@@ -1,98 +1,213 @@
 // =====================================================================
-// OIL: a leaking engine drips oil onto the track.
-// Each drip is a small dark, glossy spot. A tyre rolling over a spot
-// loses most of its grip for that moment. All spots are one instanced
-// object (drawn in a single go), and the oldest is reused once the pool
-// is full, so a long leak never slows the game down.
+// OIL: a leaking engine leaves oil on the track.
+//   - While moving: a thin, continuous trail that follows the car
+//   - While stopped: a puddle that slowly spreads out
+// Any tyre that rolls over oil loses most of its grip. The trail and the
+// puddles are each one instanced object (drawn in a single go), with a
+// fixed pool that recycles the oldest pieces, and a simple grid makes
+// "is this tyre on oil?" quick to answer.
 // =====================================================================
 
 import * as THREE from 'three';
 
-export class OilSlicks {
-  constructor(scene, { maxSpots = 400, slickGrip = 0.35 } = {}) {
-    this.max = maxSpots;
-    this.slickGrip = slickGrip;   // grip left on oil (1 = clean tarmac)
-    this.spots = [];              // { x, z, r }
-    this.next = 0;
-    this.distanceSinceDrip = 0;
-    this.timeSinceDrip = 0;
+const CELL = 2;   // metres: size of each square in the lookup grid
+const cellKey = (x, z) => `${Math.floor(x / CELL)},${Math.floor(z / CELL)}`;
 
-    const geo = new THREE.CircleGeometry(1, 20);
-    geo.rotateX(-Math.PI / 2);   // lie flat on the ground
+export class OilSlicks {
+  constructor(scene, { maxSegments = 1600, maxPuddles = 40, slickGrip = 0.35 } = {}) {
+    this.slickGrip = slickGrip;   // grip left on oil (1 = clean tarmac)
+    this.maxSegments = maxSegments;
+    this.maxPuddles = maxPuddles;
+
+    this.segments = [];   // { ax, az, bx, bz, w, cells }
+    this.nextSeg = 0;
+    this.puddles = [];    // { x, z, r, maxR, cells }
+    this.nextPuddle = 0;
+    this.grid = new Map();   // cell -> Set of { kind, index }
+
+    this.lastPoint = null;   // where the trail last ended
+    this.wobble = 0;         // gentle side-to-side drift of the drip line
+    this.activePuddle = -1;  // the puddle currently growing under the car
+
     const mat = new THREE.MeshStandardMaterial({
       color: 0x0d0c0b,
-      roughness: 0.12,           // wet and shiny
+      roughness: 0.12,       // wet and shiny
       metalness: 0.4,
       transparent: true,
       opacity: 0.88,
-      polygonOffset: true,       // sits on the tarmac without flickering
+      polygonOffset: true,   // sits on the tarmac without flickering
       polygonOffsetFactor: -2,
       polygonOffsetUnits: -2,
     });
-    this.mesh = new THREE.InstancedMesh(geo, mat, this.max);
-    this.mesh.count = 0;
-    this.mesh.receiveShadow = true;
-    this.mesh.frustumCulled = false;
-    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    scene.add(this.mesh);
+
+    // Trail pieces: thin flat strips laid end to end
+    const stripGeo = new THREE.PlaneGeometry(1, 1);
+    stripGeo.rotateX(-Math.PI / 2);
+    this.trailMesh = new THREE.InstancedMesh(stripGeo, mat, maxSegments);
+    // Puddles: flat discs that grow
+    const discGeo = new THREE.CircleGeometry(1, 24);
+    discGeo.rotateX(-Math.PI / 2);
+    this.puddleMesh = new THREE.InstancedMesh(discGeo, mat, maxPuddles);
+
+    for (const mesh of [this.trailMesh, this.puddleMesh]) {
+      mesh.count = 0;
+      mesh.receiveShadow = true;
+      mesh.frustumCulled = false;
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      scene.add(mesh);
+    }
+
     this._m = new THREE.Matrix4();
     this._q = new THREE.Quaternion();
     this._p = new THREE.Vector3();
     this._s = new THREE.Vector3();
+    this._up = new THREE.Vector3(0, 1, 0);
   }
 
-  // Call every frame. carX/carZ/heading place the drip under the engine.
-  // rate: 0 = no leak, 1 = damaged and dripping, 2 = blown and pouring
+  // Call every frame.
+  //   carX/carZ/heading: where the car is, so the oil falls from under the engine
+  //   speed: m/s
+  //   rate: 0 = not leaking, 1 = dripping (damaged), 2 = pouring (blown)
   update(dt, carX, carZ, heading, speed, rate) {
-    if (rate <= 0) return;
-    this.distanceSinceDrip += Math.abs(speed) * dt;
-    this.timeSinceDrip += dt;
-    const everyMetres = rate >= 2 ? 0.6 : 1.4;
-    const everySeconds = rate >= 2 ? 0.9 : 2.5;   // still drips while stopped, pooling up
-    if (this.distanceSinceDrip >= everyMetres || this.timeSinceDrip >= everySeconds) {
-      this.distanceSinceDrip = 0;
-      this.timeSinceDrip = 0;
-      // Drips fall from under the front of the car (the engine), a little spread out
-      const fx = Math.sin(heading), fz = Math.cos(heading);
-      const side = (Math.random() - 0.5) * 0.5;
-      const x = carX + fx * 0.6 + fz * side;
-      const z = carZ + fz * 0.6 - fx * side;
-      const r = (rate >= 2 ? 0.22 : 0.15) + Math.random() * 0.12;
-      this.addSpot(x, z, r);
+    if (rate <= 0) {
+      this.lastPoint = null;
+      this.activePuddle = -1;
+      return;
+    }
+    const fx = Math.sin(heading), fz = Math.cos(heading);
+    this.wobble += dt * (0.8 + Math.random() * 0.4);
+    const side = Math.sin(this.wobble * 1.7) * 0.06;     // the drip line wanders a little
+    const x = carX + fx * 0.6 + fz * side;
+    const z = carZ + fz * 0.6 - fx * side;
+
+    if (Math.abs(speed) < 0.4) {
+      // Stopped: the oil pools and spreads
+      this.lastPoint = null;
+      this.growPuddle(x, z, dt, rate);
+      return;
+    }
+    this.activePuddle = -1;
+
+    // Moving: extend the trail as a continuous line
+    if (!this.lastPoint) {
+      this.lastPoint = { x, z };
+      return;
+    }
+    const dx = x - this.lastPoint.x;
+    const dz = z - this.lastPoint.z;
+    const len = Math.hypot(dx, dz);
+    if (len >= 0.35) {
+      const width = (rate >= 2 ? 0.11 : 0.07) * (0.85 + Math.random() * 0.3);
+      this.addSegment(this.lastPoint.x, this.lastPoint.z, x, z, width);
+      this.lastPoint = { x, z };
     }
   }
 
-  addSpot(x, z, r) {
-    const i = this.next;
-    this.next = (this.next + 1) % this.max;
-    this.spots[i] = { x, z, r };
-    // Slightly oval and randomly turned, so it looks like a splash, not a coin
-    this._p.set(x, 0.004, z);
-    this._q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.random() * Math.PI);
-    this._s.set(r, 1, r * (0.65 + Math.random() * 0.35));
+  addSegment(ax, az, bx, bz, w) {
+    const i = this.nextSeg;
+    this.nextSeg = (this.nextSeg + 1) % this.maxSegments;
+    if (this.segments[i]) this.unregister('seg', i, this.segments[i].cells);
+
+    const len = Math.hypot(bx - ax, bz - az);
+    const cells = this.cellsAlong(ax, az, bx, bz);
+    this.segments[i] = { ax, az, bx, bz, w, cells };
+    this.register('seg', i, cells);
+
+    // Strip centred between the two points, turned to face along the line,
+    // slightly overlapping the next piece so the trail has no gaps
+    this._p.set((ax + bx) / 2, 0.004, (az + bz) / 2);
+    this._q.setFromAxisAngle(this._up, Math.atan2(bx - ax, bz - az));
+    this._s.set(w, 1, len + w * 0.6);
     this._m.compose(this._p, this._q, this._s);
-    this.mesh.setMatrixAt(i, this._m);
-    this.mesh.count = Math.max(this.mesh.count, i + 1);
-    this.mesh.instanceMatrix.needsUpdate = true;
+    this.trailMesh.setMatrixAt(i, this._m);
+    this.trailMesh.count = Math.max(this.trailMesh.count, i + 1);
+    this.trailMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  growPuddle(x, z, dt, rate) {
+    let p = this.puddles[this.activePuddle];
+    // Start a new puddle if there isn't one under the car
+    if (this.activePuddle < 0 || !p || Math.hypot(x - p.x, z - p.z) > 0.3) {
+      const i = this.nextPuddle;
+      this.nextPuddle = (this.nextPuddle + 1) % this.maxPuddles;
+      if (this.puddles[i]) this.unregister('pud', i, this.puddles[i].cells);
+      p = { x, z, r: 0.06, maxR: rate >= 2 ? 1.3 : 0.75, cells: [], angle: Math.random() * Math.PI, squash: 0.75 + Math.random() * 0.2 };
+      this.puddles[i] = p;
+      this.activePuddle = i;
+      this.puddleMesh.count = Math.max(this.puddleMesh.count, i + 1);
+    }
+    // Spreads quickly at first, then more slowly as it gets bigger
+    const speed = (rate >= 2 ? 0.25 : 0.08) * (1 - p.r / p.maxR);
+    p.r = Math.min(p.maxR, p.r + speed * dt);
+
+    this.unregister('pud', this.activePuddle, p.cells);
+    p.cells = this.cellsAround(p.x, p.z, p.r);
+    this.register('pud', this.activePuddle, p.cells);
+
+    this._p.set(p.x, 0.005, p.z);
+    this._q.setFromAxisAngle(this._up, p.angle);
+    this._s.set(p.r, 1, p.r * p.squash);
+    this._m.compose(this._p, this._q, this._s);
+    this.puddleMesh.setMatrixAt(this.activePuddle, this._m);
+    this.puddleMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  // --- Lookup grid, so checking a tyre only looks at nearby oil ---
+  cellsAlong(ax, az, bx, bz) {
+    const keys = new Set([cellKey(ax, az), cellKey(bx, bz), cellKey((ax + bx) / 2, (az + bz) / 2)]);
+    return [...keys];
+  }
+
+  cellsAround(x, z, r) {
+    const keys = new Set();
+    for (const dx of [-r, 0, r]) for (const dz of [-r, 0, r]) keys.add(cellKey(x + dx, z + dz));
+    return [...keys];
+  }
+
+  register(kind, index, cells) {
+    for (const k of cells) {
+      if (!this.grid.has(k)) this.grid.set(k, new Set());
+      this.grid.get(k).add(`${kind}:${index}`);
+    }
+  }
+
+  unregister(kind, index, cells) {
+    for (const k of cells) this.grid.get(k)?.delete(`${kind}:${index}`);
   }
 
   // Grip at a point on the ground: low on oil, normal everywhere else
   gripAt(x, z) {
-    for (let i = 0; i < this.spots.length; i++) {
-      const s = this.spots[i];
-      const dx = x - s.x;
-      const dz = z - s.z;
-      const reach = s.r + 0.1;   // the tyre's contact patch has some width too
-      if (dx * dx + dz * dz < reach * reach) return this.slickGrip;
+    const here = this.grid.get(cellKey(x, z));
+    if (!here || here.size === 0) return 1;
+    const tyre = 0.1;   // half the width of a tyre's contact patch
+    for (const id of here) {
+      const [kind, n] = id.split(':');
+      if (kind === 'pud') {
+        const p = this.puddles[+n];
+        const reach = p.r + tyre;
+        if ((x - p.x) ** 2 + (z - p.z) ** 2 < reach * reach) return this.slickGrip;
+      } else {
+        const s = this.segments[+n];
+        // Distance from the point to the strip's centre line
+        const vx = s.bx - s.ax, vz = s.bz - s.az;
+        const t = Math.max(0, Math.min(1, ((x - s.ax) * vx + (z - s.az) * vz) / (vx * vx + vz * vz || 1)));
+        const px = s.ax + vx * t - x, pz = s.az + vz * t - z;
+        const reach = s.w / 2 + tyre;
+        if (px * px + pz * pz < reach * reach) return this.slickGrip;
+      }
     }
     return 1;
   }
 
   clear() {
-    this.spots.length = 0;
-    this.next = 0;
-    this.mesh.count = 0;
-    this.distanceSinceDrip = 0;
-    this.timeSinceDrip = 0;
+    this.segments.length = 0;
+    this.puddles.length = 0;
+    this.grid.clear();
+    this.nextSeg = 0;
+    this.nextPuddle = 0;
+    this.trailMesh.count = 0;
+    this.puddleMesh.count = 0;
+    this.lastPoint = null;
+    this.activePuddle = -1;
   }
 }
