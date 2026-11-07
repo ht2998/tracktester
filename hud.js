@@ -299,6 +299,37 @@ const STYLE = `
 #sidepanel .gb-option:hover { background: rgba(242, 239, 230, 0.05); }
 
 /* Level sliders for the driver aids: 0 = off, 5 = strongest */
+#sidepanel .tyre-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 190px;
+  padding: 9px 12px 11px;
+  border: 1px solid #2c3139;
+  border-radius: 8px;
+}
+#sidepanel select {
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid #3a404a;
+  border-radius: 6px;
+  background: #15181c;
+  color: ${COLORS.ink};
+  font: 600 16px ${FONT};
+  cursor: pointer;
+}
+#sidepanel select:focus-visible { outline: 2px solid ${COLORS.needle}; outline-offset: 2px; }
+#sidepanel .tyre-fresh {
+  align-self: flex-start;
+  padding: 5px 10px;
+  border: 1px solid #3a404a;
+  border-radius: 6px;
+  background: transparent;
+  color: ${COLORS.ink};
+  font: 600 14px ${FONT};
+  cursor: pointer;
+}
+#sidepanel .tyre-fresh:hover { background: rgba(242, 239, 230, 0.05); }
 #sidepanel .assist {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -343,11 +374,108 @@ const GEARBOXES = [
   { id: 'cvt', name: 'CVT', note: 'No gears, smooth revs' },
 ];
 
+// The classic check engine symbol: an engine block seen from the side
+function drawCheckEngine(g, cx, cy, width, color) {
+  const u = width / 24;   // drawn on a 24 x 16 grid
+  const x0 = cx - 12 * u, y0 = cy - 8 * u;
+  const P = (x, y) => [x0 + x * u, y0 + y * u];
+  g.save();
+  g.fillStyle = color;
+  g.strokeStyle = color;
+  g.lineWidth = Math.max(1.2, 1.6 * u);
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  g.shadowColor = color;
+  g.shadowBlur = 6 * u;
+  g.beginPath();
+  [[5, 5], [9, 5], [9, 3], [14, 3], [14, 5], [18, 5], [20, 7], [22, 7], [22, 12],
+   [20, 12], [18, 14], [8, 14], [5, 11]].forEach(([x, y], i) => (i ? g.lineTo(...P(x, y)) : g.moveTo(...P(x, y))));
+  g.closePath();
+  g.fill();
+  g.beginPath();                       // the bracket on the left
+  g.moveTo(...P(2, 6)); g.lineTo(...P(2, 13));
+  g.moveTo(...P(2, 9.5)); g.lineTo(...P(5, 9.5));
+  g.stroke();
+  g.restore();
+}
+
+// Tyre wear: four bars laid out like the car seen from above. Each starts
+// white and fills red from the top as that tyre wears. The outline turns
+// orange when a tyre is losing pressure, and flashes red when it's nearly flat.
+class TyreBars {
+  constructor() {
+    this.canvas = document.createElement('canvas');
+    this.ctx = this.canvas.getContext('2d');
+  }
+
+  resize(height) {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.w = Math.round(height * 0.62);
+    this.h = Math.round(height);
+    this.dpr = dpr;
+    this.canvas.width = this.w * dpr;
+    this.canvas.height = this.h * dpr;
+    this.canvas.style.width = `${this.w}px`;
+    this.canvas.style.height = `${this.h}px`;
+  }
+
+  draw(tyres, compound, time) {
+    const g = this.ctx;
+    g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    g.clearRect(0, 0, this.w, this.h);
+    const pad = this.h * 0.06;
+    const labelH = this.h * 0.2;
+    // Dark backing plate so the bars read over the sky or the road
+    g.fillStyle = 'rgba(14, 16, 19, 0.72)';
+    roundRect(g, 0, 0, this.w, this.h, this.h * 0.08);
+    g.fill();
+    const gapX = this.w * 0.16, gapY = this.h * 0.08;
+    const bw = (this.w - 2 * pad - gapX) / 2;
+    const bh = (this.h - 2 * pad - labelH - gapY) / 2;
+    [[0, 0], [1, 0], [0, 1], [1, 1]].forEach(([col, row], i) => {   // FL FR / RL RR
+      const t = tyres?.[i] ?? { wear: 0, pressure: 1 };
+      const x = pad + col * (bw + gapX);
+      const y = pad + row * (bh + gapY);
+      const worn = Math.max(0, Math.min(1, t.wear));
+      g.fillStyle = COLORS.ink;                          // remaining tread
+      g.fillRect(x, y, bw, bh);
+      g.fillStyle = COLORS.redline;                      // worn away
+      g.fillRect(x, y, bw, bh * worn);
+      // Pressure warning around the bar
+      let ring = null;
+      if (t.pressure < 0.3) ring = Math.floor(time * 4) % 2 === 0 ? COLORS.redline : null;
+      else if (t.pressure < 0.95) ring = COLORS.ledAmber;
+      if (ring) {
+        g.strokeStyle = ring;
+        g.lineWidth = Math.max(1.5, this.h * 0.035);
+        g.strokeRect(x - 1.5, y - 1.5, bw + 3, bh + 3);
+      }
+    });
+    g.fillStyle = COLORS.inkSoft;
+    g.font = `600 ${Math.round(labelH * 0.72)}px ${FONT}`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(compound || 'Tyres', this.w / 2, this.h - pad - labelH / 2);
+  }
+}
+
+function roundRect(g, x, y, w, h, r) {
+  g.beginPath();
+  g.moveTo(x + r, y);
+  g.arcTo(x + w, y, x + w, y + h, r);
+  g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r);
+  g.arcTo(x, y, x + w, y, r);
+  g.closePath();
+}
+
 // ---------------------------------------------------------------------
 // The dashboard
 // ---------------------------------------------------------------------
 export class Hud {
-  constructor({ redline, maxSpeed = 240, onTransmission, onAssist, compact = false }) {
+  constructor({ redline, maxSpeed = 240, onTransmission, onAssist, onTyres, tyreOptions = {}, compact = false }) {
+    this.onTyres = onTyres;
+    this.tyreOptions = tyreOptions;
     this.compact = compact;   // mini gauges for phones and tablets
     this.redline = redline;
     this.onTransmission = onTransmission;
@@ -382,7 +510,8 @@ export class Hud {
     dash.id = 'dash';
     if (compact) dash.classList.add('compact');
     this.dash = dash;
-    dash.append(this.tach.canvas, this.speedo.canvas, smallGauges);
+    this.tyreBars = new TyreBars();
+    dash.append(this.tyreBars.canvas, this.tach.canvas, this.speedo.canvas, smallGauges);
     document.body.appendChild(dash);
 
     // Clutch status: a tiny line of text at the top of the screen
@@ -458,7 +587,46 @@ export class Hud {
       return box;
     });
 
-    panel.append(gearHeading, gearGroup, assistHeading, ...assistButtons);
+    // Tyres: one dropdown (grouped by type) so the panel stays short
+    const tyreHeading = document.createElement('div');
+    tyreHeading.className = 'sp-heading';
+    tyreHeading.textContent = 'Tyres';
+    const tyreBox = document.createElement('div');
+    tyreBox.className = 'tyre-box';
+    const select = document.createElement('select');
+    select.id = 'tyre-select';
+    select.setAttribute('aria-label', 'Tyre compound');
+    const groups = {};
+    for (const [id, t] of Object.entries(this.tyreOptions)) {
+      if (!groups[t.group]) {
+        groups[t.group] = document.createElement('optgroup');
+        groups[t.group].label = t.group;
+        select.appendChild(groups[t.group]);
+      }
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = t.name;
+      groups[t.group].appendChild(opt);
+    }
+    select.addEventListener('change', () => {
+      this.onTyres?.(select.value);
+      select.blur();   // give the arrow keys back to steering
+    });
+    const note = document.createElement('span');
+    note.className = 'gb-note';
+    note.textContent = 'Changing fits a fresh set';
+    const fresh = document.createElement('button');
+    fresh.type = 'button';
+    fresh.className = 'tyre-fresh';
+    fresh.textContent = 'Fit a fresh set';
+    fresh.addEventListener('click', () => {
+      this.onTyres?.(select.value);
+      fresh.blur();
+    });
+    tyreBox.append(select, note, fresh);
+    this.tyreSelect = select;
+
+    panel.append(gearHeading, gearGroup, assistHeading, ...assistButtons, tyreHeading, tyreBox);
     this.side.append(handle, panel);
     document.body.appendChild(this.side);
 
@@ -482,10 +650,15 @@ export class Hud {
     this.speedo.resize(Math.round(tachSize * 0.82));
     this.fuelGauge.resize(Math.round(tachSize * 0.42));
     this.oilGauge.resize(Math.round(tachSize * 0.42));
+    this.tyreBars.resize(Math.round(tachSize * 0.5));
   }
 
   update({ speedKmh, rpm, gearLabel, limiter, transmission, engineHealth = 1, oilLevel = 1,
-           fuelLevel = 1, assists = {}, clutchIn = false, time }) {
+           fuelLevel = 1, assists = {}, clutchIn = false, tyres = null, tyreCompound = 'SM', time }) {
+    this.tyreBars.draw(tyres, tyreCompound, time);
+    if (this.tyreSelect && document.activeElement !== this.tyreSelect && this.tyreSelect.value !== tyreCompound) {
+      this.tyreSelect.value = tyreCompound;
+    }
     // --- Clutch status ---
     const clutchWords = clutchIn ? 'Clutch disengaged' : 'Clutch engaged';
     if (this.clutchText.textContent !== clutchWords) {
@@ -505,15 +678,12 @@ export class Hud {
       tg.textAlign = 'center';
       tg.textBaseline = 'middle';
       tg.fillText('Out of fuel', tR, tR - tR * 0.28);
-    } else if (engineHealth < 0.995) {
-      let text = `Engine ${Math.round(engineHealth * 100)}%`;
-      if (engineHealth <= 0) text = 'Engine failure';
-      else if (engineHealth < 0.1) text += ', oil leak';
-      tg.fillStyle = engineHealth < 0.5 ? COLORS.redline : COLORS.ledAmber;
-      tg.font = `600 ${Math.round(tR * 0.13)}px ${FONT}`;
-      tg.textAlign = 'center';
-      tg.textBaseline = 'middle';
-      tg.fillText(text, tR, tR - tR * 0.28);
+    } else if (engineHealth < 0.75) {
+      // Check engine light: steady orange below 75%, flashing red below 20%
+      const critical = engineHealth < 0.2;
+      if (!critical || Math.floor(time * 3) % 2 === 0) {
+        drawCheckEngine(tg, tR, tR - tR * 0.3, tR * 0.36, critical ? COLORS.redline : COLORS.ledAmber);
+      }
     }
     tg.fillStyle = limiter ? COLORS.redline : COLORS.ink;
     tg.font = `700 ${Math.round(tR * 0.42)}px ${FONT}`;
