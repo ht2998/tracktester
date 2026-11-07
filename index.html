@@ -37,7 +37,63 @@
       pointer-events: none;
     }
     #info b { font-size: 15px; }
+    /* Error box: only appears if something goes wrong */
+    #errors {
+      display: none;
+      position: fixed;
+      left: 12px;
+      right: 12px;
+      bottom: 12px;
+      max-height: 40vh;
+      overflow: auto;
+      padding: 10px 14px;
+      border-radius: 8px;
+      background: rgba(120, 10, 10, 0.92);
+      color: #fff;
+      font: 13px/1.45 ui-monospace, Menlo, Consolas, monospace;
+      white-space: pre-wrap;
+      z-index: 10;
+    }
   </style>
+
+  <!-- Shows problems on screen, so you don't need the browser's developer tools -->
+  <script>
+    (function () {
+      var shown = {};
+      function report(message) {
+        if (shown[message]) return;          // don't repeat the same error every frame
+        shown[message] = true;
+        var box = document.getElementById('errors');
+        if (!box) return;
+        box.style.display = 'block';
+        box.textContent += (box.textContent ? '\n\n' : '') + message;
+      }
+      window.addEventListener('error', function (e) {
+        var where = e.filename ? ' (' + e.filename.split('/').pop() + ' line ' + e.lineno + ')' : '';
+        report('Error: ' + e.message + where);
+      });
+      window.addEventListener('unhandledrejection', function (e) {
+        report('Error: ' + (e.reason && e.reason.message ? e.reason.message : e.reason));
+      });
+
+      // If the game hasn't started after a few seconds, check which files are missing
+      var FILES = ['rendering.js', 'physics.js', 'input.js', 'sound.js', 'smoke.js', 'hud.js', 'oil.js'];
+      window.checkGameStarted = function () {
+        var info = document.getElementById('info');
+        if (!info || info.textContent.indexOf('Rendering test') === -1) return;   // it started
+        Promise.all(FILES.map(function (f) {
+          return fetch(f, { cache: 'no-store' }).then(function (r) { return r.ok ? null : f; })
+            .catch(function () { return f; });
+        })).then(function (missing) {
+          missing = missing.filter(Boolean);
+          report(missing.length
+            ? 'The game could not start. These files are missing from the repo (check the exact name, all lowercase): ' + missing.join(', ')
+            : 'The game could not start, but all files are there. One of them may have a pasting mistake; the error above (if any) says which.');
+        });
+      };
+      window.addEventListener('load', function () { setTimeout(window.checkGameStarted, 4000); });
+    })();
+  </script>
 
   <!-- Tells the browser where to download the Three.js 3D library from -->
   <script type="importmap">
@@ -56,6 +112,7 @@
     Rendering test<br>
     Drag to look around · scroll or pinch to zoom
   </div>
+  <div id="errors" role="alert"></div>
 
   <!-- Loads the game code -->
   <script type="module" src="rendering.js"></script>
