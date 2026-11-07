@@ -5,8 +5,8 @@
 //   A / Left arrow   = steer left
 //   D / Right arrow  = steer right
 //   Space            = handbrake
-//   Q / E            = shift down / up (manual gearbox)
-//   R                = reverse gear on / off (when stopped)
+//   Q / E  or  , / . = shift down / up (manual gearbox; Q from 1st = reverse)
+//   R                = reverse on / off (automatic and CVT, when stopped)
 //   T                = change gearbox (manual / automatic / CVT)
 //   M                = mute
 //   C                = switch camera (chase / showroom)
@@ -23,6 +23,10 @@ const TAP_KEYS = {
   Backspace: 'reset',
   KeyQ: 'shiftDown',
   KeyE: 'shiftUp',
+  // Alternative shift keys for the right hand. Many keyboards can't detect
+  // Q or E while W and A/D are held ("ghosting"), so these always work.
+  Comma: 'shiftDown',
+  Period: 'shiftUp',
   KeyT: 'transmission',
   KeyM: 'mute',
 };
