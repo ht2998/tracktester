@@ -384,9 +384,12 @@ const smoke = new TyreSmoke(scene, { maxParticles: QUALITY.smokeParticles, puffs
 smoke.setViewport(renderer.domElement.height, camera.fov);
 
 // Thick dark grey smoke pouring from the engine bay once the engine blows
+// (small puffs that rise fast and drift off on a breeze, so a stopped car
+// trails a column of smoke instead of sitting inside a cloud)
 const engineSmoke = new TyreSmoke(scene, {
-  maxParticles: isMobile ? 160 : 260, puffsPerSecond: isMobile ? 16 : 26,
-  color: 0x3c3c3e, thickness: 2.8, sizeScale: 1.3, rise: 1.8, lifeScale: 1.4,
+  maxParticles: isMobile ? 200 : 320, puffsPerSecond: isMobile ? 22 : 34,
+  color: 0x3a3a3c, thickness: 2.2, sizeScale: 0.5, rise: 3.4, lifeScale: 1.5,
+  wind: { x: 1.1, z: 0.6 },
 });
 engineSmoke.setViewport(renderer.domElement.height, camera.fov);
 const ENGINE_BAY = new THREE.Vector3(0, 0.62, 0.95);
@@ -420,7 +423,8 @@ function updateSmoke(dt) {
   engineSmoke.update(dt);
 
   // Oil: drips below 10% health, pours once the engine has blown
-  const leakRate = physics.engineBlown ? 2 : physics.leakingOil ? 1 : 0;
+  // (stops once the oil has all run out: there's nothing left to leak)
+  const leakRate = !physics.leakingOil ? 0 : physics.engineBlown ? 2 : 1;
   oil.update(dt, physics.x, physics.z, physics.heading, physics.vx, leakRate);
 }
 
@@ -443,7 +447,7 @@ const info = document.getElementById('info');
 info.innerHTML =
   '<b>Track Tester</b><br>' +
   'W / S: throttle, brake · A / D: steer<br>' +
-  'Space: handbrake · Q / E: shift down / up<br>' +
+  'Space: handbrake · Q / E or , / . : shift down / up<br>' +
   'Reverse: Q from 1st (manual), R (auto, CVT)<br>' +
   'T: gearbox<br>' +
   'M: mute · C: camera · Backspace: reset<br>' +
@@ -560,6 +564,7 @@ renderer.setAnimationLoop(() => {
     limiter: physics.limiter,
     transmission: physics.transmission,
     engineHealth: physics.engineHealth,
+    oilLevel: physics.oilLevel,
     time: clock.elapsedTime,
   });
 
