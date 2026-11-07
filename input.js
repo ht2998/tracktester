@@ -56,15 +56,29 @@ window.addEventListener('blur', () => held.clear());
 
 const controls = { throttle: 0, brake: 0, steer: 0, handbrake: false, clutch: false };
 
+// On-screen touch controls write their state here (see touch.js)
+const touch = { throttle: 0, brake: 0, steer: 0, handbrake: false, clutch: false };
+export function setTouch(values) {
+  Object.assign(touch, values);
+}
+// A touch button's one-off action (shift, reverse, camera, reset, mute)
+export function tap(name) {
+  tapped.add(name);
+}
+
 // Called once per frame: returns the current driving controls
+// (keyboard and touch combined, so either works)
 export function readControls() {
   const left = held.has('KeyA') || held.has('ArrowLeft');
   const right = held.has('KeyD') || held.has('ArrowRight');
-  controls.throttle = held.has('KeyW') || held.has('ArrowUp') ? 1 : 0;
-  controls.brake = held.has('KeyS') || held.has('ArrowDown') ? 1 : 0;
-  controls.steer = (left ? 1 : 0) - (right ? 1 : 0);   // +1 = left, -1 = right
-  controls.handbrake = held.has('Space');
-  controls.clutch = held.has('KeyX');
+  const keyThrottle = held.has('KeyW') || held.has('ArrowUp') ? 1 : 0;
+  const keyBrake = held.has('KeyS') || held.has('ArrowDown') ? 1 : 0;
+  const keySteer = (left ? 1 : 0) - (right ? 1 : 0);   // +1 = left, -1 = right
+  controls.throttle = Math.max(keyThrottle, touch.throttle);
+  controls.brake = Math.max(keyBrake, touch.brake);
+  controls.steer = keySteer !== 0 ? keySteer : touch.steer;
+  controls.handbrake = held.has('Space') || touch.handbrake;
+  controls.clutch = held.has('KeyX') || touch.clutch;
   return controls;
 }
 
