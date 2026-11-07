@@ -39,8 +39,8 @@ const GAME_KEYS = new Set([
 ]);
 
 window.addEventListener('keydown', (e) => {
-  // A focused slider (side panel) gets the arrow keys instead of the car
-  if (e.target && e.target.tagName === 'INPUT') return;
+  // A focused slider or dropdown (side panel) gets the arrow keys instead of the car
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return;
   if (!GAME_KEYS.has(e.code)) return;
   e.preventDefault();                 // stop arrows and space scrolling the page
   if (!e.repeat && TAP_KEYS[e.code]) tapped.add(TAP_KEYS[e.code]);
