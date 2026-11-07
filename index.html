@@ -77,7 +77,7 @@
       });
 
       // If the game hasn't started after a few seconds, check which files are missing
-      var FILES = ['rendering.js', 'physics.js', 'input.js', 'sound.js', 'smoke.js', 'hud.js', 'oil.js'];
+      var FILES = ['rendering.js', 'physics.js', 'input.js', 'sound.js', 'smoke.js', 'hud.js', 'oil.js', 'skids.js', 'debris.js'];
       window.checkGameStarted = function () {
         var info = document.getElementById('info');
         if (!info || info.textContent.indexOf('Rendering test') === -1) return;   // it started
