@@ -280,55 +280,43 @@ const STYLE = `
 #sidepanel .gb-note { font-size: 14px; font-weight: 500; color: ${COLORS.inkSoft}; }
 #sidepanel .gb-option:hover { background: rgba(242, 239, 230, 0.05); }
 
-/* On/off switches for the driver aids */
-#sidepanel .toggle {
+/* Level sliders for the driver aids: 0 = off, 5 = strongest */
+#sidepanel .assist {
   display: grid;
   grid-template-columns: 1fr auto;
-  align-items: center;
-  column-gap: 12px;
+  align-items: baseline;
+  row-gap: 6px;
   min-width: 190px;
-  padding: 9px 12px;
+  padding: 9px 12px 11px;
   border: 1px solid #2c3139;
   border-radius: 8px;
-  background: transparent;
   color: ${COLORS.ink};
-  text-align: left;
-  cursor: pointer;
   font-family: ${FONT};
 }
-#sidepanel .toggle:hover { background: rgba(242, 239, 230, 0.05); }
-#sidepanel .toggle .gb-note { grid-column: 1; }
-#sidepanel .switch {
-  grid-row: span 2;
-  position: relative;
-  width: 38px;
-  height: 22px;
-  border-radius: 11px;
-  background: #2c3139;
-  transition: background 150ms ease;
+#sidepanel .assist .gb-note { grid-column: 1 / -1; }
+#sidepanel .assist-level { font-size: 16px; font-weight: 600; color: ${COLORS.needle}; }
+#sidepanel .assist-level.off { color: ${COLORS.inkSoft}; }
+#sidepanel .assist input[type=range] {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin: 2px 0 0;
+  accent-color: ${COLORS.needle};
+  cursor: pointer;
 }
-#sidepanel .switch::after {
-  content: '';
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: ${COLORS.inkSoft};
-  transition: transform 150ms ease, background 150ms ease;
+#sidepanel .assist .scale {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: ${COLORS.inkSoft};
 }
-#sidepanel .toggle[aria-checked="true"] .switch { background: ${COLORS.needle}; }
-#sidepanel .toggle[aria-checked="true"] .switch::after { transform: translateX(16px); background: ${COLORS.ink}; }
-@media (prefers-reduced-motion: reduce) {
-  #sidepanel .switch, #sidepanel .switch::after, #sidepanel .sp-handle svg { transition: none; }
-}
+#sidepanel input[type=range]:focus-visible { outline: 2px solid ${COLORS.needle}; outline-offset: 3px; }
 #sidepanel button:focus-visible { outline: 2px solid ${COLORS.needle}; outline-offset: 2px; }
 `;
 
 const ASSISTS = [
-  { id: 'abs', name: 'ABS', note: 'Brakes hard without locking up' },
-  { id: 'tcs', name: 'TCS', note: 'Stops the rear wheels spinning' },
+  { id: 'abs', name: 'ABS', note: 'Higher: steer while braking hard. 0: wheels lock' },
+  { id: 'tcs', name: 'TCS', note: 'Higher: less wheelspin and sliding. 0: raw power' },
 ];
 
 const GEARBOXES = [
@@ -412,25 +400,28 @@ export class Hud {
       this.options[g.id] = b;
     }
 
-    // Assists: on/off switches
+    // Assists: level sliders, 0 (off) to 5 (strongest)
     const assistHeading = document.createElement('div');
     assistHeading.className = 'sp-heading';
     assistHeading.textContent = 'Assists';
-    this.toggles = {};
+    this.sliders = {};
     const assistButtons = ASSISTS.map((a) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'toggle';
-      b.setAttribute('role', 'switch');
-      b.innerHTML = `<span class="gb-name">${a.name}</span><span class="switch" aria-hidden="true"></span>`
-        + `<span class="gb-note">${a.note}</span>`;
-      b.addEventListener('click', () => {
-        const on = b.getAttribute('aria-checked') !== 'true';
-        this.onAssist?.(a.id, on);
-        b.blur();
-      });
-      this.toggles[a.id] = b;
-      return b;
+      const box = document.createElement('div');
+      box.className = 'assist';
+      const id = `assist-${a.id}`;
+      box.innerHTML = `<label class="gb-name" for="${id}">${a.name}</label>`
+        + `<span class="assist-level" aria-hidden="true"></span>`
+        + `<span class="gb-note">${a.note}</span>`
+        + `<input id="${id}" type="range" min="0" max="5" step="1">`
+        + `<span class="scale" aria-hidden="true"><span>Off</span><span>5</span></span>`;
+      const input = box.querySelector('input');
+      input.addEventListener('input', () => this.onAssist?.(a.id, Number(input.value)));
+      // Let go of the slider afterwards, so the arrow keys go back to steering
+      const release = () => input.blur();
+      input.addEventListener('change', release);
+      input.addEventListener('pointerup', release);
+      this.sliders[a.id] = { input, label: box.querySelector('.assist-level') };
+      return box;
     });
 
     panel.append(gearHeading, gearGroup, assistHeading, ...assistButtons);
@@ -512,8 +503,15 @@ export class Hud {
       b.classList.toggle('active', active);
       b.setAttribute('aria-checked', String(active));
     }
-    for (const [id, b] of Object.entries(this.toggles)) {
-      b.setAttribute('aria-checked', String(!!assists[id]));
+    for (const [id, { input, label }] of Object.entries(this.sliders)) {
+      const level = assists[id] === true ? 5 : Number(assists[id]) || 0;
+      if (document.activeElement !== input && Number(input.value) !== level) input.value = String(level);
+      const text = level === 0 ? 'Off' : `Level ${level}`;
+      if (label.textContent !== text) {
+        label.textContent = text;
+        label.classList.toggle('off', level === 0);
+        input.setAttribute('aria-valuetext', text);
+      }
     }
   }
 
