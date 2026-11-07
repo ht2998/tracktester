@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { readControls, wasTapped } from './input.js';
-import { CarPhysics, CATERHAM, TRANSMISSIONS } from './physics.js';
+import { CarPhysics, CATERHAM, TRANSMISSIONS, TYRES } from './physics.js';
 import { EngineSound } from './sound.js';
 import { TyreSmoke } from './smoke.js';
 import { Hud } from './hud.js';
@@ -354,15 +354,28 @@ const wheelRot = new THREE.Quaternion();
 const wheelEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 const ONE = new THREE.Vector3(1, 1, 1);
 
+// Which physics tyre (FL, FR, RL, RR) each drawn wheel is (+x is the car's left)
+const physicsWheel = (x, isFront) => (isFront ? 0 : 2) + (x > 0 ? 0 : 1);
+const tyreSquash = [1, 1, 1, 1];   // per physics tyre: 1 = round, lower = squashed flat
+const squashMatrix = new THREE.Matrix4();
+const spinMatrix = new THREE.Matrix4();
+
 function updateWheels(steer, spin) {
   WHEELS.forEach(([x, y, z, isFront], i) => {
     wheelPos.set(x, y, z);
+    // A deflated tyre: the top keeps its shape while the bottom squashes flat
+    // and bulges out where it meets the road. The rim stays round.
+    const sy = tyreSquash[physicsWheel(x, isFront)];
+    const bulge = 1 - sy;
     for (let k = 0; k < 2; k++) {
       wheelEuler.set(spin + k * Math.PI / 2, isFront ? steer : 0, 0);
       wheelRot.setFromEuler(wheelEuler);
       wheelMatrix.compose(wheelPos, wheelRot, ONE);
       if (k === 0) {
-        carModel.tyres.setMatrixAt(i, wheelMatrix);
+        spinMatrix.makeRotationFromQuaternion(wheelRot);
+        squashMatrix.makeScale(1 + bulge * 0.35, sy, 1 + bulge * 0.6).multiply(spinMatrix);
+        squashMatrix.setPosition(x, y + WHEEL_RADIUS * (1 - sy), z);
+        carModel.tyres.setMatrixAt(i, squashMatrix);
         carModel.rims.setMatrixAt(i, wheelMatrix);
       }
       carModel.spokes.setMatrixAt(i * 2 + k, wheelMatrix);
@@ -371,6 +384,71 @@ function updateWheels(steer, spin) {
   carModel.tyres.instanceMatrix.needsUpdate = true;
   carModel.rims.instanceMatrix.needsUpdate = true;
   carModel.spokes.instanceMatrix.needsUpdate = true;
+}
+
+// ---------------------------------------------------------------------
+// BODY LEAN on deflated tyres
+// Each corner wants its hub at (tyre radius - how far that tyre has sunk).
+// A rigid body can't follow four separate heights, so it settles on the
+// best-fitting plane: the low corner drops, and the opposite wheel lifts.
+// ---------------------------------------------------------------------
+const bodyLean = { heave: 0, roll: 0, pitch: 0 };
+const HUB_X = [TRACK_HALF, -TRACK_HALF, TRACK_HALF, -TRACK_HALF];   // FL FR RL RR (+x = left)
+const HUB_Z = [FRONT_AXLE, FRONT_AXLE, REAR_AXLE, REAR_AXLE];
+
+function fitBodyToTyres(dt) {
+  const hub = physics.tyreSink.map((sink) => WHEEL_RADIUS - sink);
+  const mean = hub.reduce((a, b) => a + b, 0) / 4;
+  let sx = 0, sz = 0, xx = 0, zz = 0;
+  for (let i = 0; i < 4; i++) {
+    sx += hub[i] * HUB_X[i]; xx += HUB_X[i] * HUB_X[i];
+    sz += (hub[i] - mean) * HUB_Z[i]; zz += HUB_Z[i] * HUB_Z[i];
+  }
+  const b = sx / xx;          // height change per metre to the left
+  const c = sz / zz;          // height change per metre forwards
+  const k = Math.min(1, 10 * dt);   // settle smoothly
+  bodyLean.heave += (mean - WHEEL_RADIUS - bodyLean.heave) * k;
+  bodyLean.roll += (Math.atan(b) - bodyLean.roll) * k;
+  bodyLean.pitch += (-Math.atan(c) - bodyLean.pitch) * k;
+  // Where each hub ends up, and so how squashed each tyre must be to reach the road
+  for (let i = 0; i < 4; i++) {
+    const hubHeight = mean + b * HUB_X[i] + c * HUB_Z[i];
+    tyreSquash[i] = Math.max(0.62, Math.min(1, (hubHeight + WHEEL_RADIUS) / (2 * WHEEL_RADIUS)));
+  }
+}
+
+// ---------------------------------------------------------------------
+// PUNCTURES: running over sharp engine debris can puncture a tyre.
+// Each piece gets one chance per tyre, and gets kicked away when hit.
+// ---------------------------------------------------------------------
+const PUNCTURE_CHANCE = { chunk: 0.45, part: 0.5, cam: 0.3, piston: 0.15 };
+const tyreContact = new THREE.Vector3();
+
+function checkDebrisPunctures() {
+  if (!debris.pieces.length || Math.hypot(physics.vx, physics.vy) < 1) return;
+  for (let i = 0; i < 4; i++) {
+    tyreContact.set(HUB_X[i], 0, HUB_Z[i]);
+    carModel.car.localToWorld(tyreContact);
+    for (const piece of debris.pieces) {
+      if (piece.pos.y > 0.25) continue;
+      const reach = piece.radius + 0.1;
+      const dx = piece.pos.x - tyreContact.x, dz = piece.pos.z - tyreContact.z;
+      if (dx * dx + dz * dz > reach * reach) continue;
+      piece.hitBy = piece.hitBy || new Set();
+      if (piece.hitBy.has(i)) continue;
+      piece.hitBy.add(i);
+      if (Math.random() < (PUNCTURE_CHANCE[piece.kind] ?? 0.3)) {
+        physics.puncture(i, 1 / (20 + Math.random() * 25));   // goes flat in roughly 30-60 s
+      }
+      // The tyre flicks the piece away
+      piece.resting = false;
+      piece.rolling = false;
+      piece.settling = false;
+      piece.vel.x += carVelocity.x * 0.3 + (Math.random() - 0.5) * 2;
+      piece.vel.z += carVelocity.z * 0.3 + (Math.random() - 0.5) * 2;
+      piece.vel.y = 1 + Math.random() * 1.5;
+    }
+  }
 }
 
 // ---------------------------------------------------------------------
@@ -454,6 +532,7 @@ function updateSmoke(dt) {
     debrisPending = false;
   }
   debris.update(dt, engineBayWorld, carVelocity, physics.heading);
+  checkDebrisPunctures();
 
   // Oil: drips below 10% health, pours once the engine has blown
   // (stops once the oil has all run out: there's nothing left to leak)
@@ -497,6 +576,8 @@ const hud = new Hud({
   redline: CATERHAM.redline,
   onTransmission: (name) => physics.setTransmission(name),
   onAssist: (name, on) => { physics.assists[name] = on; },
+  onTyres: (id) => physics.setTyres(id),
+  tyreOptions: TYRES,
   compact: touchMode,   // mini gauges at the top on phones
 });
 
@@ -590,8 +671,11 @@ renderer.setAnimationLoop(() => {
   }
 
   // Move the car model to where the physics says it is
-  carModel.car.position.set(physics.x, 0, physics.z);
-  carModel.car.rotation.y = physics.heading;
+  // Lean the body onto any corner whose tyre is going down. The body is
+  // rigid, so dropping one corner lifts the diagonally opposite wheel a little.
+  fitBodyToTyres(dt);
+  carModel.car.position.set(physics.x, bodyLean.heave, physics.z);
+  carModel.car.rotation.set(bodyLean.pitch, physics.heading, bodyLean.roll, 'YXZ');
   updateWheels(physics.steer, physics.wheelSpin);
   updateSmoke(dt);
 
@@ -601,6 +685,7 @@ renderer.setAnimationLoop(() => {
 
   updateCamera(dt);
   engineSound.update(physics, carPos);
+  engineSound.setHiss(physics.tyreHiss);
 
   hud.update({
     speedKmh: physics.speedKmh,
@@ -613,6 +698,8 @@ renderer.setAnimationLoop(() => {
     fuelLevel: physics.fuelLevel,
     assists: physics.assists,
     clutchIn: physics.clutchIn,
+    tyres: physics.tyres,
+    tyreCompound: physics.tyreCompound,
     time: clock.elapsedTime,
   });
   touchUI?.update({ transmission: physics.transmission, gearLabel: physics.gearLabel, muted: engineSound.muted });
