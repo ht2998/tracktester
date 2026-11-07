@@ -377,7 +377,7 @@ export class EngineSound {
     // (a soft clipper squeezes the sharp hits so the event can be loud and
     // dense without crackling)
     const fxDrive = ctx.createGain();
-    fxDrive.gain.value = 2.8;
+    fxDrive.gain.value = 4.2;
     const fxClip = ctx.createWaveShaper();
     fxClip.curve = makeWarmthCurve(2.4);
     fxClip.oversample = '4x';
@@ -459,22 +459,23 @@ export class EngineSound {
     this.echo.update(listenerPos);
   }
 
-  // Engine failure, about 2.5 seconds:
-  //   BANG (something lets go) -> metal shattering -> broken parts thrashing
-  //   about as the engine spins down, slower and slower -> a hiss of oil and
-  //   steam -> one last thud as it seizes.
+  // Engine failure, about 3 seconds. Everything here is built from noise
+  // (no pure tones), so it sounds like metal breaking, not like music:
+  //   a hard CLUNK -> broken parts clattering as the engine spins down
+  //   -> grinding to a halt with a final clunk -> a hiss of oil and steam
   playClunk() {
     if (!this.ctx) return;
     const ctx = this.ctx;
     const t0 = ctx.currentTime;
     const out = this.fxOut;   // louder than the engine
 
-    const env = (node, at, peak, attack, length) => {
-      node.gain.setValueAtTime(0.0001, at);
-      node.gain.exponentialRampToValueAtTime(peak, at + attack);
-      node.gain.exponentialRampToValueAtTime(0.0008, at + length);
+    const env = (g, at, peak, attack, length) => {
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(peak, at + attack);
+      g.gain.exponentialRampToValueAtTime(0.0008, at + length);
     };
-    const noiseBurst = (at, length, freq, q, peak, type = 'bandpass') => {
+    // A burst of noise shaped by a filter
+    const burst = (at, length, type, freq, q, peak, attack = 0.002) => {
       const src = ctx.createBufferSource();
       src.buffer = this.noise;
       const f = ctx.createBiquadFilter();
@@ -482,59 +483,72 @@ export class EngineSound {
       f.frequency.value = freq;
       f.Q.value = q;
       const g = ctx.createGain();
-      env(g, at, peak, 0.004, length);
+      env(g, at, peak, attack, length);
       src.connect(f).connect(g).connect(out);
-      src.start(at, Math.random());
+      src.start(at, Math.random() * 1.5);
       src.stop(at + length + 0.05);
     };
-    const tone = (at, freq, endFreq, length, peak, type = 'sine') => {
-      const o = ctx.createOscillator();
-      o.type = type;
-      o.frequency.setValueAtTime(freq, at);
-      o.frequency.exponentialRampToValueAtTime(endFreq, at + length);
-      const g = ctx.createGain();
-      env(g, at, peak, 0.006, length);
-      o.connect(g).connect(out);
-      o.start(at);
-      o.stop(at + length + 0.05);
+    // A metal impact: a hard crack plus a cluster of narrow, clashing
+    // resonances that ring briefly, like a heavy steel part striking the block
+    const impact = (at, size) => {
+      burst(at, 0.08 * size, 'highpass', 1800, 0.7, 2.2 * size, 0.001);    // the crack
+      burst(at, 0.3 * size, 'lowpass', 1100, 0.8, 3.2 * size, 0.001);      // the weight of it
+      burst(at, 0.45 * size, 'lowpass', 180, 0.7, 3.0 * size, 0.002);      // the thud through the chassis
+      burst(at, 0.6 * size, 'bandpass', 420, 1.5, 1.6 * size, 0.003);      // the body of the car shaking
+      for (const [freq, level, length] of [[620, 1.4, 0.5], [1130, 1.2, 0.42], [1710, 0.9, 0.34],
+                                           [2480, 0.7, 0.28], [3390, 0.5, 0.22], [4650, 0.35, 0.16]]) {
+        const f = freq * (0.94 + Math.random() * 0.12);
+        burst(at, length * size, 'bandpass', f, 14, level * size, 0.001);
+      }
     };
 
-    // 1. The BANG: a deep hit and a sharp crack
-    tone(t0, 110, 24, 0.9, 2.2);
-    noiseBurst(t0, 0.22, 1400, 0.7, 2.0, 'lowpass');
-    noiseBurst(t0, 0.08, 4000, 1.0, 1.2);
+    // 1. The CLUNK: two hits a split second apart (something breaks, then slams)
+    impact(t0, 1.0);
+    impact(t0 + 0.045, 0.75);
 
-    // 2. Metal shattering: clashing tones that ring out unevenly
-    for (const [freq, level, length] of [[287, 0.45, 1.4], [433, 0.36, 1.2], [612, 0.3, 1.0],
-                                         [859, 0.22, 0.9], [1207, 0.16, 0.7], [1733, 0.11, 0.55]]) {
-      const o = ctx.createOscillator();
-      o.type = 'square';
-      o.frequency.setValueAtTime(freq, t0);
-      o.frequency.exponentialRampToValueAtTime(freq * 0.9, t0 + length);
-      const f = ctx.createBiquadFilter();
-      f.type = 'bandpass';
-      f.frequency.value = freq * 1.4;
-      f.Q.value = 4;
-      const g = ctx.createGain();
-      env(g, t0, level, 0.004, length);
-      o.connect(f).connect(g).connect(out);
-      o.start(t0);
-      o.stop(t0 + length + 0.05);
+    // 2. Broken parts clattering as the engine spins down: noisy metal
+    //    clanks, fast at first, slowing and fading as it loses speed
+    let at = t0 + 0.14;
+    let gap = 0.03;
+    let level = 1.4;
+    while (at < t0 + 2.0 && level > 0.12) {
+      burst(at, 0.035 + Math.random() * 0.03, 'bandpass', 900 + Math.random() * 2600, 6 + Math.random() * 10, level);
+      if (Math.random() < 0.35) burst(at, 0.05, 'lowpass', 250, 0.8, level * 0.8);   // a heavier knock now and then
+      at += gap * (0.75 + Math.random() * 0.5);
+      gap *= 1.1;
+      level *= 0.955;
     }
 
-    // 3. Broken parts thrashing as the engine spins down: clanks that start
-    //    fast and slow to a stop, getting quieter as it dies
-    let at = t0 + 0.12;
-    let gap = 0.035;
-    let level = 2.4;
-    while (at < t0 + 2.1 && level > 0.12) {
-      const freq = 700 + Math.random() * 1500;
-      noiseBurst(at, 0.05 + Math.random() * 0.04, freq, 5, level * (0.6 + Math.random() * 0.4));
-      if (Math.random() < 0.4) tone(at, 160 + Math.random() * 80, 70, 0.07, level * 0.5);
-      at += gap * (0.8 + Math.random() * 0.4);
-      gap *= 1.11;      // slowing down
-      level *= 0.95;    // and fading
-    }
+    // 3. Grinding to a halt: a rough, chunking rumble that slows down
+    const grind = ctx.createBufferSource();
+    grind.buffer = this.noise;
+    grind.loop = true;
+    const gf = ctx.createBiquadFilter();
+    gf.type = 'bandpass';
+    gf.frequency.setValueAtTime(700, t0 + 0.2);
+    gf.frequency.exponentialRampToValueAtTime(220, t0 + 2.2);
+    gf.Q.value = 1.2;
+    const chunk = ctx.createGain();     // chopped on and off, slower and slower
+    chunk.gain.value = 0;
+    const chopper = ctx.createOscillator();
+    chopper.type = 'square';
+    chopper.frequency.setValueAtTime(28, t0 + 0.2);
+    chopper.frequency.exponentialRampToValueAtTime(4, t0 + 2.2);
+    const chopDepth = ctx.createGain();
+    chopDepth.gain.value = 0.5;
+    const chopBias = ctx.createConstantSource();
+    chopBias.offset.value = 0.5;
+    chopper.connect(chopDepth).connect(chunk.gain);
+    chopBias.connect(chunk.gain);
+    const gg = ctx.createGain();
+    gg.gain.setValueAtTime(0.0001, t0 + 0.15);
+    gg.gain.exponentialRampToValueAtTime(0.9, t0 + 0.35);
+    gg.gain.exponentialRampToValueAtTime(0.0008, t0 + 2.3);
+    grind.connect(gf).connect(chunk).connect(gg).connect(out);
+    for (const n of [grind, chopper, chopBias]) { n.start(t0 + 0.15); n.stop(t0 + 2.4); }
+
+    // ...and the final seize: one last heavy clunk
+    impact(t0 + 2.2, 0.8);
 
     // 4. Hiss of oil and steam escaping
     const hiss = ctx.createBufferSource();
@@ -544,16 +558,12 @@ export class EngineSound {
     hf.type = 'highpass';
     hf.frequency.value = 2500;
     const hg = ctx.createGain();
-    hg.gain.setValueAtTime(0.0001, t0 + 0.2);
-    hg.gain.exponentialRampToValueAtTime(0.9, t0 + 0.5);
-    hg.gain.exponentialRampToValueAtTime(0.0008, t0 + 3.2);
+    hg.gain.setValueAtTime(0.0001, t0 + 0.25);
+    hg.gain.exponentialRampToValueAtTime(0.7, t0 + 0.6);
+    hg.gain.exponentialRampToValueAtTime(0.0008, t0 + 3.4);
     hiss.connect(hf).connect(hg).connect(out);
-    hiss.start(t0 + 0.2, Math.random());
-    hiss.stop(t0 + 3.3);
-
-    // 5. The engine seizes: one last heavy thud
-    tone(t0 + 2.15, 75, 30, 0.5, 1.6);
-    noiseBurst(t0 + 2.15, 0.12, 900, 1, 0.9, 'lowpass');
+    hiss.start(t0 + 0.25, Math.random());
+    hiss.stop(t0 + 3.5);
   }
 
   // Gear grind: trying to select reverse while still rolling
