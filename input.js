@@ -1,30 +1,42 @@
 // =====================================================================
 // INPUT: reads the keyboard and turns it into driving controls.
 //   W / Up arrow     = throttle
-//   S / Down arrow   = brake, then reverse once stopped
+//   S / Down arrow   = brake
 //   A / Left arrow   = steer left
 //   D / Right arrow  = steer right
 //   Space            = handbrake
+//   Q / E            = shift down / up (manual gearbox)
+//   R                = reverse gear on / off (when stopped)
+//   T                = change gearbox (manual / automatic / CVT)
+//   M                = mute
 //   C                = switch camera (chase / showroom)
-//   R                = reset the car
+//   Backspace        = reset the car
 // =====================================================================
 
 const held = new Set();      // keys being held down right now
-const tapped = new Set();    // one-off presses waiting to be used (camera, reset)
+const tapped = new Set();    // one-off presses waiting to be used
+
+// One-off keys and the action each one triggers
+const TAP_KEYS = {
+  KeyC: 'camera',
+  KeyR: 'reverse',
+  Backspace: 'reset',
+  KeyQ: 'shiftDown',
+  KeyE: 'shiftUp',
+  KeyT: 'transmission',
+  KeyM: 'mute',
+};
 
 const GAME_KEYS = new Set([
   'KeyW', 'KeyA', 'KeyS', 'KeyD',
   'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
-  'Space', 'KeyC', 'KeyR',
+  'Space', ...Object.keys(TAP_KEYS),
 ]);
 
 window.addEventListener('keydown', (e) => {
   if (!GAME_KEYS.has(e.code)) return;
   e.preventDefault();                 // stop arrows and space scrolling the page
-  if (!e.repeat) {
-    if (e.code === 'KeyC') tapped.add('camera');
-    if (e.code === 'KeyR') tapped.add('reset');
-  }
+  if (!e.repeat && TAP_KEYS[e.code]) tapped.add(TAP_KEYS[e.code]);
   held.add(e.code);
 });
 
@@ -48,7 +60,7 @@ export function readControls() {
   return controls;
 }
 
-// Returns true once for each tap of a one-off key ('camera' or 'reset')
+// Returns true once for each tap of a one-off key (see TAP_KEYS)
 export function wasTapped(name) {
   if (tapped.has(name)) {
     tapped.delete(name);
