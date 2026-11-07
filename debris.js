@@ -77,6 +77,100 @@ function makeCamshaftChunk(material) {
   return g;
 }
 
+// --- Eight recognisable broken engine parts ---
+// Each is built lying flat (long side along x, thin side up), so once it
+// lands it can settle naturally onto the tarmac. restHeight: how high its
+// centre sits when lying flat.
+function shadow(g) {
+  g.traverse((m) => { if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; } });
+  return g;
+}
+
+function makeConRod(steel) {
+  const g = new THREE.Group();
+  const beam = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.012, 0.016), steel);
+  const bigEnd = new THREE.Mesh(new THREE.TorusGeometry(0.026, 0.008, 6, 16), steel);
+  bigEnd.rotation.x = Math.PI / 2;
+  bigEnd.position.x = 0.07;
+  const smallEnd = new THREE.Mesh(new THREE.TorusGeometry(0.013, 0.006, 6, 14), steel);
+  smallEnd.rotation.x = Math.PI / 2;
+  smallEnd.position.x = -0.065;
+  g.add(beam, bigEnd, smallEnd);
+  return { obj: shadow(g), radius: 0.035, restHeight: 0.009 };
+}
+
+function makeValve(steel) {
+  const g = new THREE.Group();
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.0035, 0.0035, 0.1, 8), steel);
+  stem.rotation.z = Math.PI / 2;
+  const head = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.006, 0.006, 16), steel);
+  head.rotation.z = Math.PI / 2;
+  head.position.x = 0.052;
+  g.add(stem, head);
+  return { obj: shadow(g), radius: 0.017, restHeight: 0.006 };
+}
+
+function makeValveSpring(steel) {
+  // A little coil: a tube following a helix
+  class Helix extends THREE.Curve {
+    getPoint(t, out = new THREE.Vector3()) {
+      const a = t * Math.PI * 2 * 6;   // 6 turns
+      return out.set(t * 0.042 - 0.021, Math.sin(a) * 0.013, Math.cos(a) * 0.013);
+    }
+  }
+  const coil = new THREE.Mesh(new THREE.TubeGeometry(new Helix(), 90, 0.0018, 5, false), steel);
+  return { obj: shadow(coil), radius: 0.016, restHeight: 0.015 };
+}
+
+function makeBolt(steel) {
+  const g = new THREE.Group();
+  const head = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.006, 6), steel);
+  head.rotation.z = Math.PI / 2;
+  head.position.x = -0.022;
+  const shank = new THREE.Mesh(new THREE.CylinderGeometry(0.0045, 0.0045, 0.045, 8), steel);
+  shank.rotation.z = Math.PI / 2;
+  g.add(head, shank);
+  return { obj: shadow(g), radius: 0.012, restHeight: 0.008 };
+}
+
+function makeNut(steel) {
+  const nut = new THREE.Mesh(new THREE.TorusGeometry(0.008, 0.004, 4, 6), steel);
+  nut.rotation.x = Math.PI / 2;   // lying flat
+  const g = new THREE.Group();
+  g.add(nut);
+  return { obj: shadow(g), radius: 0.01, restHeight: 0.004 };
+}
+
+function makeBlockShard(alloy) {
+  // A jagged lump of the engine block's aluminium casing
+  const shard = new THREE.Mesh(new THREE.DodecahedronGeometry(1, 0), alloy);
+  shard.scale.set(0.05, 0.022, 0.035);
+  const g = new THREE.Group();
+  g.add(shard);
+  return { obj: shadow(g), radius: 0.04, restHeight: 0.02 };
+}
+
+function makeBracket(steel) {
+  // A bent steel bracket, torn off its mounting
+  const g = new THREE.Group();
+  const a = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.004, 0.026), steel);
+  a.position.x = -0.028;
+  const b = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.004, 0.026), steel);
+  b.position.set(0.018, 0.014, 0);
+  b.rotation.z = 0.7;   // bent up
+  g.add(a, b);
+  return { obj: shadow(g), radius: 0.03, restHeight: 0.002 };
+}
+
+function makePistonRing(steel) {
+  // A snapped piston ring: most of a thin circle
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.043, 0.0018, 4, 32, Math.PI * 1.55), steel);
+  ring.rotation.x = Math.PI / 2;   // lying flat
+  const g = new THREE.Group();
+  g.add(ring);
+  return { obj: shadow(g), radius: 0.03, restHeight: 0.002 };
+}
+
 export class EngineDebris {
   constructor(scene, { maxSparks = 220, chunkCount = 12 } = {}) {
     this.scene = scene;
@@ -128,6 +222,15 @@ export class EngineDebris {
     this.cam.visible = false;
     scene.add(this.piston, this.cam);
 
+    this.parts = [
+      makeConRod(steel), makeValve(steel), makeValveSpring(steel), makeBolt(steel),
+      makeNut(steel), makeBlockShard(alloy), makeBracket(scorched), makePistonRing(steel),
+    ];
+    for (const part of this.parts) {
+      part.obj.visible = false;
+      scene.add(part.obj);
+    }
+
     this.pieces = [];   // every flying/rolling bit of metal
     this._m = new THREE.Matrix4();
     this._q = new THREE.Quaternion();
@@ -168,7 +271,7 @@ export class EngineDebris {
     const spin = (n) => new THREE.Vector3(rand(-n, n), rand(-n, n), rand(-n, n));
 
     for (let i = 0; i < this.chunkCount; i++) {
-      const size = rand(0.012, 0.035);
+      const size = rand(0.02, 0.05);
       this.pieces.push({
         kind: 'chunk', index: i, size, radius: size * 0.8,
         pos: new THREE.Vector3(origin.x, origin.y, origin.z),
@@ -190,6 +293,20 @@ export class EngineDebris {
       curve: rand(-0.6, 0.6),   // pistons roll in a gentle curve (slightly tapered)
       rolling: false, rollAngle: 0, resting: false,
     });
+
+    // The eight broken parts
+    for (const part of this.parts) {
+      part.obj.visible = true;
+      this.pieces.push({
+        kind: 'part', obj: part.obj, radius: part.radius, restHeight: part.restHeight,
+        pos: new THREE.Vector3(origin.x, origin.y, origin.z),
+        vel: fling(rand(0.8, 2.4), rand(1.8, 3.8)),
+        rot: new THREE.Quaternion().setFromEuler(new THREE.Euler(rand(0, 6), rand(0, 6), rand(0, 6))),
+        ang: spin(20), bounce: 0.3, rolls: false, resting: false,
+        // the way it ends up lying: flat, facing a random direction
+        flat: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand(0, Math.PI * 2)),
+      });
+    }
 
     this.cam.visible = true;
     this.pieces.push({
@@ -275,13 +392,16 @@ export class EngineDebris {
   }
 
   stepPiece(p, dt) {
-    const onGround = p.pos.y <= p.radius + 0.002;
+    // Lowest the piece can sit: its bounce radius, or its lying-flat height
+    // once an engine part has started settling onto its side
+    const floor = p.settling ? p.restHeight : p.radius;
+    const onGround = p.pos.y <= floor + 0.002;
     p.vel.y -= GRAVITY * dt;
     p.pos.addScaledVector(p.vel, dt);
 
     // Hit the ground: bounce, losing energy each time
-    if (p.pos.y < p.radius) {
-      p.pos.y = p.radius;
+    if (p.pos.y < floor) {
+      p.pos.y = floor;
       if (p.vel.y < 0) {
         p.vel.y = -p.vel.y * p.bounce;
         // Each impact with the tarmac scrubs off some sideways speed too
@@ -307,6 +427,20 @@ export class EngineDebris {
       p.vel.z *= scale;
       p.rollAngle += (speed / p.rollRadius) * dt;
       if (speed < 0.03) { p.vel.set(0, 0, 0); p.resting = true; }
+    } else if (onGround && p.vel.y === 0 && p.flat) {
+      // Engine parts: scrape along and topple over onto their flat side
+      p.settling = true;
+      p.vel.x *= Math.max(0, 1 - 5 * dt);
+      p.vel.z *= Math.max(0, 1 - 5 * dt);
+      p.ang.set(0, 0, 0);
+      p.rot.slerp(p.flat, Math.min(1, 9 * dt));
+      p.pos.y += (p.restHeight - p.pos.y) * Math.min(1, 9 * dt);
+      if (Math.hypot(p.vel.x, p.vel.z) < 0.03) {
+        p.rot.copy(p.flat);
+        p.pos.y = p.restHeight;
+        p.resting = true;
+      }
+      return;
     } else if (onGround && p.vel.y === 0) {
       // Chunks: slide, scrape and tumble to a stop
       p.vel.x *= Math.max(0, 1 - 5 * dt);
@@ -355,6 +489,7 @@ export class EngineDebris {
     this.chunkMesh.count = 0;
     this.piston.visible = false;
     this.cam.visible = false;
+    for (const part of this.parts) part.obj.visible = false;
   }
 
   clear() {
