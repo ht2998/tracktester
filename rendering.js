@@ -15,6 +15,7 @@ import { Hud } from './hud.js';
 import { OilSlicks } from './oil.js';
 import { SkidMarks } from './skids.js';
 import { EngineDebris } from './debris.js';
+import { TouchControls, isTouchDevice } from './touch.js';
 
 // ---------------------------------------------------------------------
 // QUALITY SETTINGS
@@ -486,11 +487,17 @@ info.innerHTML =
   '<span id="soundhint" style="color:#ffd76a">Press any key or tap for sound</span>';
 const soundHint = document.getElementById('soundhint');
 
-// Dashboard: rev counter, speedometer with shift lights, gearbox tab
+// Phones and tablets: on-screen controls, and no keyboard guide
+const touchMode = isTouchDevice();
+const touchUI = touchMode ? new TouchControls() : null;
+if (touchMode) info.style.display = 'none';
+
+// Dashboard: rev counter, speedometer with shift lights, side panel
 const hud = new Hud({
   redline: CATERHAM.redline,
   onTransmission: (name) => physics.setTransmission(name),
   onAssist: (name, on) => { physics.assists[name] = on; },
+  compact: touchMode,   // mini gauges at the top on phones
 });
 
 // ---------------------------------------------------------------------
@@ -605,8 +612,10 @@ renderer.setAnimationLoop(() => {
     oilLevel: physics.oilLevel,
     fuelLevel: physics.fuelLevel,
     assists: physics.assists,
+    clutchIn: physics.clutchIn,
     time: clock.elapsedTime,
   });
+  touchUI?.update({ transmission: physics.transmission, gearLabel: physics.gearLabel, muted: engineSound.muted });
 
   renderer.render(scene, camera);
 });
