@@ -338,12 +338,20 @@ export class Hud {
     this.speedo.resize(Math.round(tachSize * 0.82));
   }
 
-  update({ speedKmh, rpm, gearLabel, limiter, transmission, time }) {
+  update({ speedKmh, rpm, gearLabel, limiter, transmission, engineHealth = 1, time }) {
     // --- Rev counter, with the gear in the gap at the bottom ---
     const t = this.tach;
     t.beginFrame();
     const tg = t.ctx;
     const tR = t.size / 2;
+    // Engine health, only shown once a bad over-rev has damaged it
+    if (engineHealth < 0.995) {
+      tg.fillStyle = engineHealth < 0.85 ? COLORS.redline : COLORS.ledAmber;
+      tg.font = `600 ${Math.round(tR * 0.13)}px ${FONT}`;
+      tg.textAlign = 'center';
+      tg.textBaseline = 'middle';
+      tg.fillText(`Engine ${Math.round(engineHealth * 100)}%`, tR, tR - tR * 0.28);
+    }
     tg.fillStyle = limiter ? COLORS.redline : COLORS.ink;
     tg.font = `700 ${Math.round(tR * 0.42)}px ${FONT}`;
     tg.textAlign = 'center';
