@@ -172,9 +172,17 @@ export class CarPhysics {
 
   // Advance the simulation by dt seconds, in small steps for stability
   update(controls, dt) {
+    if (!(dt > 0)) return;   // skip zero-length frames (the very first one can be 0)
     const steps = Math.max(1, Math.ceil(dt / (1 / 120)));
     const h = dt / steps;
     for (let i = 0; i < steps; i++) this.step(controls, h);
+    // Safety net: if anything ever produces an invalid number, put the
+    // car back at the start rather than letting it vanish
+    if (!Number.isFinite(this.x + this.z + this.heading + this.vx + this.vy + this.yawRate + this.rpm)) {
+      const transmission = this.transmission;
+      this.reset();
+      this.transmission = transmission;
+    }
   }
 
   step(c, h) {
@@ -329,7 +337,7 @@ export class CarPhysics {
     // Remember the acceleration for next step's weight transfer (smoothed,
     // like the car's body settling on its springs)
     const accelNow = forceX / m - (vxBeforeBrake - this.vx) / h;
-    this.accelX += (accelNow - this.accelX) * Math.min(1, 8 * h);
+    if (Number.isFinite(accelNow)) this.accelX += (accelNow - this.accelX) * Math.min(1, 8 * h);
 
     // Come to a full stop instead of creeping forever
     if (!c.throttle && !c.brake && Math.abs(this.vx) < 0.05) {
