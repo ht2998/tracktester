@@ -449,7 +449,7 @@ info.innerHTML =
   'W / S: throttle, brake · A / D: steer<br>' +
   'Space: handbrake · Q / E or , / . : shift down / up<br>' +
   'Reverse: Q from 1st (manual), R (auto, CVT)<br>' +
-  'T: gearbox<br>' +
+  'T: gearbox · arrow on the right: gearbox and assists<br>' +
   'M: mute · C: camera · Backspace: reset<br>' +
   '<span id="soundhint" style="color:#ffd76a">Press any key or tap for sound</span>';
 const soundHint = document.getElementById('soundhint');
@@ -458,6 +458,7 @@ const soundHint = document.getElementById('soundhint');
 const hud = new Hud({
   redline: CATERHAM.redline,
   onTransmission: (name) => physics.setTransmission(name),
+  onAssist: (name, on) => { physics.assists[name] = on; },
 });
 
 // ---------------------------------------------------------------------
@@ -565,6 +566,7 @@ renderer.setAnimationLoop(() => {
     transmission: physics.transmission,
     engineHealth: physics.engineHealth,
     oilLevel: physics.oilLevel,
+    assists: physics.assists,
     time: clock.elapsedTime,
   });
 
