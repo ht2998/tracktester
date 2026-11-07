@@ -92,7 +92,8 @@ export class CarPhysics {
     this.spec = spec;
     this.transmission = 'manual';
     // Driver aids, switchable from the side panel. Both on by default.
-    this.assists = { abs: true, tcs: true };
+    // Levels 0-5: 0 = off, 5 = strongest. Both start at 5.
+    this.assists = { abs: 5, tcs: 5 };
     // How grippy the ground is at a point: 1 = normal tarmac. The game sets
     // this so that tyres rolling over oil (or later gravel, wet patches...)
     // lose grip.
@@ -129,6 +130,7 @@ export class CarPhysics {
     this.lastWheelspin = 0;
     this.tractionControl = false;   // true while traction control is cutting power
     this.absActive = false;         // true while ABS is easing the brakes
+    this.absSteerLoss = 0;          // steering grip given up at lower ABS levels
     this.wheelsLocked = false;      // true while the brakes have locked the wheels
     this.engineHealth = 1;    // drops after big over-revs (1 = full power, 0 = blown)
     this.engineBlown = false;
@@ -136,6 +138,14 @@ export class CarPhysics {
     this.knock = 0;           // 0-1, rod knock from oil starvation (for the sound)
     this.limiterClock = 0;
     this.events = [];         // shift events for the sound to pick up
+  }
+
+  // An assist's level, 0 (off) to 5 (strongest)
+  assistLevel(name) {
+    const v = this.assists[name];
+    if (v === true) return 5;
+    if (!v) return 0;
+    return clamp(Math.round(v), 0, 5);
   }
 
   // Total speed in km/h, for the display
@@ -333,6 +343,7 @@ export class CarPhysics {
 
     // W is always the accelerator and S always the brake, in any gear
     const throttle = c.throttle;
+    this.handbrakeOn = c.handbrake;   // (rear tyres locked: for skid marks)
     const brakePedal = c.brake;
 
     // --- Automatic gear changes ---
@@ -455,19 +466,25 @@ export class CarPhysics {
     this.wheelsLocked = false;
     this.absActive = false;
     if (brakeDemand > 0 && Math.abs(this.vx) > 1.5) {
-      if (this.assists.abs) {
-        if (brakeDemand > 0.95 * brakeGrip) {
-          footBrake = 0.95 * brakeGrip;
+      const absLevel = this.assistLevel('abs');
+      if (absLevel > 0) {
+        // Lower ABS levels let the tyres slip closer to locking: a touch
+        // more stopping power, but less grip left over for steering
+        const allowed = (0.95 + 0.01 * (5 - absLevel)) * brakeGrip;
+        if (brakeDemand > allowed) {
+          footBrake = allowed;
           this.absActive = true;
+          this.absSteerLoss = 0.12 * (5 - absLevel);   // level 5: none, level 1: about half
         }
       } else if (brakeDemand > brakeGrip) {
         footBrake = s.lockedBrakeGrip * brakeGrip;
         this.wheelsLocked = true;
       }
     }
+    if (!this.absActive) this.absSteerLoss = 0;
     let brake = footBrake + (c.handbrake ? s.handbrakeLockGrip * maxRear : 0);
     // Locked tyres have almost no sideways grip: the car goes straight on
-    let maxFrontSide = this.wheelsLocked ? maxFront * 0.12 : maxFront;
+    let maxFrontSide = this.wheelsLocked ? maxFront * 0.12 : maxFront * (1 - this.absSteerLoss);
 
     // A bad downshift briefly locks the rear wheels with engine braking
     let lockGripLoss = 0;
@@ -483,10 +500,16 @@ export class CarPhysics {
     // Traction control (TCS, switchable): never send more power than the rear
     // tyres can use, and cut it back further if the rear starts to slide.
     this.tractionControl = false;
-    if (this.assists.tcs && drive > 0) {
-      // Nearly full power in a straight line, less the more you steer
-      const share = 0.9 - 0.3 * Math.abs(c.steer) - 0.45 * clamp(this.lastRearSlide, 0, 1);
-      const tcLimit = maxRear * Math.max(0.3, share);
+    const tcsLevel = this.assistLevel('tcs');
+    if (tcsLevel > 0 && drive > 0) {
+      // Each level allows some wheelspin and some slide before stepping in.
+      // Past its slide allowance it cuts the power hard to catch the car,
+      // so lower levels let you play with the tail, and 5 keeps it planted.
+      const slack = [0, 0.8, 0.65, 0.45, 0.22, 0][tcsLevel];          // extra wheelspin allowed
+      const slideAllowance = [0, 0.9, 0.75, 0.5, 0.25, 0][tcsLevel]; // slide allowed before cutting
+      const overSlide = clamp((this.lastRearSlide - slideAllowance) / 0.2, 0, 1);
+      const share = (0.9 + slack - 0.3 * Math.abs(c.steer)) * (1 - 0.85 * overSlide);
+      const tcLimit = maxRear * Math.max(0.12, share);
       if (drive > tcLimit) {
         drive = tcLimit;
         this.tractionControl = true;
