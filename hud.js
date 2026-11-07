@@ -204,6 +204,24 @@ const STYLE = `
   filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.45));
 }
 #dash canvas { display: block; }
+/* Phones and tablets: a mini cluster at the top, out of the way of the road */
+#dash.compact { top: calc(6px + env(safe-area-inset-top)); bottom: auto; align-items: flex-start; gap: 6px; }
+
+/* Tiny clutch status line */
+#clutch-status {
+  position: fixed;
+  left: 50%;
+  top: 6px;
+  transform: translateX(-50%);
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(14, 16, 19, 0.45);
+  color: rgba(242, 239, 230, 0.75);
+  font: 600 13px ${FONT};
+  pointer-events: none;
+  white-space: nowrap;
+}
+#clutch-status.out { color: ${COLORS.needle}; background: rgba(14, 16, 19, 0.7); }
 
 /* Side panel: a slim arrow on the right edge that slides out the settings */
 #sidepanel {
@@ -329,7 +347,8 @@ const GEARBOXES = [
 // The dashboard
 // ---------------------------------------------------------------------
 export class Hud {
-  constructor({ redline, maxSpeed = 240, onTransmission, onAssist }) {
+  constructor({ redline, maxSpeed = 240, onTransmission, onAssist, compact = false }) {
+    this.compact = compact;   // mini gauges for phones and tablets
     this.redline = redline;
     this.onTransmission = onTransmission;
     this.onAssist = onAssist;
@@ -361,8 +380,16 @@ export class Hud {
     smallGauges.append(this.fuelGauge.canvas, this.oilGauge.canvas);
     const dash = document.createElement('div');
     dash.id = 'dash';
+    if (compact) dash.classList.add('compact');
+    this.dash = dash;
     dash.append(this.tach.canvas, this.speedo.canvas, smallGauges);
     document.body.appendChild(dash);
+
+    // Clutch status: a tiny line of text at the top of the screen
+    this.clutchText = document.createElement('div');
+    this.clutchText.id = 'clutch-status';
+    this.clutchText.textContent = 'Clutch engaged';
+    document.body.appendChild(this.clutchText);
 
     // Side panel: an arrow on the right edge opens Gearbox and Assists
     this.side = document.createElement('div');
@@ -446,7 +473,11 @@ export class Hud {
   // Size the dials to the screen: smaller on phones
   layout() {
     const short = Math.min(window.innerWidth, window.innerHeight);
-    const tachSize = Math.round(Math.min(200, Math.max(120, short * 0.3)));
+    const tachSize = this.compact
+      ? Math.round(Math.min(120, Math.max(84, short * 0.24)))   // mini cluster
+      : Math.round(Math.min(200, Math.max(120, short * 0.3)));
+    // The clutch line sits just under the mini cluster, or at the very top
+    this.clutchText.style.top = this.compact ? `calc(${tachSize + 12}px + env(safe-area-inset-top))` : '6px';
     this.tach.resize(tachSize);
     this.speedo.resize(Math.round(tachSize * 0.82));
     this.fuelGauge.resize(Math.round(tachSize * 0.42));
@@ -454,7 +485,14 @@ export class Hud {
   }
 
   update({ speedKmh, rpm, gearLabel, limiter, transmission, engineHealth = 1, oilLevel = 1,
-           fuelLevel = 1, assists = {}, time }) {
+           fuelLevel = 1, assists = {}, clutchIn = false, time }) {
+    // --- Clutch status ---
+    const clutchWords = clutchIn ? 'Clutch disengaged' : 'Clutch engaged';
+    if (this.clutchText.textContent !== clutchWords) {
+      this.clutchText.textContent = clutchWords;
+      this.clutchText.classList.toggle('out', clutchIn);
+    }
+
     // --- Rev counter, with the gear in the gap at the bottom ---
     const t = this.tach;
     t.beginFrame();
