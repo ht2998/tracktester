@@ -450,7 +450,7 @@ function updateSmoke(dt) {
     debris.burst(engineBayWorld, carVelocity, physics.heading);
     debrisPending = false;
   }
-  debris.update(dt);
+  debris.update(dt, engineBayWorld, carVelocity, physics.heading);
 
   // Oil: drips below 10% health, pours once the engine has blown
   // (stops once the oil has all run out: there's nothing left to leak)
@@ -477,7 +477,7 @@ const info = document.getElementById('info');
 info.innerHTML =
   '<b>Track Tester</b><br>' +
   'W / S: throttle, brake · A / D: steer<br>' +
-  'Space: handbrake · Q / E or , / . : shift down / up<br>' +
+  'Space: handbrake · X: clutch · Q / E or , / . : shift<br>' +
   'Reverse: Q from 1st (manual), R (auto, CVT)<br>' +
   'T: gearbox · arrow on the right: gearbox and assists<br>' +
   'M: mute · C: camera · Backspace: reset<br>' +
@@ -601,6 +601,7 @@ renderer.setAnimationLoop(() => {
     transmission: physics.transmission,
     engineHealth: physics.engineHealth,
     oilLevel: physics.oilLevel,
+    fuelLevel: physics.fuelLevel,
     assists: physics.assists,
     time: clock.elapsedTime,
   });
