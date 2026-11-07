@@ -12,6 +12,7 @@ import * as THREE from 'three';
 const CELL = 2;   // metres: size of each square in the lookup grid
 const cellKey = (x, z) => `${Math.floor(x / CELL)},${Math.floor(z / CELL)}`;
 
+const MARK_THRESHOLD = 0.45;   // how hard a tyre must be skidding to leave a mark (0-1)
 const TARMAC = new THREE.Color(0x4a4d50);   // matches the ground, so faint marks blend in
 const RUBBER = new THREE.Color(0x151517);   // a heavy, fresh black mark
 
@@ -52,7 +53,8 @@ export class SkidMarks {
   // Call every frame for each tyre. id: which tyre, x/z: its contact patch,
   // intensity: 0 = gripping, 1 = skidding hard
   update(id, x, z, intensity) {
-    if (intensity < 0.12) {
+    // Only a real skid leaves rubber: the small slips of brisk cornering don't
+    if (intensity < MARK_THRESHOLD) {
       this.last.delete(id);   // the mark ends here
       return;
     }
@@ -67,7 +69,8 @@ export class SkidMarks {
       this.last.set(id, { x, z });
       return;
     }
-    const dark = Math.min(1, 0.3 + intensity * 0.9);
+    // Faint just past the threshold, black on a full slide
+    const dark = Math.min(1, 0.3 + 0.7 * (intensity - MARK_THRESHOLD) / (1 - MARK_THRESHOLD));
     this.addSegment(prev.x, prev.z, x, z, dark);
     this.last.set(id, { x, z });
   }
