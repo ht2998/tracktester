@@ -40,6 +40,13 @@ export const CATERHAM = {
   wheelRadius: 0.288,     // metres (195/50 R15)
   trackHalf: 0.68,        // metres from the centre line to each wheel
 
+  // --- Fuel ---
+  fuelCapacity: 36,       // litres
+  fuelDensity: 0.745,     // kg per litre of petrol
+  fuelPerKwh: 0.27,       // kg of fuel burnt per kWh of work (a typical petrol engine)
+  idleFuel: 0.8,          // litres per hour just to keep running
+  fuelReserve: 1.5,       // litres: below this the engine starts to sputter
+
   // --- Oil ---
   oilLeakRate: 0.011,     // share of the oil lost per second when damaged (about 90 s to empty)
   oilPourRate: 0.05,      // share lost per second once the engine has blown
@@ -135,6 +142,12 @@ export class CarPhysics {
     this.engineHealth = 1;    // drops after big over-revs (1 = full power, 0 = blown)
     this.engineBlown = false;
     this.oilLevel = 1;        // engine oil, 1 = full. Drains while leaking.
+    this.fuel = this.spec.fuelCapacity;   // litres in the tank (resets full)
+    this.misfiring = false;   // sputtering on the last drops of fuel
+    this.clutchIn = false;    // X held: engine disconnected from the wheels
+    this.clutchWasIn = false;
+    this.clutchDump = 0;      // seconds left of a clutch-dump kick
+    this.dumpStrength = 0;
     this.knock = 0;           // 0-1, rod knock from oil starvation (for the sound)
     this.limiterClock = 0;
     this.events = [];         // shift events for the sound to pick up
@@ -252,6 +265,15 @@ export class CarPhysics {
     }
   }
 
+  // The engine isn't running: blown up, or out of fuel
+  get engineDead() {
+    return this.engineBlown || this.fuel <= 0;
+  }
+
+  get fuelLevel() {
+    return this.fuel / this.spec.fuelCapacity;
+  }
+
   // How well the engine runs on the oil it has left (1 = fine)
   get oilFactor() {
     return 1 - 0.3 * clamp((0.3 - this.oilLevel) / 0.3, 0, 1);
@@ -299,7 +321,8 @@ export class CarPhysics {
 
   step(c, h) {
     const s = this.spec;
-    const m = s.mass;
+    // The car gets lighter as the fuel burns off (about 27 kg when full)
+    const m = s.mass + (this.fuel - s.fuelCapacity / 2) * s.fuelDensity;
     const L = s.cgToFront + s.cgToRear;
 
     // --- Steering: less lock at high speed, and the wheels turn smoothly ---
@@ -348,7 +371,7 @@ export class CarPhysics {
 
     // --- Automatic gear changes ---
     this.autoShiftCooldown -= h;
-    if (this.transmission === 'auto' && this.gear > 0 && this.shiftTimer <= 0 && this.autoShiftCooldown <= 0) {
+    if (this.transmission === 'auto' && this.gear > 0 && this.shiftTimer <= 0 && this.autoShiftCooldown <= 0 && !c.clutch) {
       const g = this.bestAutoGear(throttle);
       if (g !== this.gear) {
         const up = g > this.gear;
@@ -401,16 +424,39 @@ export class CarPhysics {
     if (this.lastWheelspin > 0.05) {
       targetRpm = Math.max(targetRpm, Math.min(s.redline - 60, coupledRpm + this.lastWheelspin * 3500));
     }
+    // --- Clutch (X): purely for fun ---
+    // Held: the engine is disconnected, so it revs freely (rev battles!).
+    // Released at high revs: the stored energy kicks the car forward.
+    const dead = this.engineDead;
+    const clutchIn = !!c.clutch && !dead;
+    if (this.clutchWasIn && !clutchIn && !dead) {
+      const gap = this.rpm - coupledRpm;
+      if (gap > 800) {
+        this.clutchDump = 0.35;
+        this.dumpStrength = clamp(gap / 4000, 0, 1);
+      }
+    }
+    this.clutchWasIn = clutchIn;
+    this.clutchIn = clutchIn;
+    if (clutchIn) targetRpm = throttle ? s.redline + 300 : s.idleRpm;
+    if (this.clutchDump > 0) {
+      this.clutchDump -= h;
+      // The revs drop towards road speed as the clutch grabs
+      const k = Math.max(0, this.clutchDump / 0.35);
+      targetRpm = Math.max(targetRpm, coupledRpm + (this.rpm - coupledRpm) * k);
+    }
+
     // --- Rev limiter ---
     // At the top of a gear the limiter cuts the ignition in fast bursts:
     // the revs flicker just under the redline, the exhaust stutters
     // "v-v-v-v", and the car simply can't go any faster in that gear.
     // Well above the redline (a bad downshift) the engine is being dragged
     // round by the wheels: the limiter can't help, the fuel is simply cut.
-    const overRevving = coupledRpm > s.redline + 150;
-    const atLimit = !this.engineBlown && throttle > 0 && this.shiftTimer <= 0 && !overRevving
-      && coupledRpm >= s.redline - 20;
-    if (this.engineBlown) targetRpm = 0;   // a blown engine has stopped turning
+    const overRevving = !clutchIn && coupledRpm > s.redline + 150;
+    const atLimit = !dead && throttle > 0 && this.shiftTimer <= 0 && (clutchIn
+      ? this.rpm >= s.redline - 20                                 // free-revving into the limiter
+      : !overRevving && coupledRpm >= s.redline - 20);
+    if (dead) targetRpm = 0;   // a blown or fuel-starved engine has stopped turning
     this.limiterClock = (this.limiterClock + h) % 0.08;
     this.limiterCut = atLimit && this.limiterClock < 0.04;   // 40 ms cut, 40 ms fire
     this.onLimiter = atLimit;
@@ -439,8 +485,17 @@ export class CarPhysics {
     }
     // Handbrake: the rear wheels are locked, so the engine can't drive them
     if (c.handbrake) engineTorque = 0;
-    // Blown engine: no power at all, the car just coasts
-    if (this.engineBlown) engineTorque = 0;
+    // Clutch held: nothing reaches the wheels (no drive, no engine braking)
+    if (clutchIn) engineTorque = 0;
+    // Clutch dump: the spinning engine's stored energy slams into the drivetrain
+    if (this.clutchDump > 0 && engineTorque > 0) {
+      engineTorque *= 1 + 1.4 * this.dumpStrength * (this.clutchDump / 0.35);
+    }
+    // Last drops of fuel: the engine sputters, cutting out now and then
+    this.misfiring = !dead && this.fuel < s.fuelReserve;
+    if (this.misfiring && Math.random() < 0.5 * (1 - this.fuel / s.fuelReserve)) engineTorque = Math.min(engineTorque, 0);
+    // Blown or out of fuel: no power at all, the car just coasts
+    if (dead) engineTorque = 0;
     if (this.gear === -1 && this.vx < -s.maxReverseSpeed) engineTorque = Math.min(engineTorque, 0);
 
     let drive = (engineTorque * ratio * s.driveEfficiency) / s.wheelRadius;
@@ -454,6 +509,14 @@ export class CarPhysics {
 
     this.throttleAmount = throttle;
     this.engineLoad = atLimit ? (this.limiterCut ? 0 : 0.6) : clamp(engineTorque / s.peakTorque, 0, 1);
+    if (clutchIn && !atLimit) this.engineLoad = throttle * 0.7;   // free revving still sounds angry
+
+    // --- Fuel: burnt in proportion to the work the engine does ---
+    if (!dead) {
+      const workKw = throttle * torqueAt(s.torqueCurve, this.rpm) * (this.rpm * Math.PI / 30) / 1000;
+      const litresPerSecond = (workKw * s.fuelPerKwh) / 3600 / s.fuelDensity + s.idleFuel / 3600;
+      this.fuel = Math.max(0, this.fuel - litresPerSecond * h);
+    }
 
     // Handbrake: locked rear tyres skid, which slows the car about as hard as
     // the rear tyres can grip (they're sliding, so a bit less than full grip)
