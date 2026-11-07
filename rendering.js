@@ -8,7 +8,9 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { readControls, wasTapped } from './input.js';
-import { CarPhysics } from './physics.js';
+import { CarPhysics, CATERHAM, TRANSMISSIONS, TRANSMISSION_NAMES } from './physics.js';
+import { EngineSound } from './sound.js';
+import { TyreSmoke } from './smoke.js';
 
 // ---------------------------------------------------------------------
 // QUALITY SETTINGS
@@ -20,6 +22,8 @@ const QUALITY = {
   pixelRatio: Math.min(window.devicePixelRatio, isMobile ? 1.5 : 2),
   shadowMapSize: isMobile ? 1024 : 2048,
   antialias: !isMobile,
+  smokeParticles: isMobile ? 200 : 400,
+  smokeRate: isMobile ? 18 : 30,
 };
 
 // ---------------------------------------------------------------------
@@ -369,14 +373,62 @@ function updateWheels(steer, spin) {
 // ---------------------------------------------------------------------
 const physics = new CarPhysics();
 
-// Speed readout and controls guide in the corner label
+// Tyre smoke, puffed from each tyre's contact patch when it loses traction
+const smoke = new TyreSmoke(scene, { maxParticles: QUALITY.smokeParticles, puffsPerSecond: QUALITY.smokeRate });
+smoke.setViewport(renderer.domElement.height, camera.fov);
+const SMOKE_POINTS = [
+  { id: 'rl', local: new THREE.Vector3(-TRACK_HALF, 0.12, REAR_AXLE), axle: 'rear' },
+  { id: 'rr', local: new THREE.Vector3(TRACK_HALF, 0.12, REAR_AXLE), axle: 'rear' },
+  { id: 'fl', local: new THREE.Vector3(-TRACK_HALF, 0.12, FRONT_AXLE), axle: 'front' },
+  { id: 'fr', local: new THREE.Vector3(TRACK_HALF, 0.12, FRONT_AXLE), axle: 'front' },
+];
+const smokeWorld = new THREE.Vector3();
+const carVelocity = new THREE.Vector3();
+
+function updateSmoke(dt) {
+  const sin = Math.sin(physics.heading);
+  const cos = Math.cos(physics.heading);
+  carVelocity.set(sin * physics.vx + cos * physics.vy, 0, cos * physics.vx - sin * physics.vy);
+  carModel.car.updateMatrixWorld();
+  for (const p of SMOKE_POINTS) {
+    smokeWorld.copy(p.local);
+    carModel.car.localToWorld(smokeWorld);
+    smoke.emitFrom(p.id, smokeWorld, physics.tyreSlip[p.axle], carVelocity, dt);
+  }
+  smoke.update(dt);
+}
+
+// ---------------------------------------------------------------------
+// SOUND
+// Browsers block sound until the player interacts, so it starts on the
+// first key press or tap. Big scenery is registered for echoes with
+// engineSound.echo.addReflector(object) once tracks have buildings.
+// ---------------------------------------------------------------------
+const engineSound = new EngineSound(CATERHAM);
+const startSound = () => {
+  engineSound.start();
+  soundHint.style.display = 'none';
+};
+window.addEventListener('keydown', startSound);
+window.addEventListener('pointerdown', startSound);
+
+// Speed, gear and controls guide in the corner label
 const info = document.getElementById('info');
 info.innerHTML =
   '<b>Track Tester</b><br>' +
-  'W / S: throttle, brake, reverse · A / D: steer<br>' +
-  'Space: handbrake · C: camera · R: reset<br>' +
-  '<span id="speed" style="font-size:22px;font-weight:700">0 km/h</span>';
+  'W / S: throttle, brake · A / D: steer<br>' +
+  'Space: handbrake · Q / E: shift down / up<br>' +
+  'R: reverse (when stopped) · T: gearbox<br>' +
+  'M: mute · C: camera · Backspace: reset<br>' +
+  '<span id="speed" style="font-size:22px;font-weight:700">0 km/h</span>' +
+  ' <span id="gear" style="font-size:22px;font-weight:700;margin-left:10px">1</span><br>' +
+  '<span id="rpm">850 rpm</span> · <span id="box">Manual</span><br>' +
+  '<span id="soundhint" style="color:#ffd76a">Press any key or tap for sound</span>';
 const speedLabel = document.getElementById('speed');
+const gearLabel = document.getElementById('gear');
+const rpmLabel = document.getElementById('rpm');
+const boxLabel = document.getElementById('box');
+const soundHint = document.getElementById('soundhint');
 
 // ---------------------------------------------------------------------
 // CAMERAS: chase camera behind the car, or showroom orbit (press C)
@@ -425,6 +477,7 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  smoke.setViewport(renderer.domElement.height, camera.fov);
 });
 
 // ---------------------------------------------------------------------
@@ -438,20 +491,41 @@ renderer.setAnimationLoop(() => {
 
   if (wasTapped('camera')) switchCamera();
   if (wasTapped('reset')) physics.reset();
+  if (wasTapped('reverse')) physics.toggleReverse();
+  if (wasTapped('shiftUp')) physics.shiftUp();
+  if (wasTapped('shiftDown')) physics.shiftDown();
+  if (wasTapped('mute')) engineSound.setMuted(!engineSound.muted);
+  if (wasTapped('transmission')) {
+    const next = TRANSMISSIONS[(TRANSMISSIONS.indexOf(physics.transmission) + 1) % TRANSMISSIONS.length];
+    physics.setTransmission(next);
+  }
 
   physics.update(readControls(), dt);
+
+  // Gear change sounds
+  while (physics.events.length) {
+    const e = physics.events.shift();
+    if (e.type === 'shift') engineSound.playShift(physics.transmission === 'cvt' ? 'cvt' : e.style);
+  }
 
   // Move the car model to where the physics says it is
   carModel.car.position.set(physics.x, 0, physics.z);
   carModel.car.rotation.y = physics.heading;
   updateWheels(physics.steer, physics.wheelSpin);
+  updateSmoke(dt);
 
   // Keep the sun's shadow area centred on the car
   sun.target.position.set(physics.x, 0, physics.z);
   sun.position.set(physics.x, 0, physics.z).add(SUN_OFFSET);
 
   updateCamera(dt);
+  engineSound.update(physics, carPos);
+
   speedLabel.textContent = `${Math.round(physics.speedKmh)} km/h`;
+  gearLabel.textContent = physics.gearLabel;
+  rpmLabel.textContent = `${Math.round(physics.rpm / 50) * 50} rpm`;
+  rpmLabel.style.color = physics.limiter ? '#ff6b6b' : '';
+  boxLabel.textContent = TRANSMISSION_NAMES[physics.transmission];
 
   renderer.render(scene, camera);
 });
