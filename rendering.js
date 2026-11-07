@@ -1,11 +1,14 @@
 // =====================================================================
-// RENDERING: sets up the 3D scene, lighting, camera and a test car.
+// RENDERING: sets up the 3D scene, lighting, cameras and the test car,
+// and runs the main loop that drives everything each frame.
 // Track Tester - phase 1
 // =====================================================================
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { readControls, wasTapped } from './input.js';
+import { CarPhysics } from './physics.js';
 
 // ---------------------------------------------------------------------
 // QUALITY SETTINGS
@@ -38,17 +41,17 @@ container.appendChild(renderer.domElement);
 // ---------------------------------------------------------------------
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x9ec9ef);   // sky blue
-scene.fog = new THREE.Fog(0x9ec9ef, 30, 120);   // distant things fade into the sky
+scene.fog = new THREE.Fog(0x9ec9ef, 40, 160);   // distant things fade into the sky
 
 // Reflections: gives the car paint and metal something to reflect
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
 // ---------------------------------------------------------------------
-// CAMERA + CONTROLS
+// CAMERA + SHOWROOM CONTROLS
 // ---------------------------------------------------------------------
-const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 500);
-camera.position.set(4.5, 2.2, 5.5);
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 500);
+camera.position.set(0, 2.4, -6.5);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(0, 0.45, 0);
@@ -57,6 +60,7 @@ controls.enablePan = false;         // keep the camera always circling the car
 controls.minDistance = 2.5;
 controls.maxDistance = 20;
 controls.maxPolarAngle = Math.PI * 0.48; // stops the camera going under the ground
+controls.enabled = false;           // starts in chase mode
 controls.update();
 
 // ---------------------------------------------------------------------
@@ -66,35 +70,66 @@ controls.update();
 const hemiLight = new THREE.HemisphereLight(0xdbeeff, 0x5a5040, 0.6);
 scene.add(hemiLight);
 
-// The sun: bright, directional, and casts shadows
+// The sun: bright, directional, and casts shadows. It follows the car
+// so the shadows stay sharp wherever you drive.
+const SUN_OFFSET = new THREE.Vector3(6, 10, 4);
 const sun = new THREE.DirectionalLight(0xfff2dd, 2.6);
-sun.position.set(6, 10, 4);
+sun.position.copy(SUN_OFFSET);
 sun.castShadow = true;
 sun.shadow.mapSize.set(QUALITY.shadowMapSize, QUALITY.shadowMapSize);
-sun.shadow.camera.left = -6;
-sun.shadow.camera.right = 6;
-sun.shadow.camera.top = 6;
-sun.shadow.camera.bottom = -6;
+sun.shadow.camera.left = -8;
+sun.shadow.camera.right = 8;
+sun.shadow.camera.top = 8;
+sun.shadow.camera.bottom = -8;
 sun.shadow.camera.near = 1;
 sun.shadow.camera.far = 30;
 sun.shadow.bias = -0.0005;
 scene.add(sun);
+scene.add(sun.target);
 
 // ---------------------------------------------------------------------
-// GROUND: a simple tarmac pad
+// GROUND: a big tarmac area
 // ---------------------------------------------------------------------
 const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(300, 300),
+  new THREE.PlaneGeometry(2000, 2000),
   new THREE.MeshStandardMaterial({ color: 0x4a4d50, roughness: 0.95 })
 );
 ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
 scene.add(ground);
 
-// Faint grid lines to help judge size and movement
-const grid = new THREE.GridHelper(300, 150, 0x5d6166, 0x56595d);
+// Grid lines help you feel your speed and see where you're sliding
+const grid = new THREE.GridHelper(600, 300, 0x5d6166, 0x56595d);
 grid.position.y = 0.002;
 scene.add(grid);
+
+// ---------------------------------------------------------------------
+// CONES: drawn with INSTANCING (one cone model, drawn many times at once)
+// They're ghosts for now: you drive through them. Collisions come later.
+// ---------------------------------------------------------------------
+function buildCones() {
+  const positions = [];
+  // A slalom straight ahead
+  for (let i = 0; i < 10; i++) positions.push([i % 2 === 0 ? -1.5 : 1.5, 25 + i * 14]);
+  // A ring to drive circles and drift around
+  for (let i = 0; i < 20; i++) {
+    const a = (i / 20) * Math.PI * 2;
+    positions.push([-40 + Math.cos(a) * 15, 40 + Math.sin(a) * 15]);
+  }
+
+  const coneGeo = new THREE.ConeGeometry(0.16, 0.45, 16);
+  coneGeo.translate(0, 0.225, 0);
+  const coneMat = new THREE.MeshStandardMaterial({ color: 0xff6a13, roughness: 0.6 });
+  const cones = new THREE.InstancedMesh(coneGeo, coneMat, positions.length);
+  cones.castShadow = true;
+  const m = new THREE.Matrix4();
+  positions.forEach(([x, z], i) => {
+    m.makeTranslation(x, 0, z);
+    cones.setMatrixAt(i, m);
+  });
+  scene.add(cones);
+}
+buildCones();
 
 // ---------------------------------------------------------------------
 // MATERIALS for the car
@@ -109,6 +144,9 @@ const MAT = {
   chrome: new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 1.0, roughness: 0.1 }),
   tyre: new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.85 }),
   rim: new THREE.MeshStandardMaterial({ color: 0xb8bcc2, metalness: 0.9, roughness: 0.25 }),
+  spoke: new THREE.MeshStandardMaterial({ color: 0x3a3d42, metalness: 0.7, roughness: 0.35 }),
+  arm: new THREE.MeshStandardMaterial({ color: 0x2b2b2e, metalness: 0.6, roughness: 0.4 }),
+  damper: new THREE.MeshStandardMaterial({ color: 0xd8262e, metalness: 0.3, roughness: 0.4 }),
   lens: new THREE.MeshStandardMaterial({ color: 0xfff8e0, emissive: 0x332a10, roughness: 0.1 }),
   glass: new THREE.MeshPhysicalMaterial({
     color: 0xffffff, metalness: 0, roughness: 0.05, transmission: 0.9, transparent: true, opacity: 0.35,
@@ -120,8 +158,14 @@ fenderMat.side = THREE.DoubleSide;
 
 // ---------------------------------------------------------------------
 // TEST CAR: a simple Caterham-style car built from basic shapes
-// The front of the car points along +z.
+// The front of the car points along +z, and +x is the car's left side.
 // ---------------------------------------------------------------------
+const WHEEL_RADIUS = 0.3;
+const WHEEL_WIDTH = 0.2;
+const TRACK_HALF = 0.68;   // half the distance between left and right wheels
+const FRONT_AXLE = 1.1;
+const REAR_AXLE = -1.1;
+
 function part(geometry, material, x, y, z) {
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.set(x, y, z);
@@ -130,22 +174,42 @@ function part(geometry, material, x, y, z) {
   return mesh;
 }
 
+// Draws many rods between pairs of points as ONE instanced object.
+// Each rod is [startPoint, endPoint, thickness].
+function rodSet(rods, material) {
+  const geo = new THREE.CylinderGeometry(1, 1, 1, 8);   // scaled per rod
+  const mesh = new THREE.InstancedMesh(geo, material, rods.length);
+  mesh.castShadow = true;
+  const up = new THREE.Vector3(0, 1, 0);
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const dir = new THREE.Vector3();
+  const mid = new THREE.Vector3();
+  const q = new THREE.Quaternion();
+  const scale = new THREE.Vector3();
+  const m = new THREE.Matrix4();
+  rods.forEach(([p1, p2, radius], i) => {
+    a.fromArray(p1);
+    b.fromArray(p2);
+    dir.subVectors(b, a);
+    const length = dir.length();
+    mid.addVectors(a, b).multiplyScalar(0.5);
+    q.setFromUnitVectors(up, dir.normalize());
+    scale.set(radius, length, radius);
+    m.compose(mid, q, scale);
+    mesh.setMatrixAt(i, m);
+  });
+  return mesh;
+}
+
 function buildCar() {
   const car = new THREE.Group();
-
-  // Size reference (metres)
-  const WHEEL_RADIUS = 0.3;
-  const WHEEL_WIDTH = 0.2;
-  const TRACK_HALF = 0.68;   // half the distance between left and right wheels
-  const FRONT_AXLE = 1.1;
-  const REAR_AXLE = -1.1;
 
   // --- Main body tub ---
   car.add(part(new THREE.BoxGeometry(0.9, 0.5, 1.9), MAT.paint, 0, 0.4, -0.35));
 
   // --- Long nose (aluminium, like a classic Seven) ---
-  const nose = part(new THREE.BoxGeometry(0.62, 0.34, 0.9), MAT.aluminium, 0, 0.38, 1.05);
-  car.add(nose);
+  car.add(part(new THREE.BoxGeometry(0.62, 0.34, 0.9), MAT.aluminium, 0, 0.38, 1.05));
   // Grille at the very front
   car.add(part(new THREE.BoxGeometry(0.5, 0.26, 0.02), MAT.black, 0, 0.38, 1.505));
 
@@ -157,7 +221,7 @@ function buildCar() {
   car.add(part(new THREE.BoxGeometry(0.3, 0.35, 0.08), MAT.interior, -0.18, 0.8, -0.62)); // seat backs
   car.add(part(new THREE.BoxGeometry(0.3, 0.35, 0.08), MAT.interior, 0.18, 0.8, -0.62));
 
-  // --- Small steering wheel ---
+  // --- Small steering wheel (right-hand drive) ---
   const steering = part(new THREE.TorusGeometry(0.13, 0.015, 8, 24), MAT.black, -0.18, 0.82, 0.05);
   steering.rotation.x = -0.35;
   car.add(steering);
@@ -203,39 +267,156 @@ function buildCar() {
   exhaust.rotation.x = Math.PI / 2;
   car.add(exhaust);
 
+  // --- Suspension: double wishbones, uprights, dampers, tie rods, driveshafts ---
+  // Every rod links a point on the body to a point on the wheel's upright,
+  // so the wheels are properly attached instead of floating.
+  const arms = [];
+  const dampers = [];
+  for (const s of [-1, 1]) {
+    const F = FRONT_AXLE;
+    const R = REAR_AXLE;
+
+    // Front lower wishbone (two legs meeting at the upright)
+    arms.push([[s * 0.30, 0.22, F + 0.18], [s * 0.56, 0.24, F], 0.014]);
+    arms.push([[s * 0.30, 0.22, F - 0.18], [s * 0.56, 0.24, F], 0.014]);
+    // Front upper wishbone
+    arms.push([[s * 0.30, 0.47, F + 0.14], [s * 0.54, 0.42, F], 0.012]);
+    arms.push([[s * 0.30, 0.47, F - 0.14], [s * 0.54, 0.42, F], 0.012]);
+    // Front upright (joins the wishbone ends, carries the wheel)
+    arms.push([[s * 0.56, 0.24, F], [s * 0.54, 0.42, F], 0.022]);
+    // Steering tie rod
+    arms.push([[s * 0.30, 0.30, F - 0.12], [s * 0.55, 0.31, F - 0.10], 0.010]);
+    // Front coil-over damper (lower wishbone up to the chassis)
+    dampers.push([[s * 0.48, 0.24, F + 0.02], [s * 0.31, 0.53, F + 0.08], 0.03]);
+
+    // Rear lower wishbone
+    arms.push([[s * 0.44, 0.20, R + 0.20], [s * 0.56, 0.22, R], 0.014]);
+    arms.push([[s * 0.44, 0.20, R - 0.20], [s * 0.56, 0.22, R], 0.014]);
+    // Rear upper wishbone
+    arms.push([[s * 0.44, 0.45, R + 0.15], [s * 0.55, 0.42, R], 0.012]);
+    arms.push([[s * 0.44, 0.45, R - 0.15], [s * 0.55, 0.42, R], 0.012]);
+    // Rear upright
+    arms.push([[s * 0.56, 0.22, R], [s * 0.55, 0.42, R], 0.022]);
+    // Driveshaft from the differential to the wheel
+    arms.push([[s * 0.40, 0.30, R], [s * 0.57, 0.30, R], 0.028]);
+    // Rear coil-over damper
+    dampers.push([[s * 0.52, 0.23, R + 0.06], [s * 0.45, 0.58, R + 0.12], 0.03]);
+  }
+  car.add(rodSet(arms, MAT.arm));
+  car.add(rodSet(dampers, MAT.damper));
+
   // --- Wheels: drawn with INSTANCING ---
-  // One tyre model and one rim model, each drawn 4 times in a single step,
-  // instead of 8 separate objects. This is the Mecabricks-style trick that
-  // keeps phones smooth, and we'll use it for cones, barriers, trees and crowds.
+  // One tyre, rim and spoke model, each drawn several times in a single step.
   const tyreGeo = new THREE.CylinderGeometry(WHEEL_RADIUS, WHEEL_RADIUS, WHEEL_WIDTH, 28);
   tyreGeo.rotateZ(Math.PI / 2);
   const rimGeo = new THREE.CylinderGeometry(WHEEL_RADIUS * 0.62, WHEEL_RADIUS * 0.62, WHEEL_WIDTH + 0.01, 20);
   rimGeo.rotateZ(Math.PI / 2);
+  // Spokes across the rim, so you can see the wheels turning
+  const spokeGeo = new THREE.BoxGeometry(WHEEL_WIDTH + 0.02, 0.035, WHEEL_RADIUS * 1.2);
 
   const tyres = new THREE.InstancedMesh(tyreGeo, MAT.tyre, 4);
   const rims = new THREE.InstancedMesh(rimGeo, MAT.rim, 4);
-  tyres.castShadow = rims.castShadow = true;
-  tyres.receiveShadow = rims.receiveShadow = true;
+  const spokes = new THREE.InstancedMesh(spokeGeo, MAT.spoke, 8);
+  for (const mesh of [tyres, rims, spokes]) {
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); // updated every frame
+    car.add(mesh);
+  }
 
-  const wheelPositions = [
-    [-TRACK_HALF, WHEEL_RADIUS, FRONT_AXLE],
-    [TRACK_HALF, WHEEL_RADIUS, FRONT_AXLE],
-    [-TRACK_HALF, WHEEL_RADIUS, REAR_AXLE],
-    [TRACK_HALF, WHEEL_RADIUS, REAR_AXLE],
-  ];
-  const m = new THREE.Matrix4();
-  wheelPositions.forEach(([x, y, z], i) => {
-    m.makeTranslation(x, y, z);
-    tyres.setMatrixAt(i, m);
-    rims.setMatrixAt(i, m);
-  });
-  car.add(tyres, rims);
-
-  return car;
+  return { car, tyres, rims, spokes };
 }
 
-const car = buildCar();
-scene.add(car);
+const carModel = buildCar();
+scene.add(carModel.car);
+
+// Where each wheel sits on the car: [x, y, z, isFront]
+const WHEELS = [
+  [-TRACK_HALF, WHEEL_RADIUS, FRONT_AXLE, true],
+  [TRACK_HALF, WHEEL_RADIUS, FRONT_AXLE, true],
+  [-TRACK_HALF, WHEEL_RADIUS, REAR_AXLE, false],
+  [TRACK_HALF, WHEEL_RADIUS, REAR_AXLE, false],
+];
+
+// Turns the front wheels with the steering and spins all four
+const wheelMatrix = new THREE.Matrix4();
+const wheelPos = new THREE.Vector3();
+const wheelRot = new THREE.Quaternion();
+const wheelEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+const ONE = new THREE.Vector3(1, 1, 1);
+
+function updateWheels(steer, spin) {
+  WHEELS.forEach(([x, y, z, isFront], i) => {
+    wheelPos.set(x, y, z);
+    for (let k = 0; k < 2; k++) {
+      wheelEuler.set(spin + k * Math.PI / 2, isFront ? steer : 0, 0);
+      wheelRot.setFromEuler(wheelEuler);
+      wheelMatrix.compose(wheelPos, wheelRot, ONE);
+      if (k === 0) {
+        carModel.tyres.setMatrixAt(i, wheelMatrix);
+        carModel.rims.setMatrixAt(i, wheelMatrix);
+      }
+      carModel.spokes.setMatrixAt(i * 2 + k, wheelMatrix);
+    }
+  });
+  carModel.tyres.instanceMatrix.needsUpdate = true;
+  carModel.rims.instanceMatrix.needsUpdate = true;
+  carModel.spokes.instanceMatrix.needsUpdate = true;
+}
+
+// ---------------------------------------------------------------------
+// DRIVING
+// ---------------------------------------------------------------------
+const physics = new CarPhysics();
+
+// Speed readout and controls guide in the corner label
+const info = document.getElementById('info');
+info.innerHTML =
+  '<b>Track Tester</b><br>' +
+  'W / S: throttle, brake, reverse · A / D: steer<br>' +
+  'Space: handbrake · C: camera · R: reset<br>' +
+  '<span id="speed" style="font-size:22px;font-weight:700">0 km/h</span>';
+const speedLabel = document.getElementById('speed');
+
+// ---------------------------------------------------------------------
+// CAMERAS: chase camera behind the car, or showroom orbit (press C)
+// ---------------------------------------------------------------------
+let cameraMode = 'chase';
+const carPos = new THREE.Vector3();
+const lastCarPos = new THREE.Vector3();
+const forward = new THREE.Vector3();
+const desiredCam = new THREE.Vector3();
+const lookTarget = new THREE.Vector3();
+
+function updateCamera(dt) {
+  carPos.set(physics.x, 0, physics.z);
+  forward.set(Math.sin(physics.heading), 0, Math.cos(physics.heading));
+
+  if (cameraMode === 'chase') {
+    // Sit behind and above the car, catching up smoothly
+    desiredCam.copy(carPos).addScaledVector(forward, -6.5);
+    desiredCam.y = 2.4;
+    camera.position.lerp(desiredCam, 1 - Math.exp(-6 * dt));
+    lookTarget.copy(carPos).addScaledVector(forward, 2.5);
+    lookTarget.y = 0.7;
+    camera.lookAt(lookTarget);
+  } else {
+    // Showroom: orbit around the car and move along with it
+    camera.position.add(carPos).sub(lastCarPos);
+    controls.target.set(carPos.x, 0.45, carPos.z);
+    controls.update();
+  }
+  lastCarPos.copy(carPos);
+}
+
+function switchCamera() {
+  cameraMode = cameraMode === 'chase' ? 'showroom' : 'chase';
+  controls.enabled = cameraMode === 'showroom';
+  if (controls.enabled) {
+    controls.target.set(physics.x, 0.45, physics.z);
+    controls.update();
+  }
+}
 
 // ---------------------------------------------------------------------
 // KEEP IT FITTING THE SCREEN when the window resizes or the phone rotates
@@ -247,9 +428,30 @@ window.addEventListener('resize', () => {
 });
 
 // ---------------------------------------------------------------------
-// MAIN LOOP: redraws the scene about 60 times a second
+// MAIN LOOP: runs about 60 times a second
+// read controls -> move the car -> update visuals -> draw
 // ---------------------------------------------------------------------
+const clock = new THREE.Clock();
+
 renderer.setAnimationLoop(() => {
-  controls.update();
+  const dt = Math.min(clock.getDelta(), 0.05);   // avoid huge jumps after a pause
+
+  if (wasTapped('camera')) switchCamera();
+  if (wasTapped('reset')) physics.reset();
+
+  physics.update(readControls(), dt);
+
+  // Move the car model to where the physics says it is
+  carModel.car.position.set(physics.x, 0, physics.z);
+  carModel.car.rotation.y = physics.heading;
+  updateWheels(physics.steer, physics.wheelSpin);
+
+  // Keep the sun's shadow area centred on the car
+  sun.target.position.set(physics.x, 0, physics.z);
+  sun.position.set(physics.x, 0, physics.z).add(SUN_OFFSET);
+
+  updateCamera(dt);
+  speedLabel.textContent = `${Math.round(physics.speedKmh)} km/h`;
+
   renderer.render(scene, camera);
 });
