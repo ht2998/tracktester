@@ -5,6 +5,7 @@
 //   A / Left arrow   = steer left
 //   D / Right arrow  = steer right
 //   Space            = handbrake
+//   X (hold)         = clutch: rev the engine freely, let go to dump it
 //   Q / E  or  , / . = shift down / up (manual gearbox; Q from 1st = reverse)
 //   R                = reverse on / off (automatic and CVT, when stopped)
 //   T                = change gearbox (manual / automatic / CVT)
@@ -34,7 +35,7 @@ const TAP_KEYS = {
 const GAME_KEYS = new Set([
   'KeyW', 'KeyA', 'KeyS', 'KeyD',
   'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
-  'Space', ...Object.keys(TAP_KEYS),
+  'Space', 'KeyX', ...Object.keys(TAP_KEYS),
 ]);
 
 window.addEventListener('keydown', (e) => {
@@ -53,7 +54,7 @@ window.addEventListener('keyup', (e) => {
 // If the window loses focus, let go of everything so the car doesn't drive off on its own
 window.addEventListener('blur', () => held.clear());
 
-const controls = { throttle: 0, brake: 0, steer: 0, handbrake: false };
+const controls = { throttle: 0, brake: 0, steer: 0, handbrake: false, clutch: false };
 
 // Called once per frame: returns the current driving controls
 export function readControls() {
@@ -63,6 +64,7 @@ export function readControls() {
   controls.brake = held.has('KeyS') || held.has('ArrowDown') ? 1 : 0;
   controls.steer = (left ? 1 : 0) - (right ? 1 : 0);   // +1 = left, -1 = right
   controls.handbrake = held.has('Space');
+  controls.clutch = held.has('KeyX');
   return controls;
 }
 
