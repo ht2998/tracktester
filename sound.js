@@ -23,6 +23,7 @@ class EnginePulses extends AudioWorkletProcessor {
       { name: 'load', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
       { name: 'cylinders', defaultValue: 6, minValue: 1, maxValue: 12, automationRate: 'k-rate' },
       { name: 'limiter', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+      { name: 'knock', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
     ];
   }
 
@@ -39,7 +40,11 @@ class EnginePulses extends AudioWorkletProcessor {
     // harmonic (the "dual" rumble, 30 Hz + 60 Hz for a 4-cylinder at idle),
     // and one for the intake howl of the throttle bodies.
     this.res = [this.makeRes(), this.makeRes(), this.makeRes(),
-                this.makeRes(), this.makeRes(), this.makeRes()];
+                this.makeRes(), this.makeRes(), this.makeRes(),
+                this.makeRes(),    // the 7th: valvetrain clatter
+                this.makeRes()];   // the 8th: rod knock
+    this.tick = 0;         // the latest valve clatter, dying away
+    this.knockHit = 0;     // the latest rod knock, dying away
     this.lp = 0;           // gentle smoothing of the very top end
     this.cycle = 0;        // position in the engine cycle (two crank turns)
     this.cutClock = 0;     // rev limiter's on/off rhythm
@@ -72,6 +77,7 @@ class EnginePulses extends AudioWorkletProcessor {
     const load = parameters.load[0];
     const cylinders = Math.round(parameters.cylinders[0]);
     const limiter = parameters.limiter[0] > 0.5;
+    const knock = parameters.knock[0];   // rod knock from oil starvation, 0-1
     const firesPerSecond = (rpm / 60) * (cylinders / 2);   // four-stroke
     const cyclesPerSecond = rpm / 120;                     // one full engine cycle = 2 turns
 
@@ -79,7 +85,8 @@ class EnginePulses extends AudioWorkletProcessor {
     // cycle ("vr vr vr vr"), with a slight wobble in pitch. It fades out as
     // the revs rise and the engine smooths out.
     const idleness = Math.max(0, Math.min(1, 1 - (rpm - 900) / 1700));
-    const lopeDepth = 0.55 * idleness;
+    const lopeDepth = 0.75 * idleness;
+    const idleBoost = 1 + 0.3 * idleness;   // idle pulses a little louder
     const unevenness = 0.12 + 0.14 * idleness;
 
     // The pipe's pitches rise a little with the revs
@@ -99,10 +106,24 @@ class EnginePulses extends AudioWorkletProcessor {
     const hissDecay = Math.exp(-1 / (sampleRate * 0.0012));
     const strength = 0.35 + 0.65 * load;              // harder pulses under throttle
     const rasp = 0.15 + 0.5 * load;
-    const smooth = 0.35 + 0.25 * load;
+    const smooth = 0.5 + 0.3 * load;
+
+    // Real engines are never perfectly regular: every combustion lands a
+    // little early or late and a little stronger or weaker, the valves
+    // clatter, and the exhaust adds grit. All of it grows under load.
+    const rough = 0.35 + 0.65 * load;
+    const timingJitter = 0.07 * rough;                         // ±3.5% spacing between firings
+    const extraUneven = 0.16 * load * rev;                     // strength varies more when worked hard
+    const hissAmount = 0.3 + 0.7 * load;                       // combustion roar in each pulse
+    const hissDecayLoad = Math.exp(-1 / (sampleRate * (0.0012 + 0.0016 * load)));
+    const clatter = 0.04 + 0.12 * rev;                         // valvetrain ticking
+    const grit = 0.25 + 0.55 * load;                           // exhaust rasp (uneven distortion)
+    this.tune(this.res[6], Math.min(nyq, 3200 + rpm * 0.15), 2.2);
+    this.tune(this.res[7], 950, 6);   // a hollow, metallic knock
 
     for (let i = 0; i < left.length; i++) {
-      this.cycle = (this.cycle + cyclesPerSecond / sampleRate) % 1;
+      // The lope swells once every two engine cycles, so the pulses are spread out
+      this.cycle = (this.cycle + (cyclesPerSecond * 0.5) / sampleRate) % 1;
       const lope = 1 + lopeDepth * Math.sin(2 * Math.PI * this.cycle);
       this.phase += (firesPerSecond / sampleRate) * (1 + 0.035 * idleness * Math.sin(2 * Math.PI * this.cycle));
 
@@ -111,19 +132,28 @@ class EnginePulses extends AudioWorkletProcessor {
       const cut = limiter && this.cutClock < 0.04;
 
       if (this.phase >= 1) {
-        this.phase -= 1;
+        // The next firing lands slightly early or late
+        this.phase -= 1 + (Math.random() - 0.5) * timingJitter;
         this.cyl = (this.cyl + 1) % cylinders;
+        this.tick = 0.6 + Math.random() * 0.8;   // a valve clattering shut
+        // Rod knock: a worn bearing hammers once per crank turn when oil runs low
+        if (knock > 0 && this.cyl % 2 === 0) this.knockHit = 1 + Math.random() * 0.3;
         if (!cut) {
-          const jitter = 1 - unevenness + Math.random() * 2 * unevenness;
-          const kick = this.cylStrength[this.cyl] * jitter * lope * (limiter ? 1.15 : strength);
+          const spread = unevenness + extraUneven;
+          const jitter = 1 - spread + Math.random() * 2 * spread;
+          const kick = this.cylStrength[this.cyl] * jitter * lope * idleBoost * (limiter ? 1.15 : strength);
           this.pulse += kick;
-          this.hiss += kick;
+          this.hiss += kick * (0.7 + Math.random() * 0.6);
         }
       }
-      const noise = (Math.random() * 2 - 1) * this.hiss * 0.35;
+      const noise = (Math.random() * 2 - 1) * this.hiss * hissAmount;
       const x = this.pulse + noise;
       this.pulse *= pulseDecay;
-      this.hiss *= hissDecay;
+      this.hiss *= this.hiss > 0 ? hissDecayLoad : hissDecay;
+      this.tick *= 0.9965;
+      const clack = this.ring(this.res[6], (Math.random() * 2 - 1) * this.tick) * clatter;
+      this.knockHit *= 0.9975;
+      const rodKnock = knock * 7 * this.ring(this.res[7], this.knockHit * (Math.random() * 2 - 1) + this.knockHit * 0.4);
 
       // Intake: rushing air that throbs with each firing
       const intakeIn = (Math.random() * 2 - 1) * (0.35 + Math.min(1.5, this.pulse) * 0.8);
@@ -132,9 +162,13 @@ class EnginePulses extends AudioWorkletProcessor {
             + 0.55 * this.ring(this.res[1], x)
             + rasp * 0.3 * this.ring(this.res[2], x)
             + humAmount * (0.8 * this.ring(this.res[3], x) + 0.6 * this.ring(this.res[4], x))
-            + intakeAmount * this.ring(this.res[5], intakeIn);
-      this.lp += (y - this.lp) * smooth;   // take the edge off
-      left[i] = this.lp * 1.15;
+            + intakeAmount * this.ring(this.res[5], intakeIn)
+            + clack
+            + rodKnock;
+      // Exhaust rasp: lopsided distortion adds the gritty edge real pipes have
+      y = y + grit * 0.6 * y * Math.abs(y) - grit * 0.15 * y * y;
+      this.lp += (y - this.lp) * smooth;   // take only the harshest edge off
+      left[i] = this.lp * 1.05;
     }
     for (let ch = 1; ch < out.length; ch++) out[ch].set(left);
     return true;
@@ -349,75 +383,128 @@ export class EngineSound {
     // Throttle matters even before the engine is fully loaded, so blend both
     const load = clamp(Math.max(car.engineLoad, car.throttleAmount * 0.6), 0, 1);
 
+    // Ease into and out of throttle rather than switching instantly: getting
+    // on the power swells in over ~0.15 s, lifting off fades over ~0.25 s
+    const rising = load > (this.lastLoad ?? 0);
+    this.lastLoad = load;
+    const loadEase = rising ? 0.15 : 0.25;
+
     if (this.voice) {
-      this.voice.parameters.get('rpm').setTargetAtTime(rpm, t, 0.015);
-      this.voice.parameters.get('load').setTargetAtTime(load, t, 0.03);
+      this.voice.parameters.get('rpm').setTargetAtTime(rpm, t, 0.03);
+      this.voice.parameters.get('load').setTargetAtTime(load, t, loadEase);
       this.voice.parameters.get('limiter').setValueAtTime(car.onLimiter ? 1 : 0, t);
+      this.voice.parameters.get('knock').setTargetAtTime(car.knock ?? 0, t, 0.3);
     }
 
     // Brighter under load, darker and softer on the overrun
-    this.tone.frequency.setTargetAtTime(500 + rpm * 0.32 + load * 1600, t, 0.04);
+    this.tone.frequency.setTargetAtTime(500 + rpm * 0.32 + load * 1600, t, loadEase);
 
     let volume = 0.5 + 0.25 * rev + 0.35 * load;
-    if (car.shiftTimer > 0) volume *= 0.55;   // ignition cut during a shift
+    const shifting = car.shiftTimer > 0;
+    if (shifting) volume *= 0.55;             // ignition cut during a shift
     if (car.engineBlown) volume = 0;          // a dead engine makes no noise
     // (the limiter's stutter is made by the pulses themselves)
-    this.engineGain.gain.setTargetAtTime(volume, t, 0.02);
+    // Shifts and the engine dying stay quick; everything else eases
+    this.engineGain.gain.setTargetAtTime(volume, t, shifting || car.engineBlown ? 0.03 : loadEase);
 
     this.echo.update(listenerPos);
   }
 
-  // Engine failure: a heavy CLUNK, as if something just smashed inside
+  // Engine failure, about 2.5 seconds:
+  //   BANG (something lets go) -> metal shattering -> broken parts thrashing
+  //   about as the engine spins down, slower and slower -> a hiss of oil and
+  //   steam -> one last thud as it seizes.
   playClunk() {
     if (!this.ctx) return;
     const ctx = this.ctx;
-    const t = ctx.currentTime;
+    const t0 = ctx.currentTime;
+    const out = this.out;
 
-    // The heavy hit: a deep thud that drops in pitch
-    const thud = ctx.createOscillator();
-    thud.type = 'sine';
-    thud.frequency.setValueAtTime(95, t);
-    thud.frequency.exponentialRampToValueAtTime(28, t + 0.45);
-    const thudGain = ctx.createGain();
-    thudGain.gain.setValueAtTime(0.0001, t);
-    thudGain.gain.exponentialRampToValueAtTime(1.0, t + 0.008);
-    thudGain.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
-    thud.connect(thudGain).connect(this.out);
-    thud.start(t);
-    thud.stop(t + 0.6);
+    const env = (node, at, peak, attack, length) => {
+      node.gain.setValueAtTime(0.0001, at);
+      node.gain.exponentialRampToValueAtTime(peak, at + attack);
+      node.gain.exponentialRampToValueAtTime(0.0008, at + length);
+    };
+    const noiseBurst = (at, length, freq, q, peak, type = 'bandpass') => {
+      const src = ctx.createBufferSource();
+      src.buffer = this.noise;
+      const f = ctx.createBiquadFilter();
+      f.type = type;
+      f.frequency.value = freq;
+      f.Q.value = q;
+      const g = ctx.createGain();
+      env(g, at, peak, 0.004, length);
+      src.connect(f).connect(g).connect(out);
+      src.start(at, Math.random());
+      src.stop(at + length + 0.05);
+    };
+    const tone = (at, freq, endFreq, length, peak, type = 'sine') => {
+      const o = ctx.createOscillator();
+      o.type = type;
+      o.frequency.setValueAtTime(freq, at);
+      o.frequency.exponentialRampToValueAtTime(endFreq, at + length);
+      const g = ctx.createGain();
+      env(g, at, peak, 0.006, length);
+      o.connect(g).connect(out);
+      o.start(at);
+      o.stop(at + length + 0.05);
+    };
 
-    // The metal: a few clashing tones that ring out unevenly
-    for (const [freq, level, length] of [[312, 0.22, 0.5], [471, 0.16, 0.4], [689, 0.12, 0.3], [1043, 0.08, 0.25]]) {
-      const ring = ctx.createOscillator();
-      ring.type = 'square';
-      ring.frequency.setValueAtTime(freq, t);
-      ring.frequency.exponentialRampToValueAtTime(freq * 0.93, t + length);
-      const ringFilter = ctx.createBiquadFilter();
-      ringFilter.type = 'bandpass';
-      ringFilter.frequency.value = freq * 1.5;
-      ringFilter.Q.value = 3;
-      const ringGain = ctx.createGain();
-      ringGain.gain.setValueAtTime(0.0001, t);
-      ringGain.gain.exponentialRampToValueAtTime(level, t + 0.005);
-      ringGain.gain.exponentialRampToValueAtTime(0.001, t + length);
-      ring.connect(ringFilter).connect(ringGain).connect(this.out);
-      ring.start(t);
-      ring.stop(t + length + 0.05);
+    // 1. The BANG: a deep hit and a sharp crack
+    tone(t0, 110, 24, 0.9, 1.0);
+    noiseBurst(t0, 0.22, 1400, 0.7, 0.9, 'lowpass');
+    noiseBurst(t0, 0.08, 4000, 1.0, 0.5);
+
+    // 2. Metal shattering: clashing tones that ring out unevenly
+    for (const [freq, level, length] of [[287, 0.2, 1.3], [433, 0.16, 1.1], [612, 0.13, 0.9],
+                                         [859, 0.1, 0.8], [1207, 0.07, 0.6], [1733, 0.05, 0.5]]) {
+      const o = ctx.createOscillator();
+      o.type = 'square';
+      o.frequency.setValueAtTime(freq, t0);
+      o.frequency.exponentialRampToValueAtTime(freq * 0.9, t0 + length);
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass';
+      f.frequency.value = freq * 1.4;
+      f.Q.value = 4;
+      const g = ctx.createGain();
+      env(g, t0, level, 0.004, length);
+      o.connect(f).connect(g).connect(out);
+      o.start(t0);
+      o.stop(t0 + length + 0.05);
     }
 
-    // Debris: a short crunchy burst of noise
-    const crunch = ctx.createBufferSource();
-    crunch.buffer = this.noise;
-    const crunchFilter = ctx.createBiquadFilter();
-    crunchFilter.type = 'lowpass';
-    crunchFilter.frequency.value = 1800;
-    const crunchGain = ctx.createGain();
-    crunchGain.gain.setValueAtTime(0.0001, t);
-    crunchGain.gain.exponentialRampToValueAtTime(0.6, t + 0.004);
-    crunchGain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
-    crunch.connect(crunchFilter).connect(crunchGain).connect(this.out);
-    crunch.start(t, Math.random());
-    crunch.stop(t + 0.3);
+    // 3. Broken parts thrashing as the engine spins down: clanks that start
+    //    fast and slow to a stop, getting quieter as it dies
+    let at = t0 + 0.12;
+    let gap = 0.035;
+    let level = 0.55;
+    while (at < t0 + 2.1 && level > 0.04) {
+      const freq = 700 + Math.random() * 1500;
+      noiseBurst(at, 0.05 + Math.random() * 0.04, freq, 5, level * (0.6 + Math.random() * 0.4));
+      if (Math.random() < 0.4) tone(at, 160 + Math.random() * 80, 70, 0.07, level * 0.5);
+      at += gap * (0.8 + Math.random() * 0.4);
+      gap *= 1.11;      // slowing down
+      level *= 0.93;    // and fading
+    }
+
+    // 4. Hiss of oil and steam escaping
+    const hiss = ctx.createBufferSource();
+    hiss.buffer = this.noise;
+    hiss.loop = true;
+    const hf = ctx.createBiquadFilter();
+    hf.type = 'highpass';
+    hf.frequency.value = 2500;
+    const hg = ctx.createGain();
+    hg.gain.setValueAtTime(0.0001, t0 + 0.2);
+    hg.gain.exponentialRampToValueAtTime(0.18, t0 + 0.5);
+    hg.gain.exponentialRampToValueAtTime(0.0008, t0 + 3.2);
+    hiss.connect(hf).connect(hg).connect(out);
+    hiss.start(t0 + 0.2, Math.random());
+    hiss.stop(t0 + 3.3);
+
+    // 5. The engine seizes: one last heavy thud
+    tone(t0 + 2.15, 75, 30, 0.45, 0.6);
+    noiseBurst(t0 + 2.15, 0.12, 900, 1, 0.35, 'lowpass');
   }
 
   // Gear grind: trying to select reverse while still rolling
