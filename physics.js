@@ -39,11 +39,17 @@ export const CATERHAM = {
   wheelRadius: 0.288,     // metres (195/50 R15)
   trackHalf: 0.68,        // metres from the centre line to each wheel
 
+  // --- Oil ---
+  oilLeakRate: 0.011,     // share of the oil lost per second when damaged (about 90 s to empty)
+  oilPourRate: 0.05,      // share lost per second once the engine has blown
+  starvationDamage: 0.008,// health lost per second at 0% oil and full revs
+
   // --- Engine: Duratec-style 2.0 inline-4, naturally aspirated ---
   cylinders: 4,
   idleRpm: 900,
   redline: 7600,          // rev limiter cuts in here (peak power)
-  launchRpm: 4500,        // revs held while the clutch slips pulling away
+  launchRpm: 4500,        // revs the engine flares to when pulling away
+  clutchBite: 0.45,       // seconds for the clutch to take up the drive
   engineBraking: 38,      // Nm of drag when you lift off the throttle
   peakTorque: 203,
   cvtTargetRpm: 6600,     // where the CVT holds the revs at full throttle
@@ -116,9 +122,13 @@ export class CarPhysics {
     this.overRevLock = 0;     // seconds left of rear-wheel lock from a bad downshift
     this.overRevSeverity = 0;
     this.lastRearSlide = 0;
+    this.launchTime = -1;     // seconds since pulling away began (-1 = not launching)
+    this.lastWheelspin = 0;
     this.tractionControl = false;   // true while traction control is cutting power
     this.engineHealth = 1;    // drops after big over-revs (1 = full power, 0 = blown)
     this.engineBlown = false;
+    this.oilLevel = 1;        // engine oil, 1 = full. Drains while leaking.
+    this.knock = 0;           // 0-1, rod knock from oil starvation (for the sound)
     this.limiterClock = 0;
     this.events = [];         // shift events for the sound to pick up
   }
@@ -199,7 +209,37 @@ export class CarPhysics {
 
   // Leaking oil once the engine is badly damaged
   get leakingOil() {
-    return this.engineHealth < 0.1;
+    return this.engineHealth < 0.1 && this.oilLevel > 0;
+  }
+
+  // --- Oil: drains while leaking; running low starves and wrecks the engine ---
+  // Later, pit stops will be able to fix leaks and top the oil back up.
+  updateOil(dt) {
+    const s = this.spec;
+    if (this.leakingOil) {
+      // A cracked engine drips; a blown one pours
+      const drain = this.engineBlown ? s.oilPourRate : s.oilLeakRate;
+      this.oilLevel = Math.max(0, this.oilLevel - drain * dt);
+    }
+    if (this.engineBlown) {
+      this.knock = 0;
+      return;
+    }
+    // Below 30% oil the bearings start to starve. The lower the oil and the
+    // harder the engine is worked, the faster it destroys itself. At 0% it's
+    // a ticking time bomb: you can hear the rods knocking.
+    const starvation = clamp((0.3 - this.oilLevel) / 0.3, 0, 1);
+    this.knock = starvation;
+    if (starvation > 0) {
+      const effort = 0.2 + 0.8 * clamp(this.rpm / s.redline, 0, 1);
+      this.engineHealth -= starvation * effort * s.starvationDamage * dt;
+      if (this.engineHealth <= 0) this.blowEngine();
+    }
+  }
+
+  // How well the engine runs on the oil it has left (1 = fine)
+  get oilFactor() {
+    return 1 - 0.3 * clamp((0.3 - this.oilLevel) / 0.3, 0, 1);
   }
 
   startShift(newGear, direction) {
@@ -232,6 +272,7 @@ export class CarPhysics {
     const steps = Math.max(1, Math.ceil(dt / (1 / 120)));
     const h = dt / steps;
     for (let i = 0; i < steps; i++) this.step(controls, h);
+    this.updateOil(dt);
     // Safety net: if anything ever produces an invalid number, put the
     // car back at the start rather than letting it vanish
     if (!Number.isFinite(this.x + this.z + this.heading + this.vx + this.vy + this.yawRate + this.rpm)) {
@@ -319,11 +360,30 @@ export class CarPhysics {
     // only does this in 1st and 2nd; in a high gear at low speed it bogs down.
     const canSlip = this.transmission !== 'manual' || this.gear <= 2;
     let targetRpm = Math.max(coupledRpm, s.idleRpm);
+
+    // Pulling away: the revs flare up, then sink smoothly as the clutch bites
+    // and takes the load, then climb with the speed.
+    const pullingAway = canSlip && throttle > 0 && coupledRpm < s.launchRpm;
+    if (pullingAway) {
+      if (this.launchTime < 0) this.launchTime = 0;   // a new launch starts
+      this.launchTime += h;
+    } else if (!throttle || coupledRpm >= s.launchRpm) {
+      this.launchTime = -1;
+    }
+
     if (canSlip && throttle) {
-      const slipRpm = this.transmission === 'cvt'
-        ? s.idleRpm + 300 + throttle * (s.cvtTargetRpm - s.idleRpm)
-        : s.launchRpm;
-      targetRpm = Math.max(coupledRpm, slipRpm);
+      if (this.transmission === 'cvt') {
+        const cvtRpm = s.idleRpm + 300 + throttle * (s.cvtTargetRpm - s.idleRpm);
+        targetRpm = Math.max(coupledRpm, cvtRpm);
+      } else if (this.launchTime >= 0) {
+        const flare = s.launchRpm + 600 * throttle;          // the initial jump
+        const bite = Math.exp(-this.launchTime / s.clutchBite);   // fades as the clutch grips
+        targetRpm = Math.max(s.idleRpm, coupledRpm + (flare - coupledRpm) * bite);
+      }
+    }
+    // Spinning rear tyres (burnouts, donuts) let the engine rev up freely
+    if (this.lastWheelspin > 0.05) {
+      targetRpm = Math.max(targetRpm, Math.min(s.redline - 60, coupledRpm + this.lastWheelspin * 3500));
     }
     // --- Rev limiter ---
     // At the top of a gear the limiter cuts the ignition in fast bursts:
@@ -357,7 +417,7 @@ export class CarPhysics {
       engineTorque = this.transmission === 'auto' ? 0.4 * throttle * torqueAt(s.torqueCurve, this.rpm) : 0;
     } else if (throttle && !overRevving) {
       // A damaged engine loses power: down to a quarter just before it dies
-      engineTorque = throttle * torqueAt(s.torqueCurve, this.rpm) * (0.25 + 0.75 * this.engineHealth);
+      engineTorque = throttle * torqueAt(s.torqueCurve, this.rpm) * (0.25 + 0.75 * this.engineHealth) * this.oilFactor;
     } else if (coupledRpm > s.idleRpm + 200) {
       engineTorque = -s.engineBraking * (this.rpm / s.redline);   // engine braking
     }
@@ -420,6 +480,7 @@ export class CarPhysics {
     // engine can't overpower them, so fast corners stay stable.
     const wheelspinAmount = clamp((requestedPush / maxRear - 1) / 0.8, 0, 1);
     maxRearSide *= 1 - 0.65 * wheelspinAmount;
+    this.lastWheelspin = throttle > 0 ? wheelspinAmount : 0;   // for the revs next step
 
     const forceX = drive - resist;
 
