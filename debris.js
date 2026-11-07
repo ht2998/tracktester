@@ -37,7 +37,7 @@ const sparkFragment = /* glsl */ `
     vec3 cool = vec3(0.7, 0.12, 0.02);
     vec3 col = vHeat > 0.5 ? mix(warm, hot, (vHeat - 0.5) * 2.0) : mix(cool, warm, vHeat * 2.0);
     float glow = (1.0 - r) * (1.0 - r);
-    gl_FragColor = vec4(col * glow * 1.6, glow * vHeat);
+    gl_FragColor = vec4(col * glow * 2.6, glow * vHeat);
   }
 `;
 
@@ -145,20 +145,11 @@ export class EngineDebris {
     const fx = Math.sin(heading), fz = Math.cos(heading);
     const lx = fz, lz = -fx;   // the car's left
 
-    // Sparks: mostly out of the sides and down onto the road, some up
-    for (let i = 0; i < this.maxSparks; i++) {
-      const side = Math.random() < 0.5 ? -1 : 1;
-      const out = rand(2, 9);
-      this.sparkPos.set([origin.x + rand(-0.2, 0.2), origin.y - rand(0.1, 0.35), origin.z + rand(-0.2, 0.2)], i * 3);
-      this.sparkVel.set([
-        carVel.x * 0.9 + lx * side * out + fx * rand(-3, 3),
-        rand(-1.5, 5.5),
-        carVel.z * 0.9 + lz * side * out + fz * rand(-3, 3),
-      ], i * 3);
-      this.sparkLife[i] = rand(0.35, 1.1);
-      this.sparkHeat[i] = 1;
-      this.sparkSize[i] = rand(0.025, 0.06);
-    }
+    // Sparks: a big first burst, then a stream for a while as the engine
+    // grinds itself apart (see update)
+    this.sparkStream = 1.6;
+    this.sparkNext = 0;
+    for (let i = 0; i < Math.floor(this.maxSparks * 0.55); i++) this.spawnSpark(origin, carVel, heading, 1);
     this.sparks.geometry.attributes.aSize.needsUpdate = true;
 
     this.flash.position.copy(origin);
@@ -169,9 +160,9 @@ export class EngineDebris {
     const fling = (speedOut, up) => {
       const side = Math.random() < 0.5 ? -1 : 1;
       return new THREE.Vector3(
-        carVel.x * 0.85 + lx * side * speedOut + fx * rand(-1.5, 3),
+        carVel.x * 0.85 + lx * side * speedOut + fx * rand(-0.6, 1.2),
         up,
-        carVel.z * 0.85 + lz * side * speedOut + fz * rand(-1.5, 3),
+        carVel.z * 0.85 + lz * side * speedOut + fz * rand(-0.6, 1.2),
       );
     };
     const spin = (n) => new THREE.Vector3(rand(-n, n), rand(-n, n), rand(-n, n));
@@ -181,7 +172,7 @@ export class EngineDebris {
       this.pieces.push({
         kind: 'chunk', index: i, size, radius: size * 0.8,
         pos: new THREE.Vector3(origin.x, origin.y, origin.z),
-        vel: fling(rand(2, 6), rand(2, 6)),
+        vel: fling(rand(0.8, 2.4), rand(1.5, 3.5)),
         rot: new THREE.Quaternion().setFromEuler(new THREE.Euler(rand(0, 6), rand(0, 6), rand(0, 6))),
         ang: spin(25), bounce: 0.35, rolls: false, resting: false,
         stretch: new THREE.Vector3(rand(0.7, 1.6), rand(0.5, 1), rand(0.7, 1.4)),   // jagged, uneven shapes
@@ -193,7 +184,7 @@ export class EngineDebris {
     this.pieces.push({
       kind: 'piston', obj: this.piston, radius: 0.0435,
       pos: new THREE.Vector3(origin.x, origin.y, origin.z),
-      vel: fling(rand(3.5, 5.5), rand(3, 5)),
+      vel: fling(rand(1.2, 2.2), rand(2, 3)),
       rot: new THREE.Quaternion().setFromEuler(new THREE.Euler(rand(0, 6), rand(0, 6), rand(0, 6))),
       ang: spin(18), bounce: 0.3, rolls: true, rollRadius: 0.0435,
       curve: rand(-0.6, 0.6),   // pistons roll in a gentle curve (slightly tapered)
@@ -204,7 +195,7 @@ export class EngineDebris {
     this.pieces.push({
       kind: 'cam', obj: this.cam, radius: 0.02,
       pos: new THREE.Vector3(origin.x, origin.y, origin.z),
-      vel: fling(rand(2.5, 4.5), rand(3.5, 6)),
+      vel: fling(rand(1, 2), rand(2, 3.5)),
       rot: new THREE.Quaternion().setFromEuler(new THREE.Euler(rand(0, 6), rand(0, 6), rand(0, 6))),
       ang: spin(22), bounce: 0.25, rolls: true, rollRadius: 0.02,
       lumpy: true,   // the lobes make it roll awkwardly
@@ -212,7 +203,40 @@ export class EngineDebris {
     });
   }
 
-  update(dt) {
+  // One spark, thrown mostly out of the sides and down onto the road
+  spawnSpark(origin, carVel, heading, strength) {
+    const i = this.sparkNext;
+    this.sparkNext = (this.sparkNext + 1) % this.maxSparks;
+    const fx = Math.sin(heading), fz = Math.cos(heading);
+    const lx = fz, lz = -fx;
+    const side = Math.random() < 0.5 ? -1 : 1;
+    const out = rand(1.5, 6) * strength;
+    this.sparkPos.set([origin.x + rand(-0.2, 0.2), origin.y - rand(0.1, 0.35), origin.z + rand(-0.2, 0.2)], i * 3);
+    this.sparkVel.set([
+      carVel.x * 0.9 + lx * side * out + fx * rand(-2, 2),
+      rand(-1, 4) * strength,
+      carVel.z * 0.9 + lz * side * out + fz * rand(-2, 2),
+    ], i * 3);
+    this.sparkLife[i] = rand(1.0, 2.5);      // each one glows for a good while
+    this.sparkHeat[i] = 1;
+    this.sparkSize[i] = rand(0.06, 0.13);    // big enough to see from the chase camera
+  }
+
+  // origin/carVel: where the engine bay is now and how fast the car is going,
+  // so the stream of sparks keeps coming from the car as it rolls on
+  update(dt, origin = null, carVel = null, heading = 0) {
+    // --- A stream of sparks while the engine grinds to a halt ---
+    if (this.sparkStream > 0 && origin) {
+      this.sparkStream -= dt;
+      const rate = 90 * Math.max(0, this.sparkStream / 1.6);   // fewer and fewer
+      this.sparkCarry = (this.sparkCarry || 0) + rate * dt;
+      while (this.sparkCarry >= 1) {
+        this.spawnSpark(origin, carVel, heading, 0.7);
+        this.sparkCarry -= 1;
+      }
+      this.sparks.geometry.attributes.aSize.needsUpdate = true;
+    }
+
     // --- Sparks ---
     for (let i = 0; i < this.maxSparks; i++) {
       if (this.sparkHeat[i] <= 0) continue;
@@ -336,6 +360,7 @@ export class EngineDebris {
   clear() {
     this.clearMetal();
     this.sparkHeat.fill(0);
+    this.sparkStream = 0;
     this.heatAttr.needsUpdate = true;
     this.flashTime = 0;
     this.flash.intensity = 0;
