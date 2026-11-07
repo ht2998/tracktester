@@ -12,6 +12,7 @@ import { CarPhysics, CATERHAM, TRANSMISSIONS } from './physics.js';
 import { EngineSound } from './sound.js';
 import { TyreSmoke } from './smoke.js';
 import { Hud } from './hud.js';
+import { OilSlicks } from './oil.js';
 
 // ---------------------------------------------------------------------
 // QUALITY SETTINGS
@@ -374,9 +375,23 @@ function updateWheels(steer, spin) {
 // ---------------------------------------------------------------------
 const physics = new CarPhysics();
 
+// Oil dripped by a badly damaged engine. Tyres on oil lose grip.
+const oil = new OilSlicks(scene);
+physics.surfaceGrip = (x, z) => oil.gripAt(x, z);
+
 // Tyre smoke, puffed from each tyre's contact patch when it loses traction
 const smoke = new TyreSmoke(scene, { maxParticles: QUALITY.smokeParticles, puffsPerSecond: QUALITY.smokeRate });
 smoke.setViewport(renderer.domElement.height, camera.fov);
+
+// Thick dark grey smoke pouring from the engine bay once the engine blows
+const engineSmoke = new TyreSmoke(scene, {
+  maxParticles: isMobile ? 160 : 260, puffsPerSecond: isMobile ? 16 : 26,
+  color: 0x3c3c3e, thickness: 2.8, sizeScale: 1.3, rise: 1.8, lifeScale: 1.4,
+});
+engineSmoke.setViewport(renderer.domElement.height, camera.fov);
+const ENGINE_BAY = new THREE.Vector3(0, 0.62, 0.95);
+const engineBayWorld = new THREE.Vector3();
+
 const SMOKE_POINTS = [
   { id: 'rl', local: new THREE.Vector3(-TRACK_HALF, 0.12, REAR_AXLE), axle: 'rear' },
   { id: 'rr', local: new THREE.Vector3(TRACK_HALF, 0.12, REAR_AXLE), axle: 'rear' },
@@ -397,6 +412,16 @@ function updateSmoke(dt) {
     smoke.emitFrom(p.id, smokeWorld, physics.tyreSlip[p.axle], carVelocity, dt);
   }
   smoke.update(dt);
+
+  // Engine smoke: pours out once blown
+  engineBayWorld.copy(ENGINE_BAY);
+  carModel.car.localToWorld(engineBayWorld);
+  engineSmoke.emitFrom('engine', engineBayWorld, physics.engineBlown ? 1 : 0, carVelocity, dt);
+  engineSmoke.update(dt);
+
+  // Oil: drips below 10% health, pours once the engine has blown
+  const leakRate = physics.engineBlown ? 2 : physics.leakingOil ? 1 : 0;
+  oil.update(dt, physics.x, physics.z, physics.heading, physics.vx, leakRate);
 }
 
 // ---------------------------------------------------------------------
@@ -479,6 +504,7 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
   smoke.setViewport(renderer.domElement.height, camera.fov);
+  engineSmoke.setViewport(renderer.domElement.height, camera.fov);
 });
 
 // ---------------------------------------------------------------------
@@ -491,7 +517,10 @@ renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.05);   // avoid huge jumps after a pause
 
   if (wasTapped('camera')) switchCamera();
-  if (wasTapped('reset')) physics.reset();
+  if (wasTapped('reset')) {
+    physics.reset();   // also repairs the engine
+    oil.clear();
+  }
   if (wasTapped('reverse')) physics.toggleReverse();
   if (wasTapped('shiftUp')) physics.shiftUp();
   if (wasTapped('shiftDown')) physics.shiftDown();
@@ -508,6 +537,7 @@ renderer.setAnimationLoop(() => {
     const e = physics.events.shift();
     if (e.type === 'shift') engineSound.playShift(physics.transmission === 'cvt' ? 'cvt' : e.style);
     if (e.type === 'grind') engineSound.playGrind();
+    if (e.type === 'blown') engineSound.playClunk();
   }
 
   // Move the car model to where the physics says it is
