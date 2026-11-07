@@ -410,6 +410,38 @@ export class EngineSound {
     // Echoes are fed from the engine sound
     this.echo.connect(ctx, this.engineGain, this.out);
 
+    // --- Tyre squeal: rubber sliding on tarmac ---
+    // A narrow band of noise plus a faint wavering whine, which together give
+    // the slightly tonal, shrieking texture of a sliding tyre
+    const squealNoise = ctx.createBufferSource();
+    squealNoise.buffer = this.noise;
+    squealNoise.loop = true;
+    this.squealBand = ctx.createBiquadFilter();
+    this.squealBand.type = 'bandpass';
+    this.squealBand.frequency.value = 1000;
+    this.squealBand.Q.value = 14;
+    const squealNoiseGain = ctx.createGain();
+    squealNoiseGain.gain.value = 13;   // (a narrow band of noise is quiet, so it needs a big boost)
+    this.squealTone = ctx.createOscillator();
+    this.squealTone.type = 'sine';
+    this.squealTone.frequency.value = 1000;
+    const wobble = ctx.createOscillator();      // the tyre's shriek wavers
+    wobble.frequency.value = 7;
+    const wobbleDepth = ctx.createGain();
+    wobbleDepth.gain.value = 35;
+    wobble.connect(wobbleDepth).connect(this.squealTone.frequency);
+    const squealToneGain = ctx.createGain();
+    squealToneGain.gain.value = 0.35;
+    this.squealGain = ctx.createGain();
+    this.squealGain.gain.value = 0;
+    squealNoise.connect(this.squealBand).connect(squealNoiseGain).connect(this.squealGain);
+    this.squealTone.connect(squealToneGain).connect(this.squealGain);
+    this.squealGain.connect(this.out);
+    const startAt = ctx.currentTime;
+    squealNoise.start(startAt);
+    this.squealTone.start(startAt);
+    wobble.start(startAt);
+
     // Load the pulse generator onto the audio thread
     if (ctx.audioWorklet) {
       const url = URL.createObjectURL(new Blob([ENGINE_WORKLET], { type: 'application/javascript' }));
@@ -463,6 +495,23 @@ export class EngineSound {
     this.engineGain.gain.setTargetAtTime(volume, t, shifting || car.engineBlown ? 0.03 : car.engineDead ? 0.4 : loadEase);
 
     this.echo.update(listenerPos);
+  }
+
+  // Tyre squeal, called every frame. skid: how hard the tyres are skidding
+  // (0-1, the same measure as the skid marks), speed: m/s
+  setSqueal(skid, speed) {
+    if (!this.ctx || !this.squealGain) return;
+    const t = this.ctx.currentTime;
+    // Same threshold as the skid marks: no marks, no squeal
+    const amount = Math.max(0, (skid - 0.45) / 0.55);
+    const moving = Math.min(1, Math.max(0, (speed - 2) / 8));   // fades out below ~35 km/h
+    const level = 0.32 * Math.pow(amount, 0.8) * moving;
+    this.squealGain.gain.setTargetAtTime(level, t, level > this.squealGain.gain.value ? 0.06 : 0.12);
+    // A harder slide shrieks a little higher, with a slow random drift
+    this.squealDrift = Math.max(-1, Math.min(1, (this.squealDrift || 0) + (Math.random() - 0.5) * 0.2));
+    const pitch = 880 + 380 * amount + 60 * this.squealDrift;
+    this.squealBand.frequency.setTargetAtTime(pitch, t, 0.08);
+    this.squealTone.frequency.setTargetAtTime(pitch, t, 0.08);
   }
 
   // Engine failure, about 3 seconds. Everything here is built from noise
