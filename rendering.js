@@ -8,9 +8,10 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { readControls, wasTapped } from './input.js';
-import { CarPhysics, CATERHAM, TRANSMISSIONS, TRANSMISSION_NAMES } from './physics.js';
+import { CarPhysics, CATERHAM, TRANSMISSIONS } from './physics.js';
 import { EngineSound } from './sound.js';
 import { TyreSmoke } from './smoke.js';
+import { Hud } from './hud.js';
 
 // ---------------------------------------------------------------------
 // QUALITY SETTINGS
@@ -164,7 +165,7 @@ fenderMat.side = THREE.DoubleSide;
 // TEST CAR: a simple Caterham-style car built from basic shapes
 // The front of the car points along +z, and +x is the car's left side.
 // ---------------------------------------------------------------------
-const WHEEL_RADIUS = 0.3;
+const WHEEL_RADIUS = 0.288;   // 195/50 R15, same as the physics
 const WHEEL_WIDTH = 0.2;
 const TRACK_HALF = 0.68;   // half the distance between left and right wheels
 const FRONT_AXLE = 1.1;
@@ -412,7 +413,7 @@ const startSound = () => {
 window.addEventListener('keydown', startSound);
 window.addEventListener('pointerdown', startSound);
 
-// Speed, gear and controls guide in the corner label
+// Controls guide in the corner label
 const info = document.getElementById('info');
 info.innerHTML =
   '<b>Track Tester</b><br>' +
@@ -420,15 +421,14 @@ info.innerHTML =
   'Space: handbrake · Q / E: shift down / up<br>' +
   'R: reverse (when stopped) · T: gearbox<br>' +
   'M: mute · C: camera · Backspace: reset<br>' +
-  '<span id="speed" style="font-size:22px;font-weight:700">0 km/h</span>' +
-  ' <span id="gear" style="font-size:22px;font-weight:700;margin-left:10px">1</span><br>' +
-  '<span id="rpm">850 rpm</span> · <span id="box">Manual</span><br>' +
   '<span id="soundhint" style="color:#ffd76a">Press any key or tap for sound</span>';
-const speedLabel = document.getElementById('speed');
-const gearLabel = document.getElementById('gear');
-const rpmLabel = document.getElementById('rpm');
-const boxLabel = document.getElementById('box');
 const soundHint = document.getElementById('soundhint');
+
+// Dashboard: rev counter, speedometer with shift lights, gearbox tab
+const hud = new Hud({
+  redline: CATERHAM.redline,
+  onTransmission: (name) => physics.setTransmission(name),
+});
 
 // ---------------------------------------------------------------------
 // CAMERAS: chase camera behind the car, or showroom orbit (press C)
@@ -521,11 +521,14 @@ renderer.setAnimationLoop(() => {
   updateCamera(dt);
   engineSound.update(physics, carPos);
 
-  speedLabel.textContent = `${Math.round(physics.speedKmh)} km/h`;
-  gearLabel.textContent = physics.gearLabel;
-  rpmLabel.textContent = `${Math.round(physics.rpm / 50) * 50} rpm`;
-  rpmLabel.style.color = physics.limiter ? '#ff6b6b' : '';
-  boxLabel.textContent = TRANSMISSION_NAMES[physics.transmission];
+  hud.update({
+    speedKmh: physics.speedKmh,
+    rpm: physics.rpm,
+    gearLabel: physics.gearLabel,
+    limiter: physics.limiter,
+    transmission: physics.transmission,
+    time: clock.elapsedTime,
+  });
 
   renderer.render(scene, camera);
 });
