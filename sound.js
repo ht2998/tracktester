@@ -437,6 +437,18 @@ export class EngineSound {
     squealNoise.connect(this.squealBand).connect(squealNoiseGain).connect(this.squealGain);
     this.squealTone.connect(squealToneGain).connect(this.squealGain);
     this.squealGain.connect(this.out);
+
+    // --- Puncture hiss: air escaping from a tyre (quiet; the engine covers it) ---
+    const hissSrc = ctx.createBufferSource();
+    hissSrc.buffer = this.noise;
+    hissSrc.loop = true;
+    const hissFilter = ctx.createBiquadFilter();
+    hissFilter.type = 'highpass';
+    hissFilter.frequency.value = 3800;
+    this.hissGain = ctx.createGain();
+    this.hissGain.gain.value = 0;
+    hissSrc.connect(hissFilter).connect(this.hissGain).connect(this.out);
+    hissSrc.start(ctx.currentTime);
     const startAt = ctx.currentTime;
     squealNoise.start(startAt);
     this.squealTone.start(startAt);
@@ -495,6 +507,13 @@ export class EngineSound {
     this.engineGain.gain.setTargetAtTime(volume, t, shifting || car.engineBlown ? 0.03 : car.engineDead ? 0.4 : loadEase);
 
     this.echo.update(listenerPos);
+  }
+
+  // Puncture hiss, called every frame with how fast air is escaping
+  setHiss(amount) {
+    if (!this.ctx || !this.hissGain) return;
+    const level = Math.min(0.11, amount * 2.6);
+    this.hissGain.gain.setTargetAtTime(level, this.ctx.currentTime, 0.2);
   }
 
   // Tyre squeal, called every frame. skid: how hard the tyres are skidding
