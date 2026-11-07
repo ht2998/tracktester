@@ -31,14 +31,19 @@ const SWEEP = Math.PI * 1.5;    // ...and sweeps 270° round to bottom-right
 // One analogue dial
 // ---------------------------------------------------------------------
 class Dial {
-  constructor({ max, major, minor, labelEvery, labelScale = 1, redFrom = null, caption }) {
+  constructor({ max, major, minor, labelEvery, labelScale = 1, redFrom = null, redBelow = null,
+                caption = '', labels = null, labelSize = 0.17, captionSize = 0.11 }) {
     this.max = max;
     this.major = major;
     this.minor = minor;
     this.labelEvery = labelEvery;
     this.labelScale = labelScale;
     this.redFrom = redFrom;
+    this.redBelow = redBelow;       // red zone at the low end instead (e.g. oil level)
     this.caption = caption;
+    this.labels = labels;           // e.g. { 0: 'E', 100: 'F' } instead of numbers
+    this.labelSize = labelSize;
+    this.captionSize = captionSize;
     this.canvas = document.createElement('canvas');
     this.ctx = this.canvas.getContext('2d');
     this.background = document.createElement('canvas');
@@ -91,9 +96,10 @@ class Dial {
     g.fill();
 
     // Redline zone
-    if (this.redFrom !== null) {
+    if (this.redFrom !== null || this.redBelow !== null) {
       g.beginPath();
-      g.arc(c, c, R * 0.8, this.angle(this.redFrom), this.angle(this.max));
+      if (this.redFrom !== null) g.arc(c, c, R * 0.8, this.angle(this.redFrom), this.angle(this.max));
+      else g.arc(c, c, R * 0.8, this.angle(0), this.angle(this.redBelow));
       g.strokeStyle = COLORS.redline;
       g.lineWidth = R * 0.07;
       g.stroke();
@@ -109,29 +115,38 @@ class Dial {
       g.beginPath();
       g.moveTo(c + Math.cos(a) * inner, c + Math.sin(a) * inner);
       g.lineTo(c + Math.cos(a) * outer, c + Math.sin(a) * outer);
-      g.strokeStyle = this.redFrom !== null && v >= this.redFrom ? COLORS.redline : COLORS.ink;
+      const inRed = (this.redFrom !== null && v >= this.redFrom) || (this.redBelow !== null && v <= this.redBelow);
+      g.strokeStyle = inRed ? COLORS.redline : COLORS.ink;
       g.lineWidth = isMajor ? Math.max(1.5, R * 0.025) : Math.max(1, R * 0.012);
       g.stroke();
     }
 
     // Numbers
     g.fillStyle = COLORS.ink;
-    g.font = `600 ${Math.round(R * 0.17)}px ${FONT}`;
+    g.font = `600 ${Math.round(R * this.labelSize)}px ${FONT}`;
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    for (let v = 0; v <= this.max + 1e-6; v += this.labelEvery) {
-      const a = this.angle(v);
-      const r = R * 0.56;
-      g.fillText(String(Math.round(v * this.labelScale)), c + Math.cos(a) * r, c + Math.sin(a) * r);
+    if (this.labels) {
+      for (const [v, text] of Object.entries(this.labels)) {
+        const a = this.angle(Number(v));
+        const r = R * 0.5;
+        g.fillText(text, c + Math.cos(a) * r, c + Math.sin(a) * r);
+      }
+    } else {
+      for (let v = 0; v <= this.max + 1e-6; v += this.labelEvery) {
+        const a = this.angle(v);
+        const r = R * 0.56;
+        g.fillText(String(Math.round(v * this.labelScale)), c + Math.cos(a) * r, c + Math.sin(a) * r);
+      }
     }
 
     // Small caption in the lower face
     g.fillStyle = COLORS.inkSoft;
-    g.font = `500 ${Math.round(R * 0.11)}px ${FONT}`;
-    g.fillText(this.caption, c, c + R * 0.3);
+    g.font = `500 ${Math.round(R * this.captionSize)}px ${FONT}`;
+    if (this.caption) g.fillText(this.caption, c, c + R * 0.3);
   }
 
-  drawNeedle(value) {
+  drawNeedle(value, color = COLORS.needle) {
     const g = this.ctx;
     const R = this.size / 2;
     const c = R;
@@ -145,7 +160,7 @@ class Dial {
     g.lineTo(R * 0.8, R * 0.008);
     g.lineTo(-R * 0.14, R * 0.025);
     g.closePath();
-    g.fillStyle = COLORS.needle;
+    g.fillStyle = color;
     g.shadowColor = 'rgba(0,0,0,0.5)';
     g.shadowBlur = R * 0.04;
     g.fill();
@@ -257,7 +272,7 @@ const STYLE = `
 `;
 
 const GEARBOXES = [
-  { id: 'manual', name: 'Manual', note: 'Shift with Q and E' },
+  { id: 'manual', name: 'Manual', note: 'Shift with Q / E or , / .' },
   { id: 'auto', name: 'Automatic', note: 'Shifts for you' },
   { id: 'cvt', name: 'CVT', note: 'No gears, smooth revs' },
 ];
@@ -283,9 +298,14 @@ export class Hud {
     this.speedo = new Dial({
       max: maxSpeed, major: 20, minor: 10, labelEvery: 40, caption: 'km/h',
     });
+    // Small engine-oil gauge: empty to full, red below 30%
+    this.oilGauge = new Dial({
+      max: 100, major: 25, minor: 12.5, labelEvery: 100, redBelow: 30,
+      labels: { 0: 'E', 100: 'F' }, labelSize: 0.3,
+    });
     const dash = document.createElement('div');
     dash.id = 'dash';
-    dash.append(this.tach.canvas, this.speedo.canvas);
+    dash.append(this.tach.canvas, this.speedo.canvas, this.oilGauge.canvas);
     document.body.appendChild(dash);
 
     // Gearbox tab
@@ -336,9 +356,10 @@ export class Hud {
     const tachSize = Math.round(Math.min(200, Math.max(120, short * 0.3)));
     this.tach.resize(tachSize);
     this.speedo.resize(Math.round(tachSize * 0.82));
+    this.oilGauge.resize(Math.round(tachSize * 0.42));
   }
 
-  update({ speedKmh, rpm, gearLabel, limiter, transmission, engineHealth = 1, time }) {
+  update({ speedKmh, rpm, gearLabel, limiter, transmission, engineHealth = 1, oilLevel = 1, time }) {
     // --- Rev counter, with the gear in the gap at the bottom ---
     const t = this.tach;
     t.beginFrame();
@@ -374,6 +395,21 @@ export class Hud {
     sg.textBaseline = 'middle';
     sg.fillText(String(Math.round(speedKmh)), sR, sR + sR * 0.62);
     s.drawNeedle(speedKmh);
+
+    // --- Oil gauge: needle turns red and the label flashes when critically low ---
+    const o = this.oilGauge;
+    o.beginFrame();
+    const og = o.ctx;
+    const oR = o.size / 2;
+    const lowOil = oilLevel < 0.3;
+    if (!lowOil || Math.floor(time * 3) % 2 === 0) {
+      og.fillStyle = lowOil ? COLORS.redline : COLORS.inkSoft;
+      og.font = `600 ${Math.round(oR * 0.3)}px ${FONT}`;
+      og.textAlign = 'center';
+      og.textBaseline = 'middle';
+      og.fillText('Oil', oR, oR - oR * 0.38);
+    }
+    o.drawNeedle(oilLevel * 100, lowOil ? COLORS.redline : COLORS.needle);
 
     // --- Gearbox tab highlight ---
     for (const [id, b] of Object.entries(this.options)) {
