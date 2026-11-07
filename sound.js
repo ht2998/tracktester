@@ -24,6 +24,7 @@ class EnginePulses extends AudioWorkletProcessor {
       { name: 'cylinders', defaultValue: 6, minValue: 1, maxValue: 12, automationRate: 'k-rate' },
       { name: 'limiter', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
       { name: 'knock', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+      { name: 'misfire', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
     ];
   }
 
@@ -81,6 +82,7 @@ class EnginePulses extends AudioWorkletProcessor {
     const cylinders = Math.round(parameters.cylinders[0]);
     const limiter = parameters.limiter[0] > 0.5;
     const knock = parameters.knock[0];   // rod knock from oil starvation, 0-1
+    const misfire = parameters.misfire[0];   // chance of a cylinder not firing (out of fuel)
     const firesPerSecond = (rpm / 60) * (cylinders / 2);   // four-stroke
     const cyclesPerSecond = rpm / 120;                     // one full engine cycle = 2 turns
 
@@ -147,7 +149,9 @@ class EnginePulses extends AudioWorkletProcessor {
         if (knock > 0 && this.cyl % 2 === 0) this.knockHit = 1 + Math.random() * 0.3;
         // Body rumble: a hollow thud once per crank turn, slightly uneven
         if (this.cyl % 2 === 0 && !cut) this.thud = 0.8 + Math.random() * 0.4;
-        if (!cut) {
+        // Running out of fuel: some cylinders just don't fire (a sputter)
+        const missed = misfire > 0 && Math.random() < misfire;
+        if (!cut && !missed) {
           const spread = unevenness + extraUneven;
           const jitter = 1 - spread + Math.random() * 2 * spread;
           const kick = this.cylStrength[this.cyl] * jitter * lope * idleBoost * (limiter ? 1.15 : strength);
@@ -443,6 +447,8 @@ export class EngineSound {
       this.voice.parameters.get('load').setTargetAtTime(load, t, loadEase);
       this.voice.parameters.get('limiter').setValueAtTime(car.onLimiter ? 1 : 0, t);
       this.voice.parameters.get('knock').setTargetAtTime(car.knock ?? 0, t, 0.3);
+      const sputter = car.misfiring ? 0.25 + 0.6 * (1 - car.fuel / this.spec.fuelReserve) : 0;
+      this.voice.parameters.get('misfire').setValueAtTime(Math.min(0.9, sputter), t);
     }
 
     // Brighter under load, darker and softer on the overrun
@@ -451,10 +457,10 @@ export class EngineSound {
     let volume = 0.5 + 0.25 * rev + 0.35 * load;
     const shifting = car.shiftTimer > 0;
     if (shifting) volume *= 0.55;             // ignition cut during a shift
-    if (car.engineBlown) volume = 0;          // a dead engine makes no noise
+    if (car.engineDead) volume = 0;           // blown or out of fuel: silence
     // (the limiter's stutter is made by the pulses themselves)
     // Shifts and the engine dying stay quick; everything else eases
-    this.engineGain.gain.setTargetAtTime(volume, t, shifting || car.engineBlown ? 0.03 : loadEase);
+    this.engineGain.gain.setTargetAtTime(volume, t, shifting || car.engineBlown ? 0.03 : car.engineDead ? 0.4 : loadEase);
 
     this.echo.update(listenerPos);
   }
