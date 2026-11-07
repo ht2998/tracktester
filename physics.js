@@ -30,6 +30,7 @@ export const CATERHAM = {
   maxReverseSpeed: 6,     // m/s
   brakeForce: 8500,       // N
   handbrakeLockGrip: 0.85,// braking from locked rear tyres, as a share of their grip
+  lockedBrakeGrip: 0.8,   // braking from locked (skidding) tyres, as a share of full grip
   handbrakeRearGrip: 0.35,// rear grip left while the handbrake is on
   drag: 0.56,             // air resistance (a Seven is a brick: tuned for 219 km/h)
   rollingBase: 85,        // N of tyre rolling resistance
@@ -90,6 +91,8 @@ export class CarPhysics {
   constructor(spec = CATERHAM) {
     this.spec = spec;
     this.transmission = 'manual';
+    // Driver aids, switchable from the side panel. Both on by default.
+    this.assists = { abs: true, tcs: true };
     // How grippy the ground is at a point: 1 = normal tarmac. The game sets
     // this so that tyres rolling over oil (or later gravel, wet patches...)
     // lose grip.
@@ -125,6 +128,8 @@ export class CarPhysics {
     this.launchTime = -1;     // seconds since pulling away began (-1 = not launching)
     this.lastWheelspin = 0;
     this.tractionControl = false;   // true while traction control is cutting power
+    this.absActive = false;         // true while ABS is easing the brakes
+    this.wheelsLocked = false;      // true while the brakes have locked the wheels
     this.engineHealth = 1;    // drops after big over-revs (1 = full power, 0 = blown)
     this.engineBlown = false;
     this.oilLevel = 1;        // engine oil, 1 = full. Drains while leaking.
@@ -441,7 +446,28 @@ export class CarPhysics {
 
     // Handbrake: locked rear tyres skid, which slows the car about as hard as
     // the rear tyres can grip (they're sliding, so a bit less than full grip)
-    let brake = brakePedal * s.brakeForce + (c.handbrake ? s.handbrakeLockGrip * maxRear : 0);
+    // Footbrake: the tyres can only take so much braking. Ask for more than
+    // they can grip and the wheels lock: a locked tyre slides (less braking)
+    // and a locked front tyre can't steer. ABS stops just short of locking.
+    const brakeGrip = maxFront + maxRear;          // most braking the tyres can give
+    const brakeDemand = brakePedal * s.brakeForce;
+    let footBrake = brakeDemand;
+    this.wheelsLocked = false;
+    this.absActive = false;
+    if (brakeDemand > 0 && Math.abs(this.vx) > 1.5) {
+      if (this.assists.abs) {
+        if (brakeDemand > 0.95 * brakeGrip) {
+          footBrake = 0.95 * brakeGrip;
+          this.absActive = true;
+        }
+      } else if (brakeDemand > brakeGrip) {
+        footBrake = s.lockedBrakeGrip * brakeGrip;
+        this.wheelsLocked = true;
+      }
+    }
+    let brake = footBrake + (c.handbrake ? s.handbrakeLockGrip * maxRear : 0);
+    // Locked tyres have almost no sideways grip: the car goes straight on
+    let maxFrontSide = this.wheelsLocked ? maxFront * 0.12 : maxFront;
 
     // A bad downshift briefly locks the rear wheels with engine braking
     let lockGripLoss = 0;
@@ -454,11 +480,10 @@ export class CarPhysics {
 
     // The rear tyres share their grip between pushing the car and holding
     // the corner, so too much throttle in a corner makes the back step out.
-    // Traction control (automatic and CVT only): never send more power than
-    // the rear tyres can use, and cut it back further if the rear starts to
-    // slide. The manual has no driver aids: full power, your responsibility.
+    // Traction control (TCS, switchable): never send more power than the rear
+    // tyres can use, and cut it back further if the rear starts to slide.
     this.tractionControl = false;
-    if (this.transmission !== 'manual' && drive > 0) {
+    if (this.assists.tcs && drive > 0) {
       // Nearly full power in a straight line, less the more you steer
       const share = 0.9 - 0.3 * Math.abs(c.steer) - 0.45 * clamp(this.lastRearSlide, 0, 1);
       const tcLimit = maxRear * Math.max(0.3, share);
@@ -473,6 +498,7 @@ export class CarPhysics {
     drive = Math.sign(drive) * rearPush;
     let maxRearSide = Math.sqrt(Math.max(0, maxRear * maxRear - rearPush * rearPush));
     if (c.handbrake) maxRearSide *= s.handbrakeRearGrip;   // like driving on ice
+    if (this.wheelsLocked) maxRearSide *= 0.3;
     maxRearSide *= 1 - lockGripLoss;
     // When the engine overpowers the rear tyres (low gears, full throttle) they
     // spin, and spinning tyres lose most of their sideways grip: that's what
@@ -491,11 +517,11 @@ export class CarPhysics {
       // --- Moving forwards at speed: full tyre model ---
       const slipFront = Math.atan2(this.vy + s.cgToFront * this.yawRate, this.vx) - d;
       const slipRear = Math.atan2(this.vy - s.cgToRear * this.yawRate, this.vx);
-      const sideFront = clamp(-s.frontStiffness * slipFront, -maxFront, maxFront);
+      const sideFront = clamp(-s.frontStiffness * slipFront, -maxFrontSide, maxFrontSide);
       const sideRear = clamp(-s.rearStiffness * slipRear, -maxRearSide, maxRearSide);
 
       // Past the grip limit the tyres slide sideways (and smoke)
-      const peakFront = maxFront / s.frontStiffness;
+      const peakFront = maxFrontSide / s.frontStiffness;
       const peakRear = maxRearSide / s.rearStiffness;
       slideFront = clamp((Math.abs(slipFront) - peakFront) / 0.2, 0, 1);
       slideRear = clamp((Math.abs(slipRear) - peakRear) / 0.12, 0, 1);
