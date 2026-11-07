@@ -42,9 +42,12 @@ class EnginePulses extends AudioWorkletProcessor {
     this.res = [this.makeRes(), this.makeRes(), this.makeRes(),
                 this.makeRes(), this.makeRes(), this.makeRes(),
                 this.makeRes(),    // the 7th: valvetrain clatter
-                this.makeRes()];   // the 8th: rod knock
+                this.makeRes(),    // the 8th: rod knock
+                this.makeRes(),    // the 9th and 10th: the hollow body rumble
+                this.makeRes()];
     this.tick = 0;         // the latest valve clatter, dying away
     this.knockHit = 0;     // the latest rod knock, dying away
+    this.thud = 0;         // the latest hollow body thud, dying away
     this.lp = 0;           // gentle smoothing of the very top end
     this.cycle = 0;        // position in the engine cycle (two crank turns)
     this.cutClock = 0;     // rev limiter's on/off rhythm
@@ -120,6 +123,10 @@ class EnginePulses extends AudioWorkletProcessor {
     const grit = 0.25 + 0.55 * load;                           // exhaust rasp (uneven distortion)
     this.tune(this.res[6], Math.min(nyq, 3200 + rpm * 0.15), 2.2);
     this.tune(this.res[7], 950, 6);   // a hollow, metallic knock
+    // Body rumble: a rounder, lower version of the knock that every engine has
+    this.tune(this.res[8], 430 + rpm * 0.02, 5);
+    this.tune(this.res[9], 190 + rpm * 0.008, 3);
+    const thudAmount = 0.55 + 0.45 * load;
 
     for (let i = 0; i < left.length; i++) {
       // The lope swells once every two engine cycles, so the pulses are spread out
@@ -138,6 +145,8 @@ class EnginePulses extends AudioWorkletProcessor {
         this.tick = 0.6 + Math.random() * 0.8;   // a valve clattering shut
         // Rod knock: a worn bearing hammers once per crank turn when oil runs low
         if (knock > 0 && this.cyl % 2 === 0) this.knockHit = 1 + Math.random() * 0.3;
+        // Body rumble: a hollow thud once per crank turn, slightly uneven
+        if (this.cyl % 2 === 0 && !cut) this.thud = 0.8 + Math.random() * 0.4;
         if (!cut) {
           const spread = unevenness + extraUneven;
           const jitter = 1 - spread + Math.random() * 2 * spread;
@@ -153,6 +162,9 @@ class EnginePulses extends AudioWorkletProcessor {
       this.tick *= 0.9965;
       const clack = this.ring(this.res[6], (Math.random() * 2 - 1) * this.tick) * clatter;
       this.knockHit *= 0.9975;
+      this.thud *= 0.9982;
+      const thudIn = this.thud * (0.55 + 0.45 * (Math.random() * 2 - 1));
+      const bodyRumble = thudAmount * (2.2 * this.ring(this.res[8], thudIn) + 1.6 * this.ring(this.res[9], thudIn));
       const rodKnock = knock * 7 * this.ring(this.res[7], this.knockHit * (Math.random() * 2 - 1) + this.knockHit * 0.4);
 
       // Intake: rushing air that throbs with each firing
@@ -164,7 +176,8 @@ class EnginePulses extends AudioWorkletProcessor {
             + humAmount * (0.8 * this.ring(this.res[3], x) + 0.6 * this.ring(this.res[4], x))
             + intakeAmount * this.ring(this.res[5], intakeIn)
             + clack
-            + rodKnock;
+            + rodKnock
+            + bodyRumble;
       // Exhaust rasp: lopsided distortion adds the gritty edge real pipes have
       y = y + grit * 0.6 * y * Math.abs(y) - grit * 0.15 * y * y;
       this.lp += (y - this.lp) * smooth;   // take only the harshest edge off
@@ -192,6 +205,20 @@ function makeWarmthCurve(amount = 1.4) {
   for (let i = 0; i < n; i++) {
     const x = (i / (n - 1)) * 2 - 1;
     curve[i] = Math.tanh(amount * x) / Math.tanh(amount);
+  }
+  return curve;
+}
+
+// Speaker protection: leaves normal levels completely untouched, and only
+// rounds off peaks above 70% so nothing ever goes past the speakers' limit
+function makeKneeCurve(knee = 0.7, ceiling = 0.97) {
+  const n = 2048;
+  const curve = new Float32Array(n);
+  const room = ceiling - knee;
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * 2 - 1;
+    const a = Math.abs(x);
+    curve[i] = Math.sign(x) * (a <= knee ? a : knee + room * Math.tanh((a - knee) / room));
   }
   return curve;
 }
@@ -330,12 +357,34 @@ export class EngineSound {
     // --- Output chain: everything -> compressor -> master volume -> speakers ---
     this.master = ctx.createGain();
     this.master.gain.value = this.muted ? 0 : 0.9;
-    this.master.connect(ctx.destination);
+    // Final safety: rounds off any peak before it reaches the speakers, so
+    // loud moments get fuller instead of crackling
+    const clipper = ctx.createWaveShaper();
+    clipper.curve = makeKneeCurve();
+    clipper.oversample = 'none';   // (smoothing filters here would overshoot the ceiling)
+    this.master.connect(clipper).connect(ctx.destination);
     const compressor = ctx.createDynamicsCompressor();
     compressor.threshold.value = -14;
     compressor.ratio.value = 4;
-    compressor.connect(this.master);
+    // The engine sits a little below full volume, leaving headroom so big
+    // events (like the engine failure) can be clearly louder than revving
+    const engineBus = ctx.createGain();
+    engineBus.gain.value = 0.85;
+    compressor.connect(engineBus).connect(this.master);
     this.out = compressor;
+    // Big one-off events (engine failure) skip the engine's levelling so they
+    // can be much louder than the engine; a limiter just stops them clipping
+    // (a soft clipper squeezes the sharp hits so the event can be loud and
+    // dense without crackling)
+    const fxDrive = ctx.createGain();
+    fxDrive.gain.value = 2.8;
+    const fxClip = ctx.createWaveShaper();
+    fxClip.curve = makeWarmthCurve(2.4);
+    fxClip.oversample = '4x';
+    const fxLevel = ctx.createGain();
+    fxLevel.gain.value = 0.92;
+    fxDrive.connect(fxClip).connect(fxLevel).connect(this.master);
+    this.fxOut = fxDrive;
 
     // --- Engine tone shaping: warmth, then a filter that opens with revs and throttle ---
     const warmth = ctx.createWaveShaper();
@@ -418,7 +467,7 @@ export class EngineSound {
     if (!this.ctx) return;
     const ctx = this.ctx;
     const t0 = ctx.currentTime;
-    const out = this.out;
+    const out = this.fxOut;   // louder than the engine
 
     const env = (node, at, peak, attack, length) => {
       node.gain.setValueAtTime(0.0001, at);
@@ -451,13 +500,13 @@ export class EngineSound {
     };
 
     // 1. The BANG: a deep hit and a sharp crack
-    tone(t0, 110, 24, 0.9, 1.0);
-    noiseBurst(t0, 0.22, 1400, 0.7, 0.9, 'lowpass');
-    noiseBurst(t0, 0.08, 4000, 1.0, 0.5);
+    tone(t0, 110, 24, 0.9, 2.2);
+    noiseBurst(t0, 0.22, 1400, 0.7, 2.0, 'lowpass');
+    noiseBurst(t0, 0.08, 4000, 1.0, 1.2);
 
     // 2. Metal shattering: clashing tones that ring out unevenly
-    for (const [freq, level, length] of [[287, 0.2, 1.3], [433, 0.16, 1.1], [612, 0.13, 0.9],
-                                         [859, 0.1, 0.8], [1207, 0.07, 0.6], [1733, 0.05, 0.5]]) {
+    for (const [freq, level, length] of [[287, 0.45, 1.4], [433, 0.36, 1.2], [612, 0.3, 1.0],
+                                         [859, 0.22, 0.9], [1207, 0.16, 0.7], [1733, 0.11, 0.55]]) {
       const o = ctx.createOscillator();
       o.type = 'square';
       o.frequency.setValueAtTime(freq, t0);
@@ -477,14 +526,14 @@ export class EngineSound {
     //    fast and slow to a stop, getting quieter as it dies
     let at = t0 + 0.12;
     let gap = 0.035;
-    let level = 0.55;
-    while (at < t0 + 2.1 && level > 0.04) {
+    let level = 2.4;
+    while (at < t0 + 2.1 && level > 0.12) {
       const freq = 700 + Math.random() * 1500;
       noiseBurst(at, 0.05 + Math.random() * 0.04, freq, 5, level * (0.6 + Math.random() * 0.4));
       if (Math.random() < 0.4) tone(at, 160 + Math.random() * 80, 70, 0.07, level * 0.5);
       at += gap * (0.8 + Math.random() * 0.4);
       gap *= 1.11;      // slowing down
-      level *= 0.93;    // and fading
+      level *= 0.95;    // and fading
     }
 
     // 4. Hiss of oil and steam escaping
@@ -496,15 +545,15 @@ export class EngineSound {
     hf.frequency.value = 2500;
     const hg = ctx.createGain();
     hg.gain.setValueAtTime(0.0001, t0 + 0.2);
-    hg.gain.exponentialRampToValueAtTime(0.18, t0 + 0.5);
+    hg.gain.exponentialRampToValueAtTime(0.9, t0 + 0.5);
     hg.gain.exponentialRampToValueAtTime(0.0008, t0 + 3.2);
     hiss.connect(hf).connect(hg).connect(out);
     hiss.start(t0 + 0.2, Math.random());
     hiss.stop(t0 + 3.3);
 
     // 5. The engine seizes: one last heavy thud
-    tone(t0 + 2.15, 75, 30, 0.45, 0.6);
-    noiseBurst(t0 + 2.15, 0.12, 900, 1, 0.35, 'lowpass');
+    tone(t0 + 2.15, 75, 30, 0.5, 1.6);
+    noiseBurst(t0 + 2.15, 0.12, 900, 1, 0.9, 'lowpass');
   }
 
   // Gear grind: trying to select reverse while still rolling
