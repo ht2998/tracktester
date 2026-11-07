@@ -32,10 +32,23 @@ const fragmentShader = /* glsl */ `
 `;
 
 export class TyreSmoke {
-  constructor(scene, { maxParticles = 400, puffsPerSecond = 30 } = {}) {
+  // The same system makes light tyre smoke and thick engine smoke:
+  //   color      - smoke colour
+  //   thickness  - how opaque each puff is (1 = light tyre smoke)
+  //   sizeScale  - how big the puffs grow
+  //   rise       - how fast puffs float upwards
+  //   lifeScale  - how long puffs hang around
+  constructor(scene, {
+    maxParticles = 400, puffsPerSecond = 30, color = 0xdcdcdc,
+    thickness = 1, sizeScale = 1, rise = 1, lifeScale = 1,
+  } = {}) {
     this.max = maxParticles;
-    this.rate = puffsPerSecond;   // per tyre, at full slide
+    this.rate = puffsPerSecond;   // per source, at full strength
     this.next = 0;                // next pool slot to reuse
+    this.thickness = thickness;
+    this.sizeScale = sizeScale;
+    this.rise = rise;
+    this.lifeScale = lifeScale;
 
     this.pos = new Float32Array(this.max * 3);
     this.size = new Float32Array(this.max);
@@ -57,7 +70,7 @@ export class TyreSmoke {
 
     this.material = new THREE.ShaderMaterial({
       uniforms: {
-        uColor: { value: new THREE.Color(0xdcdcdc) },
+        uColor: { value: new THREE.Color(color) },
         uScale: { value: 500 },
       },
       vertexShader,
@@ -103,14 +116,14 @@ export class TyreSmoke {
     this.pos[i * 3 + 2] = p.z + r() * 0.3;
     // Smoke is left behind: it keeps only a little of the car's speed
     this.vel[i * 3] = v.x * 0.12 + r() * 0.8;
-    this.vel[i * 3 + 1] = 0.3 + Math.random() * 0.35;
+    this.vel[i * 3 + 1] = (0.3 + Math.random() * 0.35) * this.rise;
     this.vel[i * 3 + 2] = v.z * 0.12 + r() * 0.8;
 
     this.life[i] = 0;
-    this.maxLife[i] = 1.6 + Math.random() * 1.2;          // seconds
-    this.startSize[i] = 0.4 + Math.random() * 0.3;        // metres
-    this.endSize[i] = 2.6 + Math.random() * 1.6;
-    this.startAlpha[i] = 0.22 * strength + 0.04;          // light, never a thick wall
+    this.maxLife[i] = (1.6 + Math.random() * 1.2) * this.lifeScale;      // seconds
+    this.startSize[i] = (0.4 + Math.random() * 0.3) * this.sizeScale;    // metres
+    this.endSize[i] = (2.6 + Math.random() * 1.6) * this.sizeScale;
+    this.startAlpha[i] = Math.min(0.95, (0.22 * strength + 0.04) * this.thickness);
   }
 
   update(dt) {
