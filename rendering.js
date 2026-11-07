@@ -53,6 +53,7 @@ camera.position.set(4.5, 2.2, 5.5);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(0, 0.45, 0);
 controls.enableDamping = true;      // smooth, gliding movement
+controls.enablePan = false;         // keep the camera always circling the car
 controls.minDistance = 2.5;
 controls.maxDistance = 20;
 controls.maxPolarAngle = Math.PI * 0.48; // stops the camera going under the ground
