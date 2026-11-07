@@ -210,8 +210,13 @@ export class EngineDebris {
     const scorched = new THREE.MeshStandardMaterial({ color: 0x3a3632, metalness: 0.7, roughness: 0.6 });
     const alloy = new THREE.MeshStandardMaterial({ color: 0xb9bcc0, metalness: 0.9, roughness: 0.3 });
     this.chunkCount = chunkCount;
-    this.chunkMesh = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1, 0), steel, chunkCount);
+    // Fresh-broken metal: bright and shiny, so the chunks stand out on dark tarmac
+    const bare = new THREE.MeshStandardMaterial({ color: 0xa9adb3, metalness: 0.95, roughness: 0.28 });
+    this.chunkMesh = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1, 0), bare, chunkCount);
     this.chunkMesh.castShadow = true;
+    // The chunks fly all over the place, so never skip drawing them (the 3D
+    // library only works out where a group like this is once, at the start)
+    this.chunkMesh.frustumCulled = false;
     this.chunkMesh.count = 0;
     this.chunkMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     scene.add(this.chunkMesh);
@@ -271,14 +276,14 @@ export class EngineDebris {
     const spin = (n) => new THREE.Vector3(rand(-n, n), rand(-n, n), rand(-n, n));
 
     for (let i = 0; i < this.chunkCount; i++) {
-      const size = rand(0.02, 0.05);
+      const size = rand(0.02, 0.025);   // 4-5 cm across: about half a piston
       this.pieces.push({
         kind: 'chunk', index: i, size, radius: size * 0.8,
         pos: new THREE.Vector3(origin.x, origin.y, origin.z),
         vel: fling(rand(0.8, 2.4), rand(1.5, 3.5)),
         rot: new THREE.Quaternion().setFromEuler(new THREE.Euler(rand(0, 6), rand(0, 6), rand(0, 6))),
         ang: spin(25), bounce: 0.35, rolls: false, resting: false,
-        stretch: new THREE.Vector3(rand(0.7, 1.6), rand(0.5, 1), rand(0.7, 1.4)),   // jagged, uneven shapes
+        stretch: new THREE.Vector3(rand(0.85, 1.25), rand(0.6, 0.95), rand(0.85, 1.15)),   // jagged, uneven shapes
       });
     }
     this.chunkMesh.count = this.chunkCount;
