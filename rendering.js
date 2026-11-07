@@ -419,7 +419,8 @@ info.innerHTML =
   '<b>Track Tester</b><br>' +
   'W / S: throttle, brake · A / D: steer<br>' +
   'Space: handbrake · Q / E: shift down / up<br>' +
-  'R: reverse (when stopped) · T: gearbox<br>' +
+  'Reverse: Q from 1st (manual), R (auto, CVT)<br>' +
+  'T: gearbox<br>' +
   'M: mute · C: camera · Backspace: reset<br>' +
   '<span id="soundhint" style="color:#ffd76a">Press any key or tap for sound</span>';
 const soundHint = document.getElementById('soundhint');
@@ -506,6 +507,7 @@ renderer.setAnimationLoop(() => {
   while (physics.events.length) {
     const e = physics.events.shift();
     if (e.type === 'shift') engineSound.playShift(physics.transmission === 'cvt' ? 'cvt' : e.style);
+    if (e.type === 'grind') engineSound.playGrind();
   }
 
   // Move the car model to where the physics says it is
@@ -527,6 +529,7 @@ renderer.setAnimationLoop(() => {
     gearLabel: physics.gearLabel,
     limiter: physics.limiter,
     transmission: physics.transmission,
+    engineHealth: physics.engineHealth,
     time: clock.elapsedTime,
   });
 
