@@ -832,7 +832,13 @@ function updateSmoke(dt) {
 // back as echoes (see EchoSystem in sound.js).
 // ---------------------------------------------------------------------
 const engineSound = new EngineSound(CATERHAM);
-for (const e of echoSurfaces) engineSound.echo.addBox(e.min, e.max, e.reflect);
+// (If the browser is still using an older saved sound.js, skip the echoes
+// rather than stopping the game; they'll work after a refresh)
+if (typeof engineSound.echo.addBox === 'function') {
+  for (const e of echoSurfaces) engineSound.echo.addBox(e.min, e.max, e.reflect);
+} else {
+  console.warn('Echoes off: sound.js is an older version. Refresh to update it.');
+}
 const startSound = () => {
   engineSound.start();
   soundHint.style.display = 'none';
