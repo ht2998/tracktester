@@ -182,6 +182,9 @@ export class EngineDebris {
     this.sparkHeat = new Float32Array(maxSparks);
     this.sparkSize = new Float32Array(maxSparks);
     this.sparkLife = new Float32Array(maxSparks);
+    this.sparkNext = 0;     // which spark slot is used next (must start at 0, or
+                            // sparks made before an engine failure go nowhere)
+    this.sparkStream = 0;
     const geo = new THREE.BufferGeometry();
     this.posAttr = new THREE.BufferAttribute(this.sparkPos, 3).setUsage(THREE.DynamicDrawUsage);
     this.heatAttr = new THREE.BufferAttribute(this.sparkHeat, 1).setUsage(THREE.DynamicDrawUsage);
