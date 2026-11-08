@@ -123,33 +123,97 @@ function inGravel(x, z) {
 }
 
 function buildGravel() {
-  // Paint a speckled stone texture: tan with lighter and darker pebbles
+  // Paint the stones twice: once in colour, and once as a height map (each
+  // pebble a little dome) that becomes a normal map, so the light catches
+  // every stone and the surface looks bumpy rather than printed flat.
   const size = 512;
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = size;
-  const g = canvas.getContext('2d');
-  g.fillStyle = '#b39769';
-  g.fillRect(0, 0, size, size);
-  const shades = ['#9c8158', '#c9b086', '#a88d61', '#d8c39c', '#8a7350', '#bfa476'];
+  const colour = document.createElement('canvas');
+  const height = document.createElement('canvas');
+  colour.width = colour.height = height.width = height.height = size;
+  const c = colour.getContext('2d');
+  const h = height.getContext('2d');
+  c.fillStyle = '#a88c5f';
+  c.fillRect(0, 0, size, size);
+  h.fillStyle = '#000';
+  h.fillRect(0, 0, size, size);
+  const shades = ['#9c8158', '#c9b086', '#a88d61', '#d8c39c', '#8a7350', '#bfa476', '#b39769'];
   for (let i = 0; i < 9000; i++) {
-    g.fillStyle = shades[(Math.random() * shades.length) | 0];
-    const r = 0.6 + Math.random() * 1.8;
-    g.beginPath();
-    g.ellipse(Math.random() * size, Math.random() * size, r, r * (0.6 + Math.random() * 0.4), Math.random() * Math.PI, 0, Math.PI * 2);
-    g.fill();
+    const x = Math.random() * size, y = Math.random() * size;
+    const r = 1.6 + Math.random() * 3.2;
+    const squash = 0.6 + Math.random() * 0.4, angle = Math.random() * Math.PI;
+    const shade = shades[(Math.random() * shades.length) | 0];
+    // Drawn again across each edge so the texture tiles without seams
+    for (const ox of [-size, 0, size]) for (const oy of [-size, 0, size]) {
+      const px = x + ox, py = y + oy;
+      if (px < -8 || px > size + 8 || py < -8 || py > size + 8) continue;
+      c.fillStyle = shade;
+      c.beginPath();
+      c.ellipse(px, py, r, r * squash, angle, 0, Math.PI * 2);
+      c.fill();
+      const dome = h.createRadialGradient(px - r * 0.2, py - r * 0.2, 0, px, py, r);
+      dome.addColorStop(0, 'rgba(255,255,255,1)');
+      dome.addColorStop(1, 'rgba(255,255,255,0)');
+      h.fillStyle = dome;
+      h.beginPath();
+      h.ellipse(px, py, r, r * squash, angle, 0, Math.PI * 2);
+      h.fill();
+    }
   }
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 4;
+  // Height map -> normal map (the slope of the height at each pixel)
+  const hp = h.getImageData(0, 0, size, size).data;
+  const normal = h.createImageData(size, size);
+  const at = (x, y) => hp[(((y + size) % size) * size + ((x + size) % size)) * 4] / 255;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = (at(x + 1, y) - at(x - 1, y)) * 2.5;
+      const dy = (at(x, y + 1) - at(x, y - 1)) * 2.5;
+      const len = Math.hypot(dx, dy, 1);
+      const k = (y * size + x) * 4;
+      normal.data[k] = (-dx / len * 0.5 + 0.5) * 255;
+      normal.data[k + 1] = (dy / len * 0.5 + 0.5) * 255;
+      normal.data[k + 2] = (1 / len * 0.5 + 0.5) * 255;
+      normal.data[k + 3] = 255;
+    }
+  }
+  h.putImageData(normal, 0, 0);
+
   const w = GRAVEL.maxX - GRAVEL.minX, d = GRAVEL.maxZ - GRAVEL.minZ;
+  const colourMap = new THREE.CanvasTexture(colour);
+  colourMap.colorSpace = THREE.SRGBColorSpace;
+  const normalMap = new THREE.CanvasTexture(height);
+  for (const t of [colourMap, normalMap]) {
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(w / 3.5, d / 3.5);      // each tile is 3.5 m: stones about 1-3 cm
+    t.anisotropy = 4;
+  }
   const patch = new THREE.Mesh(
     new THREE.PlaneGeometry(w, d),
-    new THREE.MeshStandardMaterial({ map: texture, roughness: 1 })
+    new THREE.MeshStandardMaterial({ map: colourMap, normalMap, normalScale: new THREE.Vector2(0.8, 0.8), roughness: 1 })
   );
   patch.rotation.x = -Math.PI / 2;
   patch.position.set((GRAVEL.minX + GRAVEL.maxX) / 2, 0.004, (GRAVEL.minZ + GRAVEL.maxZ) / 2);
   patch.receiveShadow = true;
   scene.add(patch);
+
+  // A scattering of real 3D stones on top, half sunk in (one draw call)
+  const count = isMobile ? 350 : 700;
+  const stones = new THREE.InstancedMesh(
+    new THREE.DodecahedronGeometry(1, 0),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, flatShading: true }),
+    count
+  );
+  stones.receiveShadow = true;
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), sc = new THREE.Vector3();
+  const tint = new THREE.Color();
+  for (let i = 0; i < count; i++) {
+    const r = 0.012 + Math.random() * Math.random() * 0.035;
+    p.set(GRAVEL.minX + 0.05 + Math.random() * (w - 0.1), r * 0.25, GRAVEL.minZ + 0.05 + Math.random() * (d - 0.1));
+    q.setFromEuler(e.set(Math.random() * 6, Math.random() * 6, Math.random() * 6));
+    sc.set(r * (0.8 + Math.random() * 0.5), r * (0.5 + Math.random() * 0.3), r * (0.8 + Math.random() * 0.5));
+    stones.setMatrixAt(i, m.compose(p, q, sc));
+    stones.setColorAt(i, tint.set(shades[(Math.random() * shades.length) | 0]));
+  }
+  scene.add(stones);
 }
 buildGravel();
 
@@ -508,7 +572,6 @@ const blowoutPending = [];             // wheels that just burst
 const crumbGap = [0, 0, 0, 0];         // metres until each tyre drops its next crumb
 const shredClock = [0, 0, 0, 0];
 const sparkCarry = [0, 0, 0, 0];
-const rimSparkPoint = new THREE.Vector3();
 function updateBlownTyres(dt) {
   const speed = Math.hypot(physics.vx, physics.vy);
   let sparked = false;
@@ -543,19 +606,17 @@ function updateBlownTyres(dt) {
       }
       // The rim edge starts catching the road through the thinning rubber:
       // the odd spark at first, more and more as the tyre wears away
-      rimSparkPoint.set(tyreContact.x, 0.3, tyreContact.z);
-      sparkCarry[i] += (2 + 18 * t.shred) * Math.min(1, speed / 15) * dt;
+      sparkCarry[i] += (4 + 26 * t.shred) * Math.min(1, speed / 12) * dt;
       while (sparkCarry[i] >= 1) {
-        debris.spawnSpark(rimSparkPoint, carVelocity, physics.heading, 0.3);
+        debris.spawnRimSpark(tyreContact, carVelocity);
         sparkCarry[i] -= 1;
         sparked = true;
       }
     } else if (t.rim && speed > 0.3) {
       // Bare rim: always a shower of sparks while it's moving, more the faster you go
-      rimSparkPoint.set(tyreContact.x, 0.3, tyreContact.z);
-      sparkCarry[i] += (15 + 50 * Math.min(1, speed / 15)) * dt;
+      sparkCarry[i] += (20 + 60 * Math.min(1, speed / 15)) * dt;
       while (sparkCarry[i] >= 1) {
-        debris.spawnSpark(rimSparkPoint, carVelocity, physics.heading, 0.45);
+        debris.spawnRimSpark(tyreContact, carVelocity);
         sparkCarry[i] -= 1;
         sparked = true;
       }
@@ -611,6 +672,11 @@ const physics = new CarPhysics();
 const oil = new OilSlicks(scene);
 // Rubber from skidding tyres. Oil wins if both are on the same spot.
 const skids = new SkidMarks(scene);
+// Tyre tracks in the gravel: the same marks, in the gravel dust's shade
+const gravelTrails = new SkidMarks(scene, {
+  maxSegments: isMobile ? 800 : 1600, tyreWidth: 0.17, rubberBonus: 0,
+  threshold: 0.05, height: 0.006, base: 0xb39769, mark: 0xc4a87a,
+});
 // Strips of tread flung off a blown tyre (they land as crumbs of rubber)
 const shreds = new TyreShreds(scene, skids, { max: isMobile ? 40 : 60 });
 // What's under a tyre: 'gravel', 'grass', 'soil' (see SURFACES in
@@ -703,6 +769,9 @@ function updateSmoke(dt) {
     skidWorld.set(p.local.x, 0, p.local.z);
     carModel.car.localToWorld(skidWorld);
     skids.update(p.id, skidWorld.x, skidWorld.z, p.onGravel ? 0 : p.axle === 'rear' ? rearSkid : frontSkid);
+    // In the gravel every rolling tyre leaves a track, heavier when it slides
+    const rolling = speed > 0.5 && inGravel(skidWorld.x, skidWorld.z);
+    gravelTrails.update(p.id, skidWorld.x, skidWorld.z, rolling ? 0.45 + 0.55 * (p.axle === 'rear' ? rearSkid : frontSkid) : 0);
   }
 
   // Engine smoke: pours out once blown
