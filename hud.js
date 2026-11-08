@@ -206,6 +206,8 @@ const STYLE = `
 #dash canvas { display: block; }
 /* Phones and tablets: a mini cluster at the top, out of the way of the road */
 #dash.compact { top: calc(6px + env(safe-area-inset-top)); bottom: auto; align-items: flex-start; gap: 6px; }
+/* (the tyre wear bars sit level with the middle of the rev counter) */
+#dash.compact .tyre-bars { align-self: center; }
 
 /* Tiny clutch status line */
 #clutch-status {
@@ -511,6 +513,7 @@ export class Hud {
     if (compact) dash.classList.add('compact');
     this.dash = dash;
     this.tyreBars = new TyreBars();
+    this.tyreBars.canvas.classList.add('tyre-bars');
     dash.append(this.tyreBars.canvas, this.tach.canvas, this.speedo.canvas, smallGauges);
     document.body.appendChild(dash);
 
@@ -534,6 +537,8 @@ export class Hud {
     handle.addEventListener('click', () => {
       const open = this.side.classList.toggle('open');
       handle.setAttribute('aria-expanded', String(open));
+      // Lets the touch controls step out of the way while the panel is open
+      window.dispatchEvent(new CustomEvent('sidepanel', { detail: { open } }));
       handle.blur();   // so Space (handbrake) doesn't press it again
     });
     const panel = document.createElement('div');
@@ -650,7 +655,7 @@ export class Hud {
     this.speedo.resize(Math.round(tachSize * 0.82));
     this.fuelGauge.resize(Math.round(tachSize * 0.42));
     this.oilGauge.resize(Math.round(tachSize * 0.42));
-    this.tyreBars.resize(Math.round(tachSize * 0.5));
+    this.tyreBars.resize(Math.round(tachSize * (this.compact ? 0.62 : 0.5)));   // a bit bigger on phones
   }
 
   update({ speedKmh, rpm, gearLabel, limiter, transmission, engineHealth = 1, oilLevel = 1,
