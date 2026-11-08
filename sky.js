@@ -123,6 +123,7 @@ export class SkySystem {
 
     // Time and weather settings
     this.hours = 10.5;                 // start mid-morning
+    this.daylight = 1;                 // 0 at night, 1 in full day
     this.speed = DEFAULT_SPEED;
     this.locked = false;
     this.weather = 'clear';            // 'clear' or 'cloudy'
@@ -261,6 +262,7 @@ export class SkySystem {
     this.sunDir.set(Math.cos(a), Math.sin(a) * 0.93, Math.sin(a) * 0.37).normalize();
     const el = this.sunDir.y;                       // sun's height: 1 = overhead, below 0 = night
     const day = smooth(-0.22, 0.3, el);             // 0 at night, 1 in full day (dawn and dusk take a while)
+    this.daylight = day;
     const twilight = Math.exp(-((el / 0.2) ** 2));  // strongest with the sun on the horizon
 
     // --- A cloud drifting over the sun? (checked against each cloud's
