@@ -5,6 +5,8 @@
 // gives a tiny bit of extra grip, like a rubbered-in racing line.
 // All marks are one instanced object with a recycled pool, and a grid
 // makes "is this tyre on rubber?" quick to answer.
+// Also: crumbs of rubber dropped by a blown tyre (same marks, same grip
+// bonus), and the strips of tread a blown tyre flings off (TyreShreds).
 // =====================================================================
 
 import * as THREE from 'three';
@@ -99,6 +101,18 @@ export class SkidMarks {
     if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
   }
 
+  // A crumb of rubber from a shredding tyre: a short, jagged scrap lying at a
+  // random angle. dark 0.2-1 gives 1-5% extra grip, like the skid marks.
+  addCrumb(x, z, size, dark) {
+    const a = Math.random() * Math.PI;
+    const len = size * (0.6 + Math.random() * 0.8);
+    const dx = Math.sin(a) * len / 2, dz = Math.cos(a) * len / 2;
+    const keepWidth = this.tyreWidth;
+    this.tyreWidth = size * (0.35 + Math.random() * 0.3);   // (addSegment sizes from this)
+    this.addSegment(x - dx, z - dz, x + dx, z + dz, dark);
+    this.tyreWidth = keepWidth;
+  }
+
   register(i, cells) {
     for (const k of cells) {
       if (!this.grid.has(k)) this.grid.set(k, new Set());
@@ -131,6 +145,79 @@ export class SkidMarks {
     this.grid.clear();
     this.last.clear();
     this.next = 0;
+    this.mesh.count = 0;
+  }
+}
+
+// =====================================================================
+// SHREDS: strips of tread flung off a blown tyre. They tumble through the
+// air, bounce, and lie where they land as crumbs of rubber (see addCrumb).
+// =====================================================================
+export class TyreShreds {
+  constructor(scene, skids, { max = 60 } = {}) {
+    this.skids = skids;
+    this.max = max;
+    this.items = [];
+    const geo = new THREE.BoxGeometry(1, 1, 1);
+    const mat = new THREE.MeshStandardMaterial({ color: 0x18181a, roughness: 0.9 });
+    this.mesh = new THREE.InstancedMesh(geo, mat, max);
+    this.mesh.count = 0;
+    this.mesh.castShadow = true;
+    this.mesh.frustumCulled = false;   // they fly all over the place
+    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    scene.add(this.mesh);
+    this._m = new THREE.Matrix4();
+    this._q = new THREE.Quaternion();
+    this._e = new THREE.Euler();
+    this._s = new THREE.Vector3();
+    this._p = new THREE.Vector3();
+  }
+
+  // Fling a strip from a wheel. pos: the wheel's contact patch (world),
+  // vel: the car's velocity, size: 0-1 (big chunk at the bang, small after)
+  fling(pos, vel, size = 0.5) {
+    if (this.items.length >= this.max) this.items.shift();
+    const r = (a, b) => a + Math.random() * (b - a);
+    this.items.push({
+      x: pos.x, y: 0.25, z: pos.z,
+      vx: vel.x * r(0.4, 0.9) + r(-2.5, 2.5), vy: r(1, 3.5) * (0.6 + size), vz: vel.z * r(0.4, 0.9) + r(-2.5, 2.5),
+      rx: r(0, 6), ry: r(0, 6), rz: r(0, 6), spin: r(-14, 14),
+      len: r(0.08, 0.22) * (0.6 + size), wid: r(0.03, 0.07) * (0.7 + size * 0.6), life: 0,
+    });
+  }
+
+  update(dt) {
+    let n = 0;
+    for (let k = this.items.length - 1; k >= 0; k--) {
+      const p = this.items[k];
+      p.life += dt;
+      p.vy -= 9.81 * dt;
+      p.vx *= 1 - 0.6 * dt; p.vz *= 1 - 0.6 * dt;
+      p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
+      p.rx += p.spin * dt; p.rz += p.spin * 0.7 * dt;
+      if (p.y < 0.01) {
+        if (Math.abs(p.vy) < 1.2 || p.life > 4) {
+          // Settled: it becomes a crumb on the road (and adds a little grip)
+          this.skids.addCrumb(p.x, p.z, p.len, 0.5 + Math.random() * 0.5);
+          this.items.splice(k, 1);
+          continue;
+        }
+        p.y = 0.01; p.vy = -p.vy * 0.3; p.vx *= 0.6; p.vz *= 0.6; p.spin *= 0.5;
+      }
+    }
+    for (const p of this.items) {
+      this._e.set(p.rx, p.ry, p.rz);
+      this._q.setFromEuler(this._e);
+      this._s.set(p.wid, 0.012, p.len);
+      this._m.compose(this._p.set(p.x, p.y, p.z), this._q, this._s);
+      this.mesh.setMatrixAt(n++, this._m);
+    }
+    this.mesh.count = n;
+    if (n) this.mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  clear() {
+    this.items.length = 0;
     this.mesh.count = 0;
   }
 }
