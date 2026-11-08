@@ -404,7 +404,8 @@ function drawCheckEngine(g, cx, cy, width, color) {
 // Tyre wear: four bars laid out like the car seen from above. Each starts
 // white and fills red from the top as that tyre wears. The outline shows the
 // tyre's pressure in five steps of 20%: green (80-100%), yellow, orange, red,
-// and flashing red when it's below 20%.
+// and flashing red when it's below 20%. A tyre that has shredded off down to
+// the rim shows as a grey bar.
 const PRESSURE_COLOURS = [COLORS.ledRed, '#ff3b30', '#ff8a1f', '#ffd23a', COLORS.ledGreen];
 class TyreBars {
   constructor() {
@@ -441,10 +442,15 @@ class TyreBars {
       const x = pad + col * (bw + gapX);
       const y = pad + row * (bh + gapY);
       const worn = Math.max(0, Math.min(1, t.wear));
-      g.fillStyle = COLORS.ink;                          // remaining tread
-      g.fillRect(x, y, bw, bh);
-      g.fillStyle = COLORS.redline;                      // worn away
-      g.fillRect(x, y, bw, bh * worn);
+      if (t.rim) {
+        g.fillStyle = COLORS.chromeDark;                 // no tyre left: just the rim
+        g.fillRect(x, y, bw, bh);
+      } else {
+        g.fillStyle = COLORS.ink;                        // remaining tread
+        g.fillRect(x, y, bw, bh);
+        g.fillStyle = COLORS.redline;                    // worn away
+        g.fillRect(x, y, bw, bh * worn);
+      }
       // Pressure around the bar: one colour per 20% step
       const step = Math.min(4, Math.floor(Math.max(0, t.pressure ?? 1) * 5));
       let ring = PRESSURE_COLOURS[step];
