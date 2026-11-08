@@ -344,6 +344,22 @@ export class EngineDebris {
     this.sparkSize[i] = rand(0.06, 0.13);    // big enough to see from the chase camera
   }
 
+  // A spark from a bare rim grinding on the road: sprayed out behind the
+  // wheel and a little up, so it streams away in a visible trail
+  spawnRimSpark(origin, carVel) {
+    const i = this.sparkNext;
+    this.sparkNext = (this.sparkNext + 1) % this.maxSparks;
+    this.sparkPos.set([origin.x + rand(-0.08, 0.08), rand(0.02, 0.08), origin.z + rand(-0.08, 0.08)], i * 3);
+    this.sparkVel.set([
+      carVel.x * rand(0.25, 0.7) + rand(-1.2, 1.2),
+      rand(0.6, 3.2),
+      carVel.z * rand(0.25, 0.7) + rand(-1.2, 1.2),
+    ], i * 3);
+    this.sparkLife[i] = rand(0.5, 1.3);
+    this.sparkHeat[i] = 1;
+    this.sparkSize[i] = rand(0.09, 0.17);    // a bit bigger than the engine's, so they read at speed
+  }
+
   // origin/carVel: where the engine bay is now and how fast the car is going,
   // so the stream of sparks keeps coming from the car as it rolls on
   update(dt, origin = null, carVel = null, heading = 0) {
