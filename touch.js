@@ -107,6 +107,8 @@ const STYLE = `
 }
 #touch .t-row { display: flex; align-items: center; gap: 8px; }
 #touch .t-row.top { gap: 8px; margin-right: 36px; }   /* clears the side panel arrow */
+/* While the settings panel is open, the right-hand controls step aside */
+#touch.panel-open .t-right { visibility: hidden; pointer-events: none; }
 #touch .t-brake { width: 76px; height: 104px; }
 #touch .t-gas { width: 80px; height: 124px; }
 #touch .t-shift { width: 44px; height: 44px; font-size: 22px; }
@@ -234,6 +236,13 @@ export class TouchControls {
       this.steerBox.classList.remove('held');
     };
     window.addEventListener('blur', releaseAll);
+    // The settings panel slides over the right-hand controls, so hide them
+    // (and let go of anything held) while it's open
+    window.addEventListener('sidepanel', (e) => {
+      const open = !!(e.detail && e.detail.open);
+      this.root.classList.toggle('panel-open', open);
+      if (open) releaseAll();
+    });
     document.addEventListener('visibilitychange', () => { if (document.hidden) releaseAll(); });
   }
 
