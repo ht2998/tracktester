@@ -145,10 +145,10 @@ function buildOffice(scene, x0, z0, x1, z1, height) {
 // BARRIERS
 // ---------------------------------------------------------------------
 
-// Concrete wall: 2 m blocks with joints, red and white kerb-style paint
+// Concrete wall: 2 m blocks (1.375 m tall) with joints, red and white kerb-style paint
 // along the bottom. Each run is [ax, az, bx, bz].
 function buildConcreteWalls(scene, runs) {
-  const H = 1.1, T = 0.5, STEP = 2;
+  const H = 1.375, T = 0.5, STEP = 2;
   const pieces = runs.flatMap(([ax, az, bx, bz]) => along(ax, az, bx, bz, STEP).slice(0, -1).map((p, i, arr) => {
     // centre each block between this point and the next
     const t = (i + 0.5) / arr.length;
@@ -251,9 +251,15 @@ function buildTyreWalls(scene, runs) {
     Math.max(ax, bx) + R + STEP, HIGH * 0.22, Math.max(az, bz) + R + STEP, 0.2));
 }
 
-// Catch fence: tall steel posts with chain-link mesh between them
+// Catch fence: tall steel posts with chain-link mesh between them, and a
+// section at the top that leans in over the track (like the debris fences
+// at street circuits such as Singapore). Each run is [ax, az, bx, bz, lean]:
+// lean = which side of the fence the track is on, so the top leans over it.
+// +1 = to the left of someone walking from a to b (towards +x for a run
+// along +z), -1 = to their right.
 function buildFences(scene, runs) {
   const H = 3.6, STEP = 3;
+  const TOP = 1.1, TILT = 0.75;                     // the top section: 1.1 m long, ~43 degrees in
   const mesh = canvasTexture(64, 64, (g, w, h) => {
     g.clearRect(0, 0, w, h);
     g.strokeStyle = 'rgba(200,205,210,0.95)';
@@ -264,14 +270,28 @@ function buildFences(scene, runs) {
   });
   const panels = [];
   const posts = [];
-  for (const [ax, az, bx, bz] of runs) {
+  for (const [ax, az, bx, bz, lean = 1] of runs) {
     const pts = along(ax, az, bx, bz, STEP);
-    posts.push(...pts);
+    posts.push(...pts.map((p) => ({ ...p, lean })));
     pts.slice(0, -1).forEach((p, i) => {
       const n = pts[i + 1];
-      panels.push({ x: (p.x + n.x) / 2, z: (p.z + n.z) / 2, angle: p.angle, len: p.len });
+      panels.push({ x: (p.x + n.x) / 2, z: (p.z + n.z) / 2, angle: p.angle, len: p.len, lean });
     });
   }
+  // The leaning top: tipped about the line of the fence, towards the track
+  const tilted = new THREE.Quaternion();
+  const tilt = new THREE.Quaternion();
+  const ACROSS = new THREE.Vector3(1, 0, 0);
+  const topPose = (angle, lean) => {
+    tilted.setFromAxisAngle(UP, angle + Math.PI / 2);
+    tilt.setFromAxisAngle(ACROSS, TILT * lean);
+    return tilted.multiply(tilt);
+  };
+  // Where the middle of the top section sits, relative to the top of a post
+  const topOffset = (angle, lean) => {
+    const out = Math.sin(TILT) * TOP / 2 * lean;     // across, towards the track
+    return { x: Math.cos(angle) * out, y: H + Math.cos(TILT) * TOP / 2, z: -Math.sin(angle) * out };
+  };
   mesh.repeat.set(STEP / 0.12, H / 0.12);          // 12 cm diamonds
   const panelMesh = new THREE.InstancedMesh(
     new THREE.PlaneGeometry(1, H),
@@ -289,10 +309,34 @@ function buildFences(scene, runs) {
   );
   posts.forEach((p, i) => postMesh.setMatrixAt(i, m4.compose(pos.set(p.x, (H + 0.3) / 2, p.z), q.identity(), scl.set(1, 1, 1))));
   postMesh.castShadow = true;
-  scene.add(panelMesh, postMesh);
+
+  // The leaning top section: mesh panels plus an angled arm on every post
+  const topMeshTex = mesh.clone();
+  topMeshTex.needsUpdate = true;
+  topMeshTex.repeat.set(STEP / 0.12, TOP / 0.12);
+  const topPanels = new THREE.InstancedMesh(
+    new THREE.PlaneGeometry(1, TOP),
+    new THREE.MeshStandardMaterial({ map: topMeshTex, transparent: true, alphaTest: 0.3, side: THREE.DoubleSide, metalness: 0.6, roughness: 0.5 }),
+    panels.length
+  );
+  panels.forEach((p, i) => {
+    const o = topOffset(p.angle, p.lean);
+    topPanels.setMatrixAt(i, m4.compose(pos.set(p.x + o.x, o.y, p.z + o.z), topPose(p.angle, p.lean), scl.set(p.len, 1, 1)));
+  });
+  const arms = new THREE.InstancedMesh(
+    new THREE.CylinderGeometry(0.04, 0.04, TOP + 0.1, 8),
+    postMesh.material,
+    posts.length
+  );
+  posts.forEach((p, i) => {
+    const o = topOffset(p.angle, p.lean);
+    arms.setMatrixAt(i, m4.compose(pos.set(p.x + o.x, o.y, p.z + o.z), topPose(p.angle, p.lean), scl.set(1, 1, 1)));
+  });
+  arms.castShadow = true;
+  scene.add(panelMesh, postMesh, topPanels, arms);
   // Mesh lets most sound through: only a faint, rattly reflection
   return runs.map(([ax, az, bx, bz]) => box(Math.min(ax, bx) - 0.05, 0, Math.min(az, bz) - 0.05,
-    Math.max(ax, bx) + 0.05, H, Math.max(az, bz) + 0.05, 0.12));
+    Math.max(ax, bx) + 0.05, H + 0.8, Math.max(az, bz) + 0.05, 0.12));
 }
 
 // ---------------------------------------------------------------------
@@ -311,6 +355,7 @@ export function buildScenery(scene) {
   echoes.push(...buildArmco(scene, [[-9, 95, -9, 145]]));
   // Behind the gravel trap: a tyre wall, then a catch fence
   echoes.push(...buildTyreWalls(scene, [[-17.2, 5, -17.2, 17]]));
-  echoes.push(...buildFences(scene, [[-20, 2, -20, 20], [-11, 95, -11, 145]]));
+  // (both lean towards +x, over the track side)
+  echoes.push(...buildFences(scene, [[-20, 2, -20, 20, 1], [-11, 95, -11, 145, 1]]));
   return echoes;
 }
