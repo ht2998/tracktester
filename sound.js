@@ -738,10 +738,46 @@ export class EngineSound {
     this.echo.update(listenerPos, car.heading);
   }
 
+  // Horn, called every frame: on while the horn key or button is held.
+  // A small car's little electric horn: two buzzy tones a bit apart, a
+  // slightly comical "meep". It echoes off buildings like everything else.
+  setHorn(on) {
+    if (!this.ctx) return;
+    if (!this.hornGain) {
+      const ctx = this.ctx;
+      this.hornGain = ctx.createGain();
+      this.hornGain.gain.value = 0;
+      const body = ctx.createBiquadFilter();    // the horn's small trumpet
+      body.type = 'bandpass';
+      body.frequency.value = 1150;
+      body.Q.value = 1.1;
+      const buzz = ctx.createWaveShaper();      // the diaphragm's rasp
+      buzz.curve = makeWarmthCurve(3);
+      for (const [freq, level] of [[415, 0.5], [498, 0.4]]) {
+        const osc = ctx.createOscillator();
+        osc.type = 'square';
+        osc.frequency.value = freq;
+        const g = ctx.createGain();
+        g.gain.value = level;
+        osc.connect(g).connect(buzz);
+        osc.start();
+      }
+      const level = ctx.createGain();
+      level.gain.value = 0.9;
+      buzz.connect(body).connect(level).connect(this.hornGain).connect(this.carBus);
+    }
+    const t = this.ctx.currentTime;
+    const target = on ? 0.32 : 0;
+    if (target !== this.hornTarget) {
+      this.hornTarget = target;
+      this.hornGain.gain.setTargetAtTime(target, t, on ? 0.008 : 0.02);   // snaps on, stops quickly
+    }
+  }
+
   // Puncture hiss, called every frame with how fast air is escaping
   setHiss(amount) {
     if (!this.ctx || !this.hissGain) return;
-    const level = Math.min(0.11, amount * 2.6);
+    const level = Math.min(0.055, amount * 1.3);   // (soft: the engine covers it)
     this.hissGain.gain.setTargetAtTime(level, this.ctx.currentTime, 0.2);
   }
 
