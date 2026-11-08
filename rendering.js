@@ -16,6 +16,7 @@ import { OilSlicks } from './oil.js';
 import { SkidMarks, TyreShreds } from './skids.js';
 import { buildScenery } from './scenery.js';
 import { GrassPatch } from './grass.js';
+import { SkySystem, TIME_SPEEDS } from './sky.js';
 import { EngineDebris } from './debris.js';
 import { TouchControls, isTouchDevice } from './touch.js';
 
@@ -97,6 +98,10 @@ sun.shadow.camera.far = 30;
 sun.shadow.bias = -0.0005;
 scene.add(sun);
 scene.add(sun.target);
+
+// Time of day and weather (sky.js): moves the sun, colours the sky and
+// light, brings out the stars at night and the clouds when it's cloudy
+const sky = new SkySystem(scene, { sun, hemi: hemiLight, isMobile });
 
 // ---------------------------------------------------------------------
 // GROUND: a big tarmac area
@@ -911,6 +916,14 @@ const hud = new Hud({
   onTyres: (id) => physics.setTyres(id),
   tyreOptions: TYRES,
   compact: touchMode,   // mini gauges at the top on phones
+  timeSpeeds: TIME_SPEEDS,
+  onSky: {
+    time: (h) => sky.setTime(h),
+    speed: (x) => sky.setSpeed(x),
+    lock: (on) => sky.setLocked(on),
+    weather: (w) => sky.setWeather(w),
+    changing: (on) => sky.setChanging(on),
+  },
 });
 
 // ---------------------------------------------------------------------
@@ -1025,7 +1038,8 @@ renderer.setAnimationLoop(() => {
 
   // Keep the sun's shadow area centred on the car
   sun.target.position.set(physics.x, 0, physics.z);
-  sun.position.set(physics.x, 0, physics.z).add(SUN_OFFSET);
+  sky.update(dt, sun.target.position);
+  sun.position.set(physics.x, 0, physics.z).addScaledVector(sky.lightDir, 14);   // the sun (or moon), wherever it is in the sky
 
   updateCamera(dt);
   engineSound.update(physics, carPos);
@@ -1042,6 +1056,8 @@ renderer.setAnimationLoop(() => {
   engineSound.setRimScrape(physics.rimsDown, carSpeed, rimSlide);
 
   hud.update({
+    sky: { clock: sky.clock, hours: sky.hours, speed: sky.speed, locked: sky.locked,
+           weather: sky.weather, changing: sky.changing, now: sky.weatherNow },
     lights: lightsMode,
     speedKmh: physics.speedKmh,
     rpm: physics.rpm,
