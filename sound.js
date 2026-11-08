@@ -279,13 +279,17 @@ function makeKneeCurve(knee = 0.7, ceiling = 0.97) {
 
 // =====================================================================
 // ECHO SYSTEM
-// Large objects (buildings, hills, walls) reflect the engine sound back.
-// The further away an object is, the later the echo arrives, the more
+// Big, hard surfaces (buildings, walls) reflect the car's sound back.
+// The further away a surface is, the later the echo arrives, the more
 // muffled it is, and the more it spreads out into a wash of sound.
+// Echoes come from the side the surface is on (stereo), solid buildings
+// reflect strongly while barriers and fences only faintly, and as you
+// drive towards or away from a wall its echo slides in pitch, like a
+// real one does.
 // =====================================================================
 export class EchoSystem {
-  constructor({ channels = 3, minSize = 4, maxDistance = 190 } = {}) {
-    this.reflectors = [];          // { box, size }
+  constructor({ channels = 4, minSize = 4, maxDistance = 190 } = {}) {
+    this.reflectors = [];          // { box, size, reflect }
     this.channelCount = channels;  // how many echoes can be heard at once
     this.minSize = minSize;        // metres: anything smaller doesn't echo
     this.maxDistance = maxDistance;
@@ -294,12 +298,25 @@ export class EchoSystem {
   }
 
   // Register an object (building, hill, wall...). Returns false if it's too small.
-  addReflector(object3D) {
+  addReflector(object3D, reflect = 1) {
     const box = new THREE.Box3().setFromObject(object3D);
     const dims = box.getSize(new THREE.Vector3());
     const size = Math.max(dims.x, dims.y, dims.z);
     if (size < this.minSize || dims.y < 2) return false;   // must be big and stand up
-    this.reflectors.push({ box, size });
+    this.reflectors.push({ box, size, reflect });
+    return true;
+  }
+
+  // Register a surface by its corners. reflect: 1 = solid building, down to
+  // about 0.1 for a mesh fence (most sound goes straight through)
+  addBox(min, max, reflect = 1) {
+    const box = new THREE.Box3(min.clone(), max.clone());
+    const dims = box.getSize(new THREE.Vector3());
+    const size = Math.max(dims.x, dims.z);
+    if (size < this.minSize) return false;
+    // Low walls reflect less: much of the sound passes over the top
+    const heightFactor = Math.min(1, 0.35 + dims.y / 3);
+    this.reflectors.push({ box, size, reflect: reflect * heightFactor });
     return true;
   }
 
@@ -325,7 +342,7 @@ export class EchoSystem {
     diffuser.buffer = ir;
     diffuser.connect(output);
 
-    // A small pool of echo paths, reused for whichever objects are nearest
+    // A small pool of echo paths, handed to whichever surfaces are nearest
     for (let i = 0; i < this.channelCount; i++) {
       const delay = ctx.createDelay(1.2);
       const muffle = ctx.createBiquadFilter();
@@ -335,47 +352,84 @@ export class EchoSystem {
       const spread = ctx.createGain();
       sharp.gain.value = 0;
       spread.gain.value = 0;
+      const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
       input.connect(delay);
       delay.connect(muffle);
       muffle.connect(sharp);
       muffle.connect(spread);
-      sharp.connect(output);
+      if (pan) sharp.connect(pan).connect(output);
+      else sharp.connect(output);
       spread.connect(diffuser);
-      this.channels.push({ delay, muffle, sharp, spread });
+      this.channels.push({ delay, muffle, sharp, spread, pan, owner: null, level: 0 });
     }
   }
 
-  // listener = THREE.Vector3 (the car's position)
-  update(listener) {
+  // listener = THREE.Vector3 (the car's position), heading = which way the
+  // car faces (radians), so echoes can come from the left or right
+  update(listener, heading = 0) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
 
-    // Find the nearest big objects
+    // The nearest surfaces, louder ones first
     const nearby = [];
     for (const r of this.reflectors) {
       const d = r.box.distanceToPoint(listener);
-      if (d <= this.maxDistance) nearby.push({ d: Math.max(d, 1), size: r.size });
+      if (d <= this.maxDistance) nearby.push({ r, d: Math.max(d, 1) });
     }
-    nearby.sort((a, b) => a.d - b.d);
+    nearby.sort((a, b) => a.d / a.r.reflect - b.d / b.r.reflect);
+    const wanted = nearby.slice(0, this.channelCount);
 
-    this.channels.forEach((ch, i) => {
-      const hit = nearby[i];
-      if (!hit) {
-        ch.sharp.gain.setTargetAtTime(0, t, 0.2);
-        ch.spread.gain.setTargetAtTime(0, t, 0.2);
-        return;
+    // Keep each surface on the same channel while it stays nearby, so its
+    // echo glides smoothly. A channel only takes a new surface once its old
+    // echo has faded out (no sudden jumps or pitch glitches).
+    const taken = new Set(this.channels.map((c) => c.owner).filter(Boolean));
+    const waiting = wanted.filter((w) => !taken.has(w.r));
+    for (const ch of this.channels) {
+      const hit = wanted.find((w) => w.r === ch.owner);
+      if (hit) {
+        this.steer(ch, hit, listener, heading, t, false);
+      } else if (ch.owner && ch.level > 0.005) {
+        this.fade(ch, t);                       // let the old echo die away first
+      } else if (waiting.length) {
+        ch.owner = waiting.shift().r;
+        const hitNew = wanted.find((w) => w.r === ch.owner);
+        this.steer(ch, hitNew, listener, heading, t, true);
+      } else {
+        ch.owner = null;
+        this.fade(ch, t);
       }
-      const { d, size } = hit;
-      const delaySeconds = clamp((2 * d) / 343, 0.005, 1.15);          // there and back at the speed of sound
-      const cutoff = clamp(5000 / (1 + d / 12), 250, 5000);            // further = more muffled
-      const strength = clamp(size / 25, 0.3, 1) * 0.55 * (12 / (12 + d)); // bigger and closer = louder
-      const dispersion = clamp(0.15 + d / 90, 0.15, 0.9);              // further = more spread out
+    }
+  }
 
-      ch.delay.delayTime.setTargetAtTime(delaySeconds, t, 0.2);
-      ch.muffle.frequency.setTargetAtTime(cutoff, t, 0.15);
-      ch.sharp.gain.setTargetAtTime(strength * (1 - dispersion), t, 0.15);
-      ch.spread.gain.setTargetAtTime(strength * dispersion, t, 0.15);
-    });
+  fade(ch, t) {
+    ch.level *= 0.85;
+    ch.sharp.gain.setTargetAtTime(0, t, 0.12);
+    ch.spread.gain.setTargetAtTime(0, t, 0.12);
+  }
+
+  steer(ch, { r, d }, listener, heading, t, fresh) {
+    const delaySeconds = clamp((2 * d) / 343, 0.005, 1.15);          // there and back at the speed of sound
+    const cutoff = clamp(5000 / (1 + d / 12), 250, 5000);            // further = more muffled
+    const strength = Math.min(0.6, clamp(r.size / 25, 0.3, 1) * 0.9 * (18 / (18 + d)) * r.reflect);   // bigger, closer, harder = louder
+    const dispersion = clamp(0.15 + d / 90, 0.15, 0.9);              // further = more spread out
+    ch.level = strength;
+
+    // A new surface: jump straight to its distance (it's silent at that moment)
+    if (fresh) ch.delay.delayTime.setValueAtTime(delaySeconds, t);
+    else ch.delay.delayTime.setTargetAtTime(delaySeconds, t, 0.2);
+    ch.muffle.frequency.setTargetAtTime(cutoff, t, 0.15);
+    ch.sharp.gain.setTargetAtTime(strength * (1 - dispersion), t, fresh ? 0.3 : 0.15);
+    ch.spread.gain.setTargetAtTime(strength * dispersion, t, fresh ? 0.3 : 0.15);
+
+    // Which side it's on: the nearest point of the surface, compared with
+    // the direction the car faces (left = -1, right = +1)
+    if (ch.pan) {
+      const p = r.box.clampPoint(listener, this._pt || (this._pt = new THREE.Vector3()));
+      const dx = p.x - listener.x, dz = p.z - listener.z;
+      const len = Math.hypot(dx, dz) || 1;
+      const leftness = (dx * Math.cos(heading) - dz * Math.sin(heading)) / len;
+      ch.pan.pan.setTargetAtTime(clamp(-leftness * 0.85, -1, 1), t, 0.15);
+    }
   }
 }
 
@@ -426,6 +480,10 @@ export class EngineSound {
     engineBus.gain.value = 0.85;
     compressor.connect(engineBus).connect(this.master);
     this.out = compressor;
+    // Everything the car makes goes through here, so it all echoes off walls
+    // (the echoes themselves go straight to the output, not back in here)
+    this.carBus = ctx.createGain();
+    this.carBus.connect(this.out);
     // Big one-off events (engine failure) skip the engine's levelling so they
     // can be much louder than the engine; a limiter just stops them clipping
     // (a soft clipper squeezes the sharp hits so the event can be loud and
@@ -455,10 +513,10 @@ export class EngineSound {
     this.engineGain.gain.value = 0;
 
     this.engineInput = warmth;
-    warmth.connect(this.body).connect(this.tone).connect(this.engineGain).connect(this.out);
+    warmth.connect(this.body).connect(this.tone).connect(this.engineGain).connect(this.carBus);
 
     // Echoes are fed from the engine sound
-    this.echo.connect(ctx, this.engineGain, this.out);
+    this.echo.connect(ctx, this.carBus, this.out);
 
     // --- Tyre squeal: rubber sliding on tarmac ---
     // A narrow band of noise plus a faint wavering whine, which together give
@@ -486,7 +544,7 @@ export class EngineSound {
     this.squealGain.gain.value = 0;
     squealNoise.connect(this.squealBand).connect(squealNoiseGain).connect(this.squealGain);
     this.squealTone.connect(squealToneGain).connect(this.squealGain);
-    this.squealGain.connect(this.out);
+    this.squealGain.connect(this.carBus);
 
     // --- Puncture hiss: air escaping from a tyre (quiet; the engine covers it) ---
     const hissSrc = ctx.createBufferSource();
@@ -497,7 +555,7 @@ export class EngineSound {
     hissFilter.frequency.value = 3800;
     this.hissGain = ctx.createGain();
     this.hissGain.gain.value = 0;
-    hissSrc.connect(hissFilter).connect(this.hissGain).connect(this.out);
+    hissSrc.connect(hissFilter).connect(this.hissGain).connect(this.carBus);
     hissSrc.start(ctx.currentTime);
 
     // --- Gravel: a deep growling rumble with a staticky crackle on top ---
@@ -533,68 +591,93 @@ export class EngineSound {
     gravelWeight.gain.value = 7;
     this.gravelSrc.connect(this.gravelTone).connect(growl).connect(this.gravelDepth)
       .connect(gravelWeight).connect(growlLevel).connect(this.gravelGain);
-    this.gravelGain.connect(this.out);
-    this.crackleSrc.connect(crackleFilter).connect(this.crackleGain).connect(this.out);
+    this.gravelGain.connect(this.carBus);
+    this.crackleSrc.connect(crackleFilter).connect(this.crackleGain).connect(this.carBus);
     this.gravelSrc.start(ctx.currentTime);
     this.crackleSrc.start(ctx.currentTime);
 
-    // --- Blown tyre: loose rubber slapping the road and bodywork ---
-    // Rumbly noise chopped by a ramp that snaps up and dies away: one slap per
-    // strip of flapping rubber, faster as the wheel turns faster
-    const flapSrc = ctx.createBufferSource();
-    flapSrc.buffer = this.noise;
-    flapSrc.loop = true;
-    const flapBand = ctx.createBiquadFilter();
-    flapBand.type = 'bandpass';
-    flapBand.frequency.value = 320;
-    flapBand.Q.value = 0.8;
-    this.flapChop = ctx.createGain();
-    this.flapChop.gain.value = 0;
-    this.flapRate = ctx.createOscillator();
-    this.flapRate.type = 'sawtooth';
-    this.flapRate.frequency.value = 8;
-    const flapShape = ctx.createGain();
-    flapShape.gain.value = -0.5;               // upside-down ramp: a sharp slap, then it fades
-    const flapBias = ctx.createConstantSource();
-    flapBias.offset.value = 0.5;
-    this.flapRate.connect(flapShape).connect(this.flapChop.gain);
-    flapBias.connect(this.flapChop.gain);
+    // --- Blown tyre: a subtle grinding as the shredded tyre and the rim's
+    // edge drag on the road (no flapping). Two bands of noise: a low, rough
+    // grind and a dry mid-range rasp.
+    const grindSrc = ctx.createBufferSource();
+    grindSrc.buffer = this.noise;
+    grindSrc.loop = true;
+    const grindLow = ctx.createBiquadFilter();
+    grindLow.type = 'bandpass';
+    grindLow.frequency.value = 260;
+    grindLow.Q.value = 1.1;
+    this.grindMid = ctx.createBiquadFilter();
+    this.grindMid.type = 'bandpass';
+    this.grindMid.frequency.value = 1300;
+    this.grindMid.Q.value = 2;
+    const grindLowLevel = ctx.createGain();
+    grindLowLevel.gain.value = 3.5;
+    const grindMidLevel = ctx.createGain();
+    grindMidLevel.gain.value = 1.6;
+    const grindShape = ctx.createWaveShaper();   // a little grit
+    grindShape.curve = makeGrowlCurve();
     this.flapGain = ctx.createGain();
     this.flapGain.gain.value = 0;
-    const flapBoost = ctx.createGain();
-    flapBoost.gain.value = 9;                  // (a band of noise is quiet, so it needs a boost)
-    flapSrc.connect(flapBand).connect(flapBoost).connect(this.flapChop).connect(this.flapGain).connect(this.out);
+    grindSrc.connect(grindLow).connect(grindLowLevel).connect(grindShape);
+    grindSrc.connect(this.grindMid).connect(grindMidLevel).connect(grindShape);
+    grindShape.connect(this.flapGain).connect(this.carBus);
 
-    // --- Bare rim on tarmac: a harsh metal scrape with a grinding undertone ---
+    // --- Bare rim on tarmac: a sharp, piercing metal SCREECH ---
+    // Clashing metallic tones (not a rubbery squeal) plus a
+    // thin, hissing "tsss" of metal grinding on stone. No low rumble under it:
+    // it's meant to be harsh and grating. It shrieks louder and higher the
+    // harder the rim slides.
     const rimSrc = ctx.createBufferSource();
     rimSrc.buffer = this.noise;
     rimSrc.loop = true;
-    const rimScreech = ctx.createBiquadFilter();
-    rimScreech.type = 'bandpass';
-    rimScreech.frequency.value = 3100;
-    rimScreech.Q.value = 4;
-    const rimGrind = ctx.createBiquadFilter();
-    rimGrind.type = 'bandpass';
-    rimGrind.frequency.value = 850;
-    rimGrind.Q.value = 1.5;
-    const screechLevel = ctx.createGain();
-    screechLevel.gain.value = 2.2;
-    const grindLevel = ctx.createGain();
-    grindLevel.gain.value = 1.3;
-    this.rimRough = ctx.createGain();           // the rim skips and chatters over the road
+    this.screechA = ctx.createBiquadFilter();
+    this.screechA.type = 'bandpass';
+    this.screechA.frequency.value = 3300;
+    this.screechA.Q.value = 30;
+    this.screechB = ctx.createBiquadFilter();      // an off-key partner: metal, not music
+    this.screechB.type = 'bandpass';
+    this.screechB.frequency.value = 3300 * 1.53;
+    this.screechB.Q.value = 30;
+    const screechBoost = ctx.createGain();
+    screechBoost.gain.value = 26;                  // (very narrow bands of noise are quiet)
+    this.screechGain = ctx.createGain();
+    this.screechGain.gain.value = 0;
+    const sizzle = ctx.createBiquadFilter();       // the "tsss"
+    sizzle.type = 'highpass';
+    sizzle.frequency.value = 6500;
+    sizzle.Q.value = 0.9;
+    const sizzleLevel = ctx.createGain();
+    sizzleLevel.gain.value = 0.5;
+    this.rimRough = ctx.createGain();              // steady: a constant screech, no chopping
     this.rimRough.gain.value = 0.75;
-    const chatter = ctx.createOscillator();
-    chatter.type = 'square';
-    chatter.frequency.value = 23;
-    const chatterDepth = ctx.createGain();
-    chatterDepth.gain.value = 0.25;
-    chatter.connect(chatterDepth).connect(this.rimRough.gain);
     this.rimGain = ctx.createGain();
     this.rimGain.gain.value = 0;
-    rimSrc.connect(rimScreech).connect(screechLevel).connect(this.rimRough);
-    rimSrc.connect(rimGrind).connect(grindLevel).connect(this.rimRough);
-    this.rimRough.connect(this.rimGain).connect(this.out);
-    for (const n of [flapSrc, this.flapRate, flapBias, rimSrc, chatter]) n.start(ctx.currentTime);
+    rimSrc.connect(this.screechA).connect(screechBoost);
+    rimSrc.connect(this.screechB).connect(screechBoost);
+    screechBoost.connect(this.screechGain).connect(this.rimRough);
+    rimSrc.connect(sizzle).connect(sizzleLevel).connect(this.rimRough);
+    // The piercing core: three pure, clashing tones (off-key to each other,
+    // like struck metal), with a fast nervous waver from the rim
+    // stick-slipping on the road. Pure tones cut through the engine far
+    // more clearly than noise does.
+    this.screechTones = [1, 1.53, 2.31].map((ratio, k) => {
+      const osc = ctx.createOscillator();
+      osc.type = k === 0 ? 'triangle' : 'sine';  // the main tone a little edgy
+      osc.frequency.value = 3300 * ratio;
+      const g = ctx.createGain();
+      g.gain.value = [0.9, 0.55, 0.3][k];
+      osc.connect(g).connect(this.screechGain);
+      return { osc, ratio };
+    });
+    const waver = ctx.createOscillator();
+    waver.frequency.value = 17;
+    const waverDepth = ctx.createGain();
+    waverDepth.gain.value = 22;                    // cents
+    waver.connect(waverDepth);
+    for (const { osc } of this.screechTones) waverDepth.connect(osc.detune);
+    this.screechStarters = [waver, ...this.screechTones.map((tn) => tn.osc)];
+    this.rimRough.connect(this.rimGain).connect(this.carBus);
+    for (const n of [grindSrc, rimSrc, ...this.screechStarters]) n.start(ctx.currentTime);
     const startAt = ctx.currentTime;
     squealNoise.start(startAt);
     this.squealTone.start(startAt);
@@ -652,7 +735,7 @@ export class EngineSound {
     // Shifts and the engine dying stay quick; everything else eases
     this.engineGain.gain.setTargetAtTime(volume, t, shifting || car.engineBlown ? 0.03 : car.engineDead ? 0.4 : loadEase);
 
-    this.echo.update(listenerPos);
+    this.echo.update(listenerPos, car.heading);
   }
 
   // Puncture hiss, called every frame with how fast air is escaping
@@ -685,26 +768,33 @@ export class EngineSound {
     this.gravelDepth.frequency.setTargetAtTime(200 + 260 * move + 150 * sliding, t, 0.1);
   }
 
-  // Blown tyre flapping, called every frame. amount: 0-1 (fades as the rubber
-  // shreds away), speed: m/s
+  // Blown tyre grinding, called every frame. amount: 0-1 (grows as the
+  // rubber shreds away and the rim gets closer to the road), speed: m/s
   setTyreFlap(amount, speed) {
     if (!this.ctx || !this.flapGain) return;
     const t = this.ctx.currentTime;
-    const rolling = Math.min(1, speed / 6);
-    const level = amount * rolling * (0.18 + 0.22 * Math.min(1, speed / 25));
-    this.flapGain.gain.setTargetAtTime(level, t, 0.1);
-    // Two loose strips slapping once each per turn of the wheel (radius 0.288 m)
-    const turnsPerSecond = speed / (2 * Math.PI * 0.288);
-    this.flapRate.frequency.setTargetAtTime(Math.max(1, turnsPerSecond * 2), t, 0.08);
+    const rolling = Math.min(1, speed / 4);
+    const level = amount * rolling * (0.035 + 0.045 * Math.min(1, speed / 25));   // subtle
+    this.flapGain.gain.setTargetAtTime(level, t, 0.15);
+    this.grindMid.frequency.setTargetAtTime(1000 + 900 * Math.min(1, speed / 25), t, 0.1);
   }
 
-  // Bare rims scraping, called every frame. rims: how many, speed: m/s
-  setRimScrape(rims, speed) {
+  // Bare rims on the road, called every frame. rims: how many, speed: m/s,
+  // slide: how hard the rims are sliding (0-1)
+  setRimScrape(rims, speed, slide = 0) {
     if (!this.ctx || !this.rimGain) return;
     const t = this.ctx.currentTime;
     const moving = Math.min(1, speed / 5);
-    const level = rims ? moving * (0.3 + 0.25 * Math.min(1, speed / 25)) * Math.min(1.6, 0.8 + 0.4 * rims) : 0;
+    const level = rims ? moving * (0.22 + 0.18 * Math.min(1, speed / 25)) * Math.min(1.6, 0.8 + 0.4 * rims) : 0;
     this.rimGain.gain.setTargetAtTime(level, t, level > this.rimGain.gain.value ? 0.05 : 0.12);
+    // Metal always screeches a little on tarmac, and shrieks when it slides
+    const sliding = Math.min(1, Math.max(0, slide));
+    this.screechGain.gain.setTargetAtTime(0.3 + 1.0 * sliding, t, 0.05);
+    this.screechDrift = Math.max(-1, Math.min(1, (this.screechDrift || 0) + (Math.random() - 0.5) * 0.25));
+    const pitch = 3200 + 1400 * sliding + 200 * this.screechDrift;
+    this.screechA.frequency.setTargetAtTime(pitch, t, 0.05);
+    this.screechB.frequency.setTargetAtTime(pitch * 1.53, t, 0.05);
+    for (const { osc, ratio } of this.screechTones) osc.frequency.setTargetAtTime(pitch * ratio, t, 0.05);
   }
 
   // A tyre bursting: a sharp BANG, a deep thump through the car and a rush
@@ -885,7 +975,7 @@ export class EngineSound {
     env.gain.exponentialRampToValueAtTime(0.7, t + 0.01);
     env.gain.setValueAtTime(0.7, t + 0.25);
     env.gain.exponentialRampToValueAtTime(0.001, t + 0.38);
-    src.connect(band).connect(chatter).connect(env).connect(this.out);
+    src.connect(band).connect(chatter).connect(env).connect(this.carBus);
     src.start(t, Math.random());
     src.stop(t + 0.4);
     lfo.start(t);
@@ -915,7 +1005,7 @@ export class EngineSound {
       clackGain.gain.setValueAtTime(0.0001, t);
       clackGain.gain.exponentialRampToValueAtTime(0.4, t + 0.003);
       clackGain.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
-      clack.connect(band).connect(clackGain).connect(this.out);
+      clack.connect(band).connect(clackGain).connect(this.carBus);
       clack.start(t, Math.random());
       clack.stop(t + 0.1);
 
@@ -929,7 +1019,7 @@ export class EngineSound {
       thumpGain.gain.setValueAtTime(0.16, t);
       thumpGain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
     }
-    thump.connect(thumpGain).connect(this.out);
+    thump.connect(thumpGain).connect(this.carBus);
     thump.start(t);
     thump.stop(t + 0.2);
   }
