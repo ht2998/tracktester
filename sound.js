@@ -537,6 +537,64 @@ export class EngineSound {
     this.crackleSrc.connect(crackleFilter).connect(this.crackleGain).connect(this.out);
     this.gravelSrc.start(ctx.currentTime);
     this.crackleSrc.start(ctx.currentTime);
+
+    // --- Blown tyre: loose rubber slapping the road and bodywork ---
+    // Rumbly noise chopped by a ramp that snaps up and dies away: one slap per
+    // strip of flapping rubber, faster as the wheel turns faster
+    const flapSrc = ctx.createBufferSource();
+    flapSrc.buffer = this.noise;
+    flapSrc.loop = true;
+    const flapBand = ctx.createBiquadFilter();
+    flapBand.type = 'bandpass';
+    flapBand.frequency.value = 320;
+    flapBand.Q.value = 0.8;
+    this.flapChop = ctx.createGain();
+    this.flapChop.gain.value = 0;
+    this.flapRate = ctx.createOscillator();
+    this.flapRate.type = 'sawtooth';
+    this.flapRate.frequency.value = 8;
+    const flapShape = ctx.createGain();
+    flapShape.gain.value = -0.5;               // upside-down ramp: a sharp slap, then it fades
+    const flapBias = ctx.createConstantSource();
+    flapBias.offset.value = 0.5;
+    this.flapRate.connect(flapShape).connect(this.flapChop.gain);
+    flapBias.connect(this.flapChop.gain);
+    this.flapGain = ctx.createGain();
+    this.flapGain.gain.value = 0;
+    const flapBoost = ctx.createGain();
+    flapBoost.gain.value = 9;                  // (a band of noise is quiet, so it needs a boost)
+    flapSrc.connect(flapBand).connect(flapBoost).connect(this.flapChop).connect(this.flapGain).connect(this.out);
+
+    // --- Bare rim on tarmac: a harsh metal scrape with a grinding undertone ---
+    const rimSrc = ctx.createBufferSource();
+    rimSrc.buffer = this.noise;
+    rimSrc.loop = true;
+    const rimScreech = ctx.createBiquadFilter();
+    rimScreech.type = 'bandpass';
+    rimScreech.frequency.value = 3100;
+    rimScreech.Q.value = 4;
+    const rimGrind = ctx.createBiquadFilter();
+    rimGrind.type = 'bandpass';
+    rimGrind.frequency.value = 850;
+    rimGrind.Q.value = 1.5;
+    const screechLevel = ctx.createGain();
+    screechLevel.gain.value = 2.2;
+    const grindLevel = ctx.createGain();
+    grindLevel.gain.value = 1.3;
+    this.rimRough = ctx.createGain();           // the rim skips and chatters over the road
+    this.rimRough.gain.value = 0.75;
+    const chatter = ctx.createOscillator();
+    chatter.type = 'square';
+    chatter.frequency.value = 23;
+    const chatterDepth = ctx.createGain();
+    chatterDepth.gain.value = 0.25;
+    chatter.connect(chatterDepth).connect(this.rimRough.gain);
+    this.rimGain = ctx.createGain();
+    this.rimGain.gain.value = 0;
+    rimSrc.connect(rimScreech).connect(screechLevel).connect(this.rimRough);
+    rimSrc.connect(rimGrind).connect(grindLevel).connect(this.rimRough);
+    this.rimRough.connect(this.rimGain).connect(this.out);
+    for (const n of [flapSrc, this.flapRate, flapBias, rimSrc, chatter]) n.start(ctx.currentTime);
     const startAt = ctx.currentTime;
     squealNoise.start(startAt);
     this.squealTone.start(startAt);
@@ -625,6 +683,56 @@ export class EngineSound {
     this.crackleSrc.playbackRate.setTargetAtTime(0.4 + 1.1 * move, t, 0.1);
     this.gravelTone.frequency.setTargetAtTime(120 + 380 * move + 250 * sliding, t, 0.1);
     this.gravelDepth.frequency.setTargetAtTime(200 + 260 * move + 150 * sliding, t, 0.1);
+  }
+
+  // Blown tyre flapping, called every frame. amount: 0-1 (fades as the rubber
+  // shreds away), speed: m/s
+  setTyreFlap(amount, speed) {
+    if (!this.ctx || !this.flapGain) return;
+    const t = this.ctx.currentTime;
+    const rolling = Math.min(1, speed / 6);
+    const level = amount * rolling * (0.18 + 0.22 * Math.min(1, speed / 25));
+    this.flapGain.gain.setTargetAtTime(level, t, 0.1);
+    // Two loose strips slapping once each per turn of the wheel (radius 0.288 m)
+    const turnsPerSecond = speed / (2 * Math.PI * 0.288);
+    this.flapRate.frequency.setTargetAtTime(Math.max(1, turnsPerSecond * 2), t, 0.08);
+  }
+
+  // Bare rims scraping, called every frame. rims: how many, speed: m/s
+  setRimScrape(rims, speed) {
+    if (!this.ctx || !this.rimGain) return;
+    const t = this.ctx.currentTime;
+    const moving = Math.min(1, speed / 5);
+    const level = rims ? moving * (0.3 + 0.25 * Math.min(1, speed / 25)) * Math.min(1.6, 0.8 + 0.4 * rims) : 0;
+    this.rimGain.gain.setTargetAtTime(level, t, level > this.rimGain.gain.value ? 0.05 : 0.12);
+  }
+
+  // A tyre bursting: a sharp BANG, a deep thump through the car and a rush
+  // of air. Louder than the engine, like the engine failure.
+  playBlowout() {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const t0 = ctx.currentTime;
+    const out = this.fxOut;
+    const burst = (at, length, type, freq, q, peak, attack = 0.001) => {
+      const src = ctx.createBufferSource();
+      src.buffer = this.noise;
+      const f = ctx.createBiquadFilter();
+      f.type = type;
+      f.frequency.value = freq;
+      f.Q.value = q;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(peak, at + attack);
+      g.gain.exponentialRampToValueAtTime(0.0008, at + length);
+      src.connect(f).connect(g).connect(out);
+      src.start(at, Math.random() * 1.5);
+      src.stop(at + length + 0.05);
+    };
+    burst(t0, 0.06, 'highpass', 900, 0.7, 3.0);          // the crack of the bang
+    burst(t0, 0.18, 'lowpass', 1400, 0.7, 2.6);          // its body
+    burst(t0, 0.35, 'lowpass', 130, 0.8, 3.2, 0.002);    // the thump through the car
+    burst(t0 + 0.02, 0.7, 'bandpass', 1600, 0.9, 0.9, 0.01);   // air rushing out
   }
 
   // Tyre squeal, called every frame. skid: how hard the tyres are skidding
