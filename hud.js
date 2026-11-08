@@ -362,6 +362,29 @@ const STYLE = `
   color: ${COLORS.inkSoft};
 }
 #sidepanel input[type=range]:focus-visible { outline: 2px solid ${COLORS.needle}; outline-offset: 3px; }
+
+/* Time and weather */
+#clock {
+  position: fixed;
+  right: calc(10px + env(safe-area-inset-right));
+  top: calc(6px + env(safe-area-inset-top));
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(14, 16, 19, 0.45);
+  color: rgba(242, 239, 230, 0.85);
+  font: 600 14px ${FONT};
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  white-space: nowrap;
+}
+#sidepanel .tw-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+#sidepanel .tw-clock { font-size: 24px; font-weight: 600; color: ${COLORS.ink}; font-variant-numeric: tabular-nums; }
+#sidepanel .tw-lock[aria-pressed="true"] { border-color: ${COLORS.needle}; color: ${COLORS.needle}; }
+#sidepanel .tw-row { display: flex; justify-content: space-between; align-items: baseline; color: ${COLORS.ink}; font-size: 15px; font-weight: 600; margin-top: 4px; }
+#sidepanel .tw-value { color: ${COLORS.needle}; font-size: 15px; font-weight: 600; }
+#sidepanel .tyre-box input[type=range] { width: 100%; margin: 0; accent-color: ${COLORS.needle}; cursor: pointer; }
+#sidepanel .tw-check { display: flex; align-items: center; gap: 8px; color: ${COLORS.ink}; font-size: 15px; font-weight: 600; cursor: pointer; }
+#sidepanel .tw-check input { width: 18px; height: 18px; accent-color: ${COLORS.needle}; margin: 0; }
 #sidepanel button:focus-visible { outline: 2px solid ${COLORS.needle}; outline-offset: 2px; }
 `;
 
@@ -512,7 +535,10 @@ function roundRect(g, x, y, w, h, r) {
 // The dashboard
 // ---------------------------------------------------------------------
 export class Hud {
-  constructor({ redline, maxSpeed = 240, onTransmission, onAssist, onTyres, tyreOptions = {}, compact = false }) {
+  constructor({ redline, maxSpeed = 240, onTransmission, onAssist, onTyres, tyreOptions = {}, compact = false,
+                timeSpeeds = [60], onSky = {} }) {
+    this.timeSpeeds = timeSpeeds;
+    this.onSky = onSky;
     this.onTyres = onTyres;
     this.tyreOptions = tyreOptions;
     this.compact = compact;   // mini gauges for phones and tablets
@@ -668,7 +694,47 @@ export class Hud {
     tyreBox.append(select, note, fresh);
     this.tyreSelect = select;
 
-    panel.append(gearHeading, gearGroup, assistHeading, ...assistButtons, tyreHeading, tyreBox);
+    // Time and weather
+    const skyHeading = document.createElement('div');
+    skyHeading.className = 'sp-heading';
+    skyHeading.textContent = 'Time & weather';
+    const skyBox = document.createElement('div');
+    skyBox.className = 'tyre-box';
+    skyBox.innerHTML = `
+      <div class="tw-top"><span class="tw-clock">--:--</span>
+        <button type="button" class="tyre-fresh tw-lock" aria-pressed="false">Lock time</button></div>
+      <label class="tw-row" for="tw-time"><span>Time of day</span></label>
+      <input id="tw-time" type="range" min="0" max="24" step="0.25">
+      <label class="tw-row" for="tw-speed"><span>Time speed</span><span class="tw-value tw-speed-label"></span></label>
+      <input id="tw-speed" type="range" min="0" max="${this.timeSpeeds.length - 1}" step="1">
+      <span class="gb-note tw-speed-note"></span>
+      <label class="tw-row" for="tw-weather"><span>Weather</span></label>
+      <select id="tw-weather"><option value="clear">Clear</option><option value="cloudy">Cloudy</option></select>
+      <label class="tw-check"><input type="checkbox" class="tw-changing"> Changes by itself</label>
+      <span class="gb-note tw-now"></span>`;
+    const q = (sel) => skyBox.querySelector(sel);
+    this.tw = {
+      clock: q('.tw-clock'), lock: q('.tw-lock'), time: q('#tw-time'), speed: q('#tw-speed'),
+      speedLabel: q('.tw-speed-label'), speedNote: q('.tw-speed-note'),
+      weather: q('#tw-weather'), changing: q('.tw-changing'), now: q('.tw-now'),
+    };
+    const letGo = (el) => { el.addEventListener('change', () => el.blur()); el.addEventListener('pointerup', () => el.blur()); };
+    this.tw.time.addEventListener('input', () => this.onSky.time?.(Number(this.tw.time.value)));
+    this.tw.speed.addEventListener('input', () => this.onSky.speed?.(this.timeSpeeds[Number(this.tw.speed.value)]));
+    this.tw.lock.addEventListener('click', () => {
+      this.onSky.lock?.(this.tw.lock.getAttribute('aria-pressed') !== 'true');
+      this.tw.lock.blur();
+    });
+    this.tw.weather.addEventListener('change', () => this.onSky.weather?.(this.tw.weather.value));
+    this.tw.changing.addEventListener('change', () => this.onSky.changing?.(this.tw.changing.checked));
+    [this.tw.time, this.tw.speed, this.tw.weather, this.tw.changing].forEach(letGo);
+
+    // The clock in the corner of the screen
+    this.clockText = document.createElement('div');
+    this.clockText.id = 'clock';
+    document.body.appendChild(this.clockText);
+
+    panel.append(gearHeading, gearGroup, assistHeading, ...assistButtons, tyreHeading, tyreBox, skyHeading, skyBox);
     this.side.append(handle, panel);
     document.body.appendChild(this.side);
 
@@ -695,8 +761,36 @@ export class Hud {
     this.tyreBars.resize(Math.round(tachSize * (this.compact ? 0.62 : 0.5)));   // a bit bigger on phones
   }
 
+  // Time and weather: the corner clock and the side panel follow the game
+  // (but never fight a control you're dragging)
+  updateSky({ clock, hours, speed, locked, weather, changing, now }) {
+    const lockedMark = locked ? ' (locked)' : '';
+    if (this.clockText.textContent !== clock + lockedMark) this.clockText.textContent = clock + lockedMark;
+    const tw = this.tw;
+    if (tw.clock.textContent !== clock) tw.clock.textContent = clock;
+    if (document.activeElement !== tw.time && Math.abs(Number(tw.time.value) - hours) > 0.2) tw.time.value = String(hours);
+    const si = Math.max(0, this.timeSpeeds.indexOf(speed));
+    if (document.activeElement !== tw.speed && tw.speed.value !== String(si)) tw.speed.value = String(si);
+    const speedLabel = speed === 1 ? 'Real time' : `${speed}x`;
+    if (tw.speedLabel.textContent !== speedLabel) {
+      tw.speedLabel.textContent = speedLabel;
+      const mins = (24 * 60) / speed;
+      tw.speedNote.textContent = speed === 1 ? 'A day takes a day'
+        : mins >= 60 ? `A day takes ${+(mins / 60).toFixed(1)} hours` : `A day takes ${Math.round(mins)} minutes`;
+    }
+    tw.lock.setAttribute('aria-pressed', String(locked));
+    const lockText = locked ? 'Time locked' : 'Lock time';
+    if (tw.lock.textContent !== lockText) tw.lock.textContent = lockText;
+    if (document.activeElement !== tw.weather && tw.weather.value !== weather) tw.weather.value = weather;
+    tw.weather.disabled = changing;           // it's in charge of itself while changing
+    tw.changing.checked = changing;
+    const nowText = changing ? `Now: ${now}` : '';
+    if (tw.now.textContent !== nowText) tw.now.textContent = nowText;
+  }
+
   update({ speedKmh, rpm, gearLabel, limiter, transmission, engineHealth = 1, oilLevel = 1,
-           fuelLevel = 1, assists = {}, clutchIn = false, tyres = null, tyreCompound = 'SM', lights = 0, time }) {
+           fuelLevel = 1, assists = {}, clutchIn = false, tyres = null, tyreCompound = 'SM', lights = 0, sky = null, time }) {
+    if (sky) this.updateSky(sky);
     this.tyreBars.draw(tyres, tyreCompound, time);
     if (this.tyreSelect && document.activeElement !== this.tyreSelect && this.tyreSelect.value !== tyreCompound) {
       this.tyreSelect.value = tyreCompound;
