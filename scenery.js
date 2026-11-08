@@ -218,9 +218,9 @@ function buildArmco(scene, runs) {
 }
 
 // Tyre barrier: stacks of old tyres, bolted together, with a belt of
-// conveyor rubber across the front (here: the stacks, 3 high, 2 deep)
+// conveyor rubber across the front (here: the stacks, 4 high, 2 deep)
 function buildTyreWalls(scene, runs) {
-  const R = 0.32, STEP = 0.62, HIGH = 3, ROWS = 2;
+  const R = 0.32, STEP = 0.62, HIGH = 4, ROWS = 2;
   const spots = runs.flatMap(([ax, az, bx, bz]) => {
     const pts = along(ax, az, bx, bz, STEP);
     const out = [];
