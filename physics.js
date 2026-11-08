@@ -139,6 +139,9 @@ export class CarPhysics {
     // this so that tyres rolling over oil (or later gravel, wet patches...)
     // lose grip.
     this.surfaceGrip = () => 1;
+    // How much the ground holds the tyres back at a point, as a share of the
+    // tyre's load: 0 = tarmac. Gravel is loose, so the tyres plough into it.
+    this.surfaceDrag = () => 0;
     this.reset();
   }
 
@@ -458,6 +461,18 @@ export class CarPhysics {
     let flatPull = 0;
     WHEEL_ORDER.forEach((w, i) => {
       const drag = 0.03 * Math.pow(1 - this.tyres[i].pressure, 1.5) * loads[i];
+      flatDrag += drag;
+      flatPull += drag * w.side * s.trackHalf;
+    });
+    // Loose ground (gravel) drags each tyre that's in it, harder the faster
+    // you go. With only one side in it, it pulls the car in that direction.
+    const ploughing = 0.3 + 0.7 * Math.min(1, Math.hypot(this.vx, this.vy) / 25);
+    const wheelAt = [
+      [fxA + lx * t, fzA + lz * t], [fxA - lx * t, fzA - lz * t],
+      [rxA + lx * t, rzA + lz * t], [rxA - lx * t, rzA - lz * t],
+    ];
+    WHEEL_ORDER.forEach((w, i) => {
+      const drag = this.surfaceDrag(wheelAt[i][0], wheelAt[i][1]) * ploughing * loads[i];
       flatDrag += drag;
       flatPull += drag * w.side * s.trackHalf;
     });
