@@ -202,6 +202,56 @@ function makeNoiseBuffer(ctx, seconds = 2) {
   return buffer;
 }
 
+// Gravel grind: deep rumbling noise that swells and crunches unevenly, as
+// stones shift and pack under the tyre (looped, sped up with road speed)
+function makeGravelBuffer(ctx, seconds = 3) {
+  const sr = ctx.sampleRate;
+  const buffer = ctx.createBuffer(1, sr * seconds, sr);
+  const data = buffer.getChannelData(0);
+  let brown = 0, env = 0.6, target = 0.6, crunch = 0;
+  for (let i = 0; i < data.length; i++) {
+    brown = (brown + 0.04 * (Math.random() * 2 - 1)) * 0.985;      // deep rumble
+    if (Math.random() < 90 / sr) target = 0.15 + Math.random() * (Math.random() < 0.25 ? 1.5 : 0.8);
+    env += (target - env) * 0.006;                                   // lumpy swells
+    if (Math.random() < 260 / sr) crunch = 0.5 + Math.random() * 0.5; // stones packing
+    crunch *= 0.996;
+    data[i] = brown * 4 * env + (Math.random() * 2 - 1) * crunch * 0.35;
+  }
+  // Blend the end into the start so the loop has no click
+  const fade = Math.floor(sr * 0.05);
+  for (let i = 0; i < fade; i++) {
+    const k = i / fade;
+    data[i] = data[i] * k + data[data.length - fade + i] * (1 - k);
+  }
+  return buffer;
+}
+
+// Gravel static: sparse sharp ticks of small stones pinging off the tyres
+// and bodywork, over a faint crackly hiss
+function makeCrackleBuffer(ctx, seconds = 2) {
+  const sr = ctx.sampleRate;
+  const buffer = ctx.createBuffer(1, sr * seconds, sr);
+  const data = buffer.getChannelData(0);
+  let click = 0;
+  const decay = Math.exp(-1 / (sr * 0.0004));
+  for (let i = 0; i < data.length; i++) {
+    if (Math.random() < 700 / sr) click = 0.3 + Math.random() * 0.7;
+    click *= decay;
+    data[i] = (Math.random() * 2 - 1) * (click + 0.06);
+  }
+  return buffer;
+}
+
+// Growl: a gritty saturation that roughens the rumble
+function makeGrowlCurve() {
+  const n = 1024, curve = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * 2 - 1;
+    curve[i] = Math.tanh(x * 3) * 0.8 + 0.2 * Math.sign(x) * Math.min(1, Math.abs(x) * 6) * 0.5;
+  }
+  return curve;
+}
+
 // Soft saturation: a little warmth, and keeps peaks from getting harsh
 function makeWarmthCurve(amount = 1.4) {
   const n = 1024;
@@ -449,6 +499,44 @@ export class EngineSound {
     this.hissGain.gain.value = 0;
     hissSrc.connect(hissFilter).connect(this.hissGain).connect(this.out);
     hissSrc.start(ctx.currentTime);
+
+    // --- Gravel: a deep growling rumble with a staticky crackle on top ---
+    this.gravelSrc = ctx.createBufferSource();
+    this.gravelSrc.buffer = makeGravelBuffer(ctx);
+    this.gravelSrc.loop = true;
+    this.gravelTone = ctx.createBiquadFilter();     // opens up with speed
+    this.gravelTone.type = 'lowpass';
+    this.gravelTone.frequency.value = 300;
+    this.gravelTone.Q.value = 1.2;
+    const growl = ctx.createWaveShaper();
+    growl.curve = makeGrowlCurve();
+    const growlLevel = ctx.createGain();
+    growlLevel.gain.value = 1.1;
+    this.crackleSrc = ctx.createBufferSource();
+    this.crackleSrc.buffer = makeCrackleBuffer(ctx);
+    this.crackleSrc.loop = true;
+    const crackleFilter = ctx.createBiquadFilter();
+    crackleFilter.type = 'highpass';
+    crackleFilter.frequency.value = 2200;
+    this.crackleGain = ctx.createGain();
+    this.crackleGain.gain.value = 0;
+    this.gravelGain = ctx.createGain();
+    this.gravelGain.gain.value = 0;
+    // After the grit: round off the fizz and add weight, so it's a deep rumble
+    this.gravelDepth = ctx.createBiquadFilter();
+    this.gravelDepth.type = 'lowpass';
+    this.gravelDepth.frequency.value = 260;
+    this.gravelDepth.Q.value = 0.8;
+    const gravelWeight = ctx.createBiquadFilter();
+    gravelWeight.type = 'lowshelf';
+    gravelWeight.frequency.value = 110;
+    gravelWeight.gain.value = 7;
+    this.gravelSrc.connect(this.gravelTone).connect(growl).connect(this.gravelDepth)
+      .connect(gravelWeight).connect(growlLevel).connect(this.gravelGain);
+    this.gravelGain.connect(this.out);
+    this.crackleSrc.connect(crackleFilter).connect(this.crackleGain).connect(this.out);
+    this.gravelSrc.start(ctx.currentTime);
+    this.crackleSrc.start(ctx.currentTime);
     const startAt = ctx.currentTime;
     squealNoise.start(startAt);
     this.squealTone.start(startAt);
@@ -514,6 +602,29 @@ export class EngineSound {
     if (!this.ctx || !this.hissGain) return;
     const level = Math.min(0.11, amount * 2.6);
     this.hissGain.gain.setTargetAtTime(level, this.ctx.currentTime, 0.2);
+  }
+
+  // Gravel, called every frame. share: how many tyres are in it (0-1),
+  // speed: m/s, slide: how hard the tyres are sliding (0-1)
+  setGravel(share, speed, slide) {
+    if (!this.ctx || !this.gravelGain) return;
+    const t = this.ctx.currentTime;
+    const move = Math.min(1, speed / 25);
+    const rolling = Math.min(1, speed / 1.5);             // silent when stopped
+    const harsh = 1 + 0.7 * Math.min(1, slide);
+    const growl = share * rolling * (0.06 + 0.3 * Math.sqrt(move)) * harsh;
+    const crackle = share * rolling * (0.011 + 0.06 * move) * harsh;
+    // Fades in as tyres roll into the stones and out as they leave
+    const ease = growl > this.gravelGain.gain.value ? 0.08 : 0.15;
+    this.gravelGain.gain.setTargetAtTime(growl, t, ease);
+    this.crackleGain.gain.setTargetAtTime(crackle, t, ease);
+    // Faster: a busier, higher grind and more stones pinging
+    // (kept low: it deepens and rolls faster rather than getting shrill)
+    const sliding = Math.min(1, slide);
+    this.gravelSrc.playbackRate.setTargetAtTime(0.35 + 0.5 * move + 0.2 * sliding, t, 0.1);
+    this.crackleSrc.playbackRate.setTargetAtTime(0.4 + 1.1 * move, t, 0.1);
+    this.gravelTone.frequency.setTargetAtTime(120 + 380 * move + 250 * sliding, t, 0.1);
+    this.gravelDepth.frequency.setTargetAtTime(200 + 260 * move + 150 * sliding, t, 0.1);
   }
 
   // Tyre squeal, called every frame. skid: how hard the tyres are skidding
