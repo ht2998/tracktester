@@ -377,6 +377,35 @@ const GEARBOXES = [
 ];
 
 // The classic check engine symbol: an engine block seen from the side
+// Headlight warning lamp, like a real dash: a lamp shape with beam lines.
+// Dipped = green, beams angled down; main beam = blue, beams straight out.
+function drawHeadlightLamp(g, cx, cy, size, main) {
+  const color = main ? '#3b8cff' : '#39c86a';
+  const u = size / 24;
+  g.save();
+  g.translate(cx - 12 * u, cy - 8 * u);
+  g.strokeStyle = color;
+  g.fillStyle = color;
+  g.lineWidth = 2 * u;
+  g.lineCap = 'round';
+  // the lamp: a "D" facing left (light shines out to the left)
+  g.beginPath();
+  g.moveTo(14 * u, 1 * u);
+  g.quadraticCurveTo(24 * u, 1 * u, 24 * u, 8 * u);
+  g.quadraticCurveTo(24 * u, 15 * u, 14 * u, 15 * u);
+  g.closePath();
+  g.fill();
+  // the beam lines
+  for (let k = 0; k < 4; k++) {
+    const y = 2 * u + k * 4 * u;
+    g.beginPath();
+    g.moveTo(11 * u, y);
+    g.lineTo(2 * u, main ? y : y + 3 * u);
+    g.stroke();
+  }
+  g.restore();
+}
+
 function drawCheckEngine(g, cx, cy, width, color) {
   const u = width / 24;   // drawn on a 24 x 16 grid
   const x0 = cx - 12 * u, y0 = cy - 8 * u;
@@ -667,7 +696,7 @@ export class Hud {
   }
 
   update({ speedKmh, rpm, gearLabel, limiter, transmission, engineHealth = 1, oilLevel = 1,
-           fuelLevel = 1, assists = {}, clutchIn = false, tyres = null, tyreCompound = 'SM', time }) {
+           fuelLevel = 1, assists = {}, clutchIn = false, tyres = null, tyreCompound = 'SM', lights = 0, time }) {
     this.tyreBars.draw(tyres, tyreCompound, time);
     if (this.tyreSelect && document.activeElement !== this.tyreSelect && this.tyreSelect.value !== tyreCompound) {
       this.tyreSelect.value = tyreCompound;
@@ -698,6 +727,8 @@ export class Hud {
         drawCheckEngine(tg, tR, tR - tR * 0.3, tR * 0.36, critical ? COLORS.redline : COLORS.ledAmber);
       }
     }
+    // Headlights on: a small green (dipped) or blue (main beam) lamp, left of the needle hub
+    if (lights) drawHeadlightLamp(tg, tR - tR * 0.3, tR + tR * 0.08, tR * 0.28, lights === 2);
     tg.fillStyle = limiter ? COLORS.redline : COLORS.ink;
     tg.font = `700 ${Math.round(tR * 0.42)}px ${FONT}`;
     tg.textAlign = 'center';
