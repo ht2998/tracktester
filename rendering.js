@@ -13,7 +13,7 @@ import { EngineSound } from './sound.js';
 import { TyreSmoke } from './smoke.js';
 import { Hud } from './hud.js';
 import { OilSlicks } from './oil.js';
-import { SkidMarks } from './skids.js';
+import { SkidMarks, TyreShreds } from './skids.js';
 import { EngineDebris } from './debris.js';
 import { TouchControls, isTouchDevice } from './touch.js';
 
@@ -406,16 +406,22 @@ function updateWheels(steer, spin) {
     wheelPos.set(x, y, z);
     // A deflated tyre: the top keeps its shape while the bottom squashes flat
     // and bulges out where it meets the road. The rim stays round.
+    const tyre = physics.tyres[physicsWheel(x, isFront)];
     const sy = tyreSquash[physicsWheel(x, isFront)];
     const bulge = 1 - sy;
+    // A blown tyre shrinks as it sheds rubber, and wobbles as the loose
+    // strips flap. Once it's all gone, only the rim is left.
+    const shrink = tyre.rim ? 0 : tyre.blown
+      ? (1 - 0.25 * tyre.shred) * (1 + (Math.random() - 0.5) * 0.06) : 1;
     for (let k = 0; k < 2; k++) {
       wheelEuler.set(spin + k * Math.PI / 2, isFront ? steer : 0, 0);
       wheelRot.setFromEuler(wheelEuler);
       wheelMatrix.compose(wheelPos, wheelRot, ONE);
       if (k === 0) {
         spinMatrix.makeRotationFromQuaternion(wheelRot);
-        squashMatrix.makeScale(1 + bulge * 0.35, sy, 1 + bulge * 0.6).multiply(spinMatrix);
-        squashMatrix.setPosition(x, y + WHEEL_RADIUS * (1 - sy), z);
+        squashMatrix.makeScale((1 + bulge * 0.35) * (tyre.blown ? 1 + (Math.random() - 0.5) * 0.15 : 1),
+          sy * shrink, (1 + bulge * 0.6) * shrink).multiply(spinMatrix);
+        squashMatrix.setPosition(x, y + WHEEL_RADIUS * (1 - sy * shrink), z);
         carModel.tyres.setMatrixAt(i, squashMatrix);
         carModel.rims.setMatrixAt(i, wheelMatrix);
       }
@@ -492,6 +498,64 @@ function checkDebrisPunctures() {
   }
 }
 
+// ---------------------------------------------------------------------
+// BLOWOUTS: a burst tyre bangs, puffs rubber smoke and flings strips of
+// tread. While it flaps it drops a trail of rubber crumbs (1-5% extra grip
+// where they lie). Once it has shredded off (about 30 s of driving), the
+// bare rim sparks along the road.
+// ---------------------------------------------------------------------
+const blowoutPending = [];             // wheels that just burst
+const crumbGap = [0, 0, 0, 0];         // metres until each tyre drops its next crumb
+const shredClock = [0, 0, 0, 0];
+const sparkCarry = [0, 0, 0, 0];
+const rimSparkPoint = new THREE.Vector3();
+function updateBlownTyres(dt) {
+  const speed = Math.hypot(physics.vx, physics.vy);
+  let sparked = false;
+  for (let i = 0; i < 4; i++) {
+    const t = physics.tyres[i];
+    if (!t.blown && !blowoutPending.includes(i)) continue;
+    tyreContact.set(HUB_X[i], 0, HUB_Z[i]);
+    carModel.car.localToWorld(tyreContact);
+    tyreContact.y = 0;
+
+    // The bang: a puff of rubber smoke and a handful of big strips of tread
+    const just = blowoutPending.indexOf(i);
+    if (just >= 0) {
+      blowoutPending.splice(just, 1);
+      for (let k = 0; k < 14; k++) smoke.spawn(tyreContact, 0.9, carVelocity);
+      for (let k = 0; k < 6; k++) shreds.fling(tyreContact, carVelocity, 1);
+      crumbGap[i] = 0.3;
+    }
+
+    if (!t.rim && speed > 1.5) {
+      // Flapping: a trail of rubber crumbs, and now and then a strip flung off
+      crumbGap[i] -= speed * dt;
+      if (crumbGap[i] <= 0) {
+        skids.addCrumb(tyreContact.x + (Math.random() - 0.5) * 0.15, tyreContact.z + (Math.random() - 0.5) * 0.15,
+          0.06 + Math.random() * 0.1, 0.2 + Math.random() * 0.8);
+        crumbGap[i] = 0.25 + Math.random() * 0.5;
+      }
+      shredClock[i] -= dt * Math.min(1, speed / 10) * (1 - 0.7 * t.shred);
+      if (shredClock[i] <= 0) {
+        shreds.fling(tyreContact, carVelocity, 0.3);
+        shredClock[i] = 0.4 + Math.random() * 0.8;
+      }
+    } else if (t.rim && speed > 1) {
+      // Bare rim: a steady shower of sparks, more the faster you go
+      rimSparkPoint.set(tyreContact.x, 0.3, tyreContact.z);
+      sparkCarry[i] += 60 * Math.min(1, speed / 15) * dt;
+      while (sparkCarry[i] >= 1) {
+        debris.spawnSpark(rimSparkPoint, carVelocity, physics.heading, 0.45);
+        sparkCarry[i] -= 1;
+        sparked = true;
+      }
+    }
+  }
+  if (sparked) debris.sparks.geometry.attributes.aSize.needsUpdate = true;
+  shreds.update(dt);
+}
+
 // Gravel: each trip into the gravel trap has a 40% chance that a sharp stone
 // gets into one of the tyres in it (a slow puncture). Dirt tyres are tougher:
 // a quarter of the chance. A trip ends once the car has been out of the
@@ -538,6 +602,8 @@ const physics = new CarPhysics();
 const oil = new OilSlicks(scene);
 // Rubber from skidding tyres. Oil wins if both are on the same spot.
 const skids = new SkidMarks(scene);
+// Strips of tread flung off a blown tyre (they land as crumbs of rubber)
+const shreds = new TyreShreds(scene, skids, { max: isMobile ? 40 : 60 });
 // What's under a tyre: 'gravel', 'grass', 'soil' (see SURFACES in
 // physics.js) or 'tarmac'. Only the gravel trap exists so far.
 const surfaceAt = (x, z) => (inGravel(x, z) ? 'gravel' : 'tarmac');
@@ -641,6 +707,7 @@ function updateSmoke(dt) {
   debris.update(dt, engineBayWorld, carVelocity, physics.heading);
   checkDebrisPunctures();
   checkGravelPunctures(dt);
+  updateBlownTyres(dt);
 
   // Oil: drips below 10% health, pours once the engine has blown
   // (stops once the oil has all run out: there's nothing left to leak)
@@ -756,6 +823,8 @@ renderer.setAnimationLoop(() => {
     physics.reset();   // also repairs the engine
     oil.clear();
     debris.clear();
+    shreds.clear();
+    blowoutPending.length = 0;
   }
   if (wasTapped('reverse')) physics.toggleReverse();
   if (wasTapped('shiftUp')) physics.shiftUp();
@@ -777,6 +846,10 @@ renderer.setAnimationLoop(() => {
       engineSound.playClunk();
       debrisPending = true;
     }
+    if (e.type === 'blowout') {
+      engineSound.playBlowout();
+      blowoutPending.push(e.wheel);
+    }
   }
 
   // Move the car model to where the physics says it is
@@ -795,6 +868,9 @@ renderer.setAnimationLoop(() => {
   updateCamera(dt);
   engineSound.update(physics, carPos);
   engineSound.setHiss(physics.tyreHiss);
+  const carSpeed = Math.hypot(physics.vx, physics.vy);
+  engineSound.setTyreFlap(physics.tyreFlap, carSpeed);
+  engineSound.setRimScrape(physics.rimsDown, carSpeed);
 
   hud.update({
     speedKmh: physics.speedKmh,
