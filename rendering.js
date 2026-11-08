@@ -541,10 +541,19 @@ function updateBlownTyres(dt) {
         shreds.fling(tyreContact, carVelocity, 0.3);
         shredClock[i] = 0.4 + Math.random() * 0.8;
       }
-    } else if (t.rim && speed > 1) {
-      // Bare rim: a steady shower of sparks, more the faster you go
+      // The rim edge starts catching the road through the thinning rubber:
+      // the odd spark at first, more and more as the tyre wears away
       rimSparkPoint.set(tyreContact.x, 0.3, tyreContact.z);
-      sparkCarry[i] += 60 * Math.min(1, speed / 15) * dt;
+      sparkCarry[i] += (2 + 18 * t.shred) * Math.min(1, speed / 15) * dt;
+      while (sparkCarry[i] >= 1) {
+        debris.spawnSpark(rimSparkPoint, carVelocity, physics.heading, 0.3);
+        sparkCarry[i] -= 1;
+        sparked = true;
+      }
+    } else if (t.rim && speed > 0.3) {
+      // Bare rim: always a shower of sparks while it's moving, more the faster you go
+      rimSparkPoint.set(tyreContact.x, 0.3, tyreContact.z);
+      sparkCarry[i] += (15 + 50 * Math.min(1, speed / 15)) * dt;
       while (sparkCarry[i] >= 1) {
         debris.spawnSpark(rimSparkPoint, carVelocity, physics.heading, 0.45);
         sparkCarry[i] -= 1;
@@ -686,7 +695,9 @@ function updateSmoke(dt) {
   // (not the gravel). Tyre squeal follows the same skid measure as the marks,
   // and gravel has its own grinding sound instead.
   const onTarmac = 1 - gravelWheels / 4;
-  engineSound.setSqueal(Math.max(rearSkid, frontSkid) * onTarmac, speed);
+  // (only tyres with rubber on them squeal: bare rims screech instead, see the sound section)
+  const rubber = (a, b) => [a, b].filter((i) => !physics.tyres[i].blown).length / 2;
+  engineSound.setSqueal(Math.max(rearSkid * rubber(2, 3), frontSkid * rubber(0, 1)) * onTarmac, speed);
   engineSound.setGravel(gravelWheels / 4, speed, Math.max(rearSkid, frontSkid));
   for (const p of SMOKE_POINTS) {
     skidWorld.set(p.local.x, 0, p.local.z);
@@ -870,7 +881,12 @@ renderer.setAnimationLoop(() => {
   engineSound.setHiss(physics.tyreHiss);
   const carSpeed = Math.hypot(physics.vx, physics.vy);
   engineSound.setTyreFlap(physics.tyreFlap, carSpeed);
-  engineSound.setRimScrape(physics.rimsDown, carSpeed);
+  // How hard the bare rims are sliding (front rims slide with the fronts, rear with the rears)
+  let rimSlide = 0;
+  physics.tyres.forEach((t, i) => {
+    if (t.rim) rimSlide = Math.max(rimSlide, i < 2 ? Math.min(1, physics.tyreSlip.front * 2.5) : physics.tyreSlip.rear);
+  });
+  engineSound.setRimScrape(physics.rimsDown, carSpeed, rimSlide);
 
   hud.update({
     speedKmh: physics.speedKmh,
