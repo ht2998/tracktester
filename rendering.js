@@ -492,23 +492,40 @@ function checkDebrisPunctures() {
   }
 }
 
-// Gravel: every metre a tyre rolls through the stones is a small chance of a
-// sharp one getting in (more while sliding, much less on dirt tyres).
-// Set high for now so punctures are easy to test.
-const GRAVEL_PUNCTURE_PER_METRE = 0.012;
+// Gravel: each trip into the gravel trap has a 40% chance that a sharp stone
+// gets into one of the tyres in it (a slow puncture). Dirt tyres are tougher:
+// a quarter of the chance. A trip ends once the car has been out of the
+// gravel for a second and a half.
+const GRAVEL_PUNCTURE_CHANCE = 0.4;
+let gravelTrip = null;     // { strikeIn: metres until the stone gets in (Infinity = not this time) }
+let outOfGravel = 99;      // seconds since any tyre was last in the gravel
 function checkGravelPunctures(dt) {
   const speed = Math.hypot(physics.vx, physics.vy);
-  if (speed < 1) return;
-  const toughness = offRoadTyres() ? 0.25 : 1;
+  const inside = [];
   for (let i = 0; i < 4; i++) {
     tyreContact.set(HUB_X[i], 0, HUB_Z[i]);
     carModel.car.localToWorld(tyreContact);
-    if (!inGravel(tyreContact.x, tyreContact.z)) continue;
-    const tyre = physics.tyres[i];
-    if (tyre.leak > 0 || tyre.pressure <= 0) continue;   // already going down
-    const slide = i < 2 ? Math.min(1, physics.tyreSlip.front * 2.5) : physics.tyreSlip.rear;
-    const chance = GRAVEL_PUNCTURE_PER_METRE * speed * dt * (1 + 2 * slide) * toughness;
-    if (Math.random() < chance) physics.puncture(i, 1 / (25 + Math.random() * 30));
+    if (inGravel(tyreContact.x, tyreContact.z)) inside.push(i);
+  }
+  if (!inside.length) {
+    outOfGravel += dt;
+    if (outOfGravel > 1.5) gravelTrip = null;
+    return;
+  }
+  outOfGravel = 0;
+  if (!gravelTrip) {
+    const chance = GRAVEL_PUNCTURE_CHANCE * (dirtTyres() ? 0.25 : 1);
+    // If it's going to happen, it happens within the first few metres
+    gravelTrip = { strikeIn: Math.random() < chance ? 0.5 + Math.random() * 3.5 : Infinity };
+  }
+  gravelTrip.strikeIn -= speed * dt;
+  if (gravelTrip.strikeIn <= 0) {
+    gravelTrip.strikeIn = Infinity;   // one per trip
+    const healthy = inside.filter((i) => physics.tyres[i].leak === 0 && physics.tyres[i].pressure > 0);
+    if (healthy.length) {
+      const wheel = healthy[Math.floor(Math.random() * healthy.length)];
+      physics.puncture(wheel, 1 / (25 + Math.random() * 30));   // goes flat in roughly 30-60 s
+    }
   }
 }
 
@@ -521,20 +538,18 @@ const physics = new CarPhysics();
 const oil = new OilSlicks(scene);
 // Rubber from skidding tyres. Oil wins if both are on the same spot.
 const skids = new SkidMarks(scene);
-// Gravel: how much of each tyre's tarmac grip is left on loose stones.
-// Road tyres slide about; dirt tyres dig in and keep most of theirs.
-const GRAVEL_GRIP = { Comfort: 0.6, Sports: 0.55, Racing: 0.42, DIRT: 0.9, SNOW: 0.75 };
-const offRoadTyres = () => TYRES[physics.tyreCompound].group === 'Off-road';
+// What's under a tyre: 'gravel', 'grass', 'soil' (see SURFACES in
+// physics.js) or 'tarmac'. Only the gravel trap exists so far.
+const surfaceAt = (x, z) => (inGravel(x, z) ? 'gravel' : 'tarmac');
+const dirtTyres = () => TYRES[physics.tyreCompound].kind === 'dirt';
 physics.surfaceGrip = (x, z) => {
-  if (inGravel(x, z)) {
-    const id = physics.tyreCompound;
-    return GRAVEL_GRIP[id] ?? GRAVEL_GRIP[TYRES[id].group] ?? 0.55;
-  }
+  const surface = surfaceAt(x, z);
+  if (surface !== 'tarmac') return physics.surfaceGripFor(surface);
   const onOil = oil.gripAt(x, z);
   return onOil < 1 ? onOil : skids.gripAt(x, z);
 };
-// Gravel also drags the tyres back as they plough through it
-physics.surfaceDrag = (x, z) => (inGravel(x, z) ? (offRoadTyres() ? 0.3 : 0.38) : 0);
+// Loose ground also drags the tyres back as they plough through it
+physics.surfaceDrag = (x, z) => physics.surfaceDragFor(surfaceAt(x, z));
 
 // Tyre smoke, puffed from each tyre's contact patch when it loses traction
 const smoke = new TyreSmoke(scene, { maxParticles: QUALITY.smokeParticles, puffsPerSecond: QUALITY.smokeRate });
