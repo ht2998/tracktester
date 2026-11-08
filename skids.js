@@ -19,8 +19,18 @@ const TARMAC = new THREE.Color(0x4a4d50);   // matches the ground, so faint mark
 const RUBBER = new THREE.Color(0x151517);   // a heavy, fresh black mark
 
 export class SkidMarks {
-  constructor(scene, { maxSegments = 4000, tyreWidth = 0.19, rubberBonus = 0.05 } = {}) {
+  // The same class also draws other trails (like tyre tracks in gravel):
+  // base/mark: the colours a mark fades between, threshold: how much
+  // "intensity" leaves a mark, height: how far above the ground it's drawn
+  constructor(scene, {
+    maxSegments = 4000, tyreWidth = 0.19, rubberBonus = 0.05,
+    threshold = MARK_THRESHOLD, height = 0.003, base = TARMAC, mark = RUBBER,
+  } = {}) {
     this.max = maxSegments;
+    this.threshold = threshold;
+    this.height = height;
+    this.base = new THREE.Color(base);
+    this.mark = new THREE.Color(mark);
     this.tyreWidth = tyreWidth;
     this.rubberBonus = rubberBonus;   // extra grip on the darkest rubber (5%)
     this.segments = [];               // { ax, az, bx, bz, dark, cells }
@@ -56,7 +66,7 @@ export class SkidMarks {
   // intensity: 0 = gripping, 1 = skidding hard
   update(id, x, z, intensity) {
     // Only a real skid leaves rubber: the small slips of brisk cornering don't
-    if (intensity < MARK_THRESHOLD) {
+    if (intensity < this.threshold) {
       this.last.delete(id);   // the mark ends here
       return;
     }
@@ -72,7 +82,7 @@ export class SkidMarks {
       return;
     }
     // Faint just past the threshold, black on a full slide
-    const dark = Math.min(1, 0.3 + 0.7 * (intensity - MARK_THRESHOLD) / (1 - MARK_THRESHOLD));
+    const dark = Math.min(1, 0.3 + 0.7 * (intensity - this.threshold) / (1 - this.threshold));
     this.addSegment(prev.x, prev.z, x, z, dark);
     this.last.set(id, { x, z });
   }
@@ -89,12 +99,12 @@ export class SkidMarks {
     const len = Math.hypot(bx - ax, bz - az);
     // Each mark varies a touch in width and shade, like real rubber
     const w = this.tyreWidth * (0.9 + Math.random() * 0.15);
-    this._p.set((ax + bx) / 2, 0.003, (az + bz) / 2);
+    this._p.set((ax + bx) / 2, this.height, (az + bz) / 2);
     this._q.setFromAxisAngle(this._up, Math.atan2(bx - ax, bz - az));
     this._s.set(w, 1, len + 0.04);
     this._m.compose(this._p, this._q, this._s);
     this.mesh.setMatrixAt(i, this._m);
-    this._c.copy(TARMAC).lerp(RUBBER, dark * (0.88 + Math.random() * 0.12));
+    this._c.copy(this.base).lerp(this.mark, dark * (0.88 + Math.random() * 0.12));
     this.mesh.setColorAt(i, this._c);
     this.mesh.count = Math.max(this.mesh.count, i + 1);
     this.mesh.instanceMatrix.needsUpdate = true;
