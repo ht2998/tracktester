@@ -4,7 +4,8 @@
 //   Right thumb: brake and gas, with small - / + shift buttons beside the
 //                gas (manual) or an R button (automatic and CVT), plus small
 //                clutch and handbrake buttons above
-//   Top left:    menu with camera, reset and sound
+//   Above the steering: a small horn button
+//   Top left:    menu with camera, lights, reset and sound
 // Only shown on touch screens (or add ?touch to the address to test).
 // Every control tracks its own finger, so you can steer, brake and shift
 // at the same time.
@@ -116,6 +117,15 @@ const STYLE = `
 #touch .t-hand { width: 92px; height: 40px; }
 #touch .t-clutch { width: 76px; height: 40px; }
 
+/* Horn, just above the steering slider on the left */
+#touch .t-horn {
+  position: absolute;
+  left: calc(18px + env(safe-area-inset-left));
+  bottom: calc(104px + env(safe-area-inset-bottom));
+  width: 64px;
+  height: 38px;
+}
+
 /* Menu, top left */
 #touch .t-menu {
   position: absolute;
@@ -162,7 +172,7 @@ export class TouchControls {
     style.textContent = STYLE;
     document.head.appendChild(style);
 
-    this.state = { throttle: 0, brake: 0, steer: 0, handbrake: false, clutch: false };
+    this.state = { throttle: 0, brake: 0, steer: 0, handbrake: false, clutch: false, horn: false };
     this.root = document.createElement('div');
     this.root.id = 'touch';
 
@@ -217,19 +227,23 @@ export class TouchControls {
       return b;
     };
     this.soundItem = item('Sound: on', 'mute');
-    this.sheet.append(item('Switch camera', 'camera'), item('Reset car', 'reset'), this.soundItem);
+    this.lightsItem = item('Lights: off', 'lights');
+    this.sheet.append(item('Switch camera', 'camera'), this.lightsItem, item('Reset car', 'reset'), this.soundItem);
+
+    // --- Horn ---
+    const horn = this.holdButton('Horn', 't-horn small', 'horn');
 
     // --- Portrait warning ---
     const rotate = document.createElement('div');
     rotate.className = 't-rotate';
     rotate.textContent = 'Turn your phone sideways to drive';
 
-    this.root.append(this.steerBox, right, menu, this.sheet, rotate);
+    this.root.append(this.steerBox, horn, right, menu, this.sheet, rotate);
     document.body.appendChild(this.root);
 
     // If the page loses focus, let go of everything
     const releaseAll = () => {
-      Object.assign(this.state, { throttle: 0, brake: 0, steer: 0, handbrake: false, clutch: false });
+      Object.assign(this.state, { throttle: 0, brake: 0, steer: 0, handbrake: false, clutch: false, horn: false });
       setTouch(this.state);
       this.root.querySelectorAll('.down').forEach((el) => el.classList.remove('down'));
       this.knob.style.transform = '';
@@ -246,7 +260,7 @@ export class TouchControls {
     document.addEventListener('visibilitychange', () => { if (document.hidden) releaseAll(); });
   }
 
-  // A button that's active while a finger is on it (gas, brake, handbrake, clutch)
+  // A button that's active while a finger is on it (gas, brake, handbrake, clutch, horn)
   holdButton(label, cls, key) {
     const b = document.createElement('div');
     b.className = `t-btn ${cls}`;
@@ -332,7 +346,7 @@ export class TouchControls {
   }
 
   // Called every frame: shows the right buttons for the current gearbox
-  update({ transmission, gearLabel, muted }) {
+  update({ transmission, gearLabel, muted, lights = 0 }) {
     const manual = transmission === 'manual';
     this.downBtn.style.display = manual ? '' : 'none';
     this.upBtn.classList.toggle('hidden', !manual);
@@ -340,5 +354,7 @@ export class TouchControls {
     this.reverseBtn.classList.toggle('active', gearLabel === 'R');
     const soundText = muted ? 'Sound: off' : 'Sound: on';
     if (this.soundItem.textContent !== soundText) this.soundItem.textContent = soundText;
+    const lightsText = ['Lights: off', 'Lights: dipped', 'Lights: main beam'][lights];
+    if (this.lightsItem.textContent !== lightsText) this.lightsItem.textContent = lightsText;
   }
 }
