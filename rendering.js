@@ -383,9 +383,28 @@ function buildCar() {
   // --- Headlights on stalks ---
   const lampBody = new THREE.SphereGeometry(0.09, 16, 12);
   const lampLens = new THREE.CircleGeometry(0.075, 16);
+  const headLens = MAT.lens.clone();           // its own, so it can glow when switched on
   for (const side of [-1, 1]) {
     car.add(part(lampBody, MAT.chrome, side * 0.42, 0.64, 1.22));
-    car.add(part(lampLens, MAT.lens, side * 0.42, 0.64, 1.311));
+    car.add(part(lampLens, headLens, side * 0.42, 0.64, 1.311));
+  }
+  // The beam: one light between the two lamps (one is much cheaper than
+  // two, and looks the same from the driver's seat). It's always there,
+  // just at zero when off, so switching on doesn't stall the game.
+  const beam = new THREE.SpotLight(0xfff1d6, 0, 60, 0.5, 0.55, 1.4);
+  beam.position.set(0, 0.64, 1.32);
+  beam.target.position.set(0, 0, 14);
+  car.add(beam, beam.target);
+
+  // --- Tail lights on the back of the rear wings: dim red with the lights
+  // on, bright when braking ---
+  const tailLens = new THREE.MeshStandardMaterial({ color: 0x8a1010, emissive: 0xff1a10, emissiveIntensity: 0, roughness: 0.3 });
+  const tailGeo = new THREE.CircleGeometry(0.045, 14);
+  for (const side of [-1, 1]) {
+    const tail = part(tailGeo, tailLens, side * 0.62, 0.55, -1.512);
+    tail.rotation.y = Math.PI;                  // facing backwards
+    tail.castShadow = false;
+    car.add(tail);
   }
 
   // --- Side exhaust ---
@@ -450,10 +469,30 @@ function buildCar() {
     car.add(mesh);
   }
 
-  return { car, tyres, rims, spokes };
+  return { car, tyres, rims, spokes, headLens, beam, tailLens };
 }
 
 const carModel = buildCar();
+
+// HEADLIGHTS: G cycles off -> dipped -> main beam. Dipped lights the road
+// close ahead; main beam reaches much further.
+let lightsMode = 0;
+const LIGHTS = [
+  { intensity: 0, distance: 60, angle: 0.5, aim: [0, 0, 14], glow: 0 },
+  { intensity: 45, distance: 45, angle: 0.5, aim: [0, 0, 12], glow: 0.9 },      // dipped
+  { intensity: 110, distance: 110, angle: 0.36, aim: [0, 0.35, 40], glow: 1.6 },  // main beam
+];
+function setLights(mode) {
+  lightsMode = mode;
+  const l = LIGHTS[mode];
+  const { beam, headLens } = carModel;
+  beam.intensity = l.intensity;
+  beam.distance = l.distance;
+  beam.angle = l.angle;
+  beam.target.position.set(...l.aim);
+  headLens.emissive.setHex(mode ? 0xfff1c8 : 0x332a10);
+  headLens.emissiveIntensity = mode ? l.glow : 1;
+}
 scene.add(carModel.car);
 
 // Where each wheel sits on the car: [x, y, z, isFront]
@@ -854,7 +893,7 @@ info.innerHTML =
   'Space: handbrake · X: clutch · Q / E or , / . : shift<br>' +
   'Reverse: Q from 1st (manual), R (auto, CVT)<br>' +
   'T: gearbox · arrow on the right: gearbox and assists<br>' +
-  'M: mute · C: camera · Backspace: reset<br>' +
+  'F: horn · G: lights · M: mute · C: camera · Backspace: reset<br>' +
   '<span id="soundhint" style="color:#ffd76a">Press any key or tap for sound</span>';
 const soundHint = document.getElementById('soundhint');
 
@@ -947,12 +986,17 @@ renderer.setAnimationLoop(() => {
   if (wasTapped('shiftUp')) physics.shiftUp();
   if (wasTapped('shiftDown')) physics.shiftDown();
   if (wasTapped('mute')) engineSound.setMuted(!engineSound.muted);
+  if (wasTapped('lights')) setLights((lightsMode + 1) % 3);
   if (wasTapped('transmission')) {
     const next = TRANSMISSIONS[(TRANSMISSIONS.indexOf(physics.transmission) + 1) % TRANSMISSIONS.length];
     physics.setTransmission(next);
   }
 
-  physics.update(readControls(), dt);
+  const input = readControls();
+  physics.update(input, dt);
+  engineSound.setHorn(input.horn);
+  // Brake lights: bright while braking, dim red with the lights on
+  carModel.tailLens.emissiveIntensity = input.brake > 0.05 ? 2.2 : lightsMode ? 0.6 : 0;
 
   // Gear change sounds
   while (physics.events.length) {
@@ -997,6 +1041,7 @@ renderer.setAnimationLoop(() => {
   engineSound.setRimScrape(physics.rimsDown, carSpeed, rimSlide);
 
   hud.update({
+    lights: lightsMode,
     speedKmh: physics.speedKmh,
     rpm: physics.rpm,
     gearLabel: physics.gearLabel,
@@ -1011,7 +1056,7 @@ renderer.setAnimationLoop(() => {
     tyreCompound: physics.tyreCompound,
     time: clock.elapsedTime,
   });
-  touchUI?.update({ transmission: physics.transmission, gearLabel: physics.gearLabel, muted: engineSound.muted });
+  touchUI?.update({ transmission: physics.transmission, gearLabel: physics.gearLabel, muted: engineSound.muted, lights: lightsMode });
 
   renderer.render(scene, camera);
 });
