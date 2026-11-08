@@ -14,6 +14,8 @@ import { TyreSmoke } from './smoke.js';
 import { Hud } from './hud.js';
 import { OilSlicks } from './oil.js';
 import { SkidMarks, TyreShreds } from './skids.js';
+import { buildScenery } from './scenery.js';
+import { GrassPatch } from './grass.js';
 import { EngineDebris } from './debris.js';
 import { TouchControls, isTouchDevice } from './touch.js';
 
@@ -217,6 +219,12 @@ function buildGravel() {
 }
 buildGravel();
 
+// GRASS: a 5 x 5 square patch (10 m x 10 m) just past the gravel trap.
+// Slippery and a bit draggy (see SURFACES.grass in physics.js); tyres
+// press it flat and leave dark brown tracks.
+const GRASS = { minX: -16, maxX: -6, minZ: 16, maxZ: 26 };
+const grass = new GrassPatch(scene, GRASS, { tufts: isMobile ? 4500 : 9000 });
+
 // ---------------------------------------------------------------------
 // CONES: drawn with INSTANCING (one cone model, drawn many times at once)
 // They're ghosts for now: you drive through them. Collisions come later.
@@ -244,6 +252,10 @@ function buildCones() {
   scene.add(cones);
 }
 buildCones();
+
+// Buildings, walls, barriers and fences (scenery.js). Their surfaces are
+// registered for echoes once the sound is set up, further down.
+const echoSurfaces = buildScenery(scene);
 
 // ---------------------------------------------------------------------
 // MATERIALS for the car
@@ -572,6 +584,7 @@ const blowoutPending = [];             // wheels that just burst
 const crumbGap = [0, 0, 0, 0];         // metres until each tyre drops its next crumb
 const shredClock = [0, 0, 0, 0];
 const sparkCarry = [0, 0, 0, 0];
+const behindWheel = new THREE.Vector3();
 function updateBlownTyres(dt) {
   const speed = Math.hypot(physics.vx, physics.vy);
   let sparked = false;
@@ -581,6 +594,10 @@ function updateBlownTyres(dt) {
     tyreContact.set(HUB_X[i], 0, HUB_Z[i]);
     carModel.car.localToWorld(tyreContact);
     tyreContact.y = 0;
+    // Sparks come off the back of the wheel (it turns forwards at the top,
+    // backwards where it meets the road)
+    behindWheel.set(HUB_X[i], 0, HUB_Z[i] - WHEEL_RADIUS * 1.1);
+    carModel.car.localToWorld(behindWheel);
 
     // The bang: a puff of rubber smoke and a handful of big strips of tread
     const just = blowoutPending.indexOf(i);
@@ -608,7 +625,7 @@ function updateBlownTyres(dt) {
       // the odd spark at first, more and more as the tyre wears away
       sparkCarry[i] += (4 + 26 * t.shred) * Math.min(1, speed / 12) * dt;
       while (sparkCarry[i] >= 1) {
-        debris.spawnRimSpark(tyreContact, carVelocity);
+        debris.spawnRimSpark(behindWheel, carVelocity, physics.heading);
         sparkCarry[i] -= 1;
         sparked = true;
       }
@@ -616,7 +633,7 @@ function updateBlownTyres(dt) {
       // Bare rim: always a shower of sparks while it's moving, more the faster you go
       sparkCarry[i] += (20 + 60 * Math.min(1, speed / 15)) * dt;
       while (sparkCarry[i] >= 1) {
-        debris.spawnRimSpark(tyreContact, carVelocity);
+        debris.spawnRimSpark(behindWheel, carVelocity, physics.heading);
         sparkCarry[i] -= 1;
         sparked = true;
       }
@@ -675,13 +692,18 @@ const skids = new SkidMarks(scene);
 // Tyre tracks in the gravel: the same marks, in the gravel dust's shade
 const gravelTrails = new SkidMarks(scene, {
   maxSegments: isMobile ? 800 : 1600, tyreWidth: 0.17, rubberBonus: 0,
-  threshold: 0.05, height: 0.006, base: 0xb39769, mark: 0xc4a87a,
+  threshold: 0.05, height: 0.006, base: 0xa88c5f, mark: 0x8a7049,
+});
+// ...and in the grass: dark brown, where the tyres have pressed it into the earth
+const grassTrails = new SkidMarks(scene, {
+  maxSegments: isMobile ? 800 : 1600, tyreWidth: 0.18, rubberBonus: 0,
+  threshold: 0.05, height: 0.006, base: 0x4a3b28, mark: 0x33261a,
 });
 // Strips of tread flung off a blown tyre (they land as crumbs of rubber)
 const shreds = new TyreShreds(scene, skids, { max: isMobile ? 40 : 60 });
 // What's under a tyre: 'gravel', 'grass', 'soil' (see SURFACES in
-// physics.js) or 'tarmac'. Only the gravel trap exists so far.
-const surfaceAt = (x, z) => (inGravel(x, z) ? 'gravel' : 'tarmac');
+// physics.js) or 'tarmac'. There's a gravel trap and a grass patch so far.
+const surfaceAt = (x, z) => (inGravel(x, z) ? 'gravel' : grass.contains(x, z) ? 'grass' : 'tarmac');
 const dirtTyres = () => TYRES[physics.tyreCompound].kind === 'dirt';
 physics.surfaceGrip = (x, z) => {
   const surface = surfaceAt(x, z);
@@ -744,12 +766,15 @@ function updateSmoke(dt) {
 
   // Tyre smoke on tarmac, tan dust in the gravel
   let gravelWheels = 0;
+  let grassWheels = 0;
   for (const p of SMOKE_POINTS) {
     smokeWorld.copy(p.local);
     carModel.car.localToWorld(smokeWorld);
     p.onGravel = inGravel(smokeWorld.x, smokeWorld.z);
+    p.onGrass = grass.contains(smokeWorld.x, smokeWorld.z);
     if (p.onGravel) gravelWheels++;
-    smoke.emitFrom(p.id, smokeWorld, p.onGravel ? 0 : physics.tyreSlip[p.axle], carVelocity, dt);
+    if (p.onGrass) grassWheels++;
+    smoke.emitFrom(p.id, smokeWorld, p.onGravel || p.onGrass ? 0 : physics.tyreSlip[p.axle], carVelocity, dt);
     const skid = p.axle === 'rear' ? rearSkid : frontSkid;
     const kick = Math.min(1, Math.min(1, speed / 18) * 0.45 + skid * 0.8);
     dust.emitFrom(p.id, smokeWorld, p.onGravel ? kick : 0, carVelocity, dt);
@@ -760,7 +785,7 @@ function updateSmoke(dt) {
   // Skid marks: each tyre marks the tarmac while it slides, spins or locks
   // (not the gravel). Tyre squeal follows the same skid measure as the marks,
   // and gravel has its own grinding sound instead.
-  const onTarmac = 1 - gravelWheels / 4;
+  const onTarmac = 1 - (gravelWheels + grassWheels) / 4;
   // (only tyres with rubber on them squeal: bare rims screech instead, see the sound section)
   const rubber = (a, b) => [a, b].filter((i) => !physics.tyres[i].blown).length / 2;
   engineSound.setSqueal(Math.max(rearSkid * rubber(2, 3), frontSkid * rubber(0, 1)) * onTarmac, speed);
@@ -768,10 +793,15 @@ function updateSmoke(dt) {
   for (const p of SMOKE_POINTS) {
     skidWorld.set(p.local.x, 0, p.local.z);
     carModel.car.localToWorld(skidWorld);
-    skids.update(p.id, skidWorld.x, skidWorld.z, p.onGravel ? 0 : p.axle === 'rear' ? rearSkid : frontSkid);
+    skids.update(p.id, skidWorld.x, skidWorld.z, p.onGravel || p.onGrass ? 0 : p.axle === 'rear' ? rearSkid : frontSkid);
     // In the gravel every rolling tyre leaves a track, heavier when it slides
     const rolling = speed > 0.5 && inGravel(skidWorld.x, skidWorld.z);
     gravelTrails.update(p.id, skidWorld.x, skidWorld.z, rolling ? 0.45 + 0.55 * (p.axle === 'rear' ? rearSkid : frontSkid) : 0);
+    // In the grass: the tyre presses the grass flat (it disappears) and
+    // leaves a dark brown track in the earth
+    const onGrass = speed > 0.3 && grass.contains(skidWorld.x, skidWorld.z);
+    if (onGrass) grass.flatten(skidWorld.x, skidWorld.z, 0.11);
+    grassTrails.update(p.id, skidWorld.x, skidWorld.z, onGrass ? 0.5 + 0.5 * (p.axle === 'rear' ? rearSkid : frontSkid) : 0);
   }
 
   // Engine smoke: pours out once blown
@@ -798,10 +828,11 @@ function updateSmoke(dt) {
 // ---------------------------------------------------------------------
 // SOUND
 // Browsers block sound until the player interacts, so it starts on the
-// first key press or tap. Big scenery is registered for echoes with
-// engineSound.echo.addReflector(object) once tracks have buildings.
+// first key press or tap. Buildings and walls reflect the car's sound
+// back as echoes (see EchoSystem in sound.js).
 // ---------------------------------------------------------------------
 const engineSound = new EngineSound(CATERHAM);
+for (const e of echoSurfaces) engineSound.echo.addBox(e.min, e.max, e.reflect);
 const startSound = () => {
   engineSound.start();
   soundHint.style.display = 'none';
@@ -949,7 +980,9 @@ renderer.setAnimationLoop(() => {
   engineSound.update(physics, carPos);
   engineSound.setHiss(physics.tyreHiss);
   const carSpeed = Math.hypot(physics.vx, physics.vy);
-  engineSound.setTyreFlap(physics.tyreFlap, carSpeed);
+  // A blown tyre grinds, more as it shreds down towards the rim
+  const grinding = physics.tyres.reduce((m, t) => Math.max(m, t.blown && !t.rim ? 0.4 + 0.6 * t.shred : 0), 0);
+  engineSound.setTyreFlap(grinding, carSpeed);
   // How hard the bare rims are sliding (front rims slide with the fronts, rear with the rears)
   let rimSlide = 0;
   physics.tyres.forEach((t, i) => {
