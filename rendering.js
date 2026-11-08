@@ -113,6 +113,47 @@ grid.position.y = 0.002;
 scene.add(grid);
 
 // ---------------------------------------------------------------------
+// GRAVEL TRAP: a 5 x 5 square patch (10 m x 10 m) ahead and to the right
+// of the start. Loose, slippery and draggy, and the stones can puncture a
+// tyre. Dirt tyres cope with it best.
+// ---------------------------------------------------------------------
+const GRAVEL = { minX: -16, maxX: -6, minZ: 6, maxZ: 16 };
+function inGravel(x, z) {
+  return x > GRAVEL.minX && x < GRAVEL.maxX && z > GRAVEL.minZ && z < GRAVEL.maxZ;
+}
+
+function buildGravel() {
+  // Paint a speckled stone texture: tan with lighter and darker pebbles
+  const size = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const g = canvas.getContext('2d');
+  g.fillStyle = '#b39769';
+  g.fillRect(0, 0, size, size);
+  const shades = ['#9c8158', '#c9b086', '#a88d61', '#d8c39c', '#8a7350', '#bfa476'];
+  for (let i = 0; i < 9000; i++) {
+    g.fillStyle = shades[(Math.random() * shades.length) | 0];
+    const r = 0.6 + Math.random() * 1.8;
+    g.beginPath();
+    g.ellipse(Math.random() * size, Math.random() * size, r, r * (0.6 + Math.random() * 0.4), Math.random() * Math.PI, 0, Math.PI * 2);
+    g.fill();
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
+  const w = GRAVEL.maxX - GRAVEL.minX, d = GRAVEL.maxZ - GRAVEL.minZ;
+  const patch = new THREE.Mesh(
+    new THREE.PlaneGeometry(w, d),
+    new THREE.MeshStandardMaterial({ map: texture, roughness: 1 })
+  );
+  patch.rotation.x = -Math.PI / 2;
+  patch.position.set((GRAVEL.minX + GRAVEL.maxX) / 2, 0.004, (GRAVEL.minZ + GRAVEL.maxZ) / 2);
+  patch.receiveShadow = true;
+  scene.add(patch);
+}
+buildGravel();
+
+// ---------------------------------------------------------------------
 // CONES: drawn with INSTANCING (one cone model, drawn many times at once)
 // They're ghosts for now: you drive through them. Collisions come later.
 // ---------------------------------------------------------------------
@@ -451,6 +492,26 @@ function checkDebrisPunctures() {
   }
 }
 
+// Gravel: every metre a tyre rolls through the stones is a small chance of a
+// sharp one getting in (more while sliding, much less on dirt tyres).
+// Set high for now so punctures are easy to test.
+const GRAVEL_PUNCTURE_PER_METRE = 0.012;
+function checkGravelPunctures(dt) {
+  const speed = Math.hypot(physics.vx, physics.vy);
+  if (speed < 1) return;
+  const toughness = offRoadTyres() ? 0.25 : 1;
+  for (let i = 0; i < 4; i++) {
+    tyreContact.set(HUB_X[i], 0, HUB_Z[i]);
+    carModel.car.localToWorld(tyreContact);
+    if (!inGravel(tyreContact.x, tyreContact.z)) continue;
+    const tyre = physics.tyres[i];
+    if (tyre.leak > 0 || tyre.pressure <= 0) continue;   // already going down
+    const slide = i < 2 ? Math.min(1, physics.tyreSlip.front * 2.5) : physics.tyreSlip.rear;
+    const chance = GRAVEL_PUNCTURE_PER_METRE * speed * dt * (1 + 2 * slide) * toughness;
+    if (Math.random() < chance) physics.puncture(i, 1 / (25 + Math.random() * 30));
+  }
+}
+
 // ---------------------------------------------------------------------
 // DRIVING
 // ---------------------------------------------------------------------
@@ -460,10 +521,20 @@ const physics = new CarPhysics();
 const oil = new OilSlicks(scene);
 // Rubber from skidding tyres. Oil wins if both are on the same spot.
 const skids = new SkidMarks(scene);
+// Gravel: how much of each tyre's tarmac grip is left on loose stones.
+// Road tyres slide about; dirt tyres dig in and keep most of theirs.
+const GRAVEL_GRIP = { Comfort: 0.6, Sports: 0.55, Racing: 0.42, DIRT: 0.9, SNOW: 0.75 };
+const offRoadTyres = () => TYRES[physics.tyreCompound].group === 'Off-road';
 physics.surfaceGrip = (x, z) => {
+  if (inGravel(x, z)) {
+    const id = physics.tyreCompound;
+    return GRAVEL_GRIP[id] ?? GRAVEL_GRIP[TYRES[id].group] ?? 0.55;
+  }
   const onOil = oil.gripAt(x, z);
   return onOil < 1 ? onOil : skids.gripAt(x, z);
 };
+// Gravel also drags the tyres back as they plough through it
+physics.surfaceDrag = (x, z) => (inGravel(x, z) ? (offRoadTyres() ? 0.3 : 0.38) : 0);
 
 // Tyre smoke, puffed from each tyre's contact patch when it loses traction
 const smoke = new TyreSmoke(scene, { maxParticles: QUALITY.smokeParticles, puffsPerSecond: QUALITY.smokeRate });
@@ -478,6 +549,14 @@ const engineSmoke = new TyreSmoke(scene, {
   wind: { x: 1.1, z: 0.6 },
 });
 engineSmoke.setViewport(renderer.domElement.height, camera.fov);
+
+// Tan dust kicked up by tyres rolling through the gravel (instead of tyre smoke)
+const dust = new TyreSmoke(scene, {
+  maxParticles: isMobile ? 160 : 260, puffsPerSecond: isMobile ? 18 : 28,
+  color: 0xc4a87a, thickness: 1.3, sizeScale: 0.75, rise: 0.4, lifeScale: 0.75,
+  wind: { x: 0.5, z: 0.3 },
+});
+dust.setViewport(renderer.domElement.height, camera.fov);
 const ENGINE_BAY = new THREE.Vector3(0, 0.62, 0.95);
 
 // Sparks and flying metal when the engine blows
@@ -501,24 +580,37 @@ function updateSmoke(dt) {
   const cos = Math.cos(physics.heading);
   carVelocity.set(sin * physics.vx + cos * physics.vy, 0, cos * physics.vx - sin * physics.vy);
   carModel.car.updateMatrixWorld();
-  for (const p of SMOKE_POINTS) {
-    smokeWorld.copy(p.local);
-    carModel.car.localToWorld(smokeWorld);
-    smoke.emitFrom(p.id, smokeWorld, physics.tyreSlip[p.axle], carVelocity, dt);
-  }
-  smoke.update(dt);
-
-  // Skid marks: each tyre marks the tarmac while it slides, spins or locks
+  const speed = Math.hypot(physics.vx, physics.vy);
   const moving = Math.abs(physics.vx) > 1;
   const locked = physics.wheelsLocked ? 0.85 : 0;
   const rearSkid = Math.max(physics.tyreSlip.rear, locked, physics.handbrakeOn && moving ? 0.7 : 0);
   const frontSkid = Math.max(Math.min(1, physics.tyreSlip.front * 2.5), locked);
-  // Tyre squeal follows the same skid measure as the marks
-  engineSound.setSqueal(Math.max(rearSkid, frontSkid), Math.hypot(physics.vx, physics.vy));
+
+  // Tyre smoke on tarmac, tan dust in the gravel
+  let gravelWheels = 0;
+  for (const p of SMOKE_POINTS) {
+    smokeWorld.copy(p.local);
+    carModel.car.localToWorld(smokeWorld);
+    p.onGravel = inGravel(smokeWorld.x, smokeWorld.z);
+    if (p.onGravel) gravelWheels++;
+    smoke.emitFrom(p.id, smokeWorld, p.onGravel ? 0 : physics.tyreSlip[p.axle], carVelocity, dt);
+    const skid = p.axle === 'rear' ? rearSkid : frontSkid;
+    const kick = Math.min(1, Math.min(1, speed / 18) * 0.45 + skid * 0.8);
+    dust.emitFrom(p.id, smokeWorld, p.onGravel ? kick : 0, carVelocity, dt);
+  }
+  smoke.update(dt);
+  dust.update(dt);
+
+  // Skid marks: each tyre marks the tarmac while it slides, spins or locks
+  // (not the gravel). Tyre squeal follows the same skid measure as the marks,
+  // and gravel has its own grinding sound instead.
+  const onTarmac = 1 - gravelWheels / 4;
+  engineSound.setSqueal(Math.max(rearSkid, frontSkid) * onTarmac, speed);
+  engineSound.setGravel(gravelWheels / 4, speed, Math.max(rearSkid, frontSkid));
   for (const p of SMOKE_POINTS) {
     skidWorld.set(p.local.x, 0, p.local.z);
     carModel.car.localToWorld(skidWorld);
-    skids.update(p.id, skidWorld.x, skidWorld.z, p.axle === 'rear' ? rearSkid : frontSkid);
+    skids.update(p.id, skidWorld.x, skidWorld.z, p.onGravel ? 0 : p.axle === 'rear' ? rearSkid : frontSkid);
   }
 
   // Engine smoke: pours out once blown
@@ -533,6 +625,7 @@ function updateSmoke(dt) {
   }
   debris.update(dt, engineBayWorld, carVelocity, physics.heading);
   checkDebrisPunctures();
+  checkGravelPunctures(dt);
 
   // Oil: drips below 10% health, pours once the engine has blown
   // (stops once the oil has all run out: there's nothing left to leak)
@@ -630,6 +723,7 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
   smoke.setViewport(renderer.domElement.height, camera.fov);
   engineSmoke.setViewport(renderer.domElement.height, camera.fov);
+  dust.setViewport(renderer.domElement.height, camera.fov);
   debris.setViewport(renderer.domElement.height, camera.fov);
 });
 
