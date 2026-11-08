@@ -46,6 +46,11 @@ export const CATERHAM = {
   tyreWearSkid: 0.0024,      // wear per metre of tyre actually sliding over the road
   tyreWearFlat: 0.00003,     // extra wear per metre driving on a deflated tyre
   flatSink: 0.085,           // metres a fully deflated tyre lets that corner drop
+  rimSink: 0.11,             // metres that corner drops once the tyre is gone (on the bare rim)
+  shredTime: 30,             // seconds of driving before a blown tyre has flung itself off the rim
+  blowWornRate: 0.025,       // blowouts per second for each fully worn tyre at normal load (much more when loaded)
+  flatHeatTime: 12,          // seconds at 100 km/h on a flat before it overheats and bursts
+  rimGrip: 0.3,              // a bare steel rim's grip, compared with a Sports Medium tyre
   rollShareFront: 0.55,      // how much of the cornering weight shift the front takes
 
   // --- Fuel ---
@@ -220,7 +225,12 @@ export class CarPhysics {
   // --- Tyres ---
   // A fresh set of the current compound: no wear, normal pressure
   freshTyres() {
-    this.tyres = WHEEL_ORDER.map(() => ({ wear: 0, pressure: 1, leak: 0 }));
+    // blown: burst, the rubber flapping and shredding off. shred: 0-1, how much
+    // has gone. rim: nothing left, running on the bare rim. heat: how close a
+    // flat tyre being driven on is to bursting (0-1).
+    this.tyres = WHEEL_ORDER.map(() => ({
+      wear: 0, pressure: 1, leak: 0, blown: false, shred: 0, rim: false, heat: 0,
+    }));
     this.wheelLoad = [0, 0, 0, 0];
     this.tyreSink = [0, 0, 0, 0];   // how far each corner sits lower (flat tyres), metres
     this.flatDrag = 0;
@@ -236,7 +246,7 @@ export class CarPhysics {
   // rate: share of the air lost per second at first (it slows as it empties)
   puncture(wheel, rate) {
     const t = this.tyres[wheel];
-    if (!t || t.pressure <= 0) return;
+    if (!t || t.pressure <= 0 || t.blown) return;
     t.leak = Math.max(t.leak, rate);
     this.events.push({ type: 'puncture', wheel });
   }
@@ -254,9 +264,22 @@ export class CarPhysics {
     return TYRES[this.tyreCompound].kind === 'dirt' ? sf.dirtTyreDrag : sf.drag;
   }
 
+  // A tyre bursts: all the air goes at once, and the rubber starts to shred
+  blowout(wheel) {
+    const t = this.tyres[wheel];
+    if (!t || t.blown) return;
+    t.blown = true;
+    t.pressure = 0;
+    t.leak = 0;
+    t.shred = 0;
+    this.events.push({ type: 'blowout', wheel });
+  }
+
   // How much grip one tyre has, from its compound, wear and pressure
   tyreGrip(i) {
     const t = this.tyres[i];
+    if (t.rim) return this.spec.rimGrip;                 // steel on tarmac
+    if (t.blown) return TYRES[this.tyreCompound].grip * 0.42 * (1 - 0.3 * t.shred);   // flapping rubber
     const compound = TYRES[this.tyreCompound];
     const wearGrip = 1 - 0.35 * Math.pow(t.wear, 1.4);          // worn tyres grip less
     const pressureGrip = 0.5 + 0.5 * Math.pow(t.pressure, 0.6);  // a flat still grips, badly
@@ -448,10 +471,14 @@ export class CarPhysics {
       const slideAngle = Math.abs(Math.atan2(this.vy, Math.max(Math.abs(this.vx), 1)));
       steerLimit = Math.min(s.maxSteer, steerLimit + slideAngle);
     }
-    const target = c.steer * steerLimit;
+    // A front wheel on its bare rim fights the steering: less lock, slower to
+    // turn, and it chatters (the rim skipping over the road)
+    const frontRims = (this.tyres[0].rim ? 1 : 0) + (this.tyres[1].rim ? 1 : 0);
+    steerLimit *= 1 - 0.18 * frontRims;
+    const target = c.steer * steerLimit + (frontRims ? (Math.random() - 0.5) * 0.02 * frontRims : 0);
     const turningIn = !countersteering && Math.abs(target) > Math.abs(this.steer)
       && Math.sign(target) === Math.sign(this.steer || target);
-    const rate = turningIn ? s.steerSpeed / Math.pow(speedFactor, 1.5) : s.steerSpeed;
+    const rate = (turningIn ? s.steerSpeed / Math.pow(speedFactor, 1.5) : s.steerSpeed) * (1 - 0.35 * frontRims);
     this.steer += clamp(target - this.steer, -rate * h, rate * h);
     const d = this.steer;
 
@@ -485,8 +512,8 @@ export class CarPhysics {
     const axleTyre = (a, b) => {
       const la = loads[a] + 1e-6, lb = loads[b] + 1e-6;
       const grip = (la * this.tyreGrip(a) + lb * this.tyreGrip(b)) / (la + lb);
-      const firm = (p) => 0.35 + 0.65 * Math.pow(p, 0.8);
-      const soft = (la * firm(this.tyres[a].pressure) + lb * firm(this.tyres[b].pressure)) / (la + lb);
+      const firm = (t) => (t.rim ? 0.6 : t.blown ? 0.3 : 0.35 + 0.65 * Math.pow(t.pressure, 0.8));
+      const soft = (la * firm(this.tyres[a]) + lb * firm(this.tyres[b])) / (la + lb);
       return { grip, soft };
     };
     const tyreFront = axleTyre(0, 1);
@@ -498,7 +525,8 @@ export class CarPhysics {
     let flatDrag = 0;
     let flatPull = 0;
     WHEEL_ORDER.forEach((w, i) => {
-      const drag = 0.03 * Math.pow(1 - this.tyres[i].pressure, 1.5) * loads[i];
+      const t = this.tyres[i];
+      const drag = (t.rim ? 0.07 : t.blown ? 0.045 : 0.03 * Math.pow(1 - t.pressure, 1.5)) * loads[i];
       flatDrag += drag;
       flatPull += drag * w.side * s.trackHalf;
     });
@@ -866,12 +894,47 @@ export class CarPhysics {
         if (t.pressure <= 0.02) { t.pressure = 0; t.leak = 0; }
       }
 
-      // A soft tyre lets its corner sit lower, more so when it's carrying weight
-      this.tyreSink[i] = s.flatSink * Math.pow(1 - t.pressure, 1.2) * (0.6 + 0.4 * clamp(loadShare, 0, 2));
+      // --- Blowouts ---
+      if (!t.blown) {
+        // Worn down to the cords: it can burst, far more likely when loaded up in a corner
+        if (t.wear >= 0.98 && speed > 5) {
+          const chance = s.blowWornRate * Math.pow(Math.max(loadShare, 0.2), 3) * h;
+          if (Math.random() < chance) this.blowout(i);
+        }
+        // Driven fast on a flat: it overheats and bursts (cools off when slow)
+        if (t.pressure < 0.1) {
+          const fast = speed / 27.8;   // 1 = 100 km/h
+          t.heat = clamp(t.heat + (fast * fast - 0.15) * h / s.flatHeatTime, 0, 1);
+          if (t.heat >= 1) this.blowout(i);
+        }
+      } else if (!t.rim) {
+        // A blown tyre flings off strips of rubber as it turns, until only the rim is left
+        if (speed > 1.5) t.shred = Math.min(1, t.shred + (h / s.shredTime) * Math.min(1, speed / 8));
+        if (t.shred >= 1) {
+          t.rim = true;
+          this.events.push({ type: 'rim', wheel: i });
+        }
+      }
+      if (t.blown) t.wear = 1;
+
+      // A soft tyre lets its corner sit lower, more so when it's carrying weight.
+      // On the bare rim, it's the full drop.
+      this.tyreSink[i] = t.rim ? s.rimSink
+        : t.blown ? s.flatSink + (s.rimSink - s.flatSink) * t.shred
+        : s.flatSink * Math.pow(1 - t.pressure, 1.2) * (0.6 + 0.4 * clamp(loadShare, 0, 2));
     });
   }
 
   // How fast air is hissing out of the tyres right now (for the sound)
+  // For the sound: how much rubber is flapping (0-1) and how many rims are scraping
+  get tyreFlap() {
+    return this.tyres.reduce((m, t) => Math.max(m, t.blown && !t.rim ? 1 - 0.6 * t.shred : 0), 0);
+  }
+
+  get rimsDown() {
+    return this.tyres.reduce((n, t) => n + (t.rim ? 1 : 0), 0);
+  }
+
   get tyreHiss() {
     return this.tyres.reduce((sum, t) => sum + (t.pressure > 0 ? t.leak * t.pressure : 0), 0);
   }
