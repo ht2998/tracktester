@@ -242,6 +242,34 @@ function makeCrackleBuffer(ctx, seconds = 2) {
   return buffer;
 }
 
+// Grass squelch: short, wet "blobs" as the tyres press into soft earth and
+// sap. Each is a quick downward sweep of a muffled tone that dies away
+// (looped, sped up with road speed so faster = more squelches)
+function makeSquelchBuffer(ctx, seconds = 3) {
+  const sr = ctx.sampleRate;
+  const buffer = ctx.createBuffer(1, sr * seconds, sr);
+  const data = buffer.getChannelData(0);
+  let t = 0;
+  while (t < seconds - 0.2) {
+    const start = Math.floor(t * sr);
+    const length = 0.05 + Math.random() * 0.09;
+    const f0 = 650 + Math.random() * 500, f1 = 160 + Math.random() * 140;
+    const amp = 0.35 + Math.random() * 0.65;
+    let phase = 0;
+    const n = Math.floor(length * sr);
+    for (let i = 0; i < n; i++) {
+      const k = i / n;
+      const f = f0 * Math.pow(f1 / f0, k);              // sweeps down: "schlp"
+      phase += (2 * Math.PI * f) / sr;
+      const env = Math.sin(Math.PI * Math.min(1, k * 4)) * Math.pow(1 - k, 1.6);
+      // a muffled tone with a little noise, like mud
+      data[start + i] += amp * env * (Math.sin(phase) * 0.8 + (Math.random() * 2 - 1) * 0.25);
+    }
+    t += 0.06 + Math.random() * 0.16;                    // irregular spacing
+  }
+  return buffer;
+}
+
 // Growl: a gritty saturation that roughens the rumble
 function makeGrowlCurve() {
   const n = 1024, curve = new Float32Array(n);
@@ -678,6 +706,42 @@ export class EngineSound {
     this.screechStarters = [waver, ...this.screechTones.map((tn) => tn.osc)];
     this.rimRough.connect(this.rimGain).connect(this.carBus);
     for (const n of [grindSrc, rimSrc, ...this.screechStarters]) n.start(ctx.currentTime);
+
+    // --- Grass: the same kind of low grind and dry rasp as the blown tyre
+    // (soil and stalks under the tyre), with a slight wet squelch over it ---
+    const turfSrc = ctx.createBufferSource();
+    turfSrc.buffer = this.noise;
+    turfSrc.loop = true;
+    const turfLow = ctx.createBiquadFilter();
+    turfLow.type = 'bandpass';
+    turfLow.frequency.value = 230;
+    turfLow.Q.value = 1.1;
+    this.turfMid = ctx.createBiquadFilter();
+    this.turfMid.type = 'bandpass';
+    this.turfMid.frequency.value = 1100;
+    this.turfMid.Q.value = 2;
+    const turfLowLevel = ctx.createGain();
+    turfLowLevel.gain.value = 3.5;
+    const turfMidLevel = ctx.createGain();
+    turfMidLevel.gain.value = 1.2;
+    const turfShape = ctx.createWaveShaper();
+    turfShape.curve = makeGrowlCurve();
+    this.turfGain = ctx.createGain();
+    this.turfGain.gain.value = 0;
+    turfSrc.connect(turfLow).connect(turfLowLevel).connect(turfShape);
+    turfSrc.connect(this.turfMid).connect(turfMidLevel).connect(turfShape);
+    turfShape.connect(this.turfGain).connect(this.carBus);
+    this.squelchSrc = ctx.createBufferSource();
+    this.squelchSrc.buffer = makeSquelchBuffer(ctx);
+    this.squelchSrc.loop = true;
+    const squelchTone = ctx.createBiquadFilter();       // soft and muffled
+    squelchTone.type = 'lowpass';
+    squelchTone.frequency.value = 1400;
+    this.squelchGain = ctx.createGain();
+    this.squelchGain.gain.value = 0;
+    this.squelchSrc.connect(squelchTone).connect(this.squelchGain).connect(this.carBus);
+    turfSrc.start(ctx.currentTime);
+    this.squelchSrc.start(ctx.currentTime);
     const startAt = ctx.currentTime;
     squealNoise.start(startAt);
     this.squealTone.start(startAt);
@@ -859,6 +923,24 @@ export class EngineSound {
     burst(t0, 0.18, 'lowpass', 1400, 0.7, 2.6);          // its body
     burst(t0, 0.35, 'lowpass', 130, 0.8, 3.2, 0.002);    // the thump through the car
     burst(t0 + 0.02, 0.7, 'bandpass', 1600, 0.9, 0.9, 0.01);   // air rushing out
+  }
+
+  // Grass, called every frame. share: how many tyres are on it (0-1),
+  // speed: m/s, slide: how hard the tyres are sliding (0-1)
+  setGrass(share, speed, slide) {
+    if (!this.ctx || !this.turfGain) return;
+    const t = this.ctx.currentTime;
+    const move = Math.min(1, speed / 25);
+    const rolling = Math.min(1, speed / 1.5);
+    const churn = 1 + 0.8 * Math.min(1, slide);          // sliding tears it up: louder, wetter
+    const grind = share * rolling * (0.05 + 0.1 * Math.sqrt(move)) * churn;
+    const squelch = share * rolling * (0.02 + 0.04 * Math.sqrt(move)) * churn;   // only a slight wet overlay
+    const ease = grind > this.turfGain.gain.value ? 0.08 : 0.15;
+    this.turfGain.gain.setTargetAtTime(grind, t, ease);
+    this.squelchGain.gain.setTargetAtTime(squelch, t, ease);
+    this.turfMid.frequency.setTargetAtTime(900 + 700 * move, t, 0.1);
+    // Faster: more squelches, a touch higher
+    this.squelchSrc.playbackRate.setTargetAtTime(0.6 + 0.9 * move + 0.4 * Math.min(1, slide), t, 0.1);
   }
 
   // Tyre squeal, called every frame. skid: how hard the tyres are skidding
