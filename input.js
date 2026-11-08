@@ -6,6 +6,8 @@
 //   D / Right arrow  = steer right
 //   Space            = handbrake
 //   X (hold)         = clutch: rev the engine freely, let go to dump it
+//   F (hold)         = horn
+//   G                = headlights: off / dipped / main beam
 //   Q / E  or  , / . = shift down / up (manual gearbox; Q from 1st = reverse)
 //   R                = reverse on / off (automatic and CVT, when stopped)
 //   T                = change gearbox (manual / automatic / CVT)
@@ -30,12 +32,13 @@ const TAP_KEYS = {
   Period: 'shiftUp',
   KeyT: 'transmission',
   KeyM: 'mute',
+  KeyG: 'lights',
 };
 
 const GAME_KEYS = new Set([
   'KeyW', 'KeyA', 'KeyS', 'KeyD',
   'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
-  'Space', 'KeyX', ...Object.keys(TAP_KEYS),
+  'Space', 'KeyX', 'KeyF', ...Object.keys(TAP_KEYS),
 ]);
 
 window.addEventListener('keydown', (e) => {
@@ -54,14 +57,14 @@ window.addEventListener('keyup', (e) => {
 // If the window loses focus, let go of everything so the car doesn't drive off on its own
 window.addEventListener('blur', () => held.clear());
 
-const controls = { throttle: 0, brake: 0, steer: 0, handbrake: false, clutch: false };
+const controls = { throttle: 0, brake: 0, steer: 0, handbrake: false, clutch: false, horn: false };
 
 // On-screen touch controls write their state here (see touch.js)
-const touch = { throttle: 0, brake: 0, steer: 0, handbrake: false, clutch: false };
+const touch = { throttle: 0, brake: 0, steer: 0, handbrake: false, clutch: false, horn: false };
 export function setTouch(values) {
   Object.assign(touch, values);
 }
-// A touch button's one-off action (shift, reverse, camera, reset, mute)
+// A touch button's one-off action (shift, reverse, camera, reset, mute, lights)
 export function tap(name) {
   tapped.add(name);
 }
@@ -79,6 +82,7 @@ export function readControls() {
   controls.steer = keySteer !== 0 ? keySteer : touch.steer;
   controls.handbrake = held.has('Space') || touch.handbrake;
   controls.clutch = held.has('KeyX') || touch.clutch;
+  controls.horn = held.has('KeyF') || touch.horn;
   return controls;
 }
 
