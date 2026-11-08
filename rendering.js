@@ -89,19 +89,51 @@ const sun = new THREE.DirectionalLight(0xfff2dd, 2.6);
 sun.position.copy(SUN_OFFSET);
 sun.castShadow = true;
 sun.shadow.mapSize.set(QUALITY.shadowMapSize, QUALITY.shadowMapSize);
-sun.shadow.camera.left = -8;
-sun.shadow.camera.right = 8;
-sun.shadow.camera.top = 8;
-sun.shadow.camera.bottom = -8;
+// The shadows cover a big square (72 m across, 56 m on phones), pushed
+// ahead of the car towards where you're looking, so buildings cast their
+// shadows long before you reach them instead of popping in up close
+const SHADOW_HALF = isMobile ? 28 : 36;
+sun.shadow.camera.left = -SHADOW_HALF;
+sun.shadow.camera.right = SHADOW_HALF;
+sun.shadow.camera.top = SHADOW_HALF;
+sun.shadow.camera.bottom = -SHADOW_HALF;
 sun.shadow.camera.near = 1;
-sun.shadow.camera.far = 30;
-sun.shadow.bias = -0.0005;
+sun.shadow.camera.far = 220;
+sun.shadow.bias = -0.0004;
+sun.shadow.normalBias = 0.03;   // (stops speckled "shadow acne" on surfaces facing the sun)
 scene.add(sun);
 scene.add(sun.target);
 
 // Time of day and weather (sky.js): moves the sun, colours the sky and
 // light, brings out the stars at night and the clouds when it's cloudy
 const sky = new SkySystem(scene, { sun, hemi: hemiLight, isMobile });
+
+// Moves the sun's shadow square: centred about 14 m ahead of the car (the
+// way the camera looks), and snapped to the shadow map's own pixel grid so
+// shadows don't shimmer or crawl as you drive
+const carSpot = new THREE.Vector3();
+const shadowCentre = new THREE.Vector3();
+const lightRight = new THREE.Vector3();
+const lightUp = new THREE.Vector3();
+const lookAhead = new THREE.Vector3();
+function placeShadows() {
+  camera.getWorldDirection(lookAhead);
+  lookAhead.y = 0;
+  if (lookAhead.lengthSq() < 1e-6) lookAhead.set(0, 0, 1);
+  lookAhead.normalize();
+  shadowCentre.copy(carSpot).addScaledVector(lookAhead, SHADOW_HALF * 0.4);
+  const dir = sky.lightDir;
+  lightRight.set(dir.z, 0, -dir.x);                       // across the light, level
+  if (lightRight.lengthSq() < 1e-6) lightRight.set(1, 0, 0);
+  lightRight.normalize();
+  lightUp.crossVectors(dir, lightRight).normalize();
+  const texel = (2 * SHADOW_HALF) / QUALITY.shadowMapSize;
+  const a = shadowCentre.dot(lightRight), b = shadowCentre.dot(lightUp);
+  shadowCentre.addScaledVector(lightRight, Math.round(a / texel) * texel - a)
+    .addScaledVector(lightUp, Math.round(b / texel) * texel - b);
+  sun.target.position.copy(shadowCentre);
+  sun.position.copy(shadowCentre).addScaledVector(dir, 100);   // the sun (or moon), far off in its direction
+}
 
 // ---------------------------------------------------------------------
 // GROUND: a big tarmac area
@@ -396,7 +428,7 @@ function buildCar() {
   // The beam: one light between the two lamps (one is much cheaper than
   // two, and looks the same from the driver's seat). It's always there,
   // just at zero when off, so switching on doesn't stall the game.
-  const beam = new THREE.SpotLight(0xfff1d6, 0, 60, 0.5, 0.55, 1.4);
+  const beam = new THREE.SpotLight(0xfff1d6, 0, 60, 0.5, 0.5, 1.3);
   beam.position.set(0, 0.64, 1.32);
   beam.target.position.set(0, 0, 14);
   car.add(beam, beam.target);
@@ -484,8 +516,8 @@ const carModel = buildCar();
 let lightsMode = 0;
 const LIGHTS = [
   { intensity: 0, distance: 60, angle: 0.5, aim: [0, 0, 14], glow: 0 },
-  { intensity: 45, distance: 45, angle: 0.5, aim: [0, 0, 12], glow: 0.9 },      // dipped
-  { intensity: 110, distance: 110, angle: 0.36, aim: [0, 0.35, 40], glow: 1.6 },  // main beam
+  { intensity: 90, distance: 70, angle: 0.55, aim: [0, 0, 14], glow: 1.2 },       // dipped
+  { intensity: 260, distance: 170, angle: 0.4, aim: [0, 0.35, 45], glow: 2.2 },   // main beam
 ];
 function setLights(mode) {
   lightsMode = mode;
@@ -1036,10 +1068,12 @@ renderer.setAnimationLoop(() => {
   updateWheels(physics.steer, physics.wheelSpin);
   updateSmoke(dt);
 
-  // Keep the sun's shadow area centred on the car
-  sun.target.position.set(physics.x, 0, physics.z);
-  sky.update(dt, sun.target.position, camera);
-  sun.position.set(physics.x, 0, physics.z).addScaledVector(sky.lightDir, 14);   // the sun (or moon), wherever it is in the sky
+  // The sky follows the car; the sun's shadow area sits ahead of it
+  carSpot.set(physics.x, 0, physics.z);
+  sky.update(dt, carSpot, camera);
+  placeShadows();
+  // Eyes adjust to the dark: a little brighter overall at night
+  renderer.toneMappingExposure = 1 + 0.55 * (1 - sky.daylight);
 
   updateCamera(dt);
   engineSound.update(physics, carPos);
