@@ -1038,7 +1038,7 @@ renderer.setAnimationLoop(() => {
 
   // Keep the sun's shadow area centred on the car
   sun.target.position.set(physics.x, 0, physics.z);
-  sky.update(dt, sun.target.position);
+  sky.update(dt, sun.target.position, camera);
   sun.position.set(physics.x, 0, physics.z).addScaledVector(sky.lightDir, 14);   // the sun (or moon), wherever it is in the sky
 
   updateCamera(dt);
