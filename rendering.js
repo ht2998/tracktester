@@ -829,6 +829,7 @@ function updateSmoke(dt) {
   const rubber = (a, b) => [a, b].filter((i) => !physics.tyres[i].blown).length / 2;
   engineSound.setSqueal(Math.max(rearSkid * rubber(2, 3), frontSkid * rubber(0, 1)) * onTarmac, speed);
   engineSound.setGravel(gravelWheels / 4, speed, Math.max(rearSkid, frontSkid));
+  engineSound.setGrass(grassWheels / 4, speed, Math.max(rearSkid, frontSkid));
   for (const p of SMOKE_POINTS) {
     skidWorld.set(p.local.x, 0, p.local.z);
     carModel.car.localToWorld(skidWorld);
