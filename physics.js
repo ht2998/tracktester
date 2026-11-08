@@ -86,20 +86,45 @@ export const CATERHAM = {
 };
 
 // Tyre compounds, GT7-style. grip: on dry tarmac compared with Sports Medium.
-// wear: how fast they wear compared with Sports Medium. Dirt and snow tyres
-// are poor on tarmac; they come into their own on dirt and snow surfaces.
+// wear: how fast they wear compared with Sports Medium. kind: what sort of
+// tyre it is, which decides how it copes off the tarmac (see SURFACES).
+// Intermediates and wets are slower on dry tarmac and wear fast there (they
+// overheat); they're for rain, which comes with weather. Dirt and snow tyres
+// are poor on tarmac and come into their own off it.
 export const TYRES = {
-  CH: { name: 'Comfort Hard', group: 'Comfort', grip: 0.78, wear: 0.4 },
-  CM: { name: 'Comfort Medium', group: 'Comfort', grip: 0.82, wear: 0.5 },
-  CS: { name: 'Comfort Soft', group: 'Comfort', grip: 0.86, wear: 0.65 },
-  SH: { name: 'Sports Hard', group: 'Sports', grip: 0.93, wear: 0.75 },
-  SM: { name: 'Sports Medium', group: 'Sports', grip: 1.0, wear: 1.0 },
-  SS: { name: 'Sports Soft', group: 'Sports', grip: 1.06, wear: 1.3 },
-  RH: { name: 'Racing Hard', group: 'Racing', grip: 1.12, wear: 1.5 },
-  RM: { name: 'Racing Medium', group: 'Racing', grip: 1.18, wear: 2.0 },
-  RS: { name: 'Racing Soft', group: 'Racing', grip: 1.24, wear: 2.7 },
-  DIRT: { name: 'Dirt', group: 'Off-road', grip: 0.72, wear: 1.4 },
-  SNOW: { name: 'Snow', group: 'Off-road', grip: 0.6, wear: 2.2 },
+  CH: { name: 'Comfort Hard', group: 'Comfort', kind: 'road', grip: 0.78, wear: 0.4 },
+  CM: { name: 'Comfort Medium', group: 'Comfort', kind: 'road', grip: 0.82, wear: 0.5 },
+  CS: { name: 'Comfort Soft', group: 'Comfort', kind: 'road', grip: 0.86, wear: 0.65 },
+  SH: { name: 'Sports Hard', group: 'Sports', kind: 'road', grip: 0.93, wear: 0.75 },
+  SM: { name: 'Sports Medium', group: 'Sports', kind: 'road', grip: 1.0, wear: 1.0 },
+  SS: { name: 'Sports Soft', group: 'Sports', kind: 'road', grip: 1.06, wear: 1.3 },
+  RH: { name: 'Racing Hard', group: 'Racing', kind: 'slick', grip: 1.12, wear: 1.5 },
+  RM: { name: 'Racing Medium', group: 'Racing', kind: 'slick', grip: 1.18, wear: 2.0 },
+  RS: { name: 'Racing Soft', group: 'Racing', kind: 'slick', grip: 1.24, wear: 2.7 },
+  IM: { name: 'Intermediate', group: 'Wet weather', kind: 'wet', grip: 1.0, wear: 2.4 },
+  W: { name: 'Wet', group: 'Wet weather', kind: 'wet', grip: 0.9, wear: 3.4 },
+  DIRT: { name: 'Dirt', group: 'Off-road', kind: 'dirt', grip: 0.72, wear: 1.4 },
+  SNOW: { name: 'Snow', group: 'Off-road', kind: 'snow', grip: 0.6, wear: 2.2 },
+};
+
+// Surfaces off the tarmac. grip: how much of a tyre's tarmac grip is left,
+// by kind of tyre. Smooth slicks are worst on loose ground; deep-treaded
+// tyres cope better; dirt tyres' knobbly blocks dig in and actually grip
+// better on dirt than they do on tarmac. drag: how hard the ground holds
+// the tyres back (as a share of their load), less for narrow dirt tyres.
+export const SURFACES = {
+  gravel: {
+    grip: { road: 0.55, slick: 0.42, wet: 0.6, dirt: 0.95, snow: 0.75 },
+    drag: 0.38, dirtTyreDrag: 0.26,
+  },
+  grass: {
+    grip: { road: 0.5, slick: 0.38, wet: 0.56, dirt: 1.0, snow: 0.8 },
+    drag: 0.12, dirtTyreDrag: 0.08,
+  },
+  soil: {
+    grip: { road: 0.6, slick: 0.45, wet: 0.65, dirt: 1.15, snow: 0.82 },
+    drag: 0.22, dirtTyreDrag: 0.14,
+  },
 };
 
 // Wheel order used everywhere: front left, front right, rear left, rear right
@@ -214,6 +239,19 @@ export class CarPhysics {
     if (!t || t.pressure <= 0) return;
     t.leak = Math.max(t.leak, rate);
     this.events.push({ type: 'puncture', wheel });
+  }
+
+  // On a surface off the tarmac: the share of tarmac grip left, and the drag,
+  // for the tyres fitted now
+  surfaceGripFor(surface) {
+    const sf = SURFACES[surface];
+    return sf ? sf.grip[TYRES[this.tyreCompound].kind] ?? 0.55 : 1;
+  }
+
+  surfaceDragFor(surface) {
+    const sf = SURFACES[surface];
+    if (!sf) return 0;
+    return TYRES[this.tyreCompound].kind === 'dirt' ? sf.dirtTyreDrag : sf.drag;
   }
 
   // How much grip one tyre has, from its compound, wear and pressure
