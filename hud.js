@@ -718,7 +718,13 @@ export class Hud {
       speedLabel: q('.tw-speed-label'), speedNote: q('.tw-speed-note'),
       weather: q('#tw-weather'), changing: q('.tw-changing'), now: q('.tw-now'),
     };
-    const letGo = (el) => { el.addEventListener('change', () => el.blur()); el.addEventListener('pointerup', () => el.blur()); };
+    // Let go of a control afterwards so the keys go back to driving. (A
+    // dropdown only once something is picked: letting go on pointerup would
+    // close its list the moment it opens.)
+    const letGo = (el) => {
+      el.addEventListener('change', () => el.blur());
+      if (el.tagName !== 'SELECT') el.addEventListener('pointerup', () => el.blur());
+    };
     this.tw.time.addEventListener('input', () => this.onSky.time?.(Number(this.tw.time.value)));
     this.tw.speed.addEventListener('input', () => this.onSky.speed?.(this.timeSpeeds[Number(this.tw.speed.value)]));
     this.tw.lock.addEventListener('click', () => {
