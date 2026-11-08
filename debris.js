@@ -344,20 +344,27 @@ export class EngineDebris {
     this.sparkSize[i] = rand(0.06, 0.13);    // big enough to see from the chase camera
   }
 
-  // A spark from a bare rim grinding on the road: sprayed out behind the
-  // wheel and a little up, so it streams away in a visible trail
-  spawnRimSpark(origin, carVel) {
+  // A spark from a bare rim grinding on the road. Same as the engine's
+  // sparks (size, glow time, how they're thrown), but sprayed out backwards
+  // from behind the wheel, the way the wheel is turning.
+  // origin: just behind the wheel (world), carVel: the car's velocity,
+  // heading: which way the car faces
+  spawnRimSpark(origin, carVel, heading) {
     const i = this.sparkNext;
     this.sparkNext = (this.sparkNext + 1) % this.maxSparks;
-    this.sparkPos.set([origin.x + rand(-0.08, 0.08), rand(0.02, 0.08), origin.z + rand(-0.08, 0.08)], i * 3);
+    const fx = Math.sin(heading), fz = Math.cos(heading);
+    const lx = fz, lz = -fx;
+    const back = rand(1.5, 6) * 0.7;             // thrown off the back of the wheel
+    const side = rand(-1.5, 1.5);
+    this.sparkPos.set([origin.x + rand(-0.1, 0.1), rand(0.1, 0.3), origin.z + rand(-0.1, 0.1)], i * 3);
     this.sparkVel.set([
-      carVel.x * rand(0.25, 0.7) + rand(-1.2, 1.2),
-      rand(0.6, 3.2),
-      carVel.z * rand(0.25, 0.7) + rand(-1.2, 1.2),
+      carVel.x * 0.9 - fx * back + lx * side,
+      rand(-1, 4) * 0.7,
+      carVel.z * 0.9 - fz * back + lz * side,
     ], i * 3);
-    this.sparkLife[i] = rand(0.5, 1.3);
+    this.sparkLife[i] = rand(1.0, 2.5);          // as long as the engine's
     this.sparkHeat[i] = 1;
-    this.sparkSize[i] = rand(0.09, 0.17);    // a bit bigger than the engine's, so they read at speed
+    this.sparkSize[i] = rand(0.06, 0.13);        // the engine's size
   }
 
   // origin/carVel: where the engine bay is now and how fast the car is going,
