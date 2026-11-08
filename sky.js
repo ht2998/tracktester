@@ -40,7 +40,7 @@ export const DEFAULT_SPEED = 60;
 const C = {
   night: new THREE.Color(0x070b18),
   dusk: new THREE.Color(0x2a3358),
-  glow: new THREE.Color(0xe8946a),
+  glow: new THREE.Color(0xff9a4c),      // the sky around a setting sun
   day: new THREE.Color(0x9ec9ef),
   overcast: new THREE.Color(0xa9b2ba),
   overcastNight: new THREE.Color(0x0b0d12),
@@ -53,6 +53,43 @@ const C = {
   groundNight: new THREE.Color(0x0e0d0b),
   white: new THREE.Color(0xffffff),
 };
+
+// The sun's colour by its height: white high up, then yellow, then orange,
+// then deep orange as it sinks below the horizon
+const SUN_RAMP = [
+  [-0.05, new THREE.Color(0xff5a14)],
+  [0.03, new THREE.Color(0xff7a24)],
+  [0.1, new THREE.Color(0xffa040)],
+  [0.22, new THREE.Color(0xffd36e)],
+  [0.38, new THREE.Color(0xfff0c8)],
+  [0.55, new THREE.Color(0xfff6ea)],
+];
+// The (clear) sky's colour by the sun's height: blue by day, pale gold as
+// the sun gets low, orange as it touches the horizon, then purple, deep
+// blue and night. (Its own sequence, so it never mixes blue and orange
+// into a muddy brown.)
+const SKY_RAMP = [
+  [-0.45, new THREE.Color(0x070b18)],
+  [-0.22, new THREE.Color(0x182046)],
+  [-0.1, new THREE.Color(0x433761)],
+  [-0.03, new THREE.Color(0xc8603a)],
+  [0.03, new THREE.Color(0xf28c45)],
+  [0.1, new THREE.Color(0xf5b56c)],
+  [0.18, new THREE.Color(0xe9d6b0)],
+  [0.3, new THREE.Color(0x9ec9ef)],
+];
+function ramp(table, el, out) {
+  if (el <= table[0][0]) return out.copy(table[0][1]);
+  for (let i = 1; i < table.length; i++) {
+    const [h, c] = table[i];
+    if (el <= h) {
+      const [h0, c0] = table[i - 1];
+      return out.copy(c0).lerp(c, (el - h0) / (h - h0));
+    }
+  }
+  return out.copy(table[table.length - 1][1]);
+}
+const sunColour = (el, out) => ramp(SUN_RAMP, el, out);
 
 // A round glow painted on a canvas: a bright core fading out softly
 function glowTexture(core = 0.18) {
@@ -263,7 +300,6 @@ export class SkySystem {
     const el = this.sunDir.y;                       // sun's height: 1 = overhead, below 0 = night
     const day = smooth(-0.22, 0.3, el);             // 0 at night, 1 in full day (dawn and dusk take a while)
     this.daylight = day;
-    const twilight = Math.exp(-((el / 0.2) ** 2));  // strongest with the sun on the horizon
 
     // --- A cloud drifting over the sun? (checked against each cloud's
     // direction from the car, so it matches what you see) ---
@@ -284,7 +320,7 @@ export class SkySystem {
     // --- Sunlight (or moonlight at night) ---
     const sunUp = el > -0.02;
     if (sunUp) {
-      this.sun.color.copy(C.sunLow).lerp(C.sunHigh, smooth(0, 0.55, el));   // golden low down
+      sunColour(el, this.sun.color).lerp(C.white, 0.15);   // white -> yellow -> orange as it sinks
       this.sun.intensity = 2.6 * smooth(-0.02, 0.4, el) * (1 - 0.72 * cloud) * shade;
       this.lightDir = this.sunDir;
     } else {
@@ -304,8 +340,7 @@ export class SkySystem {
     this.hemi.intensity = 0.1 + day * (0.5 + 0.35 * cloud);
 
     // --- Sky colour (also the fog, so the distance fades into it) ---
-    const sky = this.skyColour.copy(C.night).lerp(C.dusk, smooth(-0.45, -0.1, el)).lerp(C.day, day);
-    sky.lerp(C.glow, 0.5 * twilight * (1 - cloud));
+    const sky = ramp(SKY_RAMP, el, this.skyColour);
     this._c.copy(C.overcastNight).lerp(C.overcast, day);
     sky.lerp(this._c, cloud * 0.85);
     this.scene.background.copy(sky);
@@ -330,7 +365,7 @@ export class SkySystem {
     this.wind.set(Math.cos(this.windAngle) * windSpeed, Math.sin(this.windAngle) * windSpeed);
 
     // --- Clouds: more of them the cloudier it is, lit by the sun ---
-    const cloudLight = this._c.copy(C.night).lerp(C.dusk, smooth(-0.45, -0.1, el)).lerp(C.sunLow, smooth(-0.15, 0.1, el))
+    const cloudLight = this._c.copy(C.night).lerp(C.dusk, smooth(-0.45, -0.1, el)).lerp(sunColour(el, this._c3 || (this._c3 = new THREE.Color())), smooth(-0.15, 0.1, el))
       .lerp(C.white, day * smooth(0.05, 0.45, el));
     const grey = 1 - 0.35 * cloud;   // overcast clouds are greyer
     for (const s of this.clouds) {
@@ -357,18 +392,18 @@ export class SkySystem {
     const cloud = this.cloud;
     // Sun: 400 m out along its path (inside the camera's view distance)
     const low = 1 - smooth(0.02, 0.35, el);                     // 1 near the horizon
-    const sunCol = this._c.copy(C.sunHigh).lerp(C.sunLow, low);
+    const sunCol = sunColour(el, this._c);
     const sunVis = smooth(-0.06, 0.02, el) * (1 - 0.85 * cloud) * (1 - 0.7 * this.covered);
     this.sunPos.copy(this.sunDir).multiplyScalar(400).add(centre);
     this.sunDisc.position.copy(this.sunPos);
     this.sunHalo.position.copy(this.sunPos);
     const core = 22 + 10 * low;                                  // bigger low down
     this.sunDisc.scale.set(core, core, 1);
-    this.sunHalo.scale.set(core * 6, core * 6, 1);
+    this.sunHalo.scale.set(core * (6 + 3 * low), core * (6 + 3 * low), 1);
     this.sunDisc.material.color.copy(sunCol);
     this.sunHalo.material.color.copy(sunCol);
     this.sunDisc.material.opacity = sunVis;
-    this.sunHalo.material.opacity = sunVis * (0.35 + 0.3 * low);
+    this.sunHalo.material.opacity = sunVis * (0.35 + 0.45 * low);   // a bigger, warmer glow low down
     this.sunDisc.visible = this.sunHalo.visible = sunVis > 0.01;
 
     // Moon: opposite the sun, out once the sun has gone down
