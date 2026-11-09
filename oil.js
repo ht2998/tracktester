@@ -6,13 +6,15 @@
 // puddles are each one instanced object (drawn in a single go), with a
 // fixed pool that recycles the oldest pieces, and a simple grid makes
 // "is this tyre on oil?" quick to answer.
+// In the rain, oil spreads out wider while it fades into the road, losing
+// its slipperiness as it goes, until it's washed away completely.
 // =====================================================================
 
 import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 1;
+export const BUILD = 2;
 
 const CELL = 2;   // metres: size of each square in the lookup grid
 const LOBES_PER_PUDDLE = 5;   // main pool + up to 4 lobes
@@ -35,7 +37,7 @@ export class OilSlicks {
     this.activePuddle = -1;  // the puddle currently growing under the car
 
     const mat = new THREE.MeshStandardMaterial({
-      color: 0x0d0c0b,
+      color: 0xffffff,       // each piece's own shade comes from its instance colour (so rain can fade it)
       roughness: 0.12,       // wet and shiny
       metalness: 0.4,
       // Solid, not see-through: overlapping pieces would otherwise show as darker beads
@@ -66,6 +68,50 @@ export class OilSlicks {
     this._p = new THREE.Vector3();
     this._s = new THREE.Vector3();
     this._up = new THREE.Vector3(0, 1, 0);
+    this._c = new THREE.Color();
+    this.oilColour = new THREE.Color(0x0d0c0b);
+    this.roadColour = new THREE.Color(0x3f4245);   // what it fades into
+    this.washClock = 0;
+  }
+
+  // The rain washing oil away. rain: 0-1. Spreads each piece while fading
+  // it towards the road's colour; heavy rain clears it in about 1.5 minutes.
+  weather(dt, rain) {
+    if (rain < 0.02) return;
+    this.washClock += dt;
+    if (this.washClock < 0.25) return;            // a few times a second is plenty
+    const step = this.washClock * rain / 70;
+    this.washClock = 0;
+    let changed = false;
+    this.segments.forEach((sg, i) => {
+      if (!sg) return;
+      sg.wash = Math.min(1, (sg.wash || 0) + step);
+      if (sg.wash >= 1) {
+        this.unregister('seg', i, sg.cells);
+        this.segments[i] = null;
+        this.trailMesh.setMatrixAt(i, this._m.makeScale(0, 0, 0));
+      } else this.drawSegment(i, sg);
+      changed = true;
+    });
+    this.puddles.forEach((p, i) => {
+      if (!p || i === this.activePuddle) return;
+      p.wash = Math.min(1, (p.wash || 0) + step);
+      if (p.wash >= 1) {
+        this.unregister('pud', i, p.cells);
+        this.puddles[i] = null;
+        for (let k = 0; k < LOBES_PER_PUDDLE; k++) this.puddleMesh.setMatrixAt(i * LOBES_PER_PUDDLE + k, this._m.makeScale(0, 0, 0));
+      } else this.drawPuddle(i, p);
+      changed = true;
+    });
+    if (changed) {
+      this.trailMesh.instanceMatrix.needsUpdate = true;
+      this.puddleMesh.instanceMatrix.needsUpdate = true;
+    }
+  }
+
+  // Oil's colour as it washes away (wash 0 = fresh, 1 = gone)
+  shade(wash) {
+    return this._c.copy(this.oilColour).lerp(this.roadColour, Math.pow(wash || 0, 0.7));
   }
 
   // Call every frame.
@@ -128,21 +174,28 @@ export class OilSlicks {
     const i = this.nextSeg;
     this.nextSeg = (this.nextSeg + 1) % this.maxSegments;
     if (this.segments[i]) this.unregister('seg', i, this.segments[i].cells);
-
-    const len = Math.hypot(bx - ax, bz - az);
     const cells = this.cellsAlong(ax, az, bx, bz);
-    this.segments[i] = { ax, az, bx, bz, w, cells };
+    this.segments[i] = { ax, az, bx, bz, w, cells, wash: 0 };
     this.register('seg', i, cells);
+    this.drawSegment(i, this.segments[i]);
+    this.trailMesh.count = Math.max(this.trailMesh.count, i + 1);
+  }
 
-    // Strip centred between the two points, turned to face along the line,
-    // slightly overlapping the next piece so the trail has no gaps
+  // Strip centred between the two points, turned to face along the line,
+  // slightly overlapping the next piece so the trail has no gaps (wider
+  // and paler as the rain washes it out)
+  drawSegment(i, sg) {
+    const { ax, az, bx, bz } = sg;
+    const len = Math.hypot(bx - ax, bz - az);
+    const w = sg.w * (1 + 1.6 * (sg.wash || 0));
     this._p.set((ax + bx) / 2, 0.004, (az + bz) / 2);
     this._q.setFromAxisAngle(this._up, Math.atan2(bx - ax, bz - az));
     this._s.set(w, 1, len + w * 0.6);
     this._m.compose(this._p, this._q, this._s);
     this.trailMesh.setMatrixAt(i, this._m);
-    this.trailMesh.count = Math.max(this.trailMesh.count, i + 1);
+    this.trailMesh.setColorAt(i, this.shade(sg.wash));
     this.trailMesh.instanceMatrix.needsUpdate = true;
+    this.trailMesh.instanceColor.needsUpdate = true;
   }
 
   // A single splash of oil: a small, slightly irregular blob
@@ -172,15 +225,20 @@ export class OilSlicks {
         turn: Math.random() * Math.PI,
       });
     }
-    return { x, z, r, maxR, cells: [], angle: Math.random() * Math.PI, squash: 0.7 + Math.random() * 0.25, lobes };
+    return { x, z, r, maxR, cells: [], angle: Math.random() * Math.PI, squash: 0.7 + Math.random() * 0.25, lobes, wash: 0 };
   }
 
   // Each puddle uses LOBES_PER_PUDDLE instances: the pool, then its lobes
   drawPuddle(i, p) {
     const base = i * LOBES_PER_PUDDLE;
+    const spread = 1 + 1.2 * (p.wash || 0);           // the rain spreads it out
+    const r = p.r * spread;
+    this.shade(p.wash);
+    for (let k = 0; k < LOBES_PER_PUDDLE; k++) this.puddleMesh.setColorAt(base + k, this._c);
+    this.puddleMesh.instanceColor.needsUpdate = true;
     this._p.set(p.x, 0.005, p.z);
     this._q.setFromAxisAngle(this._up, p.angle);
-    this._s.set(p.r, 1, p.r * p.squash);
+    this._s.set(r, 1, r * p.squash);
     this._m.compose(this._p, this._q, this._s);
     this.puddleMesh.setMatrixAt(base, this._m);
     for (let k = 0; k < LOBES_PER_PUDDLE - 1; k++) {
@@ -190,8 +248,8 @@ export class OilSlicks {
         this._m.compose(this._p, this._q, this._s);
       } else {
         const grow = Math.min(1, lobe.speed * (p.r / p.maxR) + 0.15);
-        const lr = p.r * lobe.size * grow;
-        const d = p.r * lobe.reach * grow;
+        const lr = r * lobe.size * grow;
+        const d = r * lobe.reach * grow;
         this._p.set(p.x + Math.sin(lobe.angle) * d, 0.0052, p.z + Math.cos(lobe.angle) * d);
         this._q.setFromAxisAngle(this._up, lobe.turn);
         this._s.set(lr, 1, lr * lobe.squash);
@@ -248,34 +306,40 @@ export class OilSlicks {
   }
 
   // Grip at a point on the ground: low on oil, normal everywhere else
+  // (washed-out oil is less slippery)
   gripAt(x, z) {
     const here = this.grid.get(cellKey(x, z));
     if (!here || here.size === 0) return 1;
     const tyre = 0.1;   // half the width of a tyre's contact patch
+    const slick = (wash) => this.slickGrip + (1 - this.slickGrip) * (wash || 0);
+    let grip = 1;
     for (const id of here) {
       const [kind, n] = id.split(':');
       if (kind === 'pud') {
         const p = this.puddles[+n];
-        const reach = p.r + tyre;
-        if ((x - p.x) ** 2 + (z - p.z) ** 2 < reach * reach) return this.slickGrip;
+        if (!p) continue;
+        const r = p.r * (1 + 1.2 * (p.wash || 0));
+        const reach = r + tyre;
+        if ((x - p.x) ** 2 + (z - p.z) ** 2 < reach * reach) { grip = Math.min(grip, slick(p.wash)); continue; }
         for (const lobe of p.lobes) {
           const grow = Math.min(1, lobe.speed * (p.r / p.maxR) + 0.15);
-          const lr = p.r * lobe.size * grow + tyre;
-          const d = p.r * lobe.reach * grow;
+          const lr = r * lobe.size * grow + tyre;
+          const d = r * lobe.reach * grow;
           const lx = p.x + Math.sin(lobe.angle) * d, lz = p.z + Math.cos(lobe.angle) * d;
-          if ((x - lx) ** 2 + (z - lz) ** 2 < lr * lr) return this.slickGrip;
+          if ((x - lx) ** 2 + (z - lz) ** 2 < lr * lr) { grip = Math.min(grip, slick(p.wash)); break; }
         }
       } else {
         const s = this.segments[+n];
+        if (!s) continue;
         // Distance from the point to the strip's centre line
         const vx = s.bx - s.ax, vz = s.bz - s.az;
         const t = Math.max(0, Math.min(1, ((x - s.ax) * vx + (z - s.az) * vz) / (vx * vx + vz * vz || 1)));
         const px = s.ax + vx * t - x, pz = s.az + vz * t - z;
-        const reach = s.w / 2 + tyre;
-        if (px * px + pz * pz < reach * reach) return this.slickGrip;
+        const reach = (s.w * (1 + 1.6 * (s.wash || 0))) / 2 + tyre;
+        if (px * px + pz * pz < reach * reach) grip = Math.min(grip, slick(s.wash));
       }
     }
-    return 1;
+    return grip;
   }
 
   clear() {
