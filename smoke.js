@@ -9,7 +9,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 1;
+export const BUILD = 2;
 
 const vertexShader = /* glsl */ `
   attribute float aSize;
@@ -43,10 +43,13 @@ export class TyreSmoke {
   //   rise       - how fast puffs float upwards
   //   lifeScale  - how long puffs hang around
   //   wind       - breeze that carries puffs away, m/s ({ x, z })
+  //   carry      - how much of the car's speed a puff keeps (smoke hangs
+  //                back; spray flung off the tyres keeps more)
   constructor(scene, {
     maxParticles = 400, puffsPerSecond = 30, color = 0xdcdcdc,
-    thickness = 1, sizeScale = 1, rise = 1, lifeScale = 1, wind = { x: 0, z: 0 },
+    thickness = 1, sizeScale = 1, rise = 1, lifeScale = 1, wind = { x: 0, z: 0 }, carry = 0.12,
   } = {}) {
+    this.carry = carry;
     this.max = maxParticles;
     this.rate = puffsPerSecond;   // per source, at full strength
     this.next = 0;                // next pool slot to reuse
@@ -121,15 +124,16 @@ export class TyreSmoke {
     this.pos[i * 3 + 1] = p.y;
     this.pos[i * 3 + 2] = p.z + r() * 0.3;
     // Smoke is left behind: it keeps only a little of the car's speed
-    this.vel[i * 3] = v.x * 0.12 + r() * 0.8;
+    this.vel[i * 3] = v.x * this.carry + r() * 0.8;
     this.vel[i * 3 + 1] = (0.3 + Math.random() * 0.35) * this.rise;
-    this.vel[i * 3 + 2] = v.z * 0.12 + r() * 0.8;
+    this.vel[i * 3 + 2] = v.z * this.carry + r() * 0.8;
 
     this.life[i] = 0;
     this.maxLife[i] = (1.6 + Math.random() * 1.2) * this.lifeScale;      // seconds
     this.startSize[i] = (0.4 + Math.random() * 0.3) * this.sizeScale;    // metres
-    this.endSize[i] = (2.6 + Math.random() * 1.6) * this.sizeScale;
-    this.startAlpha[i] = Math.min(0.95, (0.22 * strength + 0.04) * this.thickness);
+    // A harder slide makes thicker, bigger clouds
+    this.endSize[i] = (2.6 + Math.random() * 1.6) * this.sizeScale * (0.85 + 0.35 * strength);
+    this.startAlpha[i] = Math.min(0.95, (0.2 * strength + 0.14 * strength * strength + 0.04) * this.thickness);
   }
 
   update(dt) {
