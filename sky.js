@@ -28,12 +28,23 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 3;
+export const BUILD = 4;
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const smooth = (a, b, x) => {
   const t = clamp((x - a) / (b - a), 0, 1);
   return t * t * (3 - 2 * t);
+};
+
+// Weather choices: cloud cover, and how gloomy the light gets (rain)
+export const WEATHER = {
+  clear: { cloud: 0.08, gloom: 0, label: 'Clear' },
+  cloudy: { cloud: 0.85, gloom: 0, label: 'Cloudy' },
+  drizzle: { cloud: 0.82, gloom: 0.06, rain: true, label: 'Drizzle' },
+  light: { cloud: 0.9, gloom: 0.14, rain: true, label: 'Light rain' },
+  moderate: { cloud: 0.95, gloom: 0.24, rain: true, label: 'Moderate rain' },
+  heavy: { cloud: 0.98, gloom: 0.36, rain: true, label: 'Heavy rain' },
+  storm: { cloud: 1, gloom: 0.5, rain: true, label: 'Thunderstorm' },
 };
 
 // Time speeds offered in the side panel (game seconds per real second)
@@ -400,8 +411,15 @@ export class SkySystem {
   setSpeed(speed) { this.speed = speed; }
   setLocked(locked) { this.locked = locked; }
   setWeather(type) {
-    this.weather = type;
-    this.cloudTarget = type === 'cloudy' ? 0.85 : 0.08;
+    const w = WEATHER[type] || WEATHER.clear;
+    this.weather = WEATHER[type] ? type : 'clear';
+    this.cloudTarget = w.cloud;
+    this.gloomTarget = w.gloom;
+  }
+
+  // The rain level right now ('drizzle' ... 'storm'), or null when dry
+  get rainLevel() {
+    return WEATHER[this.weather]?.rain ? this.weather : null;
   }
   setChanging(on) {
     this.changing = on;
@@ -417,6 +435,7 @@ export class SkySystem {
 
   // What the weather looks like right now (for the panel): clear, cloudy or in between
   get weatherNow() {
+    if (this.rainLevel) return WEATHER[this.weather].label.toLowerCase();
     return this.cloud < 0.3 ? 'clear' : this.cloud > 0.6 ? 'cloudy' : 'partly cloudy';
   }
 
@@ -429,15 +448,29 @@ export class SkySystem {
     if (this.changing) {
       this.nextChange -= dt;
       if (this.nextChange <= 0) {
-        // Somewhere between clear and overcast, often a big change
-        this.cloudTarget = Math.random() < 0.5 ? Math.random() * 0.35 : 0.45 + Math.random() * 0.5;
+        // Somewhere between clear and overcast, often a big change, and
+        // sometimes a shower (rarely a thunderstorm)
+        const r = Math.random();
+        const shower = r < 0.05 ? 'storm' : r < 0.3 ? ['drizzle', 'light', 'moderate', 'heavy'][(Math.random() * 4) | 0] : null;
+        if (shower) {
+          this.showers = shower;
+          this.cloudTarget = WEATHER[shower].cloud;
+          this.gloomTarget = WEATHER[shower].gloom;
+        } else {
+          this.showers = null;
+          this.cloudTarget = Math.random() < 0.5 ? Math.random() * 0.35 : 0.45 + Math.random() * 0.5;
+          this.gloomTarget = 0;
+        }
         this.nextChange = 50 + Math.random() * 70;
       }
       this.cloud += clamp(this.cloudTarget - this.cloud, -0.008 * dt, 0.008 * dt);   // drifts over a minute or two
-      this.weather = this.cloud > 0.45 ? 'cloudy' : 'clear';
+      // the shower only starts once the sky has clouded over
+      this.weather = this.showers && this.cloud > 0.75 ? this.showers : this.cloud > 0.45 ? 'cloudy' : 'clear';
     } else {
       this.cloud += clamp(this.cloudTarget - this.cloud, -0.25 * dt, 0.25 * dt);     // quick when you pick it
     }
+    this.gloom = (this.gloom ?? 0) + clamp((this.rainLevel ? this.gloomTarget ?? 0 : 0) - (this.gloom ?? 0), -0.05 * dt, 0.05 * dt);
+    this.flash = Math.max(0, (this.flash ?? 0) - dt * 5);
     const cloud = this.cloud;
 
     // --- The sun's path: rises in the east (+x) at 6:00, high in the south
@@ -467,7 +500,7 @@ export class SkySystem {
     const sunUp = el > -0.02;
     if (sunUp) {
       sunColour(el, this.sun.color).lerp(C.white, 0.15);   // white -> yellow -> orange as it sinks
-      this.sun.intensity = 3.1 * smooth(-0.02, 0.4, el) * (1 - 0.75 * cloud) * shade;   // strong, for crisp shadows
+      this.sun.intensity = 3.1 * smooth(-0.02, 0.4, el) * (1 - 0.75 * cloud) * shade * (1 - 0.6 * this.gloom);   // strong, for crisp shadows
       this.lightDir = this.sunDir;
     } else {
       // The moon: opposite the sun, dim and cool
@@ -483,12 +516,15 @@ export class SkySystem {
     // --- Soft light from the sky: brighter (and does more of the lighting) when cloudy ---
     this.hemi.color.copy(C.hemiNight).lerp(C.hemiDay, day);
     this.hemi.groundColor.copy(C.groundNight).lerp(C.groundDay, day);
-    this.hemi.intensity = 0.1 + day * (0.36 + 0.5 * cloud);   // less fill on clear days = darker shadows
+    this.hemi.intensity = (0.1 + day * (0.36 + 0.5 * cloud)) * (1 - 0.45 * this.gloom)   // less fill on clear days = darker shadows; gloomy in rain
+      + 2.2 * this.flash;                                                              // lightning lights up everything
 
     // --- Sky colour (also the fog, so the distance fades into it) ---
     const sky = ramp(SKY_RAMP, el, this.skyColour);
     this._c.copy(C.overcastNight).lerp(C.overcast, day);
     sky.lerp(this._c, smooth(0.1, 0.75, cloud));   // fully grey once it's properly cloudy
+    sky.multiplyScalar(1 - 0.55 * this.gloom);                      // heavy rain: a dark, gloomy sky
+    if (this.flash > 0) sky.lerp(C.white, Math.min(0.85, this.flash * 0.8));   // lightning
     this.scene.background.copy(sky);
     if (this.scene.fog) this.scene.fog.color.copy(sky);
 
@@ -513,7 +549,7 @@ export class SkySystem {
     // --- Clouds: more of them the cloudier it is, lit by the sun ---
     const cloudLight = this._c.copy(C.night).lerp(C.dusk, smooth(-0.45, -0.1, el)).lerp(sunColour(el, this._c3 || (this._c3 = new THREE.Color())), smooth(-0.15, 0.1, el))
       .lerp(C.white, day * smooth(0.05, 0.45, el));
-    const grey = 1 - 0.92 * cloud;   // overcast clouds are greyer and darker than the sky
+    const grey = (1 - 0.92 * cloud) * (1 - 0.5 * this.gloom);   // overcast clouds are greyer and darker than the sky; rain clouds darker still
     // (the cloud shader writes straight to the screen, so its colours are given in screen terms)
     this.cloudMat.uniforms.lit.value.copy(cloudLight).multiplyScalar(grey).convertLinearToSRGB();
     this.cloudMat.uniforms.shadow.value.copy(cloudLight).multiplyScalar(grey * (0.55 + 0.15 * day)).lerp(this.skyColour, 0.25).convertLinearToSRGB();
@@ -541,7 +577,7 @@ export class SkySystem {
     this.sheet.position.set(centre.x, 230, centre.z);
     this.sheet.material.opacity = smooth(0.35, 0.85, cloud) * 0.92;
     this.sheet.visible = this.sheet.material.opacity > 0.01;
-    this.sheet.material.color.copy(cloudLight).multiplyScalar(0.12 + 0.15 * day);   // a shade darker than the grey sky
+    this.sheet.material.color.copy(cloudLight).multiplyScalar((0.12 + 0.15 * day) * (1 - 0.55 * this.gloom));   // a shade darker than the grey sky
     this.sheetTex.offset.set((centre.x - this.drift.x) / 500, -(centre.z - this.drift.y) / 500);
 
     // Cloud shadows on the ground: subtle, only with sun and broken cloud
