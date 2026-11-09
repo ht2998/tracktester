@@ -8,6 +8,10 @@
 
 import * as THREE from 'three';
 
+// Version stamp: goes up by one every time this file changes, so the game
+// can tell if your browser loaded an old saved copy (see updates.js)
+export const BUILD = 1;
+
 const CELL = 0.5;   // metres: lookup grid for "which tufts are under this tyre?"
 const LENGTHS = [0.045, 0.085, 0.14];   // metres: short, medium, long
 
