@@ -11,6 +11,10 @@
 
 import * as THREE from 'three';
 
+// Version stamp: goes up by one every time this file changes, so the game
+// can tell if your browser loaded an old saved copy (see updates.js)
+export const BUILD = 1;
+
 const CELL = 2;   // metres: size of each square in the lookup grid
 const cellKey = (x, z) => `${Math.floor(x / CELL)},${Math.floor(z / CELL)}`;
 
