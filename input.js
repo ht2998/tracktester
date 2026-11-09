@@ -16,6 +16,10 @@
 //   Backspace        = reset the car
 // =====================================================================
 
+// Version stamp: goes up by one every time this file changes, so the game
+// can tell if your browser loaded an old saved copy (see updates.js)
+export const BUILD = 1;
+
 const held = new Set();      // keys being held down right now
 const tapped = new Set();    // one-off presses waiting to be used
 
