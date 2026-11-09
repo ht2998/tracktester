@@ -14,7 +14,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 1;
+export const BUILD = 2;
 
 const m4 = new THREE.Matrix4();
 const q = new THREE.Quaternion();
@@ -59,25 +59,69 @@ const box = (minX, minY, minZ, maxX, maxY, maxZ, reflect) => ({
 // BUILDINGS
 // ---------------------------------------------------------------------
 
-// A row of pit garages: a long block with roller doors and a roof overhang.
-// Built along the z axis with the doors facing -x (towards the start straight).
+// A row of pit garages, built along the z axis with the open fronts facing
+// -x (towards the start straight). Each bay has its roller door rolled up
+// and is fitted out like a working garage: racking along the back wall
+// with parts boxes and spare tyres, a red tool chest and a tool board on
+// the wall, stacks of wheels, a trolley jack and axle stands, a parts
+// trolley, an oil drum, and strip lights in the ceiling.
+// Everything repeated is instanced, so the whole row is a few dozen draws.
+
+// Draw one shape many times: list of [x, y, z, turnY, sx, sy, sz] (and an
+// optional colour per copy)
+function many(scene, geo, mat, list, colours) {
+  const mesh = new THREE.InstancedMesh(geo, mat, Math.max(1, list.length));
+  list.forEach(([x, y, z, ry = 0, sx = 1, sy = 1, sz = 1], i) => {
+    q.setFromAxisAngle(UP, ry);
+    mesh.setMatrixAt(i, m4.compose(pos.set(x, y, z), q, scl.set(sx, sy, sz)));
+    if (colours) mesh.setColorAt(i, new THREE.Color(colours[i % colours.length]));
+  });
+  mesh.count = list.length;
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  scene.add(mesh);
+  return mesh;
+}
+
 function buildGarages(scene, x, z0, z1, depth = 10, height = 5) {
   const len = z1 - z0;
-  const wallTex = canvasTexture(256, 256, (g, w, h) => {
-    g.fillStyle = '#d9d6cf';
-    g.fillRect(0, 0, w, h);
-    g.fillStyle = 'rgba(0,0,0,0.06)';                // panel joints
-    for (let y = 0; y < h; y += 64) g.fillRect(0, y, w, 2);
-  }, len / 6, 1);
-  const body = new THREE.Mesh(
-    new THREE.BoxGeometry(depth, height, len),
-    new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.85 })
-  );
-  body.position.set(x + depth / 2, height / 2, (z0 + z1) / 2);
-  body.castShadow = body.receiveShadow = true;
-  scene.add(body);
+  const bays = Math.floor(len / 6);
+  const bayLen = len / bays;
+  const OPEN_W = 4.4, OPEN_H = 3.6;            // each doorway
+  const back = x + depth;                      // the back wall
+  const wallMat = new THREE.MeshStandardMaterial({
+    map: canvasTexture(256, 256, (g, w, h) => {
+      g.fillStyle = '#d9d6cf';
+      g.fillRect(0, 0, w, h);
+      g.fillStyle = 'rgba(0,0,0,0.06)';          // panel joints
+      for (let y = 0; y < h; y += 64) g.fillRect(0, y, w, 2);
+    }, 2, 1),
+    roughness: 0.85,
+  });
+  const innerMat = new THREE.MeshStandardMaterial({ color: 0xe9e8e4, roughness: 0.9 });   // white painted inside
+  const solid = (w, h, d, cx, cy, cz, mat = wallMat) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.set(cx, cy, cz);
+    m.castShadow = m.receiveShadow = true;
+    scene.add(m);
+    return m;
+  };
 
-  // Roof slab with an overhang over the doors
+  // --- The shell: back wall, end walls, walls between the bays, the
+  // fascia above the doorways and the pillars between them ---
+  solid(0.3, height, len, back - 0.15, height / 2, (z0 + z1) / 2);
+  solid(depth, height, 0.3, x + depth / 2, height / 2, z0 + 0.15);
+  solid(depth, height, 0.3, x + depth / 2, height / 2, z1 - 0.15);
+  for (let i = 1; i < bays; i++) solid(depth - 0.3, height, 0.2, x + depth / 2, height / 2, z0 + i * bayLen, innerMat);
+  solid(0.35, height - OPEN_H, len, x + 0.175, OPEN_H + (height - OPEN_H) / 2, (z0 + z1) / 2);
+  const pillar = (bayLen - OPEN_W) / 2;
+  for (let i = 0; i <= bays; i++) {
+    const zc = z0 + i * bayLen;
+    const w = i === 0 || i === bays ? pillar : pillar * 2;
+    solid(0.35, OPEN_H, w, x + 0.175, OPEN_H / 2, i === 0 ? zc + w / 2 : i === bays ? zc - w / 2 : zc);
+  }
+  // Ceiling and roof slab (with an overhang over the doors)
+  solid(depth, 0.1, len, x + depth / 2, height - 0.05, (z0 + z1) / 2, innerMat);
   const roof = new THREE.Mesh(
     new THREE.BoxGeometry(depth + 2, 0.3, len + 0.6),
     new THREE.MeshStandardMaterial({ color: 0x3b4046, roughness: 0.7 })
@@ -85,31 +129,158 @@ function buildGarages(scene, x, z0, z1, depth = 10, height = 5) {
   roof.position.set(x + depth / 2 - 1, height + 0.15, (z0 + z1) / 2);
   roof.castShadow = true;
   scene.add(roof);
+  // Floor: smooth grey epoxy with a yellow line across each doorway
+  const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(depth - 0.3, len - 0.3),
+    new THREE.MeshStandardMaterial({ color: 0x8d9196, roughness: 0.35, metalness: 0.05 })
+  );
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.set(x + depth / 2, 0.012, (z0 + z1) / 2);
+  floor.receiveShadow = true;
+  scene.add(floor);
 
-  // Roller doors: ribbed steel, one per bay
-  const bays = Math.floor(len / 6);
-  const doorTex = canvasTexture(64, 128, (g, w, h) => {
+  // Per-bay pieces, gathered into lists and drawn instanced
+  const L = {
+    drum: [], upright: [], shelf: [], bin: [], binColour: [], shelfTyre: [], chest: [], chestTop: [],
+    board: [], stackTyre: [], jackBody: [], jackHandle: [], stand: [], standTop: [], trolley: [],
+    trolleyWheel: [], drum2: [], strip: [], line: [], lamp: [], lampPole: [],
+  };
+  const binColours = [0x2c64c8, 0xd23a2a, 0xe8b72c, 0x3f8f4a, 0x555a60];
+  for (let i = 0; i < bays; i++) {
+    const zc = z0 + (i + 0.5) * bayLen;
+    const zl = zc - bayLen / 2 + 0.2, zr = zc + bayLen / 2 - 0.2;     // the bay's side walls
+    // the rolled-up door at the top of the doorway
+    L.drum.push([x + 0.45, OPEN_H - 0.2, zc, 0, 1, OPEN_W, 1]);
+    // a yellow line across the doorway
+    L.line.push([x + 0.6, 0.015, zc, 0, 0.08, 1, OPEN_W]);
+    // Racking: two shelving units against the back wall
+    for (const zs of [zc - 1.3, zc + 1.3]) {
+      const rx = back - 0.6;
+      for (const dz of [-0.95, 0.95]) for (const dx of [-0.28, 0.28]) L.upright.push([rx + dx, 1.25, zs + dz]);
+      for (const h of [0.15, 0.85, 1.55, 2.25]) {
+        L.shelf.push([rx, h, zs]);
+        if (h < 0.5) {
+          // spare tyres on the bottom shelf
+          for (const t of [-0.6, 0, 0.6]) L.shelfTyre.push([rx, h + 0.32, zs + t]);
+        } else {
+          // parts boxes on the rest, in assorted colours and sizes
+          for (let b = 0; b < 4; b++) {
+            if (Math.random() < 0.2) continue;
+            const s = 0.7 + Math.random() * 0.5;
+            L.bin.push([rx + (Math.random() - 0.5) * 0.1, h + 0.13 * s, zs - 0.7 + b * 0.47, (Math.random() - 0.5) * 0.2, s, s, s]);
+            L.binColour.push(binColours[(Math.random() * binColours.length) | 0]);
+          }
+        }
+      }
+    }
+    // A red tool chest against one side wall, with a tool board above it
+    const side = i % 2 ? 1 : -1;
+    const wallZ = side > 0 ? zr : zl;
+    L.chest.push([x + 5.5, 0.55, wallZ - side * 0.3, side > 0 ? Math.PI : 0]);
+    L.chestTop.push([x + 5.5, 1.22, wallZ - side * 0.3, side > 0 ? Math.PI : 0]);
+    L.board.push([x + 5.5, 1.95, wallZ - side * 0.02, side > 0 ? Math.PI : 0]);
+    // Stacks of wheels by the doorway on the other side
+    const tyreZ = side > 0 ? zl + 0.45 : zr - 0.45;
+    for (const sx of [x + 1.3, x + 2.1]) {
+      const n = 2 + ((Math.random() * 3) | 0);
+      for (let k = 0; k < n; k++) L.stackTyre.push([sx, 0.11 + k * 0.205, tyreZ, 0, 1, 1, 1]);
+    }
+    // A trolley jack and four axle stands in the middle, ready for a car
+    L.jackBody.push([x + 3.4, 0.08, zc + 0.3, Math.PI / 2]);
+    L.jackHandle.push([x + 4.15, 0.45, zc + 0.3, 0]);
+    for (const [dx, dz] of [[-1.1, -0.75], [-1.1, 0.75], [1.1, -0.75], [1.1, 0.75]]) {
+      L.stand.push([x + 5 + dx, 0.18, zc + dz]);
+      L.standTop.push([x + 5 + dx, 0.4, zc + dz]);
+    }
+    // A parts trolley and an oil drum
+    L.trolley.push([x + 7.4, 0.45, wallZ - side * 0.5, 0]);
+    L.trolley.push([x + 7.4, 0.12, wallZ - side * 0.5, 0, 1, 0.4, 1]);
+    for (const [dx, dz] of [[-0.3, -0.2], [-0.3, 0.2], [0.3, -0.2], [0.3, 0.2]]) L.trolleyWheel.push([x + 7.4 + dx, 0.04, wallZ - side * 0.5 + dz]);
+    L.drum2.push([back - 1.6, 0.44, side > 0 ? zl + 0.5 : zr - 0.5]);
+    // Strip lights in the ceiling, and a work lamp on a stand
+    for (const dx of [2.5, 6.5]) L.strip.push([x + dx, height - 0.14, zc]);
+    L.lamp.push([x + 2.6, 1.55, zc - 1.6, -0.5]);
+    L.lampPole.push([x + 2.6, 0.75, zc - 1.6]);
+  }
+
+  // Shapes and materials
+  const steelBlue = new THREE.MeshStandardMaterial({ color: 0x2e5aa8, metalness: 0.5, roughness: 0.5 });
+  const steel = new THREE.MeshStandardMaterial({ color: 0x9aa0a6, metalness: 0.8, roughness: 0.4 });
+  const black = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.85 });
+  const chestRed = new THREE.MeshStandardMaterial({
+    map: canvasTexture(64, 128, (g, w, h) => {                      // drawers with handles
+      g.fillStyle = '#c3221c';
+      g.fillRect(0, 0, w, h);
+      for (let y = 6; y < h; y += 15) {
+        g.fillStyle = 'rgba(0,0,0,0.35)';
+        g.fillRect(0, y + 12, w, 2);
+        g.fillStyle = '#d8dadc';
+        g.fillRect(8, y + 4, w - 16, 3);
+      }
+    }),
+    metalness: 0.4, roughness: 0.4,
+  });
+  const boardMat = new THREE.MeshStandardMaterial({
+    map: canvasTexture(256, 128, (g, w, h) => {                     // pegboard with tool outlines
+      g.fillStyle = '#5b6168';
+      g.fillRect(0, 0, w, h);
+      g.fillStyle = 'rgba(0,0,0,0.35)';
+      for (let y = 4; y < h; y += 8) for (let xx = 4; xx < w; xx += 8) g.fillRect(xx, y, 2, 2);
+      g.fillStyle = '#c9ccd0';
+      for (let k = 0; k < 9; k++) {                                // spanners, longest to shortest
+        const sx = 12 + k * 12, len = 70 - k * 5;
+        g.fillRect(sx, 20, 4, len);
+        g.beginPath(); g.arc(sx + 2, 18, 5, 0, Math.PI * 2); g.fill();
+      }
+      g.fillStyle = '#d23a2a';                                      // screwdrivers
+      for (let k = 0; k < 6; k++) g.fillRect(130 + k * 10, 24, 6, 22);
+      g.fillStyle = '#c9ccd0';
+      for (let k = 0; k < 6; k++) g.fillRect(132 + k * 10, 46, 2, 26);
+      g.fillStyle = '#2b2b2b';                                      // a hammer and pliers
+      g.fillRect(210, 20, 6, 60);
+      g.fillStyle = '#9aa0a6';
+      g.fillRect(200, 16, 26, 10);
+      g.fillRect(232, 30, 4, 50);
+      g.fillRect(240, 30, 4, 50);
+    }),
+    roughness: 0.8,
+  });
+  const lightMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xf4f8ff, emissiveIntensity: 2.2 });
+  const tyreGeo = new THREE.TorusGeometry(0.24, 0.1, 10, 24);
+  tyreGeo.rotateX(Math.PI / 2);                                     // lying flat
+  const sideTyreGeo = new THREE.TorusGeometry(0.24, 0.09, 10, 24);  // standing on the shelf
+  const yellow = new THREE.MeshStandardMaterial({ color: 0xe8c22a, roughness: 0.6 });
+  const doorTex = canvasTexture(64, 64, (g, w, h) => {
     g.fillStyle = '#8f979f';
     g.fillRect(0, 0, w, h);
-    for (let y = 0; y < h; y += 6) {
-      g.fillStyle = 'rgba(255,255,255,0.18)';
-      g.fillRect(0, y, w, 1);
-      g.fillStyle = 'rgba(0,0,0,0.22)';
-      g.fillRect(0, y + 3, w, 1);
-    }
-  });
-  const doors = new THREE.InstancedMesh(
-    new THREE.PlaneGeometry(4.4, 3.6),
-    new THREE.MeshStandardMaterial({ map: doorTex, roughness: 0.5, metalness: 0.4 }),
-    bays
-  );
-  for (let i = 0; i < bays; i++) {
-    const zc = z0 + (i + 0.5) * (len / bays);
-    q.setFromAxisAngle(UP, -Math.PI / 2);         // facing -x
-    doors.setMatrixAt(i, m4.compose(pos.set(x - 0.02, 1.8, zc), q, scl.set(1, 1, 1)));
-  }
-  doors.receiveShadow = true;
-  scene.add(doors);
+    for (let y = 0; y < h; y += 4) { g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(0, y, w, 1); }
+  }, 1, 6);
+  const drumGeo = new THREE.CylinderGeometry(0.28, 0.28, 1, 16);
+  drumGeo.rotateX(Math.PI / 2);                                     // along z, across the doorway
+
+  many(scene, drumGeo, new THREE.MeshStandardMaterial({ map: doorTex, metalness: 0.4, roughness: 0.5 }), L.drum);
+  many(scene, new THREE.BoxGeometry(1, 0.01, 1), yellow, L.line).castShadow = false;
+  many(scene, new THREE.BoxGeometry(0.05, 2.5, 0.05), steelBlue, L.upright);
+  many(scene, new THREE.BoxGeometry(0.6, 0.04, 1.95), steel, L.shelf);
+  const bins = many(scene, new THREE.BoxGeometry(0.4, 0.26, 0.38), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7 }), L.bin, L.binColour);
+  bins.instanceColor.needsUpdate = true;
+  many(scene, sideTyreGeo, black, L.shelfTyre);
+  many(scene, new THREE.BoxGeometry(0.55, 1.0, 1.0), chestRed, L.chest);
+  many(scene, new THREE.BoxGeometry(0.5, 0.34, 0.95), chestRed, L.chestTop);
+  many(scene, new THREE.PlaneGeometry(2.2, 1.1), boardMat, L.board).castShadow = false;
+  many(scene, tyreGeo, black, L.stackTyre);
+  many(scene, new THREE.BoxGeometry(0.3, 0.12, 0.7), new THREE.MeshStandardMaterial({ color: 0xc3221c, metalness: 0.4, roughness: 0.45 }), L.jackBody);
+  const handle = new THREE.CylinderGeometry(0.018, 0.018, 1.0, 8);
+  handle.rotateZ(1.0);
+  many(scene, handle, steel, L.jackHandle);
+  many(scene, new THREE.ConeGeometry(0.16, 0.36, 4), new THREE.MeshStandardMaterial({ color: 0xd23a2a, metalness: 0.4, roughness: 0.5 }), L.stand);
+  many(scene, new THREE.CylinderGeometry(0.03, 0.03, 0.12, 8), steel, L.standTop);
+  many(scene, new THREE.BoxGeometry(0.9, 0.05, 0.55), steel, L.trolley);
+  many(scene, new THREE.SphereGeometry(0.04, 8, 6), black, L.trolleyWheel);
+  many(scene, new THREE.CylinderGeometry(0.29, 0.29, 0.88, 18), new THREE.MeshStandardMaterial({ color: 0x1d5fa8, metalness: 0.5, roughness: 0.45 }), L.drum2);
+  many(scene, new THREE.BoxGeometry(1.4, 0.06, 0.18), lightMat, L.strip).castShadow = false;
+  many(scene, new THREE.BoxGeometry(0.08, 0.22, 0.3), lightMat, L.lamp).castShadow = false;
+  many(scene, new THREE.CylinderGeometry(0.02, 0.03, 1.5, 8), black, L.lampPole);
 
   return [box(x, 0, z0, x + depth, height, z1, 1)];
 }
