@@ -19,6 +19,33 @@ import { GrassPatch } from './grass.js';
 import { SkySystem, TIME_SPEEDS } from './sky.js';
 import { EngineDebris } from './debris.js';
 import { TouchControls, isTouchDevice } from './touch.js';
+import { startUpdates, BUILD as UPDATES_BUILD } from './updates.js';
+// Every file's version stamp, for the old-file check (see updates.js)
+import * as inputFile from './input.js';
+import * as physicsFile from './physics.js';
+import * as soundFile from './sound.js';
+import * as smokeFile from './smoke.js';
+import * as hudFile from './hud.js';
+import * as oilFile from './oil.js';
+import * as skidsFile from './skids.js';
+import * as sceneryFile from './scenery.js';
+import * as grassFile from './grass.js';
+import * as skyFile from './sky.js';
+import * as debrisFile from './debris.js';
+import * as touchFile from './touch.js';
+
+// Version stamp: goes up by one every time this file changes, so the game
+// can tell if your browser loaded an old saved copy (see updates.js)
+const BUILD = 1;
+
+// What's new + the old-file check. (A file too old to have a stamp counts as 0.)
+const updateScreen = startUpdates({
+  'rendering.js': BUILD, 'updates.js': UPDATES_BUILD,
+  'input.js': inputFile.BUILD, 'physics.js': physicsFile.BUILD, 'sound.js': soundFile.BUILD,
+  'smoke.js': smokeFile.BUILD, 'hud.js': hudFile.BUILD, 'oil.js': oilFile.BUILD,
+  'skids.js': skidsFile.BUILD, 'scenery.js': sceneryFile.BUILD, 'grass.js': grassFile.BUILD,
+  'sky.js': skyFile.BUILD, 'debris.js': debrisFile.BUILD, 'touch.js': touchFile.BUILD,
+});
 
 // ---------------------------------------------------------------------
 // QUALITY SETTINGS
@@ -949,6 +976,7 @@ const hud = new Hud({
   tyreOptions: TYRES,
   compact: touchMode,   // mini gauges at the top on phones
   timeSpeeds: TIME_SPEEDS,
+  onWhatsNew: () => updateScreen.openAll(),
   onSky: {
     time: (h) => sky.setTime(h),
     speed: (x) => sky.setSpeed(x),
