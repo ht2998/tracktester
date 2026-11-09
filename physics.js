@@ -7,6 +7,10 @@
 // tyre temperature get added on top later.
 // =====================================================================
 
+// Version stamp: goes up by one every time this file changes, so the game
+// can tell if your browser loaded an old saved copy (see updates.js)
+export const BUILD = 1;
+
 const G = 9.81;   // gravity, m/s²
 const RPM_PER_RADS = 60 / (2 * Math.PI);
 
