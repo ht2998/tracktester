@@ -10,6 +10,10 @@
 
 import * as THREE from 'three';
 
+// Version stamp: goes up by one every time this file changes, so the game
+// can tell if your browser loaded an old saved copy (see updates.js)
+export const BUILD = 1;
+
 const GRAVITY = 9.81;
 const rand = (a, b) => a + Math.random() * (b - a);
 
