@@ -7,6 +7,10 @@
 // reused; only the needles and lights are redrawn each frame.
 // =====================================================================
 
+// Version stamp: goes up by one every time this file changes, so the game
+// can tell if your browser loaded an old saved copy (see updates.js)
+export const BUILD = 1;
+
 const COLORS = {
   face: '#15181c',
   faceEdge: '#0e1013',
@@ -536,7 +540,7 @@ function roundRect(g, x, y, w, h, r) {
 // ---------------------------------------------------------------------
 export class Hud {
   constructor({ redline, maxSpeed = 240, onTransmission, onAssist, onTyres, tyreOptions = {}, compact = false,
-                timeSpeeds = [60], onSky = {} }) {
+                timeSpeeds = [60], onSky = {}, onWhatsNew = null }) {
     this.timeSpeeds = timeSpeeds;
     this.onSky = onSky;
     this.onTyres = onTyres;
@@ -740,7 +744,15 @@ export class Hud {
     this.clockText.id = 'clock';
     document.body.appendChild(this.clockText);
 
-    panel.append(gearHeading, gearGroup, assistHeading, ...assistButtons, tyreHeading, tyreBox, skyHeading, skyBox);
+    // What's new: the update screen, any time
+    const newsBtn = document.createElement('button');
+    newsBtn.type = 'button';
+    newsBtn.className = 'tyre-fresh';
+    newsBtn.style.marginTop = '14px';
+    newsBtn.textContent = "What's new";
+    newsBtn.addEventListener('click', () => { newsBtn.blur(); onWhatsNew?.(); });
+
+    panel.append(gearHeading, gearGroup, assistHeading, ...assistButtons, tyreHeading, tyreBox, skyHeading, skyBox, newsBtn);
     this.side.append(handle, panel);
     document.body.appendChild(this.side);
 
