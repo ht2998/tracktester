@@ -7,6 +7,10 @@
 
 import * as THREE from 'three';
 
+// Version stamp: goes up by one every time this file changes, so the game
+// can tell if your browser loaded an old saved copy (see updates.js)
+export const BUILD = 1;
+
 const vertexShader = /* glsl */ `
   attribute float aSize;
   attribute float aAlpha;
