@@ -13,6 +13,10 @@
 
 import { setTouch, tap } from './input.js';
 
+// Version stamp: goes up by one every time this file changes, so the game
+// can tell if your browser loaded an old saved copy (see updates.js)
+export const BUILD = 1;
+
 export function isTouchDevice() {
   return window.matchMedia('(pointer: coarse)').matches
     || new URLSearchParams(location.search).has('touch');
