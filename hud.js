@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 1;
+export const BUILD = 2;
 
 const COLORS = {
   face: '#15181c',
@@ -713,7 +713,12 @@ export class Hud {
       <input id="tw-speed" type="range" min="0" max="${this.timeSpeeds.length - 1}" step="1">
       <span class="gb-note tw-speed-note"></span>
       <label class="tw-row" for="tw-weather"><span>Weather</span></label>
-      <select id="tw-weather"><option value="clear">Clear</option><option value="cloudy">Cloudy</option></select>
+      <select id="tw-weather">
+        <option value="clear">Clear</option><option value="cloudy">Cloudy</option>
+        <optgroup label="Rain"><option value="drizzle">Drizzle</option><option value="light">Light rain</option>
+        <option value="moderate">Moderate rain</option><option value="heavy">Heavy rain</option>
+        <option value="storm">Thunderstorm</option></optgroup>
+      </select>
       <label class="tw-check"><input type="checkbox" class="tw-changing"> Changes by itself</label>
       <span class="gb-note tw-now"></span>`;
     const q = (sel) => skyBox.querySelector(sel);
