@@ -26,6 +26,10 @@
 
 import * as THREE from 'three';
 
+// Version stamp: goes up by one every time this file changes, so the game
+// can tell if your browser loaded an old saved copy (see updates.js)
+export const BUILD = 1;
+
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const smooth = (a, b, x) => {
   const t = clamp((x - a) / (b - a), 0, 1);
