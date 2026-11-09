@@ -13,7 +13,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 1;
+export const BUILD = 2;
 
 const CELL = 2;   // metres: size of each square in the lookup grid
 const cellKey = (x, z) => `${Math.floor(x / CELL)},${Math.floor(z / CELL)}`;
@@ -127,6 +127,33 @@ export class SkidMarks {
     this.tyreWidth = keepWidth;
   }
 
+  // The rain washing rubber away: marks and crumbs fade (and lose their
+  // extra grip) until they're gone. rain 0-1; heavy rain takes about two minutes.
+  weather(dt, rain) {
+    if (rain < 0.02) return;
+    this.washClock = (this.washClock || 0) + dt;
+    if (this.washClock < 0.5) return;
+    const step = this.washClock * rain / 100;
+    this.washClock = 0;
+    let changed = false;
+    this.segments.forEach((sg, i) => {
+      if (!sg) return;
+      sg.dark -= step;
+      changed = true;
+      if (sg.dark <= 0.02) {
+        this.unregister(i, sg.cells);
+        this.segments[i] = null;
+        this.mesh.setMatrixAt(i, this._m.makeScale(0, 0, 0));
+        return;
+      }
+      this.mesh.setColorAt(i, this._c.copy(this.base).lerp(this.mark, sg.dark));
+    });
+    if (changed) {
+      this.mesh.instanceMatrix.needsUpdate = true;
+      if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
+    }
+  }
+
   register(i, cells) {
     for (const k of cells) {
       if (!this.grid.has(k)) this.grid.set(k, new Set());
@@ -146,6 +173,7 @@ export class SkidMarks {
     let best = 0;
     for (const i of here) {
       const s = this.segments[i];
+      if (!s) continue;
       const vx = s.bx - s.ax, vz = s.bz - s.az;
       const t = Math.max(0, Math.min(1, ((x - s.ax) * vx + (z - s.az) * vz) / (vx * vx + vz * vz || 1)));
       const px = s.ax + vx * t - x, pz = s.az + vz * t - z;
