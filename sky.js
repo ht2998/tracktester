@@ -28,7 +28,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 1;
+export const BUILD = 3;
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const smooth = (a, b, x) => {
@@ -46,7 +46,7 @@ const C = {
   dusk: new THREE.Color(0x2a3358),
   glow: new THREE.Color(0xff9a4c),      // the sky around a setting sun
   day: new THREE.Color(0x9ec9ef),
-  overcast: new THREE.Color(0xa9b2ba),
+  overcast: new THREE.Color(0x9a9ea2),   // a flat, neutral grey
   overcastNight: new THREE.Color(0x0b0d12),
   sunLow: new THREE.Color(0xffa060),
   sunHigh: new THREE.Color(0xfff2dd),
@@ -134,26 +134,81 @@ function moonTexture() {
   return tex;
 }
 
-// A soft, lumpy cloud painted on a canvas
-function cloudTexture() {
+// One soft cloud puff: a round, slightly lumpy blob (many of these piled
+// together make a cloud)
+function puffTexture() {
+  const size = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const g = canvas.getContext('2d');
+  for (let i = 0; i < 14; i++) {
+    const x = size * (0.32 + Math.random() * 0.36), y = size * (0.32 + Math.random() * 0.36);
+    const r = size * (0.18 + Math.random() * 0.2);
+    const blob = g.createRadialGradient(x, y, 0, x, y, r);
+    blob.addColorStop(0, 'rgba(255,255,255,0.32)');
+    blob.addColorStop(0.5, 'rgba(255,255,255,0.16)');
+    blob.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = blob;
+    g.fillRect(0, 0, size, size);
+  }
+  return new THREE.CanvasTexture(canvas);
+}
+
+// A tiling sheet of soft blotches: used for the overcast layer and for the
+// cloud shadows drifting over the ground. dark = black blotches (shadows)
+function blotchTexture(dark) {
   const size = 256;
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = size;
   const g = canvas.getContext('2d');
-  for (let i = 0; i < 26; i++) {
-    const x = size * (0.2 + Math.random() * 0.6);
-    const y = size * (0.35 + Math.random() * 0.3);
-    const r = size * (0.08 + Math.random() * 0.16);
-    const puff = g.createRadialGradient(x, y, 0, x, y, r);
-    puff.addColorStop(0, 'rgba(255,255,255,0.55)');
-    puff.addColorStop(1, 'rgba(255,255,255,0)');
-    g.fillStyle = puff;
-    g.fillRect(0, 0, size, size);
+  const col = dark ? '0,0,0' : '255,255,255';
+  for (let i = 0; i < (dark ? 14 : 70); i++) {
+    const x = Math.random() * size, y = Math.random() * size;
+    const r = size * (dark ? 0.06 + Math.random() * 0.12 : 0.05 + Math.random() * 0.12);
+    for (const ox of [-size, 0, size]) for (const oy of [-size, 0, size]) {
+      const blob = g.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r);
+      blob.addColorStop(0, `rgba(${col},${dark ? 0.9 : 0.5})`);
+      blob.addColorStop(1, `rgba(${col},0)`);
+      g.fillStyle = blob;
+      g.fillRect(0, 0, size, size);
+    }
   }
   const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   return tex;
 }
+
+// Cloud puffs, all drawn together: each puff always faces the camera, is
+// lit on top and shaded underneath, and fades with its cloud
+const CLOUD_VERT = `
+attribute vec3 aCentre;
+attribute vec3 aLocal;
+attribute float aSize;
+attribute float aShade;
+attribute float aAlpha;
+varying vec2 vUv;
+varying float vShade;
+varying float vAlpha;
+void main() {
+  vUv = uv;
+  vShade = aShade;
+  vAlpha = aAlpha;
+  vec4 mv = viewMatrix * vec4(aCentre + aLocal, 1.0);
+  mv.xy += position.xy * aSize;
+  gl_Position = projectionMatrix * mv;
+}`;
+const CLOUD_FRAG = `
+uniform sampler2D map;
+uniform vec3 lit;
+uniform vec3 shadow;
+varying vec2 vUv;
+varying float vShade;
+varying float vAlpha;
+void main() {
+  float a = texture2D(map, vUv).a * vAlpha;
+  if (a < 0.004) discard;
+  gl_FragColor = vec4(mix(shadow, lit, vShade), a);
+}`;
 
 export class SkySystem {
   // sun: the shadow-casting DirectionalLight, hemi: the HemisphereLight
@@ -205,24 +260,92 @@ export class SkySystem {
     this.stars.renderOrder = -2;
     scene.add(this.stars);
 
-    // --- Clouds: soft sprites high above, drifting with the wind ---
-    const cloudTex = cloudTexture();
+    // --- Clouds: cumulus, each a cluster of soft puffs heaped into a dome
+    // over a flatter base. Sizes range from small wisps to big piled-up
+    // clumps, scattered with gaps of sky between. All the puffs are drawn
+    // in one go ---
+    const clusterCount = isMobile ? 22 : 34;
     this.clouds = [];
-    const cloudCount = isMobile ? 26 : 40;
-    for (let i = 0; i < cloudCount; i++) {
-      const mat = new THREE.SpriteMaterial({ map: cloudTex, transparent: true, opacity: 0, depthWrite: false, fog: false });
-      const sprite = new THREE.Sprite(mat);
-      const size = 90 + Math.random() * 120;
-      sprite.scale.set(size, size * 0.45, 1);
-      sprite.renderOrder = -1;
-      sprite.userData = {
+    const puffs = [];
+    for (let i = 0; i < clusterCount; i++) {
+      const big = Math.pow(Math.random(), 1.6);            // mostly small and medium, a few huge
+      const R = 25 + 115 * big;                            // footprint radius, metres
+      const cluster = {
         x: (Math.random() - 0.5) * 900, z: (Math.random() - 0.5) * 900,
-        y: 110 + Math.random() * 90, rank: Math.random(),   // low rank = shows even on clear days
+        y: 120 + Math.random() * 70, R, rank: Math.random(), alpha: 0, first: puffs.length,
       };
-      scene.add(sprite);
-      this.clouds.push(sprite);
+      const n = 6 + Math.round(big * 22);
+      for (let k = 0; k < n; k++) {
+        const ang = Math.random() * Math.PI * 2;
+        const d = Math.sqrt(Math.random()) * R * 0.85;
+        const heap = 1 - (d / R) ** 2;                     // piles up in the middle
+        const up = Math.random() * R * 0.42 * heap;
+        puffs.push({
+          cluster: i,
+          local: [Math.cos(ang) * d, up, Math.sin(ang) * d * 0.7],
+          size: (26 + 70 * big) * (0.75 + 0.5 * Math.random()) * (0.8 + 0.5 * heap),
+          shade: clamp(0.35 + 0.65 * (up / (R * 0.42 + 1)) + Math.random() * 0.15, 0, 1),   // lit on top
+        });
+      }
+      cluster.count = n;
+      this.clouds.push(cluster);
     }
+    const plane = new THREE.PlaneGeometry(1, 1);
+    const geo = new THREE.InstancedBufferGeometry();
+    geo.index = plane.index;
+    geo.setAttribute('position', plane.getAttribute('position'));
+    geo.setAttribute('uv', plane.getAttribute('uv'));
+    const attr = (size, fill) => {
+      const a = new THREE.InstancedBufferAttribute(new Float32Array(puffs.length * size), size);
+      puffs.forEach((p, i) => fill(a.array, i, p));
+      return a;
+    };
+    this.puffCentre = attr(3, () => {});
+    this.puffCentre.setUsage(THREE.DynamicDrawUsage);
+    this.puffAlpha = attr(1, () => {});
+    this.puffAlpha.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('aCentre', this.puffCentre);
+    geo.setAttribute('aLocal', attr(3, (arr, i, p) => arr.set(p.local, i * 3)));
+    geo.setAttribute('aSize', attr(1, (arr, i, p) => { arr[i] = p.size; }));
+    geo.setAttribute('aShade', attr(1, (arr, i, p) => { arr[i] = p.shade; }));
+    geo.setAttribute('aAlpha', this.puffAlpha);
+    geo.instanceCount = puffs.length;
+    this.puffs = puffs;
+    this.cloudMat = new THREE.ShaderMaterial({
+      uniforms: { map: { value: puffTexture() }, lit: { value: new THREE.Color() }, shadow: { value: new THREE.Color() } },
+      vertexShader: CLOUD_VERT, fragmentShader: CLOUD_FRAG,
+      transparent: true, depthWrite: false,
+    });
+    this.cloudMesh = new THREE.Mesh(geo, this.cloudMat);
+    this.cloudMesh.frustumCulled = false;
+    this.cloudMesh.renderOrder = -1;
+    scene.add(this.cloudMesh);
+
+    // --- Overcast: a grey sheet across the whole sky when it's cloudy ---
+    this.sheetTex = blotchTexture(false);
+    this.sheetTex.repeat.set(3, 3);
+    this.sheet = new THREE.Mesh(
+      new THREE.PlaneGeometry(1500, 1500),
+      new THREE.MeshBasicMaterial({ map: this.sheetTex, transparent: true, opacity: 0, depthWrite: false, fog: false, side: THREE.DoubleSide })
+    );
+    this.sheet.rotation.x = Math.PI / 2;
+    this.sheet.renderOrder = -1;
+    scene.add(this.sheet);
+
+    // --- Cloud shadows: soft dark patches drifting over the ground ---
+    this.shadowTex = blotchTexture(true);
+    this.shadowTile = 180;                      // metres per repeat of the pattern
+    this.shadowTex.repeat.set(360 / this.shadowTile, 360 / this.shadowTile);
+    this.groundShade = new THREE.Mesh(
+      new THREE.PlaneGeometry(360, 360),
+      new THREE.MeshBasicMaterial({ color: 0x000000, map: this.shadowTex, transparent: true, opacity: 0, depthWrite: false, fog: false })
+    );
+    this.groundShade.rotation.x = -Math.PI / 2;
+    this.groundShade.position.y = 0.03;
+    scene.add(this.groundShade);
+
     this.wind = new THREE.Vector2(4, 1.6);       // metres per second, high up
+    this.drift = new THREE.Vector2();            // how far the wind has carried things so far
 
     // --- Sun: a bright core with a wide soft glow, far out on the sun's path ---
     const glow = glowTexture(0.18);
@@ -250,6 +373,26 @@ export class SkySystem {
     const view = document.getElementById('game');
     if (view) view.after(this.glare); else document.body.prepend(this.glare);
     this.lastGlare = '';
+    this.skyLayer();
+  }
+
+  // For the sun rays (godrays.js): which way the sun is, its colour, and
+  // how strong the rays should be (strongest low down on a clear day)
+  get rays() {
+    const el = this.sunDir.y;
+    const low = 1 - smooth(0.05, 0.5, el);
+    this._rayCol = this._rayCol || new THREE.Color();
+    sunColour(el, this._rayCol);
+    const vis = smooth(-0.04, 0.04, el) * (1 - 0.9 * this.cloud) * (1 - 0.6 * this.covered);
+    return { dir: this.sunDir, colour: this._rayCol, strength: vis * (0.3 + 0.5 * low) };
+  }
+
+  // Sky things go on layer 1: seen by the camera, but they don't block the
+  // sun rays (only solid things in the world do)
+  skyLayer() {
+    for (const o of [this.stars, this.cloudMesh, this.sheet, this.groundShade, this.sunDisc, this.sunHalo, this.moonDisc, this.moonHalo]) {
+      o.layers.set(1);
+    }
   }
 
   // Set by the side panel
@@ -308,15 +451,14 @@ export class SkySystem {
     // --- A cloud drifting over the sun? (checked against each cloud's
     // direction from the car, so it matches what you see) ---
     let cover = 0;
-    for (const s of this.clouds) {
-      if (!s.visible) continue;
-      const u = s.userData;
-      const dx = u.x - centre.x, dy = u.y, dz = u.z - centre.z;
+    for (const c of this.clouds) {
+      if (c.alpha < 0.02) continue;
+      const dx = c.x - centre.x, dy = c.y + c.R * 0.15, dz = c.z - centre.z;
       const dist = Math.hypot(dx, dy, dz);
       const along = (dx * this.sunDir.x + dy * this.sunDir.y + dz * this.sunDir.z) / dist;   // cos of the angle
-      const size = ((s.scale.x + s.scale.y) * 0.25) / dist;                                // its angular size
+      const size = (c.R * 0.8) / dist;                                                     // its angular size
       const off = Math.sqrt(Math.max(0, 2 * (1 - along)));
-      if (off < size) cover = Math.max(cover, s.material.opacity * (1 - off / size));
+      if (off < size) cover = Math.max(cover, c.alpha * (1 - off / size));
     }
     this.covered += (cover - this.covered) * Math.min(1, dt * 1.5);   // eases in and out as it passes
     const shade = 1 - 0.55 * this.covered;
@@ -325,7 +467,7 @@ export class SkySystem {
     const sunUp = el > -0.02;
     if (sunUp) {
       sunColour(el, this.sun.color).lerp(C.white, 0.15);   // white -> yellow -> orange as it sinks
-      this.sun.intensity = 2.6 * smooth(-0.02, 0.4, el) * (1 - 0.72 * cloud) * shade;
+      this.sun.intensity = 3.1 * smooth(-0.02, 0.4, el) * (1 - 0.75 * cloud) * shade;   // strong, for crisp shadows
       this.lightDir = this.sunDir;
     } else {
       // The moon: opposite the sun, dim and cool
@@ -341,18 +483,18 @@ export class SkySystem {
     // --- Soft light from the sky: brighter (and does more of the lighting) when cloudy ---
     this.hemi.color.copy(C.hemiNight).lerp(C.hemiDay, day);
     this.hemi.groundColor.copy(C.groundNight).lerp(C.groundDay, day);
-    this.hemi.intensity = 0.1 + day * (0.5 + 0.35 * cloud);
+    this.hemi.intensity = 0.1 + day * (0.36 + 0.5 * cloud);   // less fill on clear days = darker shadows
 
     // --- Sky colour (also the fog, so the distance fades into it) ---
     const sky = ramp(SKY_RAMP, el, this.skyColour);
     this._c.copy(C.overcastNight).lerp(C.overcast, day);
-    sky.lerp(this._c, cloud * 0.85);
+    sky.lerp(this._c, smooth(0.1, 0.75, cloud));   // fully grey once it's properly cloudy
     this.scene.background.copy(sky);
     if (this.scene.fog) this.scene.fog.color.copy(sky);
 
     // --- Reflections: the paint and metal reflect a bright studio, which
     // must fade at night or the car would glow ---
-    this.envFactor = 0.08 + 0.92 * day * (1 - 0.3 * cloud);
+    this.envFactor = 0.08 + 0.72 * day * (1 - 0.2 * cloud);
     this.applyReflections();
 
     // --- Stars: out at night, hidden by cloud ---
@@ -371,21 +513,45 @@ export class SkySystem {
     // --- Clouds: more of them the cloudier it is, lit by the sun ---
     const cloudLight = this._c.copy(C.night).lerp(C.dusk, smooth(-0.45, -0.1, el)).lerp(sunColour(el, this._c3 || (this._c3 = new THREE.Color())), smooth(-0.15, 0.1, el))
       .lerp(C.white, day * smooth(0.05, 0.45, el));
-    const grey = 1 - 0.35 * cloud;   // overcast clouds are greyer
-    for (const s of this.clouds) {
-      const u = s.userData;
-      u.x += this.wind.x * dt;
-      u.z += this.wind.y * dt;
+    const grey = 1 - 0.92 * cloud;   // overcast clouds are greyer and darker than the sky
+    // (the cloud shader writes straight to the screen, so its colours are given in screen terms)
+    this.cloudMat.uniforms.lit.value.copy(cloudLight).multiplyScalar(grey).convertLinearToSRGB();
+    this.cloudMat.uniforms.shadow.value.copy(cloudLight).multiplyScalar(grey * (0.55 + 0.15 * day)).lerp(this.skyColour, 0.25).convertLinearToSRGB();
+    this.drift.x += this.wind.x * dt;
+    this.drift.y += this.wind.y * dt;
+    const shown = 0.4 + 0.6 * cloud;        // share of clouds out (plenty even on clear days)
+    const cen = this.puffCentre.array, alp = this.puffAlpha.array;
+    for (const c of this.clouds) {
+      c.x += this.wind.x * dt;
+      c.z += this.wind.y * dt;
       // keep them in a big square around the car
-      if (u.x - centre.x > 450) u.x -= 900; else if (u.x - centre.x < -450) u.x += 900;
-      if (u.z - centre.z > 450) u.z -= 900; else if (u.z - centre.z < -450) u.z += 900;
-      s.position.set(u.x, u.y, u.z);
-      const shown = 0.42 + 0.58 * cloud;        // share of clouds out (a fair few even on clear days)
-      const opacity = u.rank < shown ? clamp((shown - u.rank) * 8, 0, 1) * (0.55 + 0.4 * cloud) : 0;
-      s.material.opacity = opacity;
-      s.visible = opacity > 0.01;
-      s.material.color.copy(cloudLight).multiplyScalar(grey);
+      if (c.x - centre.x > 450) c.x -= 900; else if (c.x - centre.x < -450) c.x += 900;
+      if (c.z - centre.z > 450) c.z -= 900; else if (c.z - centre.z < -450) c.z += 900;
+      const target = c.rank < shown ? clamp((shown - c.rank) * 6, 0, 1) * (0.8 + 0.2 * cloud) : 0;
+      c.alpha += (target - c.alpha) * Math.min(1, dt * 0.5);          // clouds build and melt away slowly
+      for (let k = c.first; k < c.first + c.count; k++) {
+        cen[k * 3] = c.x; cen[k * 3 + 1] = c.y; cen[k * 3 + 2] = c.z;
+        alp[k] = c.alpha;
+      }
     }
+    this.puffCentre.needsUpdate = true;
+    this.puffAlpha.needsUpdate = true;
+
+    // Overcast sheet: fades in as it clouds over
+    this.sheet.position.set(centre.x, 230, centre.z);
+    this.sheet.material.opacity = smooth(0.35, 0.85, cloud) * 0.92;
+    this.sheet.visible = this.sheet.material.opacity > 0.01;
+    this.sheet.material.color.copy(cloudLight).multiplyScalar(0.12 + 0.15 * day);   // a shade darker than the grey sky
+    this.sheetTex.offset.set((centre.x - this.drift.x) / 500, -(centre.z - this.drift.y) / 500);
+
+    // Cloud shadows on the ground: subtle, only with sun and broken cloud
+    // (under a full overcast there are no separate shadows)
+    this.groundShade.position.set(centre.x, 0.03, centre.z);
+    this.shadowTex.offset.set((centre.x - this.drift.x) / this.shadowTile, -(centre.z - this.drift.y) / this.shadowTile);
+    const broken = 1 - smooth(0.6, 0.9, cloud);
+    this.groundShade.material.opacity = 0.16 * broken * smooth(0.05, 0.3, el);
+    this.groundShade.visible = this.groundShade.material.opacity > 0.005;
+
     this.placeSunAndMoon(centre, camera);
   }
 
