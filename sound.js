@@ -11,7 +11,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 1;
+export const BUILD = 3;
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -249,6 +249,32 @@ function makeCrackleBuffer(ctx, seconds = 2) {
 // Grass squelch: short, wet "blobs" as the tyres press into soft earth and
 // sap. Each is a quick downward sweep of a muffled tone that dies away
 // (looped, sped up with road speed so faster = more squelches)
+// Rain patter: separate drops ticking on the car and the road. Each is a
+// tiny bright tick, now and then a duller "plip" on the bodywork (looped;
+// played faster for more drops)
+function makePatterBuffer(ctx, seconds = 3) {
+  const sr = ctx.sampleRate;
+  const buffer = ctx.createBuffer(1, sr * seconds, sr);
+  const data = buffer.getChannelData(0);
+  let t = 0;
+  while (t < seconds - 0.05) {
+    const start = Math.floor(t * sr);
+    const body = Math.random() < 0.25;                      // landed on the car
+    const f = body ? 500 + Math.random() * 700 : 2500 + Math.random() * 3500;
+    const decay = body ? 0.02 : 0.004 + Math.random() * 0.004;
+    const amp = (body ? 0.5 : 0.35) * (0.3 + Math.random() * 0.7);
+    const n = Math.floor(decay * 5 * sr);
+    let phase = Math.random() * 6;
+    for (let i = 0; i < n && start + i < data.length; i++) {
+      const env = Math.exp(-i / (decay * sr));
+      phase += (2 * Math.PI * f) / sr;
+      data[start + i] += amp * env * (0.6 * Math.sin(phase) + 0.4 * (Math.random() * 2 - 1));
+    }
+    t += 0.004 + Math.random() * 0.045;                      // irregular: real rain never keeps time
+  }
+  return buffer;
+}
+
 function makeSquelchBuffer(ctx, seconds = 3) {
   const sr = ctx.sampleRate;
   const buffer = ctx.createBuffer(1, sr * seconds, sr);
@@ -441,8 +467,8 @@ export class EchoSystem {
 
   steer(ch, { r, d }, listener, heading, t, fresh) {
     const delaySeconds = clamp((2 * d) / 343, 0.005, 1.15);          // there and back at the speed of sound
-    const cutoff = clamp(5000 / (1 + d / 12), 250, 5000);            // further = more muffled
-    const strength = Math.min(0.6, clamp(r.size / 25, 0.3, 1) * 0.9 * (18 / (18 + d)) * r.reflect);   // bigger, closer, harder = louder
+    const cutoff = clamp(6500 / (1 + d / 20), 350, 6500);            // further = more muffled
+    const strength = Math.min(0.9, clamp(r.size / 25, 0.4, 1) * 1.4 * (26 / (26 + d)) * r.reflect);   // bigger, closer, harder = louder
     const dispersion = clamp(0.15 + d / 90, 0.15, 0.9);              // further = more spread out
     ch.level = strength;
 
@@ -745,6 +771,79 @@ export class EngineSound {
     this.squelchGain.gain.value = 0;
     this.squelchSrc.connect(squelchTone).connect(this.squelchGain).connect(this.carBus);
     turfSrc.start(ctx.currentTime);
+
+    // --- Rain: separate pitter-patter drops in drizzle and light rain;
+    // from moderate rain up, a steady white-noise roar ---
+    this.patterSrc = ctx.createBufferSource();
+    this.patterSrc.buffer = makePatterBuffer(ctx);
+    this.patterSrc.loop = true;
+    this.patterGain = ctx.createGain();
+    this.patterGain.gain.value = 0;
+    this.patterSrc.connect(this.patterGain).connect(this.out);   // not the car's echo bus: it's all around
+    const roarSrc = ctx.createBufferSource();
+    roarSrc.buffer = this.noise;
+    roarSrc.loop = true;
+    const roarShape = ctx.createBiquadFilter();
+    roarShape.type = 'bandpass';
+    roarShape.frequency.value = 2600;
+    roarShape.Q.value = 0.45;
+    const roarLow = ctx.createBiquadFilter();                  // heavy rain drumming on the car
+    roarLow.type = 'lowpass';
+    roarLow.frequency.value = 380;
+    this.roarLowGain = ctx.createGain();
+    this.roarLowGain.gain.value = 0;
+    this.roarGain = ctx.createGain();
+    this.roarGain.gain.value = 0;
+    roarSrc.connect(roarShape).connect(this.roarGain).connect(this.out);
+    roarSrc.connect(roarLow).connect(this.roarLowGain).connect(this.out);
+
+    // --- Wet tyres: a swish on a wet road, uneven and sloshy in puddles ---
+    const swishSrc = ctx.createBufferSource();
+    swishSrc.buffer = this.noise;
+    swishSrc.loop = true;
+    const swishBand = ctx.createBiquadFilter();
+    swishBand.type = 'bandpass';
+    swishBand.frequency.value = 1300;
+    swishBand.Q.value = 0.8;
+    this.swishGain = ctx.createGain();
+    this.swishGain.gain.value = 0;
+    swishSrc.connect(swishBand).connect(this.swishGain).connect(this.carBus);
+    this.sloshSrc = ctx.createBufferSource();
+    this.sloshSrc.buffer = makeSquelchBuffer(ctx);
+    this.sloshSrc.loop = true;
+    this.sloshSrc.playbackRate.value = 1.6;                   // quicker, splashier than the grass squelch
+    const sloshTone = ctx.createBiquadFilter();
+    sloshTone.type = 'lowpass';
+    sloshTone.frequency.value = 2400;
+    this.sloshGain = ctx.createGain();
+    this.sloshGain.gain.value = 0;
+    this.sloshSrc.connect(sloshTone).connect(this.sloshGain).connect(this.carBus);
+
+    // --- Frame scraping along the road (a wheel has come off) ---
+    const frameSrc = ctx.createBufferSource();
+    frameSrc.buffer = this.noise;
+    frameSrc.loop = true;
+    const frameLow = ctx.createBiquadFilter();
+    frameLow.type = 'bandpass';
+    frameLow.frequency.value = 520;
+    frameLow.Q.value = 1.4;
+    const frameHigh = ctx.createBiquadFilter();
+    frameHigh.type = 'bandpass';
+    frameHigh.frequency.value = 2300;
+    frameHigh.Q.value = 3;
+    const frameLowLevel = ctx.createGain();
+    frameLowLevel.gain.value = 3;
+    const frameHighLevel = ctx.createGain();
+    frameHighLevel.gain.value = 2;
+    const frameGrit = ctx.createWaveShaper();
+    frameGrit.curve = makeGrowlCurve();
+    this.frameGain = ctx.createGain();
+    this.frameGain.gain.value = 0;
+    frameSrc.connect(frameLow).connect(frameLowLevel).connect(frameGrit);
+    frameSrc.connect(frameHigh).connect(frameHighLevel).connect(frameGrit);
+    frameGrit.connect(this.frameGain).connect(this.carBus);
+
+    for (const n of [this.patterSrc, roarSrc, swishSrc, this.sloshSrc, frameSrc]) n.start(ctx.currentTime);
     this.squelchSrc.start(ctx.currentTime);
     const startAt = ctx.currentTime;
     squealNoise.start(startAt);
@@ -907,7 +1006,7 @@ export class EngineSound {
     if (!this.ctx) return;
     const ctx = this.ctx;
     const t0 = ctx.currentTime;
-    const out = this.fxOut;
+    const out = this.master;                       // straight out: thunder is all around, not part of the car
     const burst = (at, length, type, freq, q, peak, attack = 0.001) => {
       const src = ctx.createBufferSource();
       src.buffer = this.noise;
@@ -927,6 +1026,68 @@ export class EngineSound {
     burst(t0, 0.18, 'lowpass', 1400, 0.7, 2.6);          // its body
     burst(t0, 0.35, 'lowpass', 130, 0.8, 3.2, 0.002);    // the thump through the car
     burst(t0 + 0.02, 0.7, 'bandpass', 1600, 0.9, 0.9, 0.01);   // air rushing out
+  }
+
+  // Rain and wet tyres, called every frame. rain: how hard it's raining
+  // (0-1), wet: how wet the track is (0-1), speed: m/s, puddle: how much
+  // standing water the tyres are in (0-1)
+  setRain(rain, wet, speed, puddle) {
+    if (!this.ctx || !this.patterGain) return;
+    const t = this.ctx.currentTime;
+    const roar = Math.max(0, (rain - 0.4) / 0.6);              // moderate rain upwards
+    // Patter: on its own in light rain, fading under the roar in heavy rain
+    this.patterGain.gain.setTargetAtTime(rain > 0.01 ? (0.25 + 1.4 * Math.min(rain, 0.5)) * (1 - 0.6 * roar) : 0, t, 0.3);
+    this.patterSrc.playbackRate.setTargetAtTime(0.5 + 1.6 * Math.min(rain, 0.5), t, 0.3);   // more drops
+    this.roarGain.gain.setTargetAtTime(0.32 * Math.pow(roar, 0.8), t, 0.4);
+    this.roarLowGain.gain.setTargetAtTime(0.4 * roar * roar, t, 0.4);
+    // Wet road: the tyres swish (more the faster and wetter)
+    const moving = Math.min(1, speed / 25);
+    this.swishGain.gain.setTargetAtTime(0.16 * wet * moving, t, 0.15);
+    // Puddles: an uneven, sloshing splash (jumps about from moment to moment)
+    const slosh = puddle * Math.min(1, speed / 8) * (0.45 + Math.random() * 0.55);
+    this.sloshGain.gain.setTargetAtTime(0.5 * slosh, t, 0.05);
+    this.sloshSrc.playbackRate.setTargetAtTime(1.1 + 1.2 * moving + Math.random() * 0.3, t, 0.08);
+  }
+
+  // A corner scraping along on its frame (the wheel has come off)
+  setFrameScrape(frames, speed) {
+    if (!this.ctx || !this.frameGain) return;
+    const t = this.ctx.currentTime;
+    const level = frames ? Math.min(1, speed / 4) * (0.22 + 0.15 * Math.min(1, speed / 25)) * (0.85 + Math.random() * 0.3) : 0;
+    this.frameGain.gain.setTargetAtTime(level, t, 0.05);
+  }
+
+  // Thunder. strength 0-1 (close strikes are loud and start with a crack)
+  playThunder(strength) {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const t0 = ctx.currentTime;
+    const out = this.master;                       // straight out: thunder is all around, not part of the car
+    const burst = (at, length, type, freq, q, peak, attack) => {
+      const src = ctx.createBufferSource();
+      src.buffer = this.noise;
+      src.loop = true;
+      const f = ctx.createBiquadFilter();
+      f.type = type;
+      f.frequency.value = freq;
+      f.Q.value = q;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(peak, at + attack);
+      g.gain.exponentialRampToValueAtTime(0.0005, at + length);
+      src.connect(f).connect(g).connect(out);
+      src.start(at, Math.random() * 1.5);
+      src.stop(at + length + 0.1);
+    };
+    if (strength > 0.65) burst(t0, 0.35, 'highpass', 1200, 0.7, 0.55 * strength, 0.005);   // the crack of a close strike
+    // The rolling rumble: several overlapping swells, getting lower and slower
+    const rolls = 3 + Math.round(strength * 3);
+    let at = t0 + (strength > 0.65 ? 0.05 : 0.2);
+    for (let k = 0; k < rolls; k++) {
+      const len = 1.2 + Math.random() * 2.2;
+      burst(at, len, 'lowpass', 90 + Math.random() * 120, 0.9, (0.45 + Math.random() * 0.3) * strength, 0.15 + Math.random() * 0.3);
+      at += 0.4 + Math.random() * 0.9;
+    }
   }
 
   // Grass, called every frame. share: how many tyres are on it (0-1),
@@ -972,7 +1133,7 @@ export class EngineSound {
     if (!this.ctx) return;
     const ctx = this.ctx;
     const t0 = ctx.currentTime;
-    const out = this.fxOut;   // louder than the engine
+    const out = this.master;                       // straight out: thunder is all around, not part of the car   // louder than the engine
 
     const env = (g, at, peak, attack, length) => {
       g.gain.setValueAtTime(0.0001, at);
