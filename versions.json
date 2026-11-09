@@ -7,13 +7,14 @@
     "input.js": 1,
     "oil.js": 1,
     "physics.js": 1,
-    "rendering.js": 1,
+    "rendering.js": 2,
     "scenery.js": 1,
     "skids.js": 1,
-    "sky.js": 1,
+    "sky.js": 3,
     "smoke.js": 1,
     "sound.js": 1,
     "touch.js": 1,
-    "updates.js": 1
+    "updates.js": 3,
+    "godrays.js": 1
   }
 }
