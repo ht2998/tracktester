@@ -20,10 +20,34 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 3;
+export const BUILD = 5;
 
 // Newest first
 export const UPDATES = [
+  {
+    id: 14, date: '10 Nov 2026', title: 'Louder echoes',
+    items: [
+      'Engine echoes off buildings and walls are much more noticeable, carry further, and sound clearer',
+    ],
+  },
+  {
+    id: 13, date: '10 Nov 2026', title: 'Rain, open garages and the driver\'s seat',
+    items: [
+      'Rain: drizzle, light, moderate, heavy and thunderstorm (Weather menu). The track gets wet, then dries out afterwards, faster in sunshine',
+      'Wet grip depends on your tyres: Wets and Intermediates grip best, slicks slide. Aquaplaning in puddles at speed',
+      'Puddles form in random spots on the tarmac; mud forms on the grass later and more slowly',
+      'Splashes from raindrops, ripples in puddles, spray behind the tyres (thicker through puddles), lightning and rolling thunder',
+      'Rain sounds: separate drops in light rain, a steady roar from moderate rain up; tyres swish on a wet road and slosh through puddles',
+      'Rain washes away rubber marks; oil spreads out wider as it fades away',
+      'Grass throws up clippings and brown dust; wet grass sprays brown, worse in mud',
+      'Bare rims leave no rubber marks but drop glittery metal shavings, and grind down until the wheel comes off and rolls away; the frame then scrapes along in sparks',
+      'Drift smoke gets thicker the harder you slide',
+      'Pit garages are open, with racks, tool chests, wheel stacks, jacks and lights',
+      'Engine failures throw up to 25 pieces, including a rocker arm, a valve spring cap and a piece of the oil pan',
+      'New cameras: close chase, T-cam on the roll bar, and a driver\'s-eye cockpit view with working mirrors',
+      'A driver in the car: steers, shifts with the lever (manual) or paddles (automatic), and pulls the handbrake',
+    ],
+  },
   {
     id: 12, date: '9 Nov 2026', title: 'Sky, sun rays and bonnet camera',
     items: [
