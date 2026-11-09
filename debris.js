@@ -12,7 +12,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 1;
+export const BUILD = 2;
 
 const GRAVITY = 9.81;
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -175,6 +175,47 @@ function makePistonRing(steel) {
   return { obj: shadow(g), radius: 0.03, restHeight: 0.002 };
 }
 
+function makeRockerArm(steel) {
+  // A rocker arm: a short bar that's thicker in the middle, with a pad at
+  // one end and an adjuster screw at the other
+  const g = new THREE.Group();
+  const bar = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.009, 0.012), steel);
+  const boss = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.016, 12), steel);
+  boss.rotation.x = Math.PI / 2;
+  const screw = new THREE.Mesh(new THREE.CylinderGeometry(0.003, 0.003, 0.016, 6), steel);
+  screw.position.set(0.024, 0.006, 0);
+  const pad = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.006, 0.012), steel);
+  pad.position.set(-0.026, -0.005, 0);
+  g.add(bar, boss, screw, pad);
+  return { obj: shadow(g), radius: 0.028, restHeight: 0.008 };
+}
+
+function makeSpringRetainer(steel) {
+  // A valve spring retainer: a small dished washer with a hole
+  const g = new THREE.Group();
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.009, 0.006, 16, 1, true), steel);
+  cap.material = steel;
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.0125, 0.0018, 4, 16), steel);
+  rim.rotation.x = Math.PI / 2;
+  rim.position.y = 0.003;
+  g.add(cap, rim);
+  return { obj: shadow(g), radius: 0.014, restHeight: 0.003 };
+}
+
+function makeSumpPiece(alloy) {
+  // A torn piece of the oil pan (sump): a bent sheet with a flange along one edge
+  const g = new THREE.Group();
+  const sheet = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.003, 0.07), alloy);
+  sheet.rotation.z = 0.12;
+  const flange = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.022, 0.004), alloy);
+  flange.position.set(0, 0.01, 0.035);
+  const lip = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.018, 0.06), alloy);
+  lip.position.set(-0.054, 0.008, 0);
+  lip.rotation.z = -0.4;
+  g.add(sheet, flange, lip);
+  return { obj: shadow(g), radius: 0.06, restHeight: 0.004 };
+}
+
 export class EngineDebris {
   constructor(scene, { maxSparks = 220, chunkCount = 12 } = {}) {
     this.scene = scene;
@@ -237,6 +278,7 @@ export class EngineDebris {
     this.parts = [
       makeConRod(steel), makeValve(steel), makeValveSpring(steel), makeBolt(steel),
       makeNut(steel), makeBlockShard(alloy), makeBracket(scorched), makePistonRing(steel),
+      makeRockerArm(steel), makeSpringRetainer(steel), makeSumpPiece(scorched),
     ];
     for (const part of this.parts) {
       part.obj.visible = false;
@@ -282,7 +324,9 @@ export class EngineDebris {
     };
     const spin = (n) => new THREE.Vector3(rand(-n, n), rand(-n, n), rand(-n, n));
 
-    for (let i = 0; i < this.chunkCount; i++) {
+    // Up to 25 pieces in all: the named parts, plus a random number of chunks
+    const chunks = Math.max(4, Math.round(this.chunkCount * rand(0.55, 1)));
+    for (let i = 0; i < chunks; i++) {
       const size = rand(0.02, 0.025);   // 4-5 cm across: about half a piston
       this.pieces.push({
         kind: 'chunk', index: i, size, radius: size * 0.8,
@@ -293,7 +337,7 @@ export class EngineDebris {
         stretch: new THREE.Vector3(rand(0.85, 1.25), rand(0.6, 0.95), rand(0.85, 1.15)),   // jagged, uneven shapes
       });
     }
-    this.chunkMesh.count = this.chunkCount;
+    this.chunkMesh.count = chunks;
 
     this.piston.visible = true;
     this.pieces.push({
@@ -306,7 +350,7 @@ export class EngineDebris {
       rolling: false, rollAngle: 0, resting: false,
     });
 
-    // The eight broken parts
+    // The eleven broken parts
     for (const part of this.parts) {
       part.obj.visible = true;
       this.pieces.push({
