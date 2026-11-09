@@ -20,10 +20,22 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 1;
+export const BUILD = 3;
 
 // Newest first
 export const UPDATES = [
+  {
+    id: 12, date: '9 Nov 2026', title: 'Sky, sun rays and bonnet camera',
+    items: [
+      'Sun rays: shafts of sunlight blocked by buildings, posts and the car, strongest with a low sun',
+      'Real-looking clouds: soft heaps from small wisps to big clumps, and a full overcast when cloudy',
+      'Subtle cloud shadows drifting over the ground',
+      'Stronger sunlight and crisper, darker shadows',
+      'Bonnet camera (C cycles chase, bonnet, showroom): drag to look around, even straight up at the sky',
+      'The showroom camera can now tilt low enough to look up past the car',
+      'Cloudy skies turn properly grey, with darker clouds',
+    ],
+  },
   {
     id: 11, date: '9 Nov 2026', title: 'This screen',
     items: [
