@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 1;
+export const BUILD = 2;
 
 const G = 9.81;   // gravity, m/s²
 const RPM_PER_RADS = 60 / (2 * Math.PI);
@@ -55,6 +55,10 @@ export const CATERHAM = {
   blowWornRate: 0.025,       // blowouts per second for each fully worn tyre at normal load (much more when loaded)
   flatHeatTime: 12,          // seconds at 100 km/h on a flat before it overheats and bursts
   rimGrip: 0.3,              // a bare steel rim's grip, compared with a Sports Medium tyre
+  rimWearDistance: 1400,     // metres of driving on a bare rim before it's ground down to the frame
+  frameSink: 0.2,            // metres that corner drops with the wheel gone (the frame on the road)
+  frameGrip: 0.22,           // the frame scraping along: barely any grip...
+  frameDrag: 0.9,            // ...and a lot of drag (share of that corner's load)
   rollShareFront: 0.55,      // how much of the cornering weight shift the front takes
 
   // --- Fuel ---
@@ -176,6 +180,9 @@ export class CarPhysics {
     // How much the ground holds the tyres back at a point, as a share of the
     // tyre's load: 0 = tarmac. Gravel is loose, so the tyres plough into it.
     this.surfaceDrag = () => 0;
+    // How fast the tyres wear compared with normal (the rain sets this: wet
+    // tyres last far longer on a wet track, everything runs cooler)
+    this.wearScale = () => 1;
     this.reset();
   }
 
@@ -232,8 +239,10 @@ export class CarPhysics {
     // blown: burst, the rubber flapping and shredding off. shred: 0-1, how much
     // has gone. rim: nothing left, running on the bare rim. heat: how close a
     // flat tyre being driven on is to bursting (0-1).
+    // rimWear: how far a bare rim has been ground down (0-1). detached: the
+    // wheel has come off and that corner is scraping along on the frame
     this.tyres = WHEEL_ORDER.map(() => ({
-      wear: 0, pressure: 1, leak: 0, blown: false, shred: 0, rim: false, heat: 0,
+      wear: 0, pressure: 1, leak: 0, blown: false, shred: 0, rim: false, heat: 0, rimWear: 0, detached: false,
     }));
     this.wheelLoad = [0, 0, 0, 0];
     this.tyreSink = [0, 0, 0, 0];   // how far each corner sits lower (flat tyres), metres
@@ -282,6 +291,7 @@ export class CarPhysics {
   // How much grip one tyre has, from its compound, wear and pressure
   tyreGrip(i) {
     const t = this.tyres[i];
+    if (t.detached) return this.spec.frameGrip;          // no wheel: the frame on the road
     if (t.rim) return this.spec.rimGrip;                 // steel on tarmac
     if (t.blown) return TYRES[this.tyreCompound].grip * 0.42 * (1 - 0.3 * t.shred);   // flapping rubber
     const compound = TYRES[this.tyreCompound];
@@ -478,7 +488,8 @@ export class CarPhysics {
     // A front wheel on its bare rim fights the steering: less lock, slower to
     // turn, and it chatters (the rim skipping over the road)
     const frontRims = (this.tyres[0].rim ? 1 : 0) + (this.tyres[1].rim ? 1 : 0);
-    steerLimit *= 1 - 0.18 * frontRims;
+    const frontGone = (this.tyres[0].detached ? 1 : 0) + (this.tyres[1].detached ? 1 : 0);
+    steerLimit *= (1 - 0.18 * frontRims) * (1 - 0.35 * frontGone);   // a missing front wheel: hardly any steering
     const target = c.steer * steerLimit + (frontRims ? (Math.random() - 0.5) * 0.02 * frontRims : 0);
     const turningIn = !countersteering && Math.abs(target) > Math.abs(this.steer)
       && Math.sign(target) === Math.sign(this.steer || target);
@@ -516,7 +527,7 @@ export class CarPhysics {
     const axleTyre = (a, b) => {
       const la = loads[a] + 1e-6, lb = loads[b] + 1e-6;
       const grip = (la * this.tyreGrip(a) + lb * this.tyreGrip(b)) / (la + lb);
-      const firm = (t) => (t.rim ? 0.6 : t.blown ? 0.3 : 0.35 + 0.65 * Math.pow(t.pressure, 0.8));
+      const firm = (t) => (t.detached ? 0.25 : t.rim ? 0.6 : t.blown ? 0.3 : 0.35 + 0.65 * Math.pow(t.pressure, 0.8));
       const soft = (la * firm(this.tyres[a]) + lb * firm(this.tyres[b])) / (la + lb);
       return { grip, soft };
     };
@@ -530,7 +541,7 @@ export class CarPhysics {
     let flatPull = 0;
     WHEEL_ORDER.forEach((w, i) => {
       const t = this.tyres[i];
-      const drag = (t.rim ? 0.07 : t.blown ? 0.045 : 0.03 * Math.pow(1 - t.pressure, 1.5)) * loads[i];
+      const drag = (t.detached ? s.frameDrag : t.rim ? 0.07 + 0.08 * t.rimWear : t.blown ? 0.045 : 0.03 * Math.pow(1 - t.pressure, 1.5)) * loads[i];
       flatDrag += drag;
       flatPull += drag * w.side * s.trackHalf;
     });
@@ -890,7 +901,7 @@ export class CarPhysics {
         + s.tyreWearCorner * loadShare * use * use * dist          // cornering: the loaded outer tyre most
         + s.tyreWearSkid * Math.sqrt(Math.max(loadShare, 0)) * slip * h
         + s.tyreWearFlat * (1 - t.pressure) * (1 - t.pressure) * dist;   // driving on a flat chews it up
-      t.wear = Math.min(1, t.wear + wear * compound.wear);
+      t.wear = Math.min(1, t.wear + wear * compound.wear * this.wearScale());
 
       // Slow puncture: air escapes, more slowly as the tyre empties
       if (t.leak > 0 && t.pressure > 0) {
@@ -918,12 +929,21 @@ export class CarPhysics {
           t.rim = true;
           this.events.push({ type: 'rim', wheel: i });
         }
+      } else if (!t.detached && speed > 0.5) {
+        // The bare rim grinds down on the road (faster when it's loaded),
+        // until the frame touches the ground and the wheel comes off
+        t.rimWear = Math.min(1, t.rimWear + (speed * h / s.rimWearDistance) * (0.6 + 0.4 * clamp(loadShare, 0, 2)));
+        if (t.rimWear >= 1) {
+          t.detached = true;
+          this.events.push({ type: 'wheelOff', wheel: i });
+        }
       }
       if (t.blown) t.wear = 1;
 
       // A soft tyre lets its corner sit lower, more so when it's carrying weight.
       // On the bare rim, it's the full drop.
-      this.tyreSink[i] = t.rim ? s.rimSink
+      this.tyreSink[i] = t.detached ? s.frameSink
+        : t.rim ? s.rimSink + (s.frameSink * 0.85 - s.rimSink) * t.rimWear
         : t.blown ? s.flatSink + (s.rimSink - s.flatSink) * t.shred
         : s.flatSink * Math.pow(1 - t.pressure, 1.2) * (0.6 + 0.4 * clamp(loadShare, 0, 2));
     });
@@ -936,7 +956,12 @@ export class CarPhysics {
   }
 
   get rimsDown() {
-    return this.tyres.reduce((n, t) => n + (t.rim ? 1 : 0), 0);
+    return this.tyres.reduce((n, t) => n + (t.rim && !t.detached ? 1 : 0), 0);
+  }
+
+  // Corners scraping along on the frame (wheel gone)
+  get framesDown() {
+    return this.tyres.reduce((n, t) => n + (t.detached ? 1 : 0), 0);
   }
 
   get tyreHiss() {
