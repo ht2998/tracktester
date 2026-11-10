@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 2;
+export const BUILD = 3;
 
 const COLORS = {
   face: '#15181c',
@@ -809,6 +809,12 @@ export class Hud {
     tw.changing.checked = changing;
     const nowText = changing ? `Now: ${now}` : '';
     if (tw.now.textContent !== nowText) tw.now.textContent = nowText;
+  }
+
+  // In the driver's-eye view the dials are on the car's own dashboard, so
+  // the on-screen ones are hidden
+  setInCar(on) {
+    this.dash.style.display = on ? 'none' : '';
   }
 
   update({ speedKmh, rpm, gearLabel, limiter, transmission, engineHealth = 1, oilLevel = 1,
