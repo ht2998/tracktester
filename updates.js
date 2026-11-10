@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 7;
+export const BUILD = 9;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
@@ -39,6 +39,13 @@ export const UPDATES = [
       ['Driver in a race suit', 'Red race suit with white stripes, harness belts, a HANS collar and a striped helmet. He\'s a little shorter now too', 'driver'],
       ['Dash display in the cockpit', 'In the driver\'s-eye view the on-screen dials disappear and everything shows on a display in the dashboard: shift lights, gear, speed, revs, fuel, oil, tyres and warnings', 'cockpit'],
       ['New rain and thunder sounds', 'Light rain is soft separate taps on the car and road; thunder is a louder crack and rattle into a big rolling boom, louder the closer the strike', 'storm'],
+      ['Grip in the wet depends on your tread', 'Each tyre can only clear so much water a second through its grooves. Go faster or hit deeper water than it can clear and it starts aquaplaning: slicks struggle even on a damp track, road tyres slide in puddles at speed, full wets cope with almost anything', 'aquaplane'],
+      ['Puddles slow you down', 'Standing water always takes some grip, even at low speed, and you hear a "psssht" of spray as you go through', 'puddles'],
+      ['Mud sound', 'A deeper splashing hiss with a breathy "pffff" as the tyres churn through mud', 'grass'],
+      ['Spray and dust all the time', 'Spray on wet roads, dust on gravel, and grass clippings and dust on grass now fly whenever you drive, not just when sliding', 'rain'],
+      ['Bigger grass patch', 'About five times bigger (19 m by 28 m), with six muddy spots when it rains', 'grass'],
+      ['Driver sits up straight', 'Shoulders back against the seat and his head on top, not poking forward', 'driver'],
+      ['Proper cockpit dials', 'The rev counter and speedo needles sweep the right way, with printed numbers, a red zone on the rev counter, and a row of shift lights along the top of the dash', 'gauges'],
       ['Closer cockpit view', 'The driver\'s-eye camera sits a little further forward, nearer the wheel', 'cockpit'],
     ],
   },
