@@ -20,7 +20,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 1;
+export const BUILD = 2;
 
 const DRIVER_X = -0.18;
 // The steering wheel's centre and tilt
@@ -29,10 +29,10 @@ const WHEEL_TILT = 0.42;            // the top leans away from the driver
 const WHEEL_R = 0.135;
 const STEER_RATIO = 3.2;                 // steering-wheel turn per radian of front-wheel angle
 // Where the driver's eyes are (the first-person camera)
-export const EYE = new THREE.Vector3(DRIVER_X, 1.09, -0.47);
+export const EYE = new THREE.Vector3(DRIVER_X, 1.035, -0.39);
 // Shoulders (left is +x: towards the middle of the car)
-const SHOULDER_L = new THREE.Vector3(DRIVER_X + 0.17, 0.96, -0.52);
-const SHOULDER_R = new THREE.Vector3(DRIVER_X - 0.17, 0.96, -0.52);
+const SHOULDER_L = new THREE.Vector3(DRIVER_X + 0.165, 0.915, -0.47);
+const SHOULDER_R = new THREE.Vector3(DRIVER_X - 0.165, 0.915, -0.47);
 const UPPER_ARM = 0.3, FOREARM = 0.29;
 // Levers on the tunnel between the seats
 const STICK_BASE = new THREE.Vector3(0.0, 0.655, -0.12);
@@ -61,7 +61,28 @@ export class Cockpit {
     this.isMobile = isMobile;
     const leather = new THREE.MeshStandardMaterial({ color: 0x1d1d1f, roughness: 0.75 });
     const stitch = new THREE.MeshStandardMaterial({ color: 0x7a2020, roughness: 0.7 });
-    const suit = new THREE.MeshStandardMaterial({ color: 0x1f3f8f, roughness: 0.8 });   // race suit
+    // Race suit: red with white stripes down the arms and sides, like a
+    // proper fireproof overall
+    const suitTex = (() => {
+      const cv = document.createElement('canvas');
+      cv.width = 64; cv.height = 64;
+      const g2 = cv.getContext('2d');
+      g2.fillStyle = '#c81d25';
+      g2.fillRect(0, 0, 64, 64);
+      g2.fillStyle = '#f4f4f2';
+      g2.fillRect(14, 0, 6, 64);                       // a stripe down one side...
+      g2.fillRect(44, 0, 6, 64);                       // ...and the other
+      g2.fillStyle = 'rgba(0,0,0,0.18)';
+      g2.fillRect(16, 0, 2, 64);
+      g2.fillRect(46, 0, 2, 64);
+      const t = new THREE.CanvasTexture(cv);
+      t.colorSpace = THREE.SRGBColorSpace;
+      return t;
+    })();
+    const suit = new THREE.MeshStandardMaterial({ map: suitTex, roughness: 0.85 });
+    const suitPlain = new THREE.MeshStandardMaterial({ color: 0xc81d25, roughness: 0.85 });
+    const strap = new THREE.MeshStandardMaterial({ color: 0x2a2c30, roughness: 0.7 });   // harness belts
+    const buckle = new THREE.MeshStandardMaterial({ color: 0xc9ccd0, metalness: 0.9, roughness: 0.3 });
     const glove = new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.7 });
     const helmetMat = new THREE.MeshPhysicalMaterial({ color: 0xf2f2f2, roughness: 0.25, clearcoat: 1 });
     const visorMat = new THREE.MeshStandardMaterial({ color: 0x111418, metalness: 0.6, roughness: 0.1 });
@@ -108,6 +129,24 @@ export class Cockpit {
       g.add(needle);
       this.needles.push(needle);
     }
+
+    // --- Digital display in the middle of the dash: in the driver's-eye
+    // view the on-screen dials go away and everything shows here instead:
+    // shift lights, gear, speed, revs, fuel, oil, the four tyres, warnings
+    this.screenCanvas = document.createElement('canvas');
+    this.screenCanvas.width = 256;
+    this.screenCanvas.height = 128;
+    this.screenTex = new THREE.CanvasTexture(this.screenCanvas);
+    this.screenTex.colorSpace = THREE.SRGBColorSpace;
+    const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.17, 0.085),
+      new THREE.MeshBasicMaterial({ map: this.screenTex, toneMapped: false }));
+    screen.position.set(0.07, 0.712, 0.147);
+    screen.rotation.set(-0.25, Math.PI - 0.25, 0, 'YXZ');      // facing the driver, tipped up a little
+    g.add(screen);
+    const bezel = mesh(new THREE.BoxGeometry(0.185, 0.1, 0.012), mats.black, 0.07, 0.712, 0.154);
+    bezel.rotation.copy(screen.rotation);
+    g.add(bezel);
+    this.screenClock = 0;
 
     // --- Steering: column, then the wheel (tilted towards the driver).
     // `wheelSpin` turns with the steering; the paddles turn with it.
@@ -163,23 +202,39 @@ export class Cockpit {
     // --- The driver ---
     this.driver = new THREE.Group();
     g.add(this.driver);
-    const torso = mesh(new THREE.CylinderGeometry(0.16, 0.14, 0.38, 14), suit, DRIVER_X, 0.83, -0.56);
+    const torso = mesh(new THREE.CylinderGeometry(0.155, 0.135, 0.33, 14), suit, DRIVER_X, 0.8, -0.52);
     torso.scale.z = 0.65;
     torso.rotation.x = -0.2;
     this.driver.add(torso);
-    this.driver.add(mesh(new THREE.SphereGeometry(0.075, 12, 10), suit, DRIVER_X, 0.98, -0.53));   // shoulders/collar
-    for (const s of [SHOULDER_L, SHOULDER_R]) this.driver.add(mesh(new THREE.SphereGeometry(0.055, 12, 10), suit, s.x, s.y, s.z));
-    // Head: the helmet and visor (hidden in the driver's-eye view)
+    this.driver.add(mesh(new THREE.SphereGeometry(0.072, 12, 10), suitPlain, DRIVER_X, 0.94, -0.49));   // shoulders/collar
+    for (const s of [SHOULDER_L, SHOULDER_R]) this.driver.add(mesh(new THREE.SphereGeometry(0.053, 12, 10), suitPlain, s.x, s.y, s.z));
+    // Harness: two shoulder belts and a lap belt, with the buckle in the middle
+    for (const sx of [-0.07, 0.07]) {
+      const belt = mesh(new THREE.BoxGeometry(0.045, 0.3, 0.012), strap, DRIVER_X + sx, 0.8, -0.415);
+      belt.rotation.x = -0.2;
+      this.driver.add(belt);
+    }
+    this.driver.add(mesh(new THREE.BoxGeometry(0.3, 0.045, 0.012), strap, DRIVER_X, 0.68, -0.44));
+    const clasp = mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.012, 16), buckle, DRIVER_X, 0.69, -0.433);
+    clasp.rotation.x = Math.PI / 2;
+    this.driver.add(clasp);
+    // Head: the helmet and visor (hidden in the driver's-eye view). The car
+    // faces +z, so the visor is centred on +z
     this.head = new THREE.Group();
-    this.head.position.set(DRIVER_X, 1.1, -0.5);
-    this.head.add(mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.1, 10), suit, 0, -0.08, 0));   // neck
-    const helmet = mesh(new THREE.SphereGeometry(0.125, 20, 16), helmetMat);
+    this.head.position.set(DRIVER_X, 1.045, -0.44);
+    this.head.add(mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.1, 10), suitPlain, 0, -0.08, 0));   // neck
+    // HANS device: the black collar that sits on the shoulders behind the helmet
+    const hans = mesh(new THREE.TorusGeometry(0.085, 0.022, 8, 20, Math.PI * 1.2), strap, 0, -0.1, -0.01);
+    hans.rotation.set(Math.PI / 2, 0, Math.PI * 0.9);   // open at the front
+    this.head.add(hans);
+    const helmet = mesh(new THREE.SphereGeometry(0.12, 20, 16), helmetMat);
     helmet.scale.set(1, 1.05, 1.12);
     this.head.add(helmet);
-    const stripe = mesh(new THREE.SphereGeometry(0.127, 20, 16, -0.15, 0.3), suit);   // a stripe over the top
-    stripe.scale.copy(helmet.scale);
+    const stripe = mesh(new THREE.TorusGeometry(0.122, 0.014, 6, 24, Math.PI), suitPlain);   // a red stripe over the top, front to back
+    stripe.rotation.y = Math.PI / 2;
+    stripe.scale.set(1, 1.05, 1.12);
     this.head.add(stripe);
-    const visor = mesh(new THREE.SphereGeometry(0.128, 20, 12, -0.9, 1.8, 1.25, 0.6), visorMat);
+    const visor = mesh(new THREE.SphereGeometry(0.123, 20, 12, Math.PI / 2 - 0.85, 1.7, 1.2, 0.55), visorMat);
     visor.scale.copy(helmet.scale);
     this.head.add(visor);
     this.driver.add(this.head);
@@ -340,6 +395,74 @@ export class Cockpit {
     onWheelR.z -= pull;
     this.placeArm(left, SHOULDER_L, handL, 1);
     this.placeArm(right, SHOULDER_R, onWheelR, -1);
+  }
+
+  // Redraw the dash display. st: { speedKmh, rpm, redline, gearLabel, limiter,
+  // fuel, oil, tyres, health }. Often in the driver's view, rarely otherwise.
+  drawScreen(dt, st) {
+    this.screenClock -= dt;
+    if (this.screenClock > 0) return;
+    this.screenClock = this.firstPerson ? 1 / 15 : 0.5;
+    const c = this.screenCanvas.getContext('2d');
+    const W = 256, H = 128;
+    c.fillStyle = '#05070a';
+    c.fillRect(0, 0, W, H);
+    // Shift lights: green, then red, then blue at the redline (all flash on the limiter)
+    const n = 10;
+    const lit = Math.max(0, Math.min(1, (st.rpm - st.redline * 0.7) / (st.redline * 0.3))) * n;
+    const flash = st.limiter && (performance.now() % 160) < 80;
+    for (let i = 0; i < n; i++) {
+      const on = flash || i < lit;
+      const col = i < 4 ? '#2bdc4a' : i < 7 ? '#ff2a2a' : '#3a8bff';
+      c.fillStyle = on ? (flash ? '#3a8bff' : col) : '#1b1f25';
+      c.beginPath(); c.arc(24 + i * 23.2, 12, 7, 0, Math.PI * 2); c.fill();
+    }
+    // Gear in the middle, speed on the left, revs on the right
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.fillStyle = '#ffffff';
+    c.font = 'bold 58px "Arial Narrow", Arial, sans-serif';
+    c.fillText(st.gearLabel, W / 2, 58);
+    c.font = 'bold 30px "Arial Narrow", Arial, sans-serif';
+    c.fillText(String(Math.round(st.speedKmh)), 42, 52);
+    c.fillText(String(Math.round(st.rpm / 100) * 100), W - 46, 52);
+    c.font = '13px Arial, sans-serif';
+    c.fillStyle = '#8a929c';
+    c.fillText('KM/H', 42, 76);
+    c.fillText('RPM', W - 46, 76);
+    // Fuel and oil bars (red when low)
+    const bar = (y, label, v, low) => {
+      c.fillStyle = '#8a929c';
+      c.textAlign = 'left';
+      c.fillText(label, 8, y + 6);
+      c.fillStyle = '#1b1f25';
+      c.fillRect(40, y, 56, 12);
+      c.fillStyle = v < low ? '#ff3b30' : '#e8e8e8';
+      c.fillRect(40, y, 56 * Math.max(0, Math.min(1, v)), 12);
+    };
+    bar(94, 'FUEL', st.fuel, 0.12);
+    bar(111, 'OIL', st.oil, 0.3);
+    // The four tyres as seen from the seat (fronts on top; the car's left on
+    // the left): green when fresh, then yellow, then red; orange when low on
+    // air; flashing red once burst or gone
+    (st.tyres || []).forEach((t, i) => {
+      const px = W - 64 + (i % 2 === 0 ? 0 : 28);
+      const y = 94 + (i < 2 ? 0 : 18);
+      const life = 1 - Math.min(1, t.wear || 0);
+      let col = life > 0.5 ? '#2bdc4a' : life > 0.25 ? '#ffd23a' : '#ff3b30';
+      if (t.pressure < 0.6) col = '#ff7a1a';
+      if (t.blown || t.detached) col = (performance.now() % 400) < 200 ? '#ff3b30' : '#1b1f25';
+      c.fillStyle = col;
+      c.fillRect(px, y, 20, 14);
+    });
+    // Check engine
+    if (st.health < 0.5) {
+      c.fillStyle = st.health < 0.2 && (performance.now() % 500) < 250 ? '#1b1f25' : '#ffb02e';
+      c.textAlign = 'center';
+      c.font = 'bold 12px Arial, sans-serif';
+      c.fillText('CHECK ENGINE', W / 2, 98);
+    }
+    this.screenTex.needsUpdate = true;
   }
 
   // Draw what each mirror sees (only call this in the driver's-eye view).
