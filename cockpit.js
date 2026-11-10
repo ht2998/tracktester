@@ -20,7 +20,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 2;
+export const BUILD = 4;
 
 const DRIVER_X = -0.18;
 // The steering wheel's centre and tilt
@@ -31,8 +31,8 @@ const STEER_RATIO = 3.2;                 // steering-wheel turn per radian of fr
 // Where the driver's eyes are (the first-person camera)
 export const EYE = new THREE.Vector3(DRIVER_X, 1.035, -0.39);
 // Shoulders (left is +x: towards the middle of the car)
-const SHOULDER_L = new THREE.Vector3(DRIVER_X + 0.165, 0.915, -0.47);
-const SHOULDER_R = new THREE.Vector3(DRIVER_X - 0.165, 0.915, -0.47);
+const SHOULDER_L = new THREE.Vector3(DRIVER_X + 0.165, 0.92, -0.52);
+const SHOULDER_R = new THREE.Vector3(DRIVER_X - 0.165, 0.92, -0.52);
 const UPPER_ARM = 0.3, FOREARM = 0.29;
 // Levers on the tunnel between the seats
 const STICK_BASE = new THREE.Vector3(0.0, 0.655, -0.12);
@@ -43,6 +43,9 @@ const BRAKE_LEN = 0.2;
 const H_PATTERN = { '-1': [1.4, -1], 0: [0, 0], 1: [-1, 1], 2: [-1, -1], 3: [0, 1], 4: [0, -1], 5: [1, 1] };
 
 const UP = new THREE.Vector3(0, 1, 0);
+// Dial needles: start 2.2 rad anticlockwise from straight up (bottom left)
+// and sweep 4.2 rad clockwise (to bottom right)
+const SWEEP_START = 2.2, SWEEP = 4.2;
 
 function mesh(geo, mat, x = 0, y = 0, z = 0) {
   const m = new THREE.Mesh(geo, mat);
@@ -54,7 +57,7 @@ function mesh(geo, mat, x = 0, y = 0, z = 0) {
 
 export class Cockpit {
   // mats: { interior, black, chrome, paint }
-  constructor(car, mats, { isMobile = false } = {}) {
+  constructor(car, mats, { isMobile = false, redline = 7600 } = {}) {
     this.group = new THREE.Group();
     car.add(this.group);
     this.car = car;
@@ -115,20 +118,46 @@ export class Cockpit {
     // a rev counter and speedo in front of the driver ---
     const dash = mesh(new THREE.BoxGeometry(0.78, 0.1, 0.08), leather, 0, 0.7, 0.19);
     g.add(dash);
+    // Each dial has a printed face: tick marks, numbers and a red zone. The
+    // needles sweep clockwise from bottom left to bottom right, like real ones.
+    this.redline = redline;
+    this.tachMax = Math.ceil((redline + 800) / 1000) * 1000;
     this.needles = [];
-    for (const [dx, r] of [[-0.075, 0.042], [0.045, 0.036]]) {
-      const face = mesh(new THREE.CircleGeometry(r, 24), dialFace, DRIVER_X + dx, 0.705, 0.148);
+    const dials = [
+      { dx: -0.078, r: 0.05, max: this.tachMax, step: 1000, label: (v) => String(v / 1000), red: redline, caption: 'RPM x1000' },
+      { dx: 0.05, r: 0.044, max: 240, step: 20, labelEvery: 40, label: (v) => String(v), red: null, caption: 'KM/H' },
+    ];
+    for (const d of dials) {
+      const faceMat = new THREE.MeshBasicMaterial({ map: this.dialTexture(d), toneMapped: false });
+      const face = mesh(new THREE.CircleGeometry(d.r, 32), faceMat, DRIVER_X + d.dx, 0.705, 0.148);
       face.rotation.y = Math.PI;                // facing the driver
       face.castShadow = false;
       g.add(face);
+      const rim = mesh(new THREE.TorusGeometry(d.r, 0.004, 6, 32), mats.chrome, DRIVER_X + d.dx, 0.705, 0.147);
+      rim.castShadow = false;
+      g.add(rim);
       const needle = new THREE.Group();
-      needle.position.set(DRIVER_X + dx, 0.705, 0.146);
-      const stick = mesh(new THREE.BoxGeometry(0.004, r * 0.85, 0.002), needleMat, 0, r * 0.4, 0);
+      needle.position.set(DRIVER_X + d.dx, 0.705, 0.145);
+      const stick = mesh(new THREE.BoxGeometry(0.0035, d.r * 0.85, 0.002), needleMat, 0, d.r * 0.4, 0);
       stick.castShadow = false;
       needle.add(stick);
       g.add(needle);
       this.needles.push(needle);
     }
+    // Shift lights: a row of ten bright lamps along the top of the dash, above
+    // the rev counter: green, then red, then blue at the redline. All flash
+    // on the rev limiter.
+    this.leds = [];
+    const ledGeo = new THREE.SphereGeometry(0.0055, 10, 8);
+    for (let i = 0; i < 10; i++) {
+      const led = new THREE.Mesh(ledGeo, new THREE.MeshBasicMaterial({ color: 0x111111, toneMapped: false }));
+      led.position.set(DRIVER_X + 0.072 - i * 0.016, 0.757, 0.15);   // left to right as the driver sees it
+      g.add(led);
+      this.leds.push(led);
+    }
+    this.ledOn = [0x2bdc4a, 0x2bdc4a, 0x2bdc4a, 0x2bdc4a, 0xff2a2a, 0xff2a2a, 0xff2a2a, 0x3a8bff, 0x3a8bff, 0x3a8bff]
+      .map((c) => new THREE.Color(c).multiplyScalar(2.2));
+    this.ledOff = new THREE.Color(0x141414);
 
     // --- Digital display in the middle of the dash: in the driver's-eye
     // view the on-screen dials go away and everything shows here instead:
@@ -202,26 +231,27 @@ export class Cockpit {
     // --- The driver ---
     this.driver = new THREE.Group();
     g.add(this.driver);
-    const torso = mesh(new THREE.CylinderGeometry(0.155, 0.135, 0.33, 14), suit, DRIVER_X, 0.8, -0.52);
+    // (sitting up straight against the seat: shoulders over the hips, head on top)
+    const torso = mesh(new THREE.CylinderGeometry(0.155, 0.135, 0.33, 14), suit, DRIVER_X, 0.8, -0.535);
     torso.scale.z = 0.65;
-    torso.rotation.x = -0.2;
+    torso.rotation.x = -0.1;
     this.driver.add(torso);
-    this.driver.add(mesh(new THREE.SphereGeometry(0.072, 12, 10), suitPlain, DRIVER_X, 0.94, -0.49));   // shoulders/collar
+    this.driver.add(mesh(new THREE.SphereGeometry(0.072, 12, 10), suitPlain, DRIVER_X, 0.94, -0.535));   // shoulders/collar
     for (const s of [SHOULDER_L, SHOULDER_R]) this.driver.add(mesh(new THREE.SphereGeometry(0.053, 12, 10), suitPlain, s.x, s.y, s.z));
     // Harness: two shoulder belts and a lap belt, with the buckle in the middle
     for (const sx of [-0.07, 0.07]) {
-      const belt = mesh(new THREE.BoxGeometry(0.045, 0.3, 0.012), strap, DRIVER_X + sx, 0.8, -0.415);
-      belt.rotation.x = -0.2;
+      const belt = mesh(new THREE.BoxGeometry(0.045, 0.3, 0.012), strap, DRIVER_X + sx, 0.8, -0.44);
+      belt.rotation.x = -0.1;
       this.driver.add(belt);
     }
-    this.driver.add(mesh(new THREE.BoxGeometry(0.3, 0.045, 0.012), strap, DRIVER_X, 0.68, -0.44));
-    const clasp = mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.012, 16), buckle, DRIVER_X, 0.69, -0.433);
+    this.driver.add(mesh(new THREE.BoxGeometry(0.3, 0.045, 0.012), strap, DRIVER_X, 0.68, -0.455));
+    const clasp = mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.012, 16), buckle, DRIVER_X, 0.69, -0.448);
     clasp.rotation.x = Math.PI / 2;
     this.driver.add(clasp);
     // Head: the helmet and visor (hidden in the driver's-eye view). The car
     // faces +z, so the visor is centred on +z
     this.head = new THREE.Group();
-    this.head.position.set(DRIVER_X, 1.045, -0.44);
+    this.head.position.set(DRIVER_X, 1.06, -0.54);              // right above the shoulders, not poking forward
     this.head.add(mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.1, 10), suitPlain, 0, -0.08, 0));   // neck
     // HANS device: the black collar that sits on the shoulders behind the helmet
     const hans = mesh(new THREE.TorusGeometry(0.085, 0.022, 8, 20, Math.PI * 1.2), strap, 0, -0.1, -0.01);
@@ -291,6 +321,50 @@ export class Cockpit {
     this._e = new THREE.Euler();
     this.shiftHold = 0;
     this.firstPerson = false;
+  }
+
+  // A printed dial face. Angles: from straight up, clockwise as the driver
+  // sees it, from -SWEEP_START (bottom left) through SWEEP radians.
+  dialTexture({ max, step, labelEvery = step, label, red, caption }) {
+    const S = 256, c0 = S / 2;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = S;
+    const g = cv.getContext('2d');
+    g.fillStyle = '#0a0b0d';
+    g.fillRect(0, 0, S, S);
+    const at = (v) => -SWEEP_START + SWEEP * (v / max);
+    const pt = (a, r) => [c0 + Math.sin(a) * r, c0 - Math.cos(a) * r];
+    if (red) {                                       // the red zone
+      g.strokeStyle = '#e0261c';
+      g.lineWidth = 16;
+      g.beginPath();
+      g.arc(c0, c0, S * 0.4, at(red) - Math.PI / 2, at(max) - Math.PI / 2);
+      g.stroke();
+    }
+    for (let v = 0; v <= max + 1e-6; v += step / 2) {
+      const major = Math.abs(v / step - Math.round(v / step)) < 1e-6;
+      const [x0, y0] = pt(at(v), S * (major ? 0.36 : 0.4));
+      const [x1, y1] = pt(at(v), S * 0.46);
+      g.strokeStyle = red && v >= red ? '#ff4a3d' : '#f2efe6';
+      g.lineWidth = major ? 5 : 2.5;
+      g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
+      if (major && Math.abs(v / labelEvery - Math.round(v / labelEvery)) < 1e-6) {
+        const [tx, ty] = pt(at(v), S * 0.26);
+        g.fillStyle = red && v >= red ? '#ff4a3d' : '#f2efe6';
+        g.font = `bold ${S * 0.12}px Arial, sans-serif`;
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillText(label(v), tx, ty);
+      }
+    }
+    g.fillStyle = '#9aa0a8';
+    g.font = `${S * 0.075}px Arial, sans-serif`;
+    g.textAlign = 'center';
+    g.fillText(caption, c0, S * 0.74);
+    const t = new THREE.CanvasTexture(cv);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 4;
+    return t;
   }
 
   // Hide the helmet when looking out through it
@@ -370,8 +444,14 @@ export class Cockpit {
     this.brakeUp += ((st.handbrake ? 1 : 0) - this.brakeUp) * (1 - Math.exp(-dt / 0.05));
     this.brake.rotation.x = -0.15 - 0.5 * this.brakeUp;
     // Dials
-    this.needles[0].rotation.z = 2.2 - 4.2 * Math.min(1.05, st.rpm / (st.redline * 1.1));
-    this.needles[1].rotation.z = 2.2 - 4.2 * Math.min(1, st.speedKmh / 240);
+    // (the face is turned to the driver, so a clockwise sweep as he sees it
+    // is a growing angle here)
+    this.needles[0].rotation.z = -SWEEP_START + SWEEP * Math.min(1.02, st.rpm / this.tachMax);
+    this.needles[1].rotation.z = -SWEEP_START + SWEEP * Math.min(1, st.speedKmh / 240);
+    // Shift lights
+    const lit = Math.max(0, Math.min(1, (st.rpm - st.redline * 0.7) / (st.redline * 0.3))) * this.leds.length;
+    const flash = st.limiter && (performance.now() % 160) < 80;
+    this.leds.forEach((led, i) => led.material.color.copy(flash ? this.ledOn[9] : i < lit ? this.ledOn[i] : this.ledOff));
     // Head leans into the corners a little
     this.head.rotation.z = THREE.MathUtils.clamp(st.lean * 0.03, -0.18, 0.18);
 
