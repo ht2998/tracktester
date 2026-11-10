@@ -11,7 +11,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 3;
+export const BUILD = 5;
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -249,29 +249,76 @@ function makeCrackleBuffer(ctx, seconds = 2) {
 // Grass squelch: short, wet "blobs" as the tyres press into soft earth and
 // sap. Each is a quick downward sweep of a muffled tone that dies away
 // (looped, sped up with road speed so faster = more squelches)
-// Rain patter: separate drops ticking on the car and the road. Each is a
-// tiny bright tick, now and then a duller "plip" on the bodywork (looped;
-// played faster for more drops)
-function makePatterBuffer(ctx, seconds = 3) {
+// Rain patter: separate drops ticking on the car and the road, "tck tck
+// tck". Each drop is a tiny dry click (a millisecond or two of hiss with a
+// hard edge), some brighter (on the bodywork), some duller (on the road).
+// Looped; played faster for more drops.
+function makePatterBuffer(ctx, seconds = 4) {
   const sr = ctx.sampleRate;
   const buffer = ctx.createBuffer(1, sr * seconds, sr);
   const data = buffer.getChannelData(0);
-  let t = 0;
-  while (t < seconds - 0.05) {
-    const start = Math.floor(t * sr);
-    const body = Math.random() < 0.25;                      // landed on the car
-    const f = body ? 500 + Math.random() * 700 : 2500 + Math.random() * 3500;
-    const decay = body ? 0.02 : 0.004 + Math.random() * 0.004;
-    const amp = (body ? 0.5 : 0.35) * (0.3 + Math.random() * 0.7);
-    const n = Math.floor(decay * 5 * sr);
-    let phase = Math.random() * 6;
-    for (let i = 0; i < n && start + i < data.length; i++) {
-      const env = Math.exp(-i / (decay * sr));
-      phase += (2 * Math.PI * f) / sr;
-      data[start + i] += amp * env * (0.6 * Math.sin(phase) + 0.4 * (Math.random() * 2 - 1));
-    }
-    t += 0.004 + Math.random() * 0.045;                      // irregular: real rain never keeps time
+  // A faint wash of far-off drops underneath, so it isn't too clean
+  let soft = 0;
+  for (let i = 0; i < data.length; i++) {
+    soft += ((Math.random() * 2 - 1) - soft) * 0.35;
+    data[i] = soft * 0.035 * (0.7 + 0.3 * Math.sin(i / sr * 1.7));
   }
+  const tick = (start, onCar, scale) => {
+    const decay = (onCar ? 0.0016 : 0.0024) + Math.random() * 0.0014;   // seconds: short, but a soft tap rather than a click
+    const amp = (onCar ? 0.9 : 0.6) * (0.35 + Math.random() * 0.65);
+    const ring = onCar ? 1800 + Math.random() * 1400 : 900 + Math.random() * 900;   // the "t" of the tap
+    const n = Math.floor(decay * 7 * sr);
+    let phase = 0, smooth = 0;
+    for (let i = 0; i < n && start + i < data.length; i++) {
+      const env = Math.min(1, i / (sr * 0.0004)) * Math.exp(-i / (decay * sr));   // a soft edge, not a hard click
+      phase += (2 * Math.PI * ring) / sr;
+      const noise = Math.random() * 2 - 1;
+      smooth += (noise - smooth) * 0.45;                          // takes the sharp fizz off
+      data[start + i] += scale * amp * env * (0.6 * smooth + 0.4 * Math.sin(phase));
+    }
+  };
+  let t = 0.01;
+  while (t < seconds - 0.03) {
+    const start = Math.floor(t * sr);
+    const onCar = Math.random() < 0.4;
+    tick(start, onCar, 1);
+    // some drops splatter: a second, smaller tick just after the first
+    if (Math.random() < 0.3) tick(start + Math.floor(sr * (0.003 + Math.random() * 0.008)), onCar, 0.4 + Math.random() * 0.3);
+    // now and then a dull, softer drop (on the tyre or the seat)
+    if (Math.random() < 0.15) tick(start + Math.floor(sr * (0.01 + Math.random() * 0.03)), false, 0.5);
+    // uneven gaps, sometimes in little clusters: real rain never keeps time
+    t += Math.random() < 0.2 ? 0.008 + Math.random() * 0.02 : 0.03 + Math.random() * 0.11;
+  }
+  return buffer;
+}
+
+// Thunder: a big bang that rolls away into a rumble.
+// Made once, then played louder or softer (and more muffled) by distance.
+function makeThunderBuffer(ctx, seconds = 6) {
+  const sr = ctx.sampleRate;
+  const buffer = ctx.createBuffer(2, sr * seconds, sr);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buffer.getChannelData(ch);
+    // The bang: a huge low boom that swells in fast and rolls away
+    let low = 0, low2 = 0;
+    const k1 = 1 - Math.exp(-2 * Math.PI * 240 / sr);
+    const k2 = 1 - Math.exp(-2 * Math.PI * 70 / sr);
+    for (let i = 0; i < d.length; i++) {
+      const tt = i / sr;
+      const env = Math.min(1, tt / 0.06) * (0.55 * Math.exp(-tt / 0.5) + 0.45 * Math.exp(-tt / 2.2));
+      // rolling: the rumble surges a few times as it fades
+      const roll = 0.75 + 0.25 * Math.sin(tt * 5.3 + ch) * Math.sin(tt * 2.1);
+      const n = Math.random() * 2 - 1;
+      low += (n - low) * k1;
+      low2 += (low - low2) * k2;
+      // (plus a burst of raw crash at the start of the bang)
+      d[i] += env * roll * (low * 3.2 + low2 * 6) + n * 0.4 * Math.min(1, tt / 0.02) * Math.exp(-tt / 0.18);
+    }
+  }
+  // Keep it inside the speaker's range
+  let peak = 0;
+  for (let ch = 0; ch < 2; ch++) for (const v of buffer.getChannelData(ch)) peak = Math.max(peak, Math.abs(v));
+  for (let ch = 0; ch < 2; ch++) { const d = buffer.getChannelData(ch); for (let i = 0; i < d.length; i++) d[i] /= peak; }
   return buffer;
 }
 
@@ -1036,8 +1083,8 @@ export class EngineSound {
     const t = this.ctx.currentTime;
     const roar = Math.max(0, (rain - 0.4) / 0.6);              // moderate rain upwards
     // Patter: on its own in light rain, fading under the roar in heavy rain
-    this.patterGain.gain.setTargetAtTime(rain > 0.01 ? (0.25 + 1.4 * Math.min(rain, 0.5)) * (1 - 0.6 * roar) : 0, t, 0.3);
-    this.patterSrc.playbackRate.setTargetAtTime(0.5 + 1.6 * Math.min(rain, 0.5), t, 0.3);   // more drops
+    this.patterGain.gain.setTargetAtTime(rain > 0.01 ? (0.22 + 0.9 * Math.min(rain, 0.5)) * (1 - 0.6 * roar) : 0, t, 0.3);
+    this.patterSrc.playbackRate.setTargetAtTime(0.7 + 1.6 * Math.min(rain, 0.5), t, 0.3);   // more drops
     this.roarGain.gain.setTargetAtTime(0.32 * Math.pow(roar, 0.8), t, 0.4);
     this.roarLowGain.gain.setTargetAtTime(0.4 * roar * roar, t, 0.4);
     // Wet road: the tyres swish (more the faster and wetter)
@@ -1057,37 +1104,22 @@ export class EngineSound {
     this.frameGain.gain.setTargetAtTime(level, t, 0.05);
   }
 
-  // Thunder. strength 0-1 (close strikes are loud and start with a crack)
+  // Thunder. strength 0-1: a close strike is loud and sharp; a far
+  // one is quieter and muffled (the crack and rattle don't carry, only the rumble)
   playThunder(strength) {
     if (!this.ctx) return;
     const ctx = this.ctx;
-    const t0 = ctx.currentTime;
-    const out = this.master;                       // straight out: thunder is all around, not part of the car
-    const burst = (at, length, type, freq, q, peak, attack) => {
-      const src = ctx.createBufferSource();
-      src.buffer = this.noise;
-      src.loop = true;
-      const f = ctx.createBiquadFilter();
-      f.type = type;
-      f.frequency.value = freq;
-      f.Q.value = q;
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0.0001, at);
-      g.gain.exponentialRampToValueAtTime(peak, at + attack);
-      g.gain.exponentialRampToValueAtTime(0.0005, at + length);
-      src.connect(f).connect(g).connect(out);
-      src.start(at, Math.random() * 1.5);
-      src.stop(at + length + 0.1);
-    };
-    if (strength > 0.65) burst(t0, 0.35, 'highpass', 1200, 0.7, 0.55 * strength, 0.005);   // the crack of a close strike
-    // The rolling rumble: several overlapping swells, getting lower and slower
-    const rolls = 3 + Math.round(strength * 3);
-    let at = t0 + (strength > 0.65 ? 0.05 : 0.2);
-    for (let k = 0; k < rolls; k++) {
-      const len = 1.2 + Math.random() * 2.2;
-      burst(at, len, 'lowpass', 90 + Math.random() * 120, 0.9, (0.45 + Math.random() * 0.3) * strength, 0.15 + Math.random() * 0.3);
-      at += 0.4 + Math.random() * 0.9;
-    }
+    this.thunderBuffer = this.thunderBuffer || makeThunderBuffer(ctx);
+    const src = ctx.createBufferSource();
+    src.buffer = this.thunderBuffer;
+    src.playbackRate.value = 0.92 + Math.random() * 0.16;          // each strike a little different
+    const tone = ctx.createBiquadFilter();
+    tone.type = 'lowpass';
+    tone.frequency.value = 400 + 9000 * strength * strength;        // far away = muffled
+    const g = ctx.createGain();
+    g.gain.value = 1.6 * Math.pow(Math.max(0.2, strength), 0.75);    // loud, and louder the closer it is
+    src.connect(tone).connect(g).connect(this.master);              // straight out: thunder is all around
+    src.start();
   }
 
   // Grass, called every frame. share: how many tyres are on it (0-1),
