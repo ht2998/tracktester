@@ -45,7 +45,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 4;
+const BUILD = 6;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -296,11 +296,11 @@ function buildGravel() {
 }
 buildGravel();
 
-// GRASS: a 5 x 5 square patch (10 m x 10 m) just past the gravel trap.
+// GRASS: a big patch (19 m x 28 m) just past the gravel trap.
 // Slippery and a bit draggy (see SURFACES.grass in physics.js); tyres
 // press it flat and leave dark brown tracks.
-const GRASS = { minX: -16, maxX: -6, minZ: 16, maxZ: 26 };
-const grass = new GrassPatch(scene, GRASS, { tufts: isMobile ? 4500 : 9000 });
+const GRASS = { minX: -24, maxX: -5, minZ: 16, maxZ: 44 };
+const grass = new GrassPatch(scene, GRASS, { tufts: isMobile ? 9000 : 24000 });
 
 // ---------------------------------------------------------------------
 // CONES: drawn with INSTANCING (one cone model, drawn many times at once)
@@ -342,7 +342,7 @@ const echoSurfaces = buildScenery(scene);
 // ---------------------------------------------------------------------
 function pickPuddleSpots(count) {
   const blocked = [
-    [-21, 0, -5, 27],      // gravel trap, grass patch, tyre wall and fence
+    [-25, 0, -4, 45],      // gravel trap, grass patch, tyre wall and fence
     [21, 39, 33, 83],      // pit garages
     [-31, 71, -15, 87],    // race control
     [8.5, 94, 11.5, 142],  // concrete wall
@@ -368,11 +368,10 @@ const rain = new RainSystem(scene, {
   spots: {
     puddles: pickPuddleSpots(isMobile ? 12 : 18),
     // Mud: low spots in the grass patch
-    mud: [
-      { x: -12 + Math.random() * 2, z: 19.5 + Math.random() * 2, r: 1.7, start: 0 },
-      { x: -8.4, z: 23.6, r: 1.2, start: 0.2 },
-      { x: -14.2, z: 24.6, r: 1.0, start: 0.4 },
-    ],
+    mud: Array.from({ length: 6 }, (_, i) => ({
+      x: -21 + Math.random() * 13, z: 19 + (i / 6) * 22 + Math.random() * 3,
+      r: 1.1 + Math.random() * 1.2, start: i === 0 ? 0 : Math.random() * 0.5,
+    })),
   },
 });
 
@@ -587,7 +586,7 @@ function buildCar() {
 
 const carModel = buildCar();
 // The cockpit and the driver (cockpit.js)
-const cockpit = new Cockpit(carModel.car, MAT, { isMobile });
+const cockpit = new Cockpit(carModel.car, MAT, { isMobile, redline: CATERHAM.redline });
 // Each kind of tyre has its own look: F1-style coloured bands, tread
 // patterns, knobbly dirt tyres, snow chains (tyres.js)
 const tyreLooks = new TyreLooks(carModel.car, carModel.tyres, { radius: WHEEL_RADIUS, width: WHEEL_WIDTH });
@@ -913,12 +912,42 @@ const shreds = new TyreShreds(scene, skids, { max: isMobile ? 40 : 60 });
 // physics.js) or 'tarmac'. There's a gravel trap and a grass patch so far.
 const surfaceAt = (x, z) => (inGravel(x, z) ? 'gravel' : grass.contains(x, z) ? 'grass' : 'tarmac');
 const dirtTyres = () => TYRES[physics.tyreCompound].kind === 'dirt';
-// In the wet: how much grip each kind of tyre keeps on a soaked track, and
-// how easily it aquaplanes in standing water (deep tread clears the water;
-// smooth slicks float on it)
-const WET_GRIP = { road: 0.7, slick: 0.5, wet: 0.88, dirt: 0.75, snow: 0.8 };
-const AQUAPLANE = { road: 0.75, slick: 0.92, wet: 0.35, dirt: 0.55, snow: 0.5 };
+// IN THE WET: grip depends on how much water each tyre can clear away.
+// Every second, a tyre has to push aside (water depth x tyre width x speed)
+// litres of water. Its tread grooves can clear DRAIN litres a second; if
+// more water arrives than it can clear, the tyre starts riding up on the
+// water (aquaplaning) and loses grip. So slicks (no grooves) only cope
+// slowly on a damp track, road tyres handle a wet road but not deep
+// puddles at speed, and full wets clear even big puddles.
+// Also, rubber on a wet surface grips a little less anyway (WET_RUBBER).
+const DRAIN = {                       // litres per second
+  RS: 2, RM: 2, RH: 2,
+  SS: 14, SM: 16, SH: 17, CS: 18, CM: 19, CH: 20,
+  IM: 30, W: 55, DIRT: 18, SNOW: 20,
+};
+const WET_RUBBER = { slick: 0.3, road: 0.15, wet: 0.05, dirt: 0.15, snow: 0.1 };
+const TYRE_WIDTH = 0.195;              // metres
 const tyreKind = () => TYRES[physics.tyreCompound].kind;
+// How deep the water is at a point, in metres
+function waterDepth(x, z) {
+  const film = (0.4 * rain.wetness + 0.3 * rain.intensity) / 1000;   // a thin film over the whole track
+  const puddle = rain.puddleAt(x, z);
+  return film + (puddle > 0 ? (2 + 6 * puddle) / 1000 : 0);           // puddles: 2-8 mm
+}
+// Share of grip left in the water at a point (1 = as good as dry)
+function wetGrip(x, z) {
+  const depth = waterDepth(x, z);
+  if (depth <= 0) return 1;
+  const speed = Math.hypot(physics.vx, physics.vy);
+  const litres = depth * TYRE_WIDTH * speed * 1000;                    // water to clear each second
+  const over = litres / (DRAIN[physics.tyreCompound] ?? 16);          // >1: more than the tread can clear
+  const aquaplane = THREE.MathUtils.smoothstep(over, 0.5, 2.2);
+  const deep = Math.min(1, rain.puddleAt(x, z) * 1.5);
+  const rubber = 1 - WET_RUBBER[tyreKind()] * Math.min(1, rain.wetness + rain.puddleAt(x, z));
+  // standing water always takes some grip, even slowly (the tyre has to wade through it)
+  const wading = 1 - 0.18 * deep;
+  return rubber * wading * (1 - (0.5 + 0.35 * deep) * aquaplane);
+}
 physics.surfaceGrip = (x, z) => {
   const surface = surfaceAt(x, z);
   const wet = rain.wetness;
@@ -931,17 +960,7 @@ physics.surfaceGrip = (x, z) => {
     }
     return g;
   }
-  // Wet tarmac: full wet tyres (W) grip best of all; intermediates nearly as well
-  let wetGrip = WET_GRIP[kind];
-  if (physics.tyreCompound === 'W') wetGrip = 0.96;
-  let g = 1 - (1 - wetGrip) * wet;
-  // Aquaplaning: in a puddle at speed the tyre rides up on the water
-  const puddle = rain.puddleAt(x, z);
-  if (puddle > 0) {
-    const speed = Math.hypot(physics.vx, physics.vy);
-    const lift = puddle * THREE.MathUtils.smoothstep(speed, 12, 32) * (physics.tyreCompound === 'W' ? 0.22 : AQUAPLANE[kind]);
-    g *= 1 - 0.85 * lift - 0.08 * puddle;
-  }
+  const g = wetGrip(x, z);
   const onOil = oil.gripAt(x, z);
   return g * (onOil < 1 ? onOil : skids.gripAt(x, z));
 };
@@ -1034,6 +1053,7 @@ const smokeWorld = new THREE.Vector3();
 const skidWorld = new THREE.Vector3();
 const carVelocity = new THREE.Vector3();
 let puddleUnder = 0;   // how much standing water the tyres are in (0-1), for the sound
+let mudUnder = 0;      // ...and how much mud they're churning through
 
 function updateSmoke(dt) {
   const sin = Math.sin(physics.heading);
@@ -1049,6 +1069,7 @@ function updateSmoke(dt) {
   // Tyre smoke on tarmac, tan dust in the gravel
   const smoothWet = THREE.MathUtils.smoothstep(rain.wetness, 0.05, 0.4);
   puddleUnder = 0;
+  mudUnder = 0;
   let gravelWheels = 0;
   let grassWheels = 0;
   for (const p of SMOKE_POINTS) {
@@ -1065,20 +1086,24 @@ function updateSmoke(dt) {
     const slip = p.onGravel || p.onGrass || !rubberOn ? 0 : physics.tyreSlip[p.axle] * (1 - 0.8 * rain.wetness);
     smoke.emitFrom(p.id, smokeWorld, slip, carVelocity, dt);
     const skid = p.axle === 'rear' ? rearSkid : frontSkid;
-    const kick = Math.min(1, Math.min(1, speed / 18) * 0.45 + skid * 0.8);
+    const kick = Math.min(1, Math.min(1, speed / 12) * 0.7 + skid * 0.8);   // dust whenever driving through it
     dust.emitFrom(p.id, smokeWorld, p.onGravel ? kick * (1 - 0.85 * rain.wetness) : 0, carVelocity, dt);
     // Wet tarmac: spray off the back of the tyre, much more through a puddle
     const puddle = p.onGravel || p.onGrass ? 0 : rain.puddleAt(smokeWorld.x, smokeWorld.z);
     puddleUnder += puddle / 4;
-    const fast = Math.min(1, speed / 22);
-    const sprayAmount = p.onGravel || p.onGrass || tyre.detached ? 0
-      : Math.min(1, fast * (0.55 * rain.wetness * smoothWet + 1.6 * puddle) + 0.3 * skid * rain.wetness);
+    // (whenever the car is moving on a wet road, not just when sliding: more
+    // the faster you go)
+    const fast = Math.min(1, speed / 14);
+    const sprayAmount = p.onGravel || p.onGrass || tyre.detached || speed < 1 ? 0
+      : Math.min(1, fast * (0.9 * smoothWet + 2 * puddle) + 0.3 * skid * rain.wetness);
     spray.emitFrom(p.id, smokeWorld, sprayAmount, carVelocity, dt);
     // Grass: clippings and brown dust when dry; brown spray when wet, worse in mud
-    const churn = p.onGrass && !tyre.detached ? Math.min(1, Math.min(1, speed / 15) * 0.5 + skid) : 0;
+    // (whenever the car is driving on it, more the faster, and more again when sliding)
+    const churn = p.onGrass && !tyre.detached && speed > 0.4 ? Math.min(1, 0.45 + 0.55 * Math.min(1, speed / 10) + skid) : 0;
     const mud = p.onGrass ? rain.mudAt(smokeWorld.x, smokeWorld.z) : 0;
-    grassDust.emitFrom(p.id, smokeWorld, churn * 0.8 * (1 - rain.wetness), carVelocity, dt);
-    mudSpray.emitFrom(p.id, smokeWorld, Math.min(1, churn * (0.7 * rain.wetness + 1.2 * mud)), carVelocity, dt);
+    grassDust.emitFrom(p.id, smokeWorld, churn * 0.8 * (1 - 0.7 * rain.wetness), carVelocity, dt);
+    mudSpray.emitFrom(p.id, smokeWorld, Math.min(1, churn * (0.9 * rain.wetness + 1.2 * mud)), carVelocity, dt);
+    mudUnder += mud * Math.min(1, churn * 2) / 4;
     grassBits.emit(p.id, smokeWorld, carVelocity, churn * (1 - 0.6 * mud), 40, dt);
     mudClumps.emit(p.id, smokeWorld, carVelocity, churn * Math.min(1, mud * 1.5 + 0.3 * rain.wetness), 30, dt);
   }
@@ -1444,6 +1469,7 @@ renderer.setAnimationLoop(() => {
   engineSound.setRimScrape(physics.rimsDown, carSpeed, rimSlide);
   engineSound.setFrameScrape?.(physics.framesDown, carSpeed);
   engineSound.setRain?.(rain.intensity, rain.wetness, carSpeed, puddleUnder);
+  engineSound.setMud?.(mudUnder, carSpeed);
 
   hud.update({
     sky: { clock: sky.clock, hours: sky.hours, speed: sky.speed, locked: sky.locked,
