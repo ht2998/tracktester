@@ -14,7 +14,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 2;
+export const BUILD = 3;
 
 const m4 = new THREE.Matrix4();
 const q = new THREE.Quaternion();
@@ -148,7 +148,9 @@ function buildGarages(scene, x, z0, z1, depth = 10, height = 5) {
   const binColours = [0x2c64c8, 0xd23a2a, 0xe8b72c, 0x3f8f4a, 0x555a60];
   for (let i = 0; i < bays; i++) {
     const zc = z0 + (i + 0.5) * bayLen;
-    const zl = zc - bayLen / 2 + 0.2, zr = zc + bayLen / 2 - 0.2;     // the bay's side walls
+    // the inside faces of the bay's side walls (the end walls are thicker than the ones between bays)
+    const zl = zc - bayLen / 2 + (i === 0 ? 0.3 : 0.1) + 0.03;
+    const zr = zc + bayLen / 2 - (i === bays - 1 ? 0.3 : 0.1) - 0.03;
     // the rolled-up door at the top of the doorway
     L.drum.push([x + 0.45, OPEN_H - 0.2, zc, 0, 1, OPEN_W, 1]);
     // a yellow line across the doorway
@@ -176,8 +178,9 @@ function buildGarages(scene, x, z0, z1, depth = 10, height = 5) {
     // A red tool chest against one side wall, with a tool board above it
     const side = i % 2 ? 1 : -1;
     const wallZ = side > 0 ? zr : zl;
-    L.chest.push([x + 5.5, 0.55, wallZ - side * 0.3, side > 0 ? Math.PI : 0]);
-    L.chestTop.push([x + 5.5, 1.22, wallZ - side * 0.3, side > 0 ? Math.PI : 0]);
+    // (turned so its back is against the wall: 0.55 m deep, 1 m wide)
+    L.chest.push([x + 5.5, 0.55, wallZ - side * 0.3, side > 0 ? Math.PI / 2 : -Math.PI / 2]);
+    L.chestTop.push([x + 5.5, 1.22, wallZ - side * 0.3, side > 0 ? Math.PI / 2 : -Math.PI / 2]);
     L.board.push([x + 5.5, 1.95, wallZ - side * 0.02, side > 0 ? Math.PI : 0]);
     // Stacks of wheels by the doorway on the other side
     const tyreZ = side > 0 ? zl + 0.45 : zr - 0.45;
