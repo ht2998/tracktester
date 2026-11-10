@@ -23,6 +23,8 @@ import { startUpdates, BUILD as UPDATES_BUILD } from './updates.js';
 import { GodRays, BUILD as GODRAYS_BUILD } from './godrays.js';
 import { RainSystem } from './rain.js';
 import { Cockpit, EYE } from './cockpit.js';
+import { TyreLooks } from './tyres.js';
+import * as tyresFile from './tyres.js';
 import * as cockpitFile from './cockpit.js';
 import { FlyingBits, MetalFlakes, LooseWheel } from './effects.js';
 import * as rainFile from './rain.js';
@@ -43,7 +45,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 3;
+const BUILD = 4;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -52,7 +54,7 @@ const updateScreen = startUpdates({
   'smoke.js': smokeFile.BUILD, 'hud.js': hudFile.BUILD, 'oil.js': oilFile.BUILD,
   'skids.js': skidsFile.BUILD, 'scenery.js': sceneryFile.BUILD, 'grass.js': grassFile.BUILD,
   'sky.js': skyFile.BUILD, 'debris.js': debrisFile.BUILD, 'touch.js': touchFile.BUILD,
-  'rain.js': rainFile.BUILD, 'effects.js': effectsFile.BUILD, 'cockpit.js': cockpitFile.BUILD,
+  'rain.js': rainFile.BUILD, 'effects.js': effectsFile.BUILD, 'cockpit.js': cockpitFile.BUILD, 'tyres.js': tyresFile.BUILD,
 });
 
 // ---------------------------------------------------------------------
@@ -586,6 +588,9 @@ function buildCar() {
 const carModel = buildCar();
 // The cockpit and the driver (cockpit.js)
 const cockpit = new Cockpit(carModel.car, MAT, { isMobile });
+// Each kind of tyre has its own look: F1-style coloured bands, tread
+// patterns, knobbly dirt tyres, snow chains (tyres.js)
+const tyreLooks = new TyreLooks(carModel.car, carModel.tyres, { radius: WHEEL_RADIUS, width: WHEEL_WIDTH });
 
 // HEADLIGHTS: G cycles off -> dipped -> main beam. Dipped lights the road
 // close ahead; main beam reaches much further.
@@ -645,6 +650,7 @@ function updateWheels(steer, spin) {
     // Gone: the wheel has come off (it's rolling away on its own; see looseWheels)
     if (tyre.detached) {
       carModel.tyres.setMatrixAt(i, HIDDEN);
+      tyreLooks.setMatrixAt(i, HIDDEN);
       carModel.rims.setMatrixAt(i, HIDDEN);
       carModel.spokes.setMatrixAt(i * 2, HIDDEN);
       carModel.spokes.setMatrixAt(i * 2 + 1, HIDDEN);
@@ -664,12 +670,14 @@ function updateWheels(steer, spin) {
           sy * shrink, (1 + bulge * 0.6) * shrink).multiply(spinMatrix);
         squashMatrix.setPosition(x, y + WHEEL_RADIUS * (1 - sy * shrink), z);
         carModel.tyres.setMatrixAt(i, squashMatrix);
+        tyreLooks.setMatrixAt(i, squashMatrix);
         carModel.rims.setMatrixAt(i, wheelMatrix);
       }
       carModel.spokes.setMatrixAt(i * 2 + k, wheelMatrix);
     }
   });
   carModel.tyres.instanceMatrix.needsUpdate = true;
+  tyreLooks.update();
   carModel.rims.instanceMatrix.needsUpdate = true;
   carModel.spokes.instanceMatrix.needsUpdate = true;
 }
@@ -883,6 +891,7 @@ function releaseWheels() {
 // DRIVING
 // ---------------------------------------------------------------------
 const physics = new CarPhysics();
+tyreLooks.apply(physics.tyreCompound);
 
 // Oil dripped by a badly damaged engine. Tyres on oil lose grip.
 const oil = new OilSlicks(scene);
@@ -1171,7 +1180,7 @@ const hud = new Hud({
   redline: CATERHAM.redline,
   onTransmission: (name) => physics.setTransmission(name),
   onAssist: (name, on) => { physics.assists[name] = on; },
-  onTyres: (id) => physics.setTyres(id),
+  onTyres: (id) => { physics.setTyres(id); tyreLooks.apply(id); },
   tyreOptions: TYRES,
   compact: touchMode,   // mini gauges at the top on phones
   timeSpeeds: TIME_SPEEDS,
@@ -1292,6 +1301,7 @@ function switchCamera() {
   camera.fov = CAMERA_FOV[cameraMode];
   camera.near = ON_CAR[cameraMode]?.near ?? 0.1;
   cockpit.setFirstPerson(cameraMode === 'cockpit');
+  hud.setInCar?.(cameraMode === 'cockpit');
   camera.updateProjectionMatrix();
   fitViewport();
   controls.enabled = cameraMode === 'showroom';
@@ -1392,6 +1402,11 @@ renderer.setAnimationLoop(() => {
     steer: physics.steer, gear: physics.gear, transmission: physics.transmission,
     handbrake: !!input.handbrake, rpm: physics.rpm, redline: CATERHAM.redline,
     speedKmh: physics.speedKmh, lean: physics.yawRate * physics.vx,
+  });
+  cockpit.drawScreen(dt, {
+    speedKmh: physics.speedKmh, rpm: physics.rpm, redline: CATERHAM.redline, gearLabel: physics.gearLabel,
+    limiter: physics.limiter, fuel: physics.fuelLevel, oil: physics.oilLevel, tyres: physics.tyres,
+    health: physics.engineHealth,
   });
   updateSmoke(dt);
   releaseWheels();
