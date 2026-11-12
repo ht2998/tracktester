@@ -47,7 +47,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 14;
+const BUILD = 15;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -339,9 +339,9 @@ if (!SEPANG) buildGravel();
 // press it flat and leave dark brown tracks.
 const GRASS = { minX: -24, maxX: -5, minZ: 16, maxZ: 44 };
 // At Sepang the grass is everywhere off the track, so the 3D tufts grow
-// around the car (and fade out further away, where the painted grass takes
-// over), and the gravel traps get loose stones the same way. They keep a
-// little away from the edges, and out of the buildings.
+// wherever the camera is looking (thinning out and fading into the painted
+// grass far away), and the gravel traps get loose stones the same way.
+// They keep a little away from the edges, and out of the buildings.
 const surfaceClear = (want) => (x, z) => {
   const S = sepang.surfaceAt;
   return S(x, z) === want && S(x + 0.7, z) === want && S(x - 0.7, z) === want
@@ -349,11 +349,11 @@ const surfaceClear = (want) => (x, z) => {
 };
 const grass = SEPANG
   ? new GrassField(scene, surfaceClear('grass'), {
-    groundY: sepang.groundY, radius: isMobile ? 11 : 18, density: isMobile ? 10 : 20, maxTufts: isMobile ? 12000 : 40000,
+    groundY: sepang.groundY, near: isMobile ? 8 : 10, far: isMobile ? 35 : 70, density: isMobile ? 10 : 20, maxTufts: isMobile ? 16000 : 60000,
   })
   : new GrassPatch(scene, GRASS, { tufts: isMobile ? 9000 : 24000 });
 const stones = SEPANG
-  ? new StoneField(scene, surfaceClear('gravel'), { groundY: 0.0005, radius: isMobile ? 14 : 22, density: 7, maxStones: isMobile ? 1500 : 5000, shades: GRAVEL_SHADES })
+  ? new StoneField(scene, surfaceClear('gravel'), { groundY: 0.0005, near: 10, far: isMobile ? 25 : 45, density: 7, maxStones: isMobile ? 2500 : 8000, shades: GRAVEL_SHADES })
   : null;
 
 // ---------------------------------------------------------------------
@@ -501,21 +501,50 @@ function rodSet(rods, material) {
   return mesh;
 }
 
-// A box with rounded edges and corners (radius r), centred on the origin
-function roundedBox(w, h, d, r, segments = 3) {
-  r = Math.max(0.002, Math.min(r, w / 2 - 0.002, h / 2 - 0.002, d / 2 - 0.002));
-  const x = w / 2 - r, y = h / 2 - r, e = 0.001;
-  const s = new THREE.Shape();
-  s.moveTo(-x + e, -y);
-  s.lineTo(x - e, -y); s.quadraticCurveTo(x, -y, x, -y + e);
-  s.lineTo(x, y - e); s.quadraticCurveTo(x, y, x - e, y);
-  s.lineTo(-x + e, y); s.quadraticCurveTo(-x, y, -x, y - e);
-  s.lineTo(-x, -y + e); s.quadraticCurveTo(-x, -y, -x + e, -y);
-  const g = new THREE.ExtrudeGeometry(s, {
-    depth: d - 2 * r, bevelEnabled: true, bevelThickness: r, bevelSize: r,
-    bevelSegments: segments, curveSegments: 2,
-  });
-  g.center();
+// Smooth shading across a shape's seams: points in the same spot share one
+// averaged normal (so rounded edges look round, not faceted)
+function smoothNormals(g) {
+  g.computeVertexNormals();
+  const pos = g.attributes.position, nor = g.attributes.normal;
+  if (!pos || !nor || !pos.array || !nor.array) return;
+  const P = pos.array, N = nor.array, groups = new Map();
+  for (let i = 0; i < pos.count; i++) {
+    const key = `${Math.round(P[i * 3] * 2e3)},${Math.round(P[i * 3 + 1] * 2e3)},${Math.round(P[i * 3 + 2] * 2e3)}`;
+    let list = groups.get(key);
+    if (!list) groups.set(key, list = []);
+    list.push(i);
+  }
+  for (const list of groups.values()) {
+    if (list.length < 2) continue;
+    let x = 0, y = 0, z = 0;
+    for (const i of list) { x += N[i * 3]; y += N[i * 3 + 1]; z += N[i * 3 + 2]; }
+    const l = Math.hypot(x, y, z) || 1;
+    for (const i of list) { N[i * 3] = x / l; N[i * 3 + 1] = y / l; N[i * 3 + 2] = z / l; }
+  }
+  nor.needsUpdate = true;
+}
+
+// A body panel that can be dented: a box made of a fine grid of points
+// (more rows near the edges), with rounded edges and corners of radius r
+function softBox(w, h, d, r, segs) {
+  const sg = segs || [Math.max(2, Math.round(w / 0.07)), Math.max(1, Math.round(h / 0.07)), Math.max(1, Math.round(d / 0.07))];
+  const g = new THREE.BoxGeometry(w, h, d, ...sg);
+  const pos = g.attributes.position;
+  if (!pos || !pos.array) return g;
+  const half = [w / 2, h / 2, d / 2];
+  r = Math.min(r, half[0] - 0.001, half[1] - 0.001, half[2] - 0.001);
+  const v = [0, 0, 0], c = [0, 0, 0];
+  for (let i = 0; i < pos.count; i++) {
+    for (let k = 0; k < 3; k++) {
+      const t = pos.array[i * 3 + k] / half[k];
+      v[k] = half[k] * Math.sin(t * Math.PI / 2);          // rows bunch up near the edges
+      c[k] = Math.max(-(half[k] - r), Math.min(half[k] - r, v[k]));
+    }
+    const dx = v[0] - c[0], dy = v[1] - c[1], dz = v[2] - c[2], l = Math.hypot(dx, dy, dz);
+    if (l > 1e-9) { v[0] = c[0] + dx / l * r; v[1] = c[1] + dy / l * r; v[2] = c[2] + dz / l * r; }
+    pos.array[i * 3] = v[0]; pos.array[i * 3 + 1] = v[1]; pos.array[i * 3 + 2] = v[2];
+  }
+  smoothNormals(g);
   return g;
 }
 
@@ -525,25 +554,30 @@ function buildCar() {
   // --- Main body tub: a solid lower half, then an open-topped cockpit with
   // a footwell running forward under the scuttle (the seats, pedals and
   // driver's legs are in cockpit.js). Rounded edges all round. ---
-  car.add(part(roundedBox(0.9, 0.32, 1.9, 0.05), MAT.paint, 0, 0.31, -0.35));          // lower tub (floor at 0.47)
+  // (every panel is made of a fine grid of points, so a crash can dent it
+  // where it hit: see dentBody)
+  const panels = [];
+  const panel = (geo, mat, x, y, z) => { const m = part(geo, mat, x, y, z); car.add(m); panels.push(m); return m; };
+  panel(softBox(0.9, 0.32, 1.9, 0.05), MAT.paint, 0, 0.31, -0.35);                       // lower tub (floor at 0.47)
   for (const side of [-1, 1]) {
-    car.add(part(roundedBox(0.04, 0.22, 1.9, 0.018), MAT.paint, side * 0.43, 0.56, -0.35));   // cockpit sides
+    panel(softBox(0.04, 0.22, 1.9, 0.018), MAT.paint, side * 0.43, 0.56, -0.35);         // cockpit sides
   }
-  car.add(part(roundedBox(0.9, 0.22, 0.04, 0.018), MAT.paint, 0, 0.56, -1.28));          // back of the cockpit
-  car.add(part(roundedBox(0.9, 0.04, 0.62, 0.018), MAT.paint, 0, 0.65, -0.98));          // rear deck behind the seats
-  car.add(part(roundedBox(0.9, 0.04, 0.44, 0.018), MAT.paint, 0, 0.65, 0.39));           // scuttle over the footwell
-  car.add(part(roundedBox(0.9, 0.22, 0.04, 0.018), MAT.paint, 0, 0.56, 0.58));           // front bulkhead
+  panel(softBox(0.9, 0.22, 0.04, 0.018), MAT.paint, 0, 0.56, -1.28);                     // back of the cockpit
+  panel(softBox(0.9, 0.04, 0.62, 0.018), MAT.paint, 0, 0.65, -0.98);                     // rear deck behind the seats
+  panel(softBox(0.9, 0.04, 0.44, 0.018), MAT.paint, 0, 0.65, 0.39);                      // scuttle over the footwell
+  panel(softBox(0.9, 0.22, 0.04, 0.018), MAT.paint, 0, 0.56, 0.58);                      // front bulkhead
 
   // --- Long nose (aluminium, like a classic Seven) ---
-  const nose = part(roundedBox(0.62, 0.34, 0.9, 0.06, 4), MAT.aluminium, 0, 0.38, 1.05);
+  const nose = part(softBox(0.62, 0.34, 0.9, 0.06, [12, 7, 16]), MAT.aluminium, 0, 0.38, 1.05);
+  panels.push(nose);
   car.add(nose);
   // Grille at the very front
   const grille = part(new THREE.BoxGeometry(0.5, 0.26, 0.02), MAT.black, 0, 0.38, 1.505);
   car.add(grille);
-  const crush = { nose, grille, lamps: [], tail: [] };   // parts that get pushed in by crashes
+  const crush = { panels, grille, lamps: [], tail: [] };   // parts that get dented or pushed in by crashes
 
   // --- Bonnet top between cockpit and nose ---
-  car.add(part(roundedBox(0.66, 0.04, 0.16, 0.015), MAT.aluminium, 0, 0.58, 0.66));
+  panel(softBox(0.66, 0.04, 0.16, 0.015), MAT.aluminium, 0, 0.58, 0.66);
 
   // (the seats, floor, pedals, steering wheel, levers, mirrors and the
   // driver are in cockpit.js)
@@ -553,6 +587,18 @@ function buildCar() {
   screen.rotation.x = -0.25;
   screen.castShadow = false;
   car.add(screen);
+  // ...in a thin frame: a bar along the top and a post up each side (the
+  // rear-view mirror hangs from the middle of the top bar: cockpit.js)
+  const frameMat = new THREE.MeshStandardMaterial({ color: 0x1b1c1e, metalness: 0.4, roughness: 0.5 });
+  const rodBetween = (a, b, r) => {
+    const A = new THREE.Vector3(...a), B = new THREE.Vector3(...b);
+    const m = part(new THREE.CylinderGeometry(r, r, A.distanceTo(B), 10), frameMat, (A.x + B.x) / 2, (A.y + B.y) / 2, (A.z + B.z) / 2);
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), B.clone().sub(A).normalize());
+    car.add(m);
+  };
+  const TOP = [0.906, 0.188], BOTTOM = [0.654, 0.252];            // the glass's top and bottom edge (height, along)
+  rodBetween([-0.42, TOP[0], TOP[1]], [0.42, TOP[0], TOP[1]], 0.012);
+  for (const side of [-1, 1]) rodBetween([side * 0.42, BOTTOM[0], BOTTOM[1]], [side * 0.42, TOP[0], TOP[1]], 0.012);
 
   // --- Roll bar behind the seats ---
   const barSide = new THREE.CylinderGeometry(0.025, 0.025, 0.42, 10);
@@ -569,14 +615,9 @@ function buildCar() {
   car.add(part(new THREE.BoxGeometry(0.07, 0.012, 0.016), MAT.chrome, 0.3, 0.684, -1.12));   // its flip handle
 
   // --- Rear wings (fenders over the back wheels) ---
-  const rearWing = roundedBox(0.3, 0.06, 0.8, 0.025);
-  car.add(part(rearWing, MAT.paint, -0.62, 0.64, -1.1));
-  car.add(part(rearWing, MAT.paint, 0.62, 0.64, -1.1));
-  const rearWingSide = roundedBox(0.3, 0.25, 0.06, 0.02);
   for (const side of [-1, 1]) {
-    const w = part(rearWingSide, MAT.paint, side * 0.62, 0.52, -1.48);
-    car.add(w);
-    crush.tail.push(w);
+    panel(softBox(0.3, 0.06, 0.8, 0.025, [5, 1, 12]), MAT.paint, side * 0.62, 0.64, -1.1);
+    panel(softBox(0.3, 0.25, 0.06, 0.02, [5, 4, 1]), MAT.paint, side * 0.62, 0.52, -1.48);
   }
 
   // --- Front cycle wings (curved fenders over the front wheels) ---
@@ -1153,8 +1194,78 @@ if (fireLight) scene.add(fireLight);
 const RADIATOR = new THREE.Vector3(0, 0.42, 1.5);
 const radiatorWorld = new THREE.Vector3();
 
-// Scratches: thin bright lines of bare metal, added where the car's side
-// scrapes along a wall (the oldest go once there are lots)
+// --- DENTS: each hit pushes the body in around where it struck, deepest
+// in the middle and fading out (with a little wrinkling, like crumpled
+// metal). The body keeps its original shape, and every panel is reshaped
+// from it and the list of dents, so the dents add up and a reset undoes
+// them. The grille, headlights and tail lights move with the metal
+// around them. (Car's own space: x = left, z = forward.)
+const dents = [];
+const _off = new THREE.Vector3();
+function dentOffset(x, y, z, out) {
+  out.set(0, 0, 0);
+  for (const d of dents) {
+    const dx = x - d.x, dy = y - d.y, dz = z - d.z;
+    const f = Math.exp(-(dx * dx + dy * dy + dz * dz) / (d.r * d.r));
+    if (f < 0.01) continue;
+    const wrinkle = 1 + 0.45 * Math.sin(x * 41 + d.seed) * Math.sin(y * 33 + d.seed * 1.7) * Math.sin(z * 37 + d.seed * 0.6);
+    out.x += d.dx * d.depth * f * wrinkle;
+    out.y += d.dy * d.depth * f * wrinkle - 0.25 * d.depth * f * f;      // the crumple sags a little
+    out.z += d.dz * d.depth * f * wrinkle;
+  }
+  const l = out.length();
+  if (l > 0.32) out.multiplyScalar(0.32 / l);                                 // metal only goes so far
+  return out;
+}
+const bodyOriginals = new Map();
+function reshapeBody() {
+  for (const m of carModel.crush.panels) {
+    const pos = m.geometry.attributes.position;
+    if (!pos || !pos.array) continue;
+    let orig = bodyOriginals.get(m);
+    if (!orig) { orig = Float32Array.from(pos.array); bodyOriginals.set(m, orig); }
+    const a = pos.array, sx = m.scale.x || 1, sy = m.scale.y || 1, sz = m.scale.z || 1;
+    for (let i = 0; i < pos.count; i++) {
+      const lx = orig[i * 3], ly = orig[i * 3 + 1], lz = orig[i * 3 + 2];
+      dentOffset(m.position.x + lx * sx, m.position.y + ly * sy, m.position.z + lz * sz, _off);
+      a[i * 3] = lx + _off.x / sx; a[i * 3 + 1] = ly + _off.y / sy; a[i * 3 + 2] = lz + _off.z / sz;
+    }
+    pos.needsUpdate = true;
+    smoothNormals(m.geometry);
+    m.geometry.computeBoundingSphere?.();
+  }
+  // Parts carried on the metal
+  const c = carModel.crush;
+  const carried = [c.grille, ...c.lamps, ...c.tail];
+  for (const m of carried) {
+    m.userData.base ??= m.position.clone();
+    dentOffset(m.userData.base.x, m.userData.base.y, m.userData.base.z, _off);
+    m.position.copy(m.userData.base).add(_off);
+  }
+  // the headlamps also get knocked askew, each its own way
+  c.lamps.forEach((m, i) => {
+    const side = i === 0 ? -1 : 1, n = Math.min(0.4, dentOffset(m.userData.base.x, m.userData.base.y, m.userData.base.z, _off).length());
+    m.rotation.set(n * (0.9 + 0.6 * side), n * 1.4 * side, n * 0.5 * side);
+  });
+  c.grille.rotation.x = Math.min(0.5, dentOffset(0, 0.38, 1.5, _off).length() * 2);
+  placeScratches();
+}
+// A hit at (x, y, z) on the car, pushing in along (dx, dz), depth in metres
+function dentBody(x, y, z, dx, dz, depth, radius) {
+  const l = Math.hypot(dx, dz) || 1;
+  dents.push({ x, y, z, dx: dx / l, dy: 0, dz: dz / l, depth, r: radius, seed: Math.random() * 100 });
+  if (dents.length > 40) dents.shift();
+  reshapeBody();
+}
+function clearDents() {
+  dents.length = 0;
+  scratchList.length = 0;
+  reshapeBody();
+}
+
+// Scratches: short, thin bright lines of bare metal where the side of the
+// car scraped along a wall. Each sits on the face of the panel it's on
+// (kept clear of its rounded edges) and moves with any dent there.
 const SCRATCH_MAX = isMobile ? 120 : 240;
 const scratches = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1),
   new THREE.MeshStandardMaterial({ color: 0xcfd1d3, metalness: 0.75, roughness: 0.32 }), SCRATCH_MAX);
@@ -1162,50 +1273,45 @@ scratches.count = 0;
 scratches.frustumCulled = false;
 scratches.castShadow = false;
 carModel.car.add(scratches);
-let scratchNext = 0;
+const scratchList = [];
 let lastScratchAt = -9;
 let lastCrashAt = -9;
 const scratchM = new THREE.Matrix4(), scratchQ = new THREE.Quaternion(), scratchE = new THREE.Euler();
 const scratchP = new THREE.Vector3(), scratchS = new THREE.Vector3();
-// The outside of the body at a point along the car (car's own space: x = left)
+// The flat outside face of the body at a point along the car: how far out
+// it is, and the heights and lengths it covers (inside its rounded edges)
 function bodySideAt(z) {
-  if (z > 0.6) return { x: 0.312, y0: 0.24, y1: 0.52 };              // nose
-  if (z < -0.75) return { x: 0.772, y0: 0.42, y1: 0.66 };            // rear wing
-  return { x: 0.452, y0: 0.2, y1: 0.62 };                            // the tub
+  if (z > 0.68) return { x: 0.312, y0: 0.27, y1: 0.49, z0: 0.68, z1: 1.43 };     // nose
+  if (z < -0.74) return { x: 0.772, y0: 0.625, y1: 0.655, z0: -1.47, z1: -0.74 }; // edge of the rear wing
+  return { x: 0.452, y0: 0.2, y1: 0.62, z0: -1.25, z1: 0.55 };                   // the tub
 }
 function addScratch(along, left, strength) {
-  const z = Math.max(-1.45, Math.min(1.45, along));
-  const b = bodySideAt(z);
-  const len = 0.1 + (0.15 + 0.3 * Math.random()) * strength;
-  scratchP.set((left ? 1 : -1) * (b.x + 0.003), b.y0 + Math.random() * (b.y1 - b.y0), z);
-  scratchQ.setFromEuler(scratchE.set((Math.random() - 0.5) * 0.3, 0, 0));
-  scratchS.set(0.004, 0.003 + 0.006 * Math.random(), len);
-  scratchM.compose(scratchP, scratchQ, scratchS);
-  scratches.setMatrixAt(scratchNext, scratchM);
-  scratchNext = (scratchNext + 1) % SCRATCH_MAX;
-  scratches.count = Math.min(SCRATCH_MAX, scratches.count + 1);
-  scratches.instanceMatrix.needsUpdate = true;
+  const b = bodySideAt(along);
+  const room = b.z1 - b.z0;
+  const len = Math.min(room * 0.9, 0.05 + (0.06 + 0.16 * Math.random()) * strength);
+  const z = Math.max(b.z0 + len / 2, Math.min(b.z1 - len / 2, along + (Math.random() - 0.5) * 0.1));
+  const y = b.y0 + Math.random() * (b.y1 - b.y0);
+  scratchList.push({ side: left ? 1 : -1, x: b.x, y, z, len, tilt: (Math.random() - 0.5) * 0.25, w: 0.0025 + 0.004 * Math.random() });
+  if (scratchList.length > SCRATCH_MAX) scratchList.shift();
+  placeScratches();
 }
-// Push the nose and tail in as far as the crashes have crushed them
-function applyCrush() {
-  const c = carModel.crush, n = physics.noseCrush, t = physics.tailCrush;
-  for (const m of [c.nose, c.grille, ...c.lamps, ...c.tail]) m.userData.baseZ ??= m.position.z;
-  c.nose.scale.z = 1 - n / 0.9;
-  c.nose.position.z = c.nose.userData.baseZ - n / 2;
-  c.nose.rotation.set(n * 0.25, n * 0.2, n * 0.12);
-  c.grille.position.z = c.grille.userData.baseZ - n;
-  c.grille.rotation.x = n * 0.8;
-  c.lamps.forEach((m, i) => {             // the headlamps get shoved back and knocked askew, each its own way
-    const side = i === 0 ? -1 : 1;
-    m.position.z = m.userData.baseZ - n * 0.75;
-    m.rotation.set(n * (0.5 + 0.4 * side), n * 0.9 * side, n * 0.3 * side);
+function placeScratches() {
+  scratchList.forEach((sc, i) => {
+    dentOffset(sc.side * sc.x, sc.y, sc.z, _off);
+    scratchP.set(sc.side * (sc.x + 0.0015) + _off.x, sc.y + _off.y, sc.z + _off.z);
+    scratchQ.setFromEuler(scratchE.set(sc.tilt, 0, 0));
+    scratchS.set(0.003, sc.w, sc.len);
+    scratchM.compose(scratchP, scratchQ, scratchS);
+    scratches.setMatrixAt(i, scratchM);
   });
-  for (const m of c.tail) m.position.z = m.userData.baseZ + t;
+  scratches.count = scratchList.length;
+  scratches.instanceMatrix.needsUpdate = true;
 }
 // WIND at ground level: blows the same way as the wind carrying the clouds,
 // light on a clear day and much stronger in a storm, in gusts. It slants
 // the rain, sways the grass and carries smoke, steam and dust away.
 const groundWind = { x: 0, z: 0 };
+const viewDir = new THREE.Vector3(), viewAt = new THREE.Vector3();   // where the camera is and which way it looks (for the grass)
 const WIND_USERS = [];   // [smoke system, how much of the wind it feels]
 function updateWind(t) {
   const storm = rain.intensity ?? 0;
@@ -1407,7 +1513,6 @@ function updateSmoke(dt) {
   engineSmoke.emitFrom('engine', engineBayWorld, Math.max(physics.engineBlown ? 1 : 0, fire * 0.9), carVelocity, dt);
   engineSmoke.update(dt);
   // Steam from the radiator, flames from the engine bay
-  applyCrush();
   radiatorWorld.set(RADIATOR.x, RADIATOR.y, RADIATOR.z - physics.noseCrush);
   carModel.car.localToWorld(radiatorWorld);
   steam.emitFrom('radiator', radiatorWorld, physics.steam, carVelocity, dt);
@@ -1559,6 +1664,15 @@ function collide(now) {
     if (hitSpeed > 2.5 && now - lastCrashAt > 0.3) {
       lastCrashAt = now;
       physics.crashHit({ zone, speed: hitSpeed, along, across });
+      // Dent the body where it struck (on the bodywork, not the wheel
+      // that may have touched first), pushed in the way the wall pushed
+      if (hitSpeed > 3) {
+        const depth = Math.min(0.22, (hitSpeed - 3) * 0.016);
+        const radius = 0.2 + Math.min(0.25, hitSpeed * 0.01);
+        if (zone === 'front') dentBody(Math.max(-0.28, Math.min(0.28, across)), 0.4, 1.5, nl, nf, depth, radius);
+        else if (zone === 'rear') dentBody(Math.max(-0.7, Math.min(0.7, across)), 0.52, -1.5, nl, nf, depth * 0.9, radius);
+        else dentBody(zone === 'left' ? 0.45 : -0.45, 0.42, Math.max(-1.3, Math.min(1.45, along)), nl, nf, depth * 0.7, radius);
+      }
     }
     // A proper hit: the barrier reacts (dents, squashes, cracks)
     if (k.c.hit && -vn > 1.5 && now - (lastHit.get(k.c) ?? -9) > 0.25) {
@@ -1654,6 +1768,8 @@ const hud = new Hud({
     changing: (on) => sky.setChanging(on),
   },
 });
+// The car's own dashboard dials show the HUD's drawings (cockpit.js)
+cockpit.useHudDials(hud.parts);
 
 // ---------------------------------------------------------------------
 // CAMERAS (press C to cycle):
@@ -1818,8 +1934,7 @@ renderer.setAnimationLoop(() => {
     flakes.clear();
     grassBits.clear();
     mudClumps.clear();
-    scratches.count = 0;
-    scratchNext = 0;
+    clearDents();             // the body's straightened out and the scratches polished away
   }
   if (wasTapped('reverse')) physics.toggleReverse();
   if (wasTapped('shiftUp')) physics.shiftUp();
@@ -1900,8 +2015,14 @@ renderer.setAnimationLoop(() => {
   // puddles, washes oil and rubber away, and brings lightning in a storm
   rain.setLevel(sky.rainLevel);
   updateWind(clock.elapsedTime);
-  grass.update?.(physics.x, physics.z);      // (Sepang: tufts and stones grow around the car)
-  stones?.update(physics.x, physics.z);
+  // (Sepang: tufts and stones grow wherever the camera is looking)
+  if (SEPANG) {
+    camera.getWorldDirection(viewDir);
+    camera.getWorldPosition(viewAt);
+    const halfView = Math.atan(Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * camera.aspect);
+    grass.update(viewAt.x, viewAt.z, viewDir.x, viewDir.z, halfView);
+    stones.update(viewAt.x, viewAt.z, viewDir.x, viewDir.z, halfView);
+  }
   rain.update(dt, camera, carVelocity, sky.daylight);
   physics.trackWetness = rain.wetness;
   rain.wetLook(ground.material, GROUND_DRY);
