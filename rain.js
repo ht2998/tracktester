@@ -23,7 +23,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 2;
+export const BUILD = 3;
 
 // How hard it rains at each level (0-1)
 export const RAIN_LEVELS = { drizzle: 0.12, light: 0.3, moderate: 0.52, heavy: 0.78, storm: 1 };
@@ -287,7 +287,7 @@ export class RainSystem {
     const streak = 0.05 + 0.03 * rain;             // seconds of motion shown as a streak
     // Splash budget: only some landings near the camera get a visible splash
     let splashes = Math.round((this.isMobile ? 40 : 90) * rain * dt * 10);
-    const wind = { x: 0.8, z: 0.3 };
+    const wind = this.wind || { x: 0.8, z: 0.3 };   // set by the game (blows harder in a storm: the rain slants)
     for (let i = 0; i < active; i++) {
       let x = d[i * 3], y = d[i * 3 + 1], z = d[i * 3 + 2];
       const v = this.dropSpeed[i];
