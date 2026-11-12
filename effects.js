@@ -13,7 +13,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 1;
+export const BUILD = 2;
 
 const rand = (a, b) => a + Math.random() * (b - a);
 
@@ -126,8 +126,10 @@ export class MetalFlakes {
     const geo = new THREE.PlaneGeometry(1, 1);
     geo.rotateX(-Math.PI / 2);
     const mat = new THREE.MeshStandardMaterial({
-      color: 0xdfe3e8, metalness: 1, roughness: 0.18,
-      emissive: 0x9aa3ad, emissiveIntensity: 0.15,   // a faint glint even in shade
+      // (bright and only partly mirror-like: fully metal flakes reflect the
+      // dark ground and looked like black rubber marks from a distance)
+      color: 0xe6e9ed, metalness: 0.55, roughness: 0.3,
+      emissive: 0xb8bec6, emissiveIntensity: 0.35,   // a glint even in shade
     });
     this.mesh = new THREE.InstancedMesh(geo, mat, max);
     this.mesh.count = 0;
@@ -144,7 +146,7 @@ export class MetalFlakes {
 
   // Drop flakes behind a grinding rim: more the faster it's turning
   emit(id, pos, speed, dt) {
-    let acc = (this.carry[id] || 0) + 30 * Math.min(1, speed / 12) * dt;
+    let acc = (this.carry[id] || 0) + 14 * Math.min(1, speed / 12) * dt;   // a sprinkle, not a line
     while (acc >= 1) {
       const i = this.next;
       this.next = (this.next + 1) % this.max;
