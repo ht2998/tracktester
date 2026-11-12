@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 18;
+export const BUILD = 19;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 21, date: '12 Nov 2026', title: 'The dashboard, on the dashboard',
+    items: [
+      ['Same dials in the car', 'In the driver\'s view, the screen on the car\'s dash now shows exactly the same dials as the on-screen dashboard: tyre bars, rev counter with the gear, speedo with the shift and warning lights, and the fuel and oil gauges', 'gauges'],
+    ],
+  },
   {
     id: 20, date: '12 Nov 2026', title: 'A proper cockpit and driver',
     items: [
