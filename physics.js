@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 5;
+export const BUILD = 6;
 
 const G = 9.81;   // gravity, m/s²
 const RPM_PER_RADS = 60 / (2 * Math.PI);
@@ -283,8 +283,13 @@ export class CarPhysics {
       const wasHoled = this.radiator < 0.75;
       this.noseCrush = Math.min(0.32, this.noseCrush + Math.max(0, v - 3) * 0.022);
       this.radiator = Math.max(0, this.radiator - Math.max(0, v - 3.5) / 14);
-      // The engine sits right behind the radiator: it takes the next hit
-      if (v > 6 && (wasHoled || v > 15)) this.damageEngine((v - 6) / (wasHoled ? 12 : 20));
+      // The engine sits right behind the radiator, so the next hit MAY reach
+      // it (or a very hard first one): more likely the harder you hit, and
+      // how badly varies. A light knock usually gets away with it.
+      if (v > 6 && (wasHoled || v > 15)) {
+        const chance = clamp((v - 6) / (wasHoled ? 16 : 24), 0, 0.85);
+        if (Math.random() < chance) this.damageEngine((v - 6) / (wasHoled ? 14 : 22) * (0.4 + 0.9 * Math.random()));
+      }
       // Off-centre: the front wheel on that side gets knocked back too
       if (Math.abs(across) > 0.5 && v > 5) bend(wheelNear(true, across > 0), (v - 5) * 0.0025, across > 0 ? 1 : -1);
     } else if (zone === 'rear') {
