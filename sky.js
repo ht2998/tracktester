@@ -28,7 +28,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 5;
+export const BUILD = 6;
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const smooth = (a, b, x) => {
@@ -223,7 +223,13 @@ void main() {
 
 export class SkySystem {
   // sun: the shadow-casting DirectionalLight, hemi: the HemisphereLight
-  constructor(scene, { sun, hemi, isMobile = false }) {
+  // place: where on Earth this is, for the sun's path:
+  //   lat: latitude (degrees, + = north)
+  //   solarNoon: the clock time the sun is highest (Malaysia's clocks run
+  //     about an hour ahead of the sun, so it's about 13:10 there)
+  //   north: which way north is in the game (a direction on the ground)
+  constructor(scene, { sun, hemi, isMobile = false, place = {} }) {
+    this.place = { lat: 2.76, solarNoon: 13.15, north: { x: 0, z: -1 }, ...place };
     this.scene = scene;
     this.sun = sun;
     this.hemi = hemi;
@@ -473,10 +479,22 @@ export class SkySystem {
     this.flash = Math.max(0, (this.flash ?? 0) - dt * 5);
     const cloud = this.cloud;
 
-    // --- The sun's path: rises in the east (+x) at 6:00, high in the south
-    // (+z) at midday, sets in the west at 18:00 ---
-    const a = ((this.hours - 6) / 12) * Math.PI;
-    this.sunDir.set(Math.cos(a), Math.sin(a) * 0.93, Math.sin(a) * 0.37).normalize();
+    // --- The sun's real path for this place and today's date: it rises in
+    // the east, crosses the sky (near the equator it passes almost straight
+    // overhead, a little to the south or north depending on the time of
+    // year) and sets in the west ---
+    const pl = this.place, rad = Math.PI / 180;
+    const now = new Date();
+    const dayOfYear = Math.floor((now - new Date(now.getFullYear(), 0, 0)) / 86400000);
+    const dec = -23.44 * rad * Math.cos((2 * Math.PI / 365) * (dayOfYear + 10));     // how far north or south of the equator the sun is today
+    const lat = pl.lat * rad;
+    const H = (this.hours - pl.solarNoon) * 15 * rad;                                 // the sun's angle from its midday point
+    const sinEl = Math.sin(lat) * Math.sin(dec) + Math.cos(lat) * Math.cos(dec) * Math.cos(H);
+    const elev = Math.asin(clamp(sinEl, -1, 1));
+    const az = Math.atan2(-Math.sin(H), Math.tan(dec) * Math.cos(lat) - Math.sin(lat) * Math.cos(H));   // from north, clockwise (east = 90°)
+    const nx = pl.north.x, nz = pl.north.z, ex = -nz, ez = nx;                         // north and east on the ground
+    const north = Math.cos(elev) * Math.cos(az), east = Math.cos(elev) * Math.sin(az);
+    this.sunDir.set(north * nx + east * ex, Math.sin(elev), north * nz + east * ez).normalize();
     const el = this.sunDir.y;                       // sun's height: 1 = overhead, below 0 = night
     const day = smooth(-0.22, 0.3, el);             // 0 at night, 1 in full day (dawn and dusk take a while)
     this.daylight = day;
