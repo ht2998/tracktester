@@ -25,7 +25,7 @@ import { RainSystem } from './rain.js';
 import { buildSepang } from './sepang.js';
 import * as sepangFile from './sepang.js';
 import { buildFlora } from './flora.js';
-import { RacingLine } from './racingline.js';
+import { RacingLine, LapTimer, TrackMap } from './racingline.js';
 import * as racingLineFile from './racingline.js';
 import * as floraFile from './flora.js';
 import { Cockpit, EYE } from './cockpit.js';
@@ -51,7 +51,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 19;
+const BUILD = 20;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -159,7 +159,10 @@ scene.add(sun.target);
 
 // Time of day and weather (sky.js): moves the sun, colours the sky and
 // light, brings out the stars at night and the clouds when it's cloudy
-const sky = new SkySystem(scene, { sun, hemi: hemiLight, isMobile });
+// (the sun follows its real path for where the track is: Sepang, Malaysia;
+// the test area uses Singapore. North is -z in both.)
+const sky = new SkySystem(scene, { sun, hemi: hemiLight, isMobile,
+  place: SEPANG ? { lat: 2.76, solarNoon: 13.15, north: { x: 0, z: -1 } } : { lat: 1.35, solarNoon: 13.05, north: { x: 0, z: -1 } } });
 
 // Moves the sun's shadow square: centred about 14 m ahead of the car (the
 // way the camera looks), and snapped to the shadow map's own pixel grid so
@@ -219,6 +222,9 @@ const racing = sepang ? new RacingLine(scene, { line: sepang.line, corners: sepa
 let racingLineOn = true;
 try { racingLineOn = localStorage.getItem('tracktester-racingline') !== 'off'; } catch (e) { /* storage blocked */ }
 racing?.setVisible(racingLineOn);
+// Lap and sector timing, and the track map in the corner
+const lapTimer = racing ? new LapTimer(racing, { onTrack: (x, z) => { const s = sepang.surfaceAt(x, z); return s === 'tarmac' || s === 'kerb'; } }) : null;
+const trackMap = racing ? new TrackMap(racing, lapTimer.cuts) : null;
 if (sepang) {
   sepang.grassTexture.repeat.set(3000 / 6, 3000 / 6);
   ground.material.map = sepang.grassTexture;
@@ -462,7 +468,19 @@ const flora = (() => {
     let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
     for (const pnt of sepang.line) { minX = Math.min(minX, pnt.x); maxX = Math.max(maxX, pnt.x); minZ = Math.min(minZ, pnt.z); maxZ = Math.max(maxZ, pnt.z); }
     const ring = [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]];
-    return buildFlora(scene, {
+    // thick woods further out: lots of trees in simpler shapes, kept well
+    // away from the track (you see them across the run-offs and beyond)
+    const woods = buildFlora(scene, {
+      isMobile, style: 'tropical', forest: true, groves: false, seed: 77,
+      area: { minX: minX - 600, maxX: maxX + 600, minZ: minZ - 600, maxZ: maxZ + 600 },
+      colliders,
+      canPlace: (x, z) => {
+        if (S(x, z) !== 'grass') return false;
+        for (const [dx, dz] of ring) if (S(x + dx * 45, z + dz * 45) !== 'grass' || S(x + dx * 25, z + dz * 25) !== 'grass') return false;
+        return !underRoof(x, z) && !nearSolid(x, z, 8);
+      },
+    });
+    const near = buildFlora(scene, {
       isMobile, style: 'tropical',
       area: { minX: minX - 260, maxX: maxX + 260, minZ: minZ - 260, maxZ: maxZ + 260 },
       colliders,
@@ -474,6 +492,7 @@ const flora = (() => {
         return !underRoof(x, z) && !nearSolid(x, z, 3);
       },
     });
+    return { count: near.count + woods.count, setWind(x, z, t) { near.setWind(x, z, t); woods.setWind(x, z, t); } };
   }
   // on the islands (trees a few metres in from the edge, so you can drive
   // round them), and woods beyond the far edges of the ground
@@ -2093,6 +2112,8 @@ renderer.setAnimationLoop(() => {
     // the plan's grip: the tyres fitted, less in the wet
     const gripNow = 1.3 * TYRES[physics.tyreCompound].grip * (1 - 0.3 * rain.wetness);
     racing.update(dt, physics.x, physics.z, physics.heading, Math.hypot(physics.vx, physics.vy), gripNow, rain.intensity);
+    lapTimer.update(dt, physics.x, physics.z);
+    trackMap.update(physics.x, physics.z, physics.heading);
   }
   // Auto: on when it gets dark or rains properly (off again a little later,
   // so they don't flicker at the changeover)
