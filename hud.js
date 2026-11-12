@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 5;
+export const BUILD = 6;
 
 const COLORS = {
   face: '#15181c',
@@ -494,6 +494,25 @@ function drawSkidLamp(g, cx, cy, width, color) {
   g.restore();
 }
 // Handbrake: a (!) in a circle, in red
+// Engine temperature: a thermometer standing in waves (the usual coolant lamp)
+function drawCoolantLamp(g, cx, cy, width, color) {
+  const u = width / 24;
+  g.save();
+  lampStyle(g, color, u);
+  g.beginPath(); g.moveTo(cx, cy - 9 * u); g.lineTo(cx, cy + 2 * u); g.stroke();      // stem
+  g.beginPath(); g.arc(cx, cy + 4 * u, 2.6 * u, 0, Math.PI * 2); g.fill();             // bulb
+  for (const k of [-6, -3]) { g.beginPath(); g.moveTo(cx, cy + k * u); g.lineTo(cx + 4 * u, cy + k * u); g.stroke(); }
+  for (const dy of [7.5, 10.5]) {                                                       // waves
+    g.beginPath();
+    for (let i = 0; i <= 16; i++) {
+      const x = cx - 10 * u + i * 1.25 * u;
+      const y = cy + dy * u + Math.sin(i * 0.8) * 1.1 * u;
+      if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+    }
+    g.stroke();
+  }
+  g.restore();
+}
 function drawHandbrakeLamp(g, cx, cy, width, color) {
   const u = width / 24;
   g.save();
@@ -567,7 +586,14 @@ function drawCheckEngine(g, cx, cy, width, color) {
 // white and fills red from the top as that tyre wears. The outline shows the
 // tyre's pressure in five steps of 20%: green (80-100%), yellow, orange, red,
 // and flashing red when it's below 20%. A tyre that has shredded off down to
-// the rim shows as a grey bar.
+// the rim shows as a grey bar. The number on each bar is its temperature:
+// blue when cold, green in its working range, red when too hot.
+export function tempColour(temp, win) {
+  if (!win || temp == null) return '#e8e8e8';
+  if (temp < win.lo) return '#4aa8ff';
+  if (temp > win.hi) return '#ff3b30';
+  return '#2bdc4a';
+}
 const PRESSURE_COLOURS = [COLORS.ledRed, '#ff3b30', '#ff8a1f', '#ffd23a', COLORS.ledGreen];
 class TyreBars {
   constructor() {
@@ -586,7 +612,7 @@ class TyreBars {
     this.canvas.style.height = `${this.h}px`;
   }
 
-  draw(tyres, compound, time) {
+  draw(tyres, compound, time, win) {
     const g = this.ctx;
     g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     g.clearRect(0, 0, this.w, this.h);
@@ -621,6 +647,17 @@ class TyreBars {
         g.strokeStyle = ring;
         g.lineWidth = Math.max(1.5, this.h * 0.035);
         g.strokeRect(x - 1.5, y - 1.5, bw + 3, bh + 3);
+      }
+      // Temperature, on a dark tab across the middle of the bar
+      if (!t.rim && t.temp != null) {
+        const th = Math.min(bh * 0.42, bw * 0.62);
+        g.fillStyle = 'rgba(8, 10, 12, 0.82)';
+        g.fillRect(x, y + bh / 2 - th / 2, bw, th);
+        g.fillStyle = tempColour(t.temp, win);
+        g.font = `700 ${Math.round(th * 0.82)}px ${FONT}`;
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillText(String(Math.round(t.temp)), x + bw / 2, y + bh / 2 + 0.5);
       }
     });
     g.fillStyle = COLORS.inkSoft;
@@ -940,10 +977,10 @@ export class Hud {
   }
 
   update({ speedKmh, rpm, gearLabel, limiter, transmission, engineHealth = 1, oilLevel = 1,
-           fuelLevel = 1, assists = {}, clutchIn = false, tyres = null, tyreCompound = 'SM', lights = 0, lightsAuto = false, sky = null, time,
+           fuelLevel = 1, assists = {}, clutchIn = false, tyres = null, tyreCompound = 'SM', tyreWindow = null, lights = 0, lightsAuto = false, sky = null, time,
            warnings = {} }) {
     if (sky) this.updateSky(sky);
-    this.tyreBars.draw(tyres, tyreCompound, time);
+    this.tyreBars.draw(tyres, tyreCompound, time, tyreWindow);
     if (this.tyreSelect && document.activeElement !== this.tyreSelect && this.tyreSelect.value !== tyreCompound) {
       this.tyreSelect.value = tyreCompound;
     }
@@ -1002,6 +1039,7 @@ export class Hud {
     //   TCS:       flashes while it's cutting power; steady (with OFF) if switched off
     //   skid:      flashes while the car is sliding sideways
     //   handbrake: red while it's pulled
+    //   engine temperature: amber when hot, flashing red when boiling
     {
       const w = warnings;
       const flash = Math.floor(time * 6) % 2 === 0;
@@ -1012,6 +1050,8 @@ export class Hud {
       else if (w.tcsOff) lamps.push((x) => drawTcsLamp(sg, x, ly, lw, COLORS.ledAmber, true));
       if (w.skid) { if (flash) lamps.push((x) => drawSkidLamp(sg, x, ly, lw, COLORS.ledAmber)); else lamps.push(null); }
       if (w.handbrake) lamps.push((x) => drawHandbrakeLamp(sg, x, ly, lw, COLORS.redline));
+      if (w.coolant > 0.95) { if (flash) lamps.push((x) => drawCoolantLamp(sg, x, ly, lw, COLORS.redline)); else lamps.push(null); }
+      else if (w.coolant > 0.8) lamps.push((x) => drawCoolantLamp(sg, x, ly, lw, COLORS.ledAmber));
       const lw = sR * 0.3, ly = sR + sR * 0.22, gap = sR * 0.34;
       lamps.forEach((draw, k) => draw?.(sR + (k - (lamps.length - 1) / 2) * gap));
     }
