@@ -14,7 +14,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 2;
+export const BUILD = 3;
 
 const CELL = 2;   // metres: size of each square in the lookup grid
 const LOBES_PER_PUDDLE = 5;   // main pool + up to 4 lobes
@@ -118,7 +118,9 @@ export class OilSlicks {
   //   carX/carZ/heading: where the car is, so the oil falls from under the engine
   //   speed: m/s
   //   rate: 0 = not leaking, 1 = dripping (damaged), 2 = pouring (blown)
-  update(dt, carX, carZ, heading, speed, rate) {
+  // remaining: how much oil is left in the engine (0-1). As it runs low the
+  // trail thins out, breaks up more and more, then becomes just the odd drop.
+  update(dt, carX, carZ, heading, speed, rate, remaining = 1) {
     if (rate <= 0) {
       this.lastPoint = null;
       this.activePuddle = -1;
@@ -132,10 +134,11 @@ export class OilSlicks {
     const x = carX + fx * 0.6 + fz * side;
     const z = carZ + fz * 0.6 - fx * side;
 
+    const thin = Math.max(0, Math.min(1, remaining / 0.25));    // 1 = plenty left, 0 = all but empty
     if (Math.abs(speed) < 0.4) {
-      // Stopped (or nearly): the oil pools and spreads
+      // Stopped (or nearly): the oil pools and spreads (more slowly as it runs out)
       this.lastPoint = null;
-      this.growPuddle(x, z, dt, rate);
+      this.growPuddle(x, z, dt, rate * (0.15 + 0.85 * thin));
       return;
     }
     this.activePuddle = -1;
@@ -148,7 +151,12 @@ export class OilSlicks {
     const dx = x - this.lastPoint.x;
     const dz = z - this.lastPoint.z;
     const len = Math.hypot(dx, dz);
-    if (len >= 0.35) {
+    if (len >= 0.35 && remaining < 0.07) {
+      // Nearly empty: no more line, just the odd drop, fewer and smaller
+      // until the last one falls
+      if (Math.random() < 0.6 * remaining / 0.07) this.addDrop(x, z, 0.02 + Math.random() * 0.035);
+      this.lastPoint = { x, z };
+    } else if (len >= 0.35) {
       // The leak puts out the same oil every second, so the slower the car,
       // the more lands on each metre: the trail thickens as you slow down
       // (1x at about 70 km/h, up to about 3x when crawling).
@@ -156,9 +164,10 @@ export class OilSlicks {
       const slowness = Math.min(3, Math.pow(20 / Math.max(v, 1.5), 0.6));
       // Width swells and thins unevenly as the leak spurts and eases
       this.flow = Math.max(0.55, Math.min(1.5, (this.flow || 1) + (Math.random() - 0.5) * 0.35));
-      const width = (rate >= 2 ? 0.11 : 0.07) * this.flow * slowness * (0.85 + Math.random() * 0.3);
-      // Now and then a drip misses, leaving a short gap (only while dripping fast)
-      const gap = rate < 2 && v > 8 && Math.random() < 0.06;
+      const width = (rate >= 2 ? 0.11 : 0.07) * this.flow * slowness * (0.85 + Math.random() * 0.3) * (0.25 + 0.75 * thin);
+      // Now and then a drip misses, leaving a short gap (only while dripping
+      // fast), and more and more often as the oil runs out
+      const gap = (rate < 2 && v > 8 && Math.random() < 0.06) || Math.random() < 0.55 * (1 - thin);
       if (!gap) this.addSegment(this.lastPoint.x, this.lastPoint.z, x, z, width);
       // Drips beside the line: more often, and bigger, the slower you go
       const dropChance = (rate >= 2 ? 0.05 : 0.025) * Math.pow(slowness, 2.2);
