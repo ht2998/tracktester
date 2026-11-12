@@ -4,7 +4,8 @@
 //   Right thumb: brake and gas, with small - / + shift buttons beside the
 //                gas (manual) or an R button (automatic and CVT), plus small
 //                clutch and handbrake buttons above
-//   Above the steering: a small horn button
+//   Above the steering: a small horn button, and a lights button beside it
+//                (tap to switch: off, auto, dipped, main beam)
 //   Top left:    menu with camera, lights, reset and sound
 // Only shown on touch screens (or add ?touch to the address to test).
 // Every control tracks its own finger, so you can steer, brake and shift
@@ -15,7 +16,7 @@ import { setTouch, tap } from './input.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 2;
+export const BUILD = 3;
 
 export function isTouchDevice() {
   return window.matchMedia('(pointer: coarse)').matches
@@ -111,7 +112,7 @@ const STYLE = `
   gap: 10px;
 }
 #touch .t-row { display: flex; align-items: center; gap: 8px; }
-#touch .t-row.top { gap: 8px; margin-right: 36px; }   /* clears the side panel arrow */
+#touch .t-row.top { gap: 8px; margin-right: 44px; }   /* clears the side panel tab */
 /* While the settings panel is open, the right-hand controls step aside */
 #touch.panel-open .t-right { visibility: hidden; pointer-events: none; }
 #touch .t-brake { width: 76px; height: 104px; }
@@ -129,6 +130,24 @@ const STYLE = `
   width: 64px;
   height: 38px;
 }
+
+/* Lights, beside the horn: the headlight symbol and what they're set to */
+#touch .t-lights {
+  position: absolute;
+  left: calc(90px + env(safe-area-inset-left));
+  bottom: calc(104px + env(safe-area-inset-bottom));
+  width: 82px;
+  height: 38px;
+  padding: 0 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 12px;
+}
+#touch .t-lights svg { flex: none; }
+#touch .t-lights.on { border-color: #2bdc4a; color: #2bdc4a; }
+#touch .t-lights.main { border-color: #3a8bff; color: #3a8bff; }
 
 /* Menu, top left */
 #touch .t-menu {
@@ -234,15 +253,21 @@ export class TouchControls {
     this.lightsItem = item('Lights: off', 'lights');
     this.sheet.append(item('Switch camera', 'camera'), this.lightsItem, item('Reset car', 'reset'), this.soundItem);
 
-    // --- Horn ---
+    // --- Horn, and the lights button beside it ---
     const horn = this.holdButton('Horn', 't-horn small', 'horn');
+    this.lightsBtn = this.tapButton('', 't-lights small', 'lights', 'Headlights');
+    this.lightsBtn.innerHTML = '<svg width="22" height="16" viewBox="0 0 22 16" aria-hidden="true">'
+      + '<path d="M9 2 C3 2 2 5 2 8 s1 6 7 6 Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>'
+      + '<path d="M12 4h8M12 8h8M12 12h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>'
+      + '<span class="t-lights-mode">OFF</span>';
+    this.lightsMode = this.lightsBtn.querySelector('.t-lights-mode');
 
     // --- Portrait warning ---
     const rotate = document.createElement('div');
     rotate.className = 't-rotate';
     rotate.textContent = 'Turn your phone sideways to drive';
 
-    this.root.append(this.steerBox, horn, right, menu, this.sheet, rotate);
+    this.root.append(this.steerBox, horn, this.lightsBtn, right, menu, this.sheet, rotate);
     document.body.appendChild(this.root);
 
     // If the page loses focus, let go of everything
@@ -360,5 +385,11 @@ export class TouchControls {
     if (this.soundItem.textContent !== soundText) this.soundItem.textContent = soundText;
     const lightsText = ['Lights: off', 'Lights: auto', 'Lights: dipped', 'Lights: main beam'][lights];
     if (this.lightsItem.textContent !== lightsText) this.lightsItem.textContent = lightsText;
+    const short = ['OFF', 'AUTO', 'ON', 'MAIN'][lights];
+    if (this.lightsMode.textContent !== short) {
+      this.lightsMode.textContent = short;
+      this.lightsBtn.classList.toggle('on', lights === 2);
+      this.lightsBtn.classList.toggle('main', lights === 3);
+    }
   }
 }
