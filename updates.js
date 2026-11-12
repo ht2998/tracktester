@@ -21,11 +21,23 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 10;
+export const BUILD = 11;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 17, date: '12 Nov 2026', title: 'Sepang, and barriers that bend where you hit them',
+    items: [
+      ['Sepang', 'A flat mock-up of Sepang International Circuit: 5.5 km and 15 turns, traced from the real track outline. Pick it under Track in the side panel (the game reloads)', 'car'],
+      ['Kerbs and run-off', 'Red and white kerbs on every corner, yellow sausage kerbs and orange bollards at the tightest apexes, green grass mesh, and gravel traps or painted run-off outside the corners', 'tyres'],
+      ['Barriers round the track', 'Armco and tyre walls behind the run-off, kept well clear of the rest of the track', 'barriers'],
+      ['Pit lane and grandstand', 'Pit lane with entry and exit, pit wall and catch fence, a long row of garages, and the main grandstand under a big roof (dry underneath in the rain)', 'garage'],
+      ['Bollards fall over', 'Clip a bollard and it gets knocked flat without stopping the car', 'barriers'],
+      ['Catch fences cave in', 'The wire mesh dents only where the car hits it: deepest at car height, wider and deeper the harder you hit. Posts lean only as far as the mesh pulls them, and the leaning top moves with them', 'barriers'],
+      ['Armco bends', 'The rails bend in a smooth curve exactly where you hit, the bottom rail most, and the posts lean only as far as the rail is pushed', 'barriers'],
+    ],
+  },
   {
     id: 16, date: '10 Nov 2026', title: 'Crashes',
     items: [
