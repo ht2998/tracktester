@@ -22,6 +22,8 @@ import { TouchControls, isTouchDevice } from './touch.js';
 import { startUpdates, BUILD as UPDATES_BUILD } from './updates.js';
 import { GodRays, BUILD as GODRAYS_BUILD } from './godrays.js';
 import { RainSystem } from './rain.js';
+import { buildSepang } from './sepang.js';
+import * as sepangFile from './sepang.js';
 import { Cockpit, EYE } from './cockpit.js';
 import { TyreLooks } from './tyres.js';
 import * as tyresFile from './tyres.js';
@@ -45,7 +47,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 7;
+const BUILD = 8;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -54,7 +56,7 @@ const updateScreen = startUpdates({
   'smoke.js': smokeFile.BUILD, 'hud.js': hudFile.BUILD, 'oil.js': oilFile.BUILD,
   'skids.js': skidsFile.BUILD, 'scenery.js': sceneryFile.BUILD, 'grass.js': grassFile.BUILD,
   'sky.js': skyFile.BUILD, 'debris.js': debrisFile.BUILD, 'touch.js': touchFile.BUILD,
-  'rain.js': rainFile.BUILD, 'effects.js': effectsFile.BUILD, 'cockpit.js': cockpitFile.BUILD, 'tyres.js': tyresFile.BUILD,
+  'rain.js': rainFile.BUILD, 'effects.js': effectsFile.BUILD, 'cockpit.js': cockpitFile.BUILD, 'tyres.js': tyresFile.BUILD, 'sepang.js': sepangFile.BUILD,
 });
 
 // ---------------------------------------------------------------------
@@ -91,6 +93,14 @@ container.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x9ec9ef);   // sky blue
 scene.fog = new THREE.Fog(0x9ec9ef, 40, 160);   // distant things fade into the sky
+
+// WHICH PLACE TO DRIVE: the test area (gravel trap, grass, slalom, cones,
+// garages and barriers) or Sepang (a flat mock-up of the real circuit).
+// Picked in the side panel; the page reloads to build the other one.
+const TRACK_KEY = 'tracktester-track';
+let TRACK = 'test';
+try { if (localStorage.getItem(TRACK_KEY) === 'sepang') TRACK = 'sepang'; } catch (e) { /* storage blocked: use the test area */ }
+const SEPANG = TRACK === 'sepang';
 
 // Reflections: gives the car paint and metal something to reflect
 const pmrem = new THREE.PMREMGenerator(renderer);
@@ -177,10 +187,13 @@ function placeShadows() {
 // ---------------------------------------------------------------------
 // GROUND: a big tarmac area
 // ---------------------------------------------------------------------
-const GROUND_DRY = { roughness: 0.95, colour: new THREE.Color(0x4a4d50) };   // rain darkens it and makes it shiny
+// (at Sepang the ground is grass, and the track is laid on top of it)
+const GROUND_DRY = SEPANG
+  ? { roughness: 1, colour: new THREE.Color(0xffffff) }
+  : { roughness: 0.95, colour: new THREE.Color(0x4a4d50) };   // rain darkens it and makes it shiny
 const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(2000, 2000),
-  new THREE.MeshStandardMaterial({ color: 0x4a4d50, roughness: 0.95 })
+  new THREE.PlaneGeometry(SEPANG ? 3000 : 2000, SEPANG ? 3000 : 2000),
+  new THREE.MeshStandardMaterial({ color: GROUND_DRY.colour.getHex(), roughness: GROUND_DRY.roughness })
 );
 ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
@@ -189,7 +202,21 @@ scene.add(ground);
 // Grid lines help you feel your speed and see where you're sliding
 const grid = new THREE.GridHelper(600, 300, 0x5d6166, 0x56595d);
 grid.position.y = 0.002;
-scene.add(grid);
+if (!SEPANG) scene.add(grid);
+
+// SEPANG (sepang.js): the whole circuit, its buildings and barriers
+const sepang = SEPANG ? buildSepang(scene, { isMobile }) : null;
+if (sepang) {
+  sepang.grassTexture.repeat.set(3000 / 6, 3000 / 6);
+  ground.material.map = sepang.grassTexture;
+  ground.position.y = sepang.groundY;
+  ground.material.needsUpdate = true;
+  // see much further: it's a big place
+  scene.fog.near = sepang.view.fogNear;
+  scene.fog.far = sepang.view.fogFar;
+  camera.far = sepang.view.far;
+  camera.updateProjectionMatrix();
+}
 
 // ---------------------------------------------------------------------
 // GRAVEL TRAP: a 5 x 5 square patch (10 m x 10 m) ahead and to the right
@@ -198,6 +225,7 @@ scene.add(grid);
 // ---------------------------------------------------------------------
 const GRAVEL = { minX: -16, maxX: -6, minZ: 6, maxZ: 16 };
 function inGravel(x, z) {
+  if (sepang) return sepang.surfaceAt(x, z) === 'gravel';
   return x > GRAVEL.minX && x < GRAVEL.maxX && z > GRAVEL.minZ && z < GRAVEL.maxZ;
 }
 
@@ -294,13 +322,16 @@ function buildGravel() {
   }
   scene.add(stones);
 }
-buildGravel();
+if (!SEPANG) buildGravel();
 
 // GRASS: a big patch (19 m x 28 m) just past the gravel trap.
 // Slippery and a bit draggy (see SURFACES.grass in physics.js); tyres
 // press it flat and leave dark brown tracks.
 const GRASS = { minX: -24, maxX: -5, minZ: 16, maxZ: 44 };
-const grass = new GrassPatch(scene, GRASS, { tufts: isMobile ? 9000 : 24000 });
+// (at Sepang the grass is everywhere off the track: no tall tufts yet)
+const grass = SEPANG
+  ? { contains: (x, z) => sepang.surfaceAt(x, z) === 'grass', flatten() {} }
+  : new GrassPatch(scene, GRASS, { tufts: isMobile ? 9000 : 24000 });
 
 // ---------------------------------------------------------------------
 // CONES: drawn with INSTANCING (one cone model, drawn many times at once)
@@ -328,11 +359,11 @@ function buildCones() {
   });
   scene.add(cones);
 }
-buildCones();
+if (!SEPANG) buildCones();
 
 // Buildings, walls, barriers and fences (scenery.js). Their surfaces are
 // registered for echoes once the sound is set up, further down.
-const echoSurfaces = buildScenery(scene);
+const echoSurfaces = sepang ? sepang.echoes : buildScenery(scene);
 
 // ---------------------------------------------------------------------
 // RAIN (rain.js): falling rain, a wet track that dries out afterwards,
@@ -367,9 +398,9 @@ const rain = new RainSystem(scene, {
   isMobile,
   roofs: echoSurfaces.roofs || [],         // rain stops on the garage and race control roofs
   spots: {
-    puddles: pickPuddleSpots(isMobile ? 12 : 18),
+    puddles: sepang ? sepang.puddles : pickPuddleSpots(isMobile ? 12 : 18),
     // Mud: low spots in the grass patch
-    mud: Array.from({ length: 6 }, (_, i) => ({
+    mud: sepang ? sepang.mud : Array.from({ length: 6 }, (_, i) => ({
       x: -21 + Math.random() * 13, z: 19 + (i / 6) * 22 + Math.random() * 3,
       r: 1.1 + Math.random() * 1.2, start: i === 0 ? 0 : Math.random() * 0.5,
     })),
@@ -892,6 +923,14 @@ function releaseWheels() {
 // ---------------------------------------------------------------------
 const physics = new CarPhysics();
 tyreLooks.apply(physics.tyreCompound);
+// Where the car starts (and goes back to on reset): at Sepang, on the start straight
+function placeAtStart() {
+  if (!sepang) return;
+  physics.x = sepang.start.x;
+  physics.z = sepang.start.z;
+  physics.heading = sepang.start.heading;
+}
+placeAtStart();
 
 // Oil dripped by a badly damaged engine. Tyres on oil lose grip.
 const oil = new OilSlicks(scene);
@@ -911,7 +950,9 @@ const grassTrails = new SkidMarks(scene, {
 const shreds = new TyreShreds(scene, skids, { max: isMobile ? 40 : 60 });
 // What's under a tyre: 'gravel', 'grass', 'soil' (see SURFACES in
 // physics.js) or 'tarmac'. There's a gravel trap and a grass patch so far.
-const surfaceAt = (x, z) => (inGravel(x, z) ? 'gravel' : grass.contains(x, z) ? 'grass' : 'tarmac');
+// (Sepang also has kerbs: grippy like tarmac when dry, slippery when wet)
+const surfaceAt = sepang ? sepang.surfaceAt
+  : (x, z) => (inGravel(x, z) ? 'gravel' : grass.contains(x, z) ? 'grass' : 'tarmac');
 const dirtTyres = () => TYRES[physics.tyreCompound].kind === 'dirt';
 // IN THE WET: grip depends on how much water each tyre can clear away.
 // Every second, a tyre has to push aside (water depth x tyre width x speed)
@@ -1194,6 +1235,32 @@ const lastHit = new Map();
 const chips = new FlyingBits(scene, { max: isMobile ? 80 : 140, colours: [0xb8b5ae, 0xa9a59c, 0xd0cdc5], size: [0.02, 0.06], flat: false });
 const chipVel = new THREE.Vector3();
 
+// Hit boxes sorted into 16 m squares, so only the ones near the car are
+// checked (Sepang has thousands). Each box is filed under every square it
+// could reach, allowing for barriers being pushed back a little.
+const BUCKET = 16;
+const buckets = new Map();
+for (const c of COLLIDERS) {
+  for (let bx = Math.floor((c.minX - 2) / BUCKET); bx <= Math.floor((c.maxX + 2) / BUCKET); bx++) {
+    for (let bz = Math.floor((c.minZ - 2) / BUCKET); bz <= Math.floor((c.maxZ + 2) / BUCKET); bz++) {
+      const key = bx * 100003 + bz;
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push(c);
+    }
+  }
+}
+const nearby = new Set();
+function collidersNear(x, z) {
+  nearby.clear();
+  for (let bx = Math.floor((x - 2.5) / BUCKET); bx <= Math.floor((x + 2.5) / BUCKET); bx++) {
+    for (let bz = Math.floor((z - 2.5) / BUCKET); bz <= Math.floor((z + 2.5) / BUCKET); bz++) {
+      const list = buckets.get(bx * 100003 + bz);
+      if (list) for (const c of list) nearby.add(c);
+    }
+  }
+  return nearby;
+}
+
 function findContact() {
   const cx = physics.x, cz = physics.z, h = physics.heading;
   const fx = Math.sin(h), fz = Math.cos(h), lx = Math.cos(h), lz = -Math.sin(h);
@@ -1201,7 +1268,7 @@ function findContact() {
   const consider = (depth, nx, nz, px, pz, c) => {
     if (depth > 0 && (!best || depth > best.depth)) best = { depth, nx, nz, px, pz, c };
   };
-  for (const c of COLLIDERS) {
+  for (const c of collidersNear(cx, cz)) {
     if (c.maxX < cx - 2.2 || c.minX > cx + 2.2 || c.maxZ < cz - 2.2 || c.minZ > cz + 2.2) continue;
     // Corners and edges of the car inside the box: pushed out through the
     // nearest face that's on the car's side of the box
@@ -1247,6 +1314,8 @@ function collide(now) {
     const pvx = vx + w * rz, pvz = vz - w * rx;                     // how fast that part of the car is moving
     const vn = pvx * k.nx + pvz * k.nz;
     if (vn >= 0) continue;                                          // already moving away
+    // A bollard just gets knocked flat: it doesn't stop the car
+    if (k.c.kind === 'bollard') { k.c.hit?.({ x: k.px, z: k.pz }, { x: k.nx, z: k.nz }, -vn); continue; }
     const props = HIT[k.c.kind] || HIT.building;
     let bounce = props.bounce;
     // A proper hit: the barrier reacts (dents, squashes, cracks)
@@ -1320,6 +1389,12 @@ const hud = new Hud({
   onTransmission: (name) => physics.setTransmission(name),
   onAssist: (name, on) => { physics.assists[name] = on; },
   onTyres: (id) => { physics.setTyres(id); tyreLooks.apply(id); },
+  // Track picker: remember the choice and reload to build it
+  track: TRACK,
+  onTrack: (id) => {
+    try { localStorage.setItem(TRACK_KEY, id); } catch (e) { /* storage blocked */ }
+    location.reload();
+  },
   tyreOptions: TYRES,
   compact: touchMode,   // mini gauges at the top on phones
   timeSpeeds: TIME_SPEEDS,
@@ -1485,6 +1560,7 @@ renderer.setAnimationLoop(() => {
   if (wasTapped('camera')) switchCamera();
   if (wasTapped('reset')) {
     physics.reset();   // also repairs the engine
+    placeAtStart();
     oil.clear();
     debris.clear();
     shreds.clear();
