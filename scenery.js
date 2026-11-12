@@ -8,13 +8,19 @@
 //
 // buildScenery(scene) returns the echo surfaces: [{ min, max, reflect }]
 //   reflect: how much sound bounces back (1 = solid building, 0.1 = mesh fence)
+// and, on that same list:
+//   .colliders: what the car can hit, as boxes seen from above
+//     { minX, maxX, minZ, maxZ, kind, hit(point, normal, speed) }
+//     kind: 'building' (solid), 'concrete' (cracks), 'armco' (dents),
+//           'tyres' (squash back), 'fence' (bulges back)
+//   .roofs: where rain can't fall: { minX, maxX, minZ, maxZ, height }
 // =====================================================================
 
 import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 3;
+export const BUILD = 4;
 
 const m4 = new THREE.Matrix4();
 const q = new THREE.Quaternion();
@@ -48,6 +54,28 @@ function along(ax, az, bx, bz, step) {
   }
   return out;
 }
+
+// Everything the car can hit, and everything with a roof (filled in as the
+// scenery is built)
+let COLLIDERS = [];
+let ROOFS = [];
+function addCollider(minX, maxX, minZ, maxZ, kind, extra = {}) {
+  const c = { minX, maxX, minZ, maxZ, kind, ...extra };
+  COLLIDERS.push(c);
+  return c;
+}
+// The box (seen from above) around a straight piece centred at (x, z),
+// running along `angle`, `len` long and `thick` across
+function pieceBox(c, x, z, angle, len, thick) {
+  const ax = Math.sin(angle) * len / 2, az = Math.cos(angle) * len / 2;      // along
+  const bx = Math.cos(angle) * thick / 2, bz = -Math.sin(angle) * thick / 2; // across
+  const ex = Math.abs(ax) + Math.abs(bx), ez = Math.abs(az) + Math.abs(bz);
+  c.minX = x - ex; c.maxX = x + ex; c.minZ = z - ez; c.maxZ = z + ez;
+  return c;
+}
+const across = (angle) => ({ x: Math.cos(angle), z: -Math.sin(angle) });   // sideways to a run
+// How far along a run a point is, and from the piece at (x, z)
+const alongDist = (p, x, z, angle) => Math.abs((p.x - x) * Math.sin(angle) + (p.z - z) * Math.cos(angle));
 
 const box = (minX, minY, minZ, maxX, maxY, maxZ, reflect) => ({
   min: new THREE.Vector3(minX, minY, minZ),
@@ -104,6 +132,8 @@ function buildGarages(scene, x, z0, z1, depth = 10, height = 5) {
     m.position.set(cx, cy, cz);
     m.castShadow = m.receiveShadow = true;
     scene.add(m);
+    // anything standing on the ground is solid to the car
+    if (cy - h / 2 < 0.5) addCollider(cx - w / 2, cx + w / 2, cz - d / 2, cz + d / 2, 'building');
     return m;
   };
 
@@ -129,6 +159,7 @@ function buildGarages(scene, x, z0, z1, depth = 10, height = 5) {
   roof.position.set(x + depth / 2 - 1, height + 0.15, (z0 + z1) / 2);
   roof.castShadow = true;
   scene.add(roof);
+  ROOFS.push({ minX: x - 2, maxX: x + depth, minZ: z0 - 0.3, maxZ: z1 + 0.3, height });
   // Floor: smooth grey epoxy with a yellow line across each doorway
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(depth - 0.3, len - 0.3),
@@ -158,6 +189,7 @@ function buildGarages(scene, x, z0, z1, depth = 10, height = 5) {
     // Racking: two shelving units against the back wall
     for (const zs of [zc - 1.3, zc + 1.3]) {
       const rx = back - 0.6;
+      addCollider(rx - 0.32, rx + 0.32, zs - 1.0, zs + 1.0, 'building');   // the racking
       for (const dz of [-0.95, 0.95]) for (const dx of [-0.28, 0.28]) L.upright.push([rx + dx, 1.25, zs + dz]);
       for (const h of [0.15, 0.85, 1.55, 2.25]) {
         L.shelf.push([rx, h, zs]);
@@ -182,6 +214,7 @@ function buildGarages(scene, x, z0, z1, depth = 10, height = 5) {
     L.chest.push([x + 5.5, 0.55, wallZ - side * 0.3, side > 0 ? Math.PI / 2 : -Math.PI / 2]);
     L.chestTop.push([x + 5.5, 1.22, wallZ - side * 0.3, side > 0 ? Math.PI / 2 : -Math.PI / 2]);
     L.board.push([x + 5.5, 1.95, wallZ - side * 0.02, side > 0 ? Math.PI : 0]);
+    addCollider(x + 5.0, x + 6.0, Math.min(wallZ, wallZ - side * 0.58), Math.max(wallZ, wallZ - side * 0.58), 'building');   // the tool chest
     // Stacks of wheels by the doorway on the other side
     const tyreZ = side > 0 ? zl + 0.45 : zr - 0.45;
     for (const sx of [x + 1.3, x + 2.1]) {
@@ -200,6 +233,7 @@ function buildGarages(scene, x, z0, z1, depth = 10, height = 5) {
     L.trolley.push([x + 7.4, 0.12, wallZ - side * 0.5, 0, 1, 0.4, 1]);
     for (const [dx, dz] of [[-0.3, -0.2], [-0.3, 0.2], [0.3, -0.2], [0.3, 0.2]]) L.trolleyWheel.push([x + 7.4 + dx, 0.04, wallZ - side * 0.5 + dz]);
     L.drum2.push([back - 1.6, 0.44, side > 0 ? zl + 0.5 : zr - 0.5]);
+    { const dz = side > 0 ? zl + 0.5 : zr - 0.5; addCollider(back - 1.9, back - 1.3, dz - 0.3, dz + 0.3, 'building'); }   // the oil drum
     // Strip lights in the ceiling, and a work lamp on a stand
     for (const dx of [2.5, 6.5]) L.strip.push([x + dx, height - 0.14, zc]);
     L.lamp.push([x + 2.6, 1.55, zc - 1.6, -0.5]);
@@ -316,6 +350,8 @@ function buildOffice(scene, x0, z0, x1, z1, height) {
   );
   roof.position.set((x0 + x1) / 2, height + 0.2, (z0 + z1) / 2);
   scene.add(roof);
+  addCollider(x0, x1, z0, z1, 'building');
+  ROOFS.push({ minX: x0 - 0.2, maxX: x1 + 0.2, minZ: z0 - 0.2, maxZ: z1 + 0.2, height });
   return [box(x0, 0, z0, x1, height, z1, 1)];
 }
 
@@ -362,6 +398,50 @@ function buildConcreteWalls(scene, runs) {
   });
   walls.castShadow = walls.receiveShadow = true;
   scene.add(walls, stripe);
+
+  // Cracks: a hit leaves a crack pattern on the wall (bigger the harder the
+  // hit) and knocks off a few chips of concrete. The wall itself doesn't move.
+  const crackTex = [0, 1, 2].map(() => canvasTexture(256, 256, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    const branch = (x, y, a, len, width) => {
+      if (len < 6 || width < 0.4) return;
+      let cx = x, cy = y;
+      g.strokeStyle = 'rgba(25,24,22,0.85)';
+      g.lineWidth = width;
+      g.beginPath(); g.moveTo(cx, cy);
+      for (let k = 0; k < 5; k++) {
+        a += (Math.random() - 0.5) * 0.7;
+        cx += Math.cos(a) * len / 5; cy += Math.sin(a) * len / 5;
+        g.lineTo(cx, cy);
+        if (Math.random() < 0.35) branch(cx, cy, a + (Math.random() < 0.5 ? 0.8 : -0.8), len * 0.5, width * 0.6);
+      }
+      g.stroke();
+    };
+    for (let k = 0; k < 7; k++) branch(w / 2, h / 2, (k / 7) * Math.PI * 2 + Math.random() * 0.5, 70 + Math.random() * 50, 3);
+    g.fillStyle = 'rgba(40,38,35,0.55)';           // the crushed spot in the middle
+    g.beginPath(); g.arc(w / 2, h / 2, 10, 0, Math.PI * 2); g.fill();
+  }));
+  const crackGeo = new THREE.PlaneGeometry(1, 1);
+  const crackMats = crackTex.map((t) => new THREE.MeshStandardMaterial({
+    map: t, transparent: true, depthWrite: false, roughness: 0.95,
+    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+  }));
+  const cracks = [];
+  const crackAt = (point, normal, speed) => {
+    if (speed < 2) return null;
+    const size = Math.min(1.5, 0.35 + speed * 0.05);
+    const m = new THREE.Mesh(crackGeo, crackMats[(Math.random() * 3) | 0]);
+    m.position.set(point.x + normal.x * 0.012, Math.min(H - size / 2, Math.max(size / 2, 0.45 + Math.random() * 0.2)), point.z + normal.z * 0.012);
+    m.rotation.set(0, Math.atan2(normal.x, normal.z), Math.random() * Math.PI * 2);
+    m.scale.setScalar(size);
+    scene.add(m);
+    cracks.push(m);
+    if (cracks.length > 40) scene.remove(cracks.shift());
+    return { chips: Math.min(14, Math.round(speed * 0.8)) };
+  };
+  for (const [ax, az, bx, bz] of runs) {
+    addCollider(Math.min(ax, bx) - T / 2, Math.max(ax, bx) + T / 2, Math.min(az, bz), Math.max(az, bz), 'concrete', { hit: crackAt });
+  }
   return runs.map(([ax, az, bx, bz]) => box(Math.min(ax, bx) - T / 2, 0, Math.min(az, bz) - T / 2,
     Math.max(ax, bx) + T / 2, H, Math.max(az, bz) + T / 2, 0.55));
 }
@@ -391,6 +471,48 @@ function buildArmco(scene, runs) {
   });
   postMesh.castShadow = railMesh.castShadow = true;
   scene.add(postMesh, railMesh);
+
+  // Dents: a hit pushes the rails back around the impact (most at the
+  // middle, easing off over a few metres either side) and bends the posts
+  // over. Each 2 m section is its own hit box, so a dent moves it back.
+  rails.forEach((p) => { p.dent = 0; p.collider = pieceBox(addCollider(0, 0, 0, 0, 'armco', { hit: (pt, n, v) => dentAt(pt, n, v) }), p.x, p.z, p.angle, p.len, 0.22); });
+  posts.forEach((p) => { p.dent = 0; });
+  const redraw = () => {
+    rails.forEach((p, i) => {
+      const a = across(p.angle);
+      const prev = rails[i - 1]?.dent ?? p.dent, next = rails[i + 1]?.dent ?? p.dent;
+      const bend = Math.atan((next - prev) / (2 * p.len));
+      q.setFromAxisAngle(UP, p.angle + bend);
+      for (const [k, y] of [[0, 0.55], [1, 0.82]]) {
+        railMesh.setMatrixAt(i * 2 + k, m4.compose(pos.set(p.x + a.x * p.dent, y - Math.abs(p.dent) * 0.12, p.z + a.z * p.dent), q, scl.set(1, 1, p.len / STEP / Math.cos(bend))));
+      }
+      pieceBox(p.collider, p.x + a.x * p.dent, p.z + a.z * p.dent, p.angle, p.len, 0.22);
+    });
+    posts.forEach((p, i) => {
+      const near = rails.filter((r) => Math.hypot(r.x - p.x, r.z - p.z) < STEP * 0.6);
+      p.dent = near.length ? near.reduce((s2, r) => s2 + r.dent, 0) / near.length : 0;
+      const a = across(p.angle);
+      const lean = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(Math.sin(p.angle), 0, Math.cos(p.angle)), -p.dent * 0.9);
+      q.setFromAxisAngle(UP, p.angle).premultiply(lean);
+      postMesh.setMatrixAt(i, m4.compose(pos.set(p.x + a.x * p.dent * 0.6, 0.425, p.z + a.z * p.dent * 0.6), q, scl.set(1, 1, 1)));
+    });
+    railMesh.instanceMatrix.needsUpdate = true;
+    postMesh.instanceMatrix.needsUpdate = true;
+  };
+  const dentAt = (point, normal, speed) => {
+    if (speed < 1.5) return null;
+    for (const p of rails) {
+      const d = alongDist(point, p.x, p.z, p.angle);
+      if (d > 3.5) continue;
+      const fall = Math.pow(Math.cos((Math.PI / 2) * d / 3.5), 2);
+      const a = across(p.angle);
+      const away = -(normal.x * a.x + normal.z * a.z);            // +1: pushed along `across`
+      const room = 0.8 - Math.abs(p.dent);                         // it can only bend so far
+      p.dent += Math.sign(away) * Math.max(0, Math.min(room, 0.045 * speed * fall));
+    }
+    redraw();
+    return { absorb: 0.5 };
+  };
   return runs.map(([ax, az, bx, bz]) => box(Math.min(ax, bx) - 0.1, 0, Math.min(az, bz) - 0.1,
     Math.max(ax, bx) + 0.1, 1, Math.max(az, bz) + 0.1, 0.35));
 }
@@ -399,14 +521,19 @@ function buildArmco(scene, runs) {
 // conveyor rubber across the front (here: the stacks, 4 high, 2 deep)
 function buildTyreWalls(scene, runs) {
   const R = 0.32, STEP = 0.62, HIGH = 4, ROWS = 2;
+  const columns = [];
   const spots = runs.flatMap(([ax, az, bx, bz]) => {
     const pts = along(ax, az, bx, bz, STEP);
     const out = [];
     for (const p of pts) {
       const lx = Math.cos(p.angle), lz = -Math.sin(p.angle);   // across the run
+      const col = { x: p.x, z: p.z, angle: p.angle, push: 0, tyres: [] };
+      columns.push(col);
       for (let row = 0; row < ROWS; row++) {
         for (let level = 0; level < HIGH; level++) {
-          out.push({ x: p.x + lx * row * STEP, z: p.z + lz * row * STEP, y: 0.11 + level * 0.22 });
+          const t = { x: p.x + lx * row * STEP, z: p.z + lz * row * STEP, y: 0.11 + level * 0.22, level, jx: 0, jz: 0, tilt: 0, spin: Math.random() * Math.PI, col };
+          out.push(t);
+          col.tyres.push(t);
         }
       }
     }
@@ -417,7 +544,7 @@ function buildTyreWalls(scene, runs) {
   const tyres = new THREE.InstancedMesh(tyreGeo, new THREE.MeshStandardMaterial({ color: 0x1c1c1e, roughness: 0.92 }), spots.length);
   const shade = new THREE.Color();
   spots.forEach((s, i) => {
-    q.setFromAxisAngle(UP, Math.random() * Math.PI);
+    q.setFromAxisAngle(UP, s.spin);
     tyres.setMatrixAt(i, m4.compose(pos.set(s.x, s.y, s.z), q, scl.set(1, 1.15, 1)));
     // Some old tyres are painted white or red, like at real tracks
     const r = Math.random();
@@ -425,6 +552,48 @@ function buildTyreWalls(scene, runs) {
   });
   tyres.castShadow = tyres.receiveShadow = true;
   scene.add(tyres);
+
+  // Squashing back: a hit shoves the stacks near the impact back (the
+  // front row squashes into the back row), and knocks the tyres askew,
+  // the top ones most. Each column of stacks is its own hit box.
+  const colBox = (c) => {
+    const a = across(c.angle);
+    const near = -R + c.push, far = STEP + R + c.push * 0.6;     // the back row moves less
+    const xs = [c.x + a.x * near, c.x + a.x * far], zs = [c.z + a.z * near, c.z + a.z * far];
+    const ax = Math.abs(Math.sin(c.angle)) * R, az = Math.abs(Math.cos(c.angle)) * R;
+    c.collider.minX = Math.min(...xs) - ax; c.collider.maxX = Math.max(...xs) + ax;
+    c.collider.minZ = Math.min(...zs) - az; c.collider.maxZ = Math.max(...zs) + az;
+  };
+  for (const c of columns) { c.collider = addCollider(0, 0, 0, 0, 'tyres', { hit: (pt, n, v) => squashAt(pt, n, v) }); colBox(c); }
+  const squashAt = (point, normal, speed) => {
+    if (speed < 1.5) return null;
+    for (const c of columns) {
+      const d = alongDist(point, c.x, c.z, c.angle);
+      if (d > 1.6) continue;
+      const fall = Math.pow(Math.cos((Math.PI / 2) * d / 1.6), 2);
+      const a = across(c.angle);
+      const away = -Math.sign(normal.x * a.x + normal.z * a.z);
+      const room = 0.55 - Math.abs(c.push);
+      const amount = Math.max(0, Math.min(room, 0.05 * speed * fall));
+      c.push += away * amount;
+      for (const t of c.tyres) {
+        const loose = 0.5 + t.level * 0.35;                          // higher tyres get knocked about more
+        t.jx += (Math.random() - 0.5) * 0.1 * amount * loose;
+        t.jz += (Math.random() - 0.5) * 0.1 * amount * loose;
+        t.tilt = Math.min(0.5, t.tilt + Math.random() * 0.3 * amount * loose);
+      }
+      colBox(c);
+    }
+    spots.forEach((t, i) => {
+      const a = across(t.col.angle);
+      const row = Math.hypot(t.x - t.col.x, t.z - t.col.z) > 0.1 ? 0.6 : 1;   // the back row moves less
+      const shift = t.col.push * row;
+      q.setFromAxisAngle(UP, t.spin).premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(Math.sin(t.col.angle), 0, Math.cos(t.col.angle)), t.tilt * Math.sign(t.col.push || 1)));
+      tyres.setMatrixAt(i, m4.compose(pos.set(t.x + a.x * shift + t.jx, t.y, t.z + a.z * shift + t.jz), q, scl.set(1, 1.15 * (1 - Math.abs(shift) * 0.25 * row), 1)));
+    });
+    tyres.instanceMatrix.needsUpdate = true;
+    return { absorb: 0.7 };
+  };
   return runs.map(([ax, az, bx, bz]) => box(Math.min(ax, bx) - R, 0, Math.min(az, bz) - R,
     Math.max(ax, bx) + R + STEP, HIGH * 0.22, Math.max(az, bz) + R + STEP, 0.2));
 }
@@ -512,6 +681,40 @@ function buildFences(scene, runs) {
   });
   arms.castShadow = true;
   scene.add(panelMesh, postMesh, topPanels, arms);
+
+  // Bulging back: a hit stretches the mesh back around the impact and
+  // bends the posts. Each panel between posts is its own hit box.
+  panels.forEach((p) => { p.dent = 0; p.collider = pieceBox(addCollider(0, 0, 0, 0, 'fence', { hit: (pt, n, v) => bulgeAt(pt, n, v) }), p.x, p.z, p.angle, p.len, 0.12); });
+  const bulgeAt = (point, normal, speed) => {
+    if (speed < 1.5) return null;
+    for (const p of panels) {
+      const d = alongDist(point, p.x, p.z, p.angle);
+      if (d > 4.5) continue;
+      const fall = Math.pow(Math.cos((Math.PI / 2) * d / 4.5), 2);
+      const a = across(p.angle);
+      const away = -Math.sign(normal.x * a.x + normal.z * a.z);
+      p.dent += away * Math.max(0, Math.min(0.9 - Math.abs(p.dent), 0.06 * speed * fall));
+    }
+    panels.forEach((p, i) => {
+      const a = across(p.angle);
+      q.setFromAxisAngle(UP, p.angle + Math.PI / 2);
+      panelMesh.setMatrixAt(i, m4.compose(pos.set(p.x + a.x * p.dent, H / 2, p.z + a.z * p.dent), q, scl.set(p.len, 1, 1)));
+      const o = topOffset(p.angle, p.lean);
+      topPanels.setMatrixAt(i, m4.compose(pos.set(p.x + o.x + a.x * p.dent * 0.5, o.y, p.z + o.z + a.z * p.dent * 0.5), topPose(p.angle, p.lean), scl.set(p.len, 1, 1)));
+      pieceBox(p.collider, p.x + a.x * p.dent, p.z + a.z * p.dent, p.angle, p.len, 0.12);
+    });
+    posts.forEach((p, i) => {
+      const near = panels.filter((pp) => Math.hypot(pp.x - p.x, pp.z - p.z) < STEP * 0.6);
+      const dent = near.length ? near.reduce((s2, pp) => s2 + pp.dent, 0) / near.length : 0;
+      const lean = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(Math.sin(p.angle), 0, Math.cos(p.angle)), -dent * 0.35);
+      const a = across(p.angle);
+      postMesh.setMatrixAt(i, m4.compose(pos.set(p.x + a.x * dent * 0.4, (H + 0.3) / 2, p.z + a.z * dent * 0.4), lean, scl.set(1, 1, 1)));
+    });
+    panelMesh.instanceMatrix.needsUpdate = true;
+    topPanels.instanceMatrix.needsUpdate = true;
+    postMesh.instanceMatrix.needsUpdate = true;
+    return { absorb: 0.6 };
+  };
   // Mesh lets most sound through: only a faint, rattly reflection
   return runs.map(([ax, az, bx, bz]) => box(Math.min(ax, bx) - 0.05, 0, Math.min(az, bz) - 0.05,
     Math.max(ax, bx) + 0.05, H + 0.8, Math.max(az, bz) + 0.05, 0.12));
@@ -523,6 +726,8 @@ function buildFences(scene, runs) {
 // z = 25-151), the cone ring (around -40, 40) and the gravel trap.
 // ---------------------------------------------------------------------
 export function buildScenery(scene) {
+  COLLIDERS = [];
+  ROOFS = [];
   const echoes = [];
   // Pit garages along the left of the slalom straight, and race control
   // further up on the right
@@ -535,5 +740,7 @@ export function buildScenery(scene) {
   echoes.push(...buildTyreWalls(scene, [[-17.2, 5, -17.2, 17]]));
   // (both lean towards +x, over the track side)
   echoes.push(...buildFences(scene, [[-20, 2, -20, 20, 1], [-11, 95, -11, 145, 1]]));
+  echoes.colliders = COLLIDERS;
+  echoes.roofs = ROOFS;
   return echoes;
 }
