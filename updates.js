@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 12;
+export const BUILD = 13;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
@@ -35,6 +35,7 @@ export const UPDATES = [
       ['Pit lane and grandstand', 'Pit lane with entry and exit, pit wall and catch fence, a long row of garages, and the main grandstand under a big roof (dry underneath in the rain)', 'garage'],
       ['Bollards fall over', 'Clip a bollard and it gets knocked flat without stopping the car', 'barriers'],
       ['Catch fences cave in', 'The wire mesh dents only where the car hits it: deepest at car height, wider and deeper the harder you hit. Posts lean only as far as the mesh pulls them, and the leaning top moves with them', 'barriers'],
+      ['More grip', 'Every tyre grips about 20% more, and a bit of wheelspin no longer throws the back out. Sports Medium now corners at about 1.4 g, Racing Softs at about 1.75 g', 'tyres'],
       ['Dirt tyres look right', 'They\'re round again, with a tread of big blocks and deep grooves painted on, instead of a lumpy shape', 'tread'],
       ['Armco bends', 'The rails bend in a smooth curve exactly where you hit, the bottom rail most, and the posts lean only as far as the rail is pushed', 'barriers'],
     ],
