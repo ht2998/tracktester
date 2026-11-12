@@ -5,19 +5,18 @@
 //   Intermediate   - green band, shallow grooves and sipes
 //   Wet            - blue band, deep grooves cut in arrow shapes
 //   Comfort/Sports - road tread: grooves round the tyre and blocks across
-//   Dirt           - big knobbly blocks that stick out of the tyre
+//   Dirt           - a pattern of big tread blocks with deep grooves between them
 //   Snow           - zigzag sipes, metal studs, and snow chains round the tyre
 // The tread is painted on canvases (a colour picture plus a bump picture,
 // so the grooves catch the light) and turns with the wheel, so you can see
-// it rolling. Dirt tyres use a lumpy tyre shape; snow tyres get a chain model
-// that's drawn with each wheel.
+// it rolling. Snow tyres also get a chain model that's drawn with each wheel.
 // =====================================================================
 
 import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 1;
+export const BUILD = 2;
 
 // Sidewall band colour by compound (null = plain black sidewall)
 const BAND = {
@@ -122,15 +121,24 @@ function paintTread(kind) {
     }
     rubberNoise(0.03);
   } else if (kind === 'dirt') {
-    // Knobs: the shape itself is lumpy; this paints the gaps between them
-    c.fillStyle = '#0d0d0e';
+    // Big square blocks in staggered rows, with wide, deep grooves all round
+    // them (painted: the tyre itself stays round). Each block has a lighter,
+    // worn top and a dark edge, so the grooves read clearly.
+    c.fillStyle = '#0a0a0b';
+    c.fillRect(0, 0, TW, TH);
     h.fillStyle = '#000000';
-    for (let row = 0; row < 24; row++) {
-      for (let lane = 0; lane < 3; lane++) {
-        const x = (row + (lane % 2) * 0.5) * (TW / 24);
-        const y = (lane / 3) * TH;
-        c.fillRect(x + TW / 24 * 0.62, y, TW / 24 * 0.38, TH / 3);
-        h.fillRect(x + TW / 24 * 0.62, y, TW / 24 * 0.38, TH / 3);
+    h.fillRect(0, 0, TW, TH);
+    const ROWS = 22, LANES = 3;
+    const bw = TW / ROWS * 0.6, bh = TH / LANES * 0.7;
+    for (let row = 0; row < ROWS; row++) {
+      for (let lane = 0; lane < LANES; lane++) {
+        const x = (row + (lane % 2) * 0.5) * (TW / ROWS) + TW / ROWS * 0.2;
+        const y = lane * (TH / LANES) + TH / LANES * 0.15;
+        c.fillStyle = '#242425'; c.fillRect(x, y, bw, bh);                 // the block
+        c.fillStyle = '#2e2e30'; c.fillRect(x + 2, y + 2, bw - 4, bh - 4);  // its worn top
+        h.fillStyle = '#ffffff'; h.fillRect(x, y, bw, bh);                  // (raised)
+        h.fillStyle = '#d0d0d0'; h.fillRect(x, y, 2, bh);                   // rounded edges
+        h.fillRect(x + bw - 2, y, 2, bh);
       }
     }
     for (let i = 0; i < 1400; i++) {            // caked-on dust
@@ -196,29 +204,6 @@ function paintSidewall(band) {
   return cv;
 }
 
-// A tyre shape with knobbly blocks standing out of the tread (dirt tyres)
-function knobblyGeometry(radius, width) {
-  const geo = new THREE.CylinderGeometry(radius, radius, width, 144, 6);
-  geo.rotateZ(Math.PI / 2);                     // axle along x
-  const pos = geo.attributes.position;
-  const v = new THREE.Vector3();
-  for (let i = 0; i < pos.count; i++) {
-    v.fromBufferAttribute(pos, i);
-    const r = Math.hypot(v.y, v.z);
-    if (r < radius * 0.98 || Math.abs(v.x) > width / 2 - 1e-4 && r < radius * 0.999) continue;   // only the tread surface
-    const a = (Math.atan2(v.z, v.y) + Math.PI) / (Math.PI * 2);   // 0-1 round the tyre
-    const lane = Math.min(2, Math.floor((v.x / width + 0.5) * 3));
-    const phase = (a * 24 + (lane % 2) * 0.5) % 1;
-    const knob = phase < 0.62 ? 0.018 : -0.004;
-    const edge = Math.abs(v.x) > width / 2 - 0.02 ? 0.5 : 1;    // knobs taper at the edges
-    const s = (r + knob * edge) / r;
-    pos.setY(i, v.y * s);
-    pos.setZ(i, v.z * s);
-  }
-  geo.computeVertexNormals();
-  return geo;
-}
-
 // Snow chains: a ring of chain along each side of the tyre, joined by cross
 // chains across the tread every so often
 function chainGeometry(radius, width) {
@@ -268,8 +253,6 @@ export class TyreLooks {
     this.tyres = tyres;
     this.radius = radius;
     this.width = width;
-    this.roundGeo = tyres.geometry;
-    this.knobGeo = null;
     this.cache = {};
     // Snow chains, drawn with each wheel (hidden unless snow tyres are on)
     this.chains = new THREE.InstancedMesh(
@@ -299,7 +282,7 @@ export class TyreLooks {
     };
     const tread = new THREE.MeshStandardMaterial({
       map: tex(paint.colour, true),
-      normalMap: tex(toNormalMap(paint.height, kind === 'dirt' ? 1.5 : 3)),
+      normalMap: tex(toNormalMap(paint.height, kind === 'dirt' ? 4 : 3)),   // (deep grooves on dirt tyres)
       normalScale: new THREE.Vector2(1, 1),
       roughness: kind === 'slick' ? 0.72 : 0.88,
     });
@@ -313,12 +296,6 @@ export class TyreLooks {
   // Put a compound's look on the car
   apply(id) {
     this.tyres.material = this.materials(id);
-    if (TREAD[id] === 'dirt') {
-      this.knobGeo = this.knobGeo || knobblyGeometry(this.radius, this.width);
-      this.tyres.geometry = this.knobGeo;
-    } else {
-      this.tyres.geometry = this.roundGeo;
-    }
     this.chains.visible = id === 'SNOW';
     this.current = id;
   }
