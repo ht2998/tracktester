@@ -21,11 +21,22 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 27;
+export const BUILD = 28;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 30, date: '12 Nov 2026', title: 'Racing line and braking zones at Sepang',
+    items: [
+      ['Racing line', 'A yellow dotted line shows the fastest way round Sepang: wide into each corner, clipping the inside at the apex, wide on the way out. It\'s worked out from the track itself, as the line that turns the least, so you can carry the most speed', 'tyres'],
+      ['Braking zones', 'The line turns red, with a red band under it, where you need to brake. The braking zone ahead of you follows YOUR speed: come in faster than planned and it starts earlier; slower, and it starts later or disappears. The speeds are worked out from your tyres\' grip (and the rain)', 'lights'],
+      ['Corner panel', 'Like Gran Turismo: a panel at the top shows the next corner, with an arrow bent the way it goes (sharper for tighter corners), its number (T1 to T15), how far away it is, and the gear and speed to take it at. It flashes BRAKE in red when you should be braking', 'gauges'],
+      ['Distance boards', '150, 100 and 50 m boards stand on the outside before every big stop', 'barriers'],
+      ['Old rubber', 'The track has a race weekend\'s worth of black tyre marks where everyone brakes and turns in, and fainter ones through the corners along the racing line. Rubbered-in track grips a little better (about 3%). Rain washes it away: a few minutes of heavy rain clears it', 'drift'],
+      ['Switching it off', 'L (or the phone menu) turns the racing line and the corner panel off and on. It remembers your choice', 'phone'],
+    ],
+  },
   {
     id: 29, date: '12 Nov 2026', title: 'Trees in the test area',
     items: [
