@@ -47,7 +47,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 9;
+const BUILD = 10;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -485,9 +485,12 @@ function buildCar() {
   car.add(part(new THREE.BoxGeometry(0.9, 0.5, 1.9), MAT.paint, 0, 0.4, -0.35));
 
   // --- Long nose (aluminium, like a classic Seven) ---
-  car.add(part(new THREE.BoxGeometry(0.62, 0.34, 0.9), MAT.aluminium, 0, 0.38, 1.05));
+  const nose = part(new THREE.BoxGeometry(0.62, 0.34, 0.9), MAT.aluminium, 0, 0.38, 1.05);
+  car.add(nose);
   // Grille at the very front
-  car.add(part(new THREE.BoxGeometry(0.5, 0.26, 0.02), MAT.black, 0, 0.38, 1.505));
+  const grille = part(new THREE.BoxGeometry(0.5, 0.26, 0.02), MAT.black, 0, 0.38, 1.505);
+  car.add(grille);
+  const crush = { nose, grille, lamps: [], tail: [] };   // parts that get pushed in by crashes
 
   // --- Bonnet top between cockpit and nose ---
   car.add(part(new THREE.BoxGeometry(0.62, 0.04, 0.5), MAT.aluminium, 0, 0.56, 0.5));
@@ -521,8 +524,11 @@ function buildCar() {
   car.add(part(rearWing, MAT.paint, -0.62, 0.64, -1.1));
   car.add(part(rearWing, MAT.paint, 0.62, 0.64, -1.1));
   const rearWingSide = new THREE.BoxGeometry(0.3, 0.25, 0.06);
-  car.add(part(rearWingSide, MAT.paint, -0.62, 0.52, -1.48));
-  car.add(part(rearWingSide, MAT.paint, 0.62, 0.52, -1.48));
+  for (const side of [-1, 1]) {
+    const w = part(rearWingSide, MAT.paint, side * 0.62, 0.52, -1.48);
+    car.add(w);
+    crush.tail.push(w);
+  }
 
   // --- Front cycle wings (curved fenders over the front wheels) ---
   const cycleWing = new THREE.CylinderGeometry(0.36, 0.36, 0.24, 20, 1, true, 0.25, 2.3);
@@ -535,8 +541,10 @@ function buildCar() {
   const lampLens = new THREE.CircleGeometry(0.075, 16);
   const headLens = MAT.lens.clone();           // its own, so it can glow when switched on
   for (const side of [-1, 1]) {
-    car.add(part(lampBody, MAT.chrome, side * 0.42, 0.64, 1.22));
-    car.add(part(lampLens, headLens, side * 0.42, 0.64, 1.311));
+    const body = part(lampBody, MAT.chrome, side * 0.42, 0.64, 1.22);
+    const lens = part(lampLens, headLens, side * 0.42, 0.64, 1.311);
+    car.add(body, lens);
+    crush.lamps.push(body, lens);
   }
   // The beam: one light between the two lamps (one is much cheaper than
   // two, and looks the same from the driver's seat). It's always there,
@@ -555,6 +563,7 @@ function buildCar() {
     tail.rotation.y = Math.PI;                  // facing backwards
     tail.castShadow = false;
     car.add(tail);
+    crush.tail.push(tail);
   }
 
   // --- Side exhaust ---
@@ -619,7 +628,7 @@ function buildCar() {
     car.add(mesh);
   }
 
-  return { car, tyres, rims, spokes, headLens, beam, tailLens };
+  return { car, tyres, rims, spokes, headLens, beam, tailLens, crush };
 }
 
 const carModel = buildCar();
@@ -672,6 +681,7 @@ const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
 // Which physics tyre (FL, FR, RL, RR) each drawn wheel is (+x is the car's left)
 const physicsWheel = (x, isFront) => (isFront ? 0 : 2) + (x > 0 ? 0 : 1);
 const tyreSquash = [1, 1, 1, 1];   // per physics tyre: 1 = round, lower = squashed flat
+const tyreHub = [WHEEL_RADIUS, WHEEL_RADIUS, WHEEL_RADIUS, WHEEL_RADIUS];   // how high each hub is off the road
 const squashMatrix = new THREE.Matrix4();
 const spinMatrix = new THREE.Matrix4();
 
@@ -706,9 +716,15 @@ function updateWheels(steer, spin) {
       wheelMatrix.compose(wheelPos, wheelRot, wheelScale);
       if (k === 0) {
         spinMatrix.makeRotationFromQuaternion(wheelRot);
-        squashMatrix.makeScale((1 + bulge * 0.35) * (tyre.blown ? 1 + (Math.random() - 0.5) * 0.15 : 1),
-          sy * shrink, (1 + bulge * 0.6) * shrink).multiply(spinMatrix);
-        squashMatrix.setPosition(x, y + WHEEL_RADIUS * (1 - sy * shrink), z);
+        // The tyre reaches from the road up to its (possibly shrunken) top,
+        // always round the hub, so the rim never pokes out of it: a
+        // shredding tyre gets smaller all round, and the hub drops with it
+        const outer = WHEEL_RADIUS * shrink;
+        const hubUp = Math.max(WHEEL_RADIUS * 0.64, Math.min(outer, tyreHub[pi]));
+        const tall = (hubUp + outer) / (2 * WHEEL_RADIUS);
+        squashMatrix.makeScale((1 + bulge * 0.35) * (tyre.blown ? 1 + (Math.random() - 0.5) * 0.06 : 1),
+          tall, (1 + bulge * 0.6) * shrink).multiply(spinMatrix);
+        squashMatrix.setPosition(x, y + (outer - hubUp) / 2, z);
         carModel.tyres.setMatrixAt(i, squashMatrix);
         tyreLooks.setMatrixAt(i, squashMatrix);
         carModel.rims.setMatrixAt(i, wheelMatrix);
@@ -749,6 +765,7 @@ function fitBodyToTyres(dt) {
   // Where each hub ends up, and so how squashed each tyre must be to reach the road
   for (let i = 0; i < 4; i++) {
     const hubHeight = mean + b * HUB_X[i] + c * HUB_Z[i];
+    tyreHub[i] = hubHeight;
     tyreSquash[i] = Math.max(0.62, Math.min(1, (hubHeight + WHEEL_RADIUS) / (2 * WHEEL_RADIUS)));
   }
 }
@@ -803,6 +820,8 @@ function updateBlownTyres(dt) {
   let sparked = false;
   for (let i = 0; i < 4; i++) {
     const t = physics.tyres[i];
+    // (end each road scratch once that corner stops grinding)
+    if (!((t.rim || t.detached) && speed > 0.3)) gouges.update('g' + i, 0, 0, 0);
     if (!t.blown && !blowoutPending.includes(i)) continue;
     tyreContact.set(HUB_X[i], 0, HUB_Z[i]);
     carModel.car.localToWorld(tyreContact);
@@ -843,19 +862,14 @@ function updateBlownTyres(dt) {
         sparked = true;
       }
     } else if (t.detached) {
-      // The wheel has come off: that corner's frame scrapes along the road,
-      // throwing a thick shower of sparks (fewer on a wet road)
-      if (speed > 0.3) {
-        behindWheel.set(HUB_X[i] * 0.85, 0, HUB_Z[i] - 0.1);
-        carModel.car.localToWorld(behindWheel);
-        sparkCarry[i] += (40 + 90 * Math.min(1, speed / 15)) * (1 - 0.5 * rain.wetness) * dt;
-        while (sparkCarry[i] >= 1) {
-          debris.spawnRimSpark(behindWheel, carVelocity, physics.heading);
-          sparkCarry[i] -= 1;
-          sparked = true;
-        }
-      }
+      // The wheel has come off: no more rim sparks. The bare frame grinds
+      // along (you hear it), scoring a pale scrape into the road
+      behindWheel.set(HUB_X[i] * 0.85, 0, HUB_Z[i] - 0.1);
+      carModel.car.localToWorld(behindWheel);
+      gouges.update('g' + i, behindWheel.x, behindWheel.z, speed > 0.3 ? 1 : 0);
     } else if (t.rim && speed > 0.3) {
+      // A bare rim leaves no rubber: it scores a thin, pale scratch into the road
+      gouges.update('g' + i, tyreContact.x, tyreContact.z, 1);
       // Glittery shavings ground off the rim, left lying on the road
       flakes.emit(i, tyreContact, speed, dt);
       // Bare rim: always a shower of sparks while it's moving, more the faster you go
@@ -972,11 +986,11 @@ const dirtTyres = () => TYRES[physics.tyreCompound].kind === 'dirt';
 // puddles at speed, and full wets clear even big puddles.
 // Also, rubber on a wet surface grips a little less anyway (WET_RUBBER).
 const DRAIN = {                       // litres per second
-  RS: 2, RM: 2, RH: 2,
-  SS: 14, SM: 16, SH: 17, CS: 18, CM: 19, CH: 20,
-  IM: 30, W: 55, DIRT: 18, SNOW: 20,
+  RS: 2.5, RM: 2.5, RH: 2.5,
+  SS: 18, SM: 20, SH: 21, CS: 22, CM: 23, CH: 24,
+  IM: 38, W: 68, DIRT: 22, SNOW: 25,
 };
-const WET_RUBBER = { slick: 0.3, road: 0.15, wet: 0.05, dirt: 0.15, snow: 0.1 };
+const WET_RUBBER = { slick: 0.22, road: 0.1, wet: 0.03, dirt: 0.1, snow: 0.07 };
 const TYRE_WIDTH = 0.195;              // metres
 const tyreKind = () => TYRES[physics.tyreCompound].kind;
 // How deep the water is at a point, in metres
@@ -1026,9 +1040,10 @@ physics.surfaceDrag = (x, z) => {
 };
 // Tyre wear in the wet: rain cools the tyres, so they all wear slower; wet
 // tyres on a dry track overheat and wear much faster
+// (and the rain cools them: see tyre temperatures in physics.js)
 physics.wearScale = () => {
   const wet = rain.wetness;
-  return tyreKind() === 'wet' ? 1.4 - 1.0 * wet : 1 - 0.3 * wet;
+  return tyreKind() === 'wet' ? 1 - 0.6 * wet : 1 - 0.55 * wet;
 };
 
 // Tyre smoke, puffed from each tyre's contact patch when it loses traction
@@ -1045,6 +1060,104 @@ const engineSmoke = new TyreSmoke(scene, {
 });
 engineSmoke.setViewport(renderer.domElement.height, camera.fov);
 
+// --- Crash damage you can see: a crumpled nose and tail, scratches down
+// the sides from scraping along walls, steam from a holed or boiling
+// radiator, and fire ---
+const steam = new TyreSmoke(scene, {
+  maxParticles: isMobile ? 160 : 260, puffsPerSecond: isMobile ? 16 : 24,
+  color: 0xeef1f4, thickness: 1.2, sizeScale: 0.4, rise: 2.4, lifeScale: 0.8,
+  wind: { x: 1.1, z: 0.6 }, carry: 0.5,
+});
+steam.setViewport(renderer.domElement.height, camera.fov);
+// Flames: bright puffs that add light, shoot up and shrink away, with a
+// hotter yellow core
+const flames = new TyreSmoke(scene, {
+  maxParticles: isMobile ? 160 : 280, puffsPerSecond: isMobile ? 40 : 64,
+  color: 0xff5a14, thickness: 2.4, sizeScale: 0.75, rise: 3.4, lifeScale: 0.24,
+  wind: { x: 0.8, z: 0.4 }, carry: 0.7, glow: true, shrink: true,
+});
+flames.setViewport(renderer.domElement.height, camera.fov);
+const flameCore = new TyreSmoke(scene, {
+  maxParticles: isMobile ? 100 : 180, puffsPerSecond: isMobile ? 30 : 48,
+  color: 0xffc640, thickness: 2.2, sizeScale: 0.42, rise: 2.6, lifeScale: 0.16,
+  wind: { x: 0.8, z: 0.4 }, carry: 0.7, glow: true, shrink: true,
+});
+flameCore.setViewport(renderer.domElement.height, camera.fov);
+// The fire's flickering orange glow on the car and the ground (not on
+// phones: an extra light costs every surface some drawing time)
+const fireLight = isMobile ? null : new THREE.PointLight(0xff7a2a, 0, 10, 2);
+if (fireLight) scene.add(fireLight);
+const RADIATOR = new THREE.Vector3(0, 0.42, 1.5);
+const radiatorWorld = new THREE.Vector3();
+
+// Scratches: thin bright lines of bare metal, added where the car's side
+// scrapes along a wall (the oldest go once there are lots)
+const SCRATCH_MAX = isMobile ? 120 : 240;
+const scratches = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1),
+  new THREE.MeshStandardMaterial({ color: 0xcfd1d3, metalness: 0.75, roughness: 0.32 }), SCRATCH_MAX);
+scratches.count = 0;
+scratches.frustumCulled = false;
+scratches.castShadow = false;
+carModel.car.add(scratches);
+let scratchNext = 0;
+let lastScratchAt = -9;
+let lastCrashAt = -9;
+const scratchM = new THREE.Matrix4(), scratchQ = new THREE.Quaternion(), scratchE = new THREE.Euler();
+const scratchP = new THREE.Vector3(), scratchS = new THREE.Vector3();
+// The outside of the body at a point along the car (car's own space: x = left)
+function bodySideAt(z) {
+  if (z > 0.6) return { x: 0.312, y0: 0.24, y1: 0.52 };              // nose
+  if (z < -0.75) return { x: 0.772, y0: 0.42, y1: 0.66 };            // rear wing
+  return { x: 0.452, y0: 0.2, y1: 0.62 };                            // the tub
+}
+function addScratch(along, left, strength) {
+  const z = Math.max(-1.45, Math.min(1.45, along));
+  const b = bodySideAt(z);
+  const len = 0.1 + (0.15 + 0.3 * Math.random()) * strength;
+  scratchP.set((left ? 1 : -1) * (b.x + 0.003), b.y0 + Math.random() * (b.y1 - b.y0), z);
+  scratchQ.setFromEuler(scratchE.set((Math.random() - 0.5) * 0.3, 0, 0));
+  scratchS.set(0.004, 0.003 + 0.006 * Math.random(), len);
+  scratchM.compose(scratchP, scratchQ, scratchS);
+  scratches.setMatrixAt(scratchNext, scratchM);
+  scratchNext = (scratchNext + 1) % SCRATCH_MAX;
+  scratches.count = Math.min(SCRATCH_MAX, scratches.count + 1);
+  scratches.instanceMatrix.needsUpdate = true;
+}
+// Push the nose and tail in as far as the crashes have crushed them
+function applyCrush() {
+  const c = carModel.crush, n = physics.noseCrush, t = physics.tailCrush;
+  for (const m of [c.nose, c.grille, ...c.lamps, ...c.tail]) m.userData.baseZ ??= m.position.z;
+  c.nose.scale.z = 1 - n / 0.9;
+  c.nose.position.z = c.nose.userData.baseZ - n / 2;
+  c.nose.rotation.set(n * 0.25, n * 0.2, n * 0.12);
+  c.grille.position.z = c.grille.userData.baseZ - n;
+  c.grille.rotation.x = n * 0.8;
+  for (const m of c.lamps) {               // the headlamps get shoved back and knocked askew
+    m.position.z = m.userData.baseZ - n * 0.75;
+    m.rotation.x = n * 1.4;
+  }
+  for (const m of c.tail) m.position.z = m.userData.baseZ + t;
+}
+// WIND at ground level: blows the same way as the wind carrying the clouds,
+// light on a clear day and much stronger in a storm, in gusts. It slants
+// the rain, sways the grass and carries smoke, steam and dust away.
+const groundWind = { x: 0, z: 0 };
+const WIND_USERS = [];   // [smoke system, how much of the wind it feels]
+function updateWind(t) {
+  const storm = rain.intensity ?? 0;
+  const gust = 0.7 + 0.3 * Math.sin(t * 0.83) * Math.sin(t * 0.31 + 1.3) + (0.15 + 0.25 * storm) * Math.sin(t * 2.1) * Math.sin(t * 0.57);
+  const speed = (1.3 + 6.5 * storm) * Math.max(0.25, gust);
+  const len = Math.hypot(sky.wind.x, sky.wind.y) || 1;
+  groundWind.x = (sky.wind.x / len) * speed;
+  groundWind.z = (sky.wind.y / len) * speed;
+  rain.wind = groundWind;
+  grass.setWind?.(groundWind.x, groundWind.z, t);
+  for (const [sys, k] of WIND_USERS) { sys.wind = { x: groundWind.x * k, z: groundWind.z * k }; }
+}
+
+// How hard each kind of barrier hits the car (soft tyre walls are kinder)
+const CRASH_SOFT = { tyres: 0.55, fence: 0.7, armco: 0.85, concrete: 1, building: 1 };
+
 // Tan dust kicked up by tyres rolling through the gravel (instead of tyre smoke)
 const dust = new TyreSmoke(scene, {
   maxParticles: isMobile ? 160 : 260, puffsPerSecond: isMobile ? 18 : 28,
@@ -1060,6 +1173,13 @@ const spray = new TyreSmoke(scene, {
   color: 0xd5dde4, thickness: 0.9, sizeScale: 0.85, rise: 0.15, lifeScale: 0.55, carry: 0.55,
 });
 spray.setViewport(renderer.domElement.height, camera.fov);
+// ...and the water pumped out sideways by treaded tyres
+const sideSpray = new TyreSmoke(scene, {
+  maxParticles: isMobile ? 220 : 400, puffsPerSecond: isMobile ? 30 : 50,
+  color: 0xdde4ea, thickness: 0.75, sizeScale: 0.5, rise: 0.25, lifeScale: 0.35, carry: 1,
+});
+sideSpray.setViewport(renderer.domElement.height, camera.fov);
+const sideOut = new THREE.Vector3(), sideVel = new THREE.Vector3(), sidePos = new THREE.Vector3();
 // Off the tarmac: brown dust from dry grass, brown muddy spray from wet grass
 const grassDust = new TyreSmoke(scene, {
   maxParticles: isMobile ? 140 : 220, puffsPerSecond: isMobile ? 16 : 24,
@@ -1071,6 +1191,9 @@ const mudSpray = new TyreSmoke(scene, {
   color: 0x5a4330, thickness: 1.3, sizeScale: 0.7, rise: 0.1, lifeScale: 0.5, carry: 0.45,
 });
 mudSpray.setViewport(renderer.domElement.height, camera.fov);
+// How much of the ground wind each cloud of smoke or spray feels
+WIND_USERS.push([smoke, 0.5], [engineSmoke, 0.6], [steam, 0.6], [flames, 0.3], [flameCore, 0.3],
+  [dust, 0.4], [spray, 0.5], [sideSpray, 0.4], [grassDust, 0.4], [mudSpray, 0.2]);
 // Bits flung by the tyres: grass clippings, and clumps of mud
 const grassBits = new FlyingBits(scene, {
   max: isMobile ? 160 : 300, colours: [0x4f7a2c, 0x5d8a33, 0x3f6524, 0x6e9440], size: [0.025, 0.06], flat: true,
@@ -1080,6 +1203,11 @@ const mudClumps = new FlyingBits(scene, {
 });
 // Glittery metal shavings ground off a bare rim
 const flakes = new MetalFlakes(scene, { max: isMobile ? 900 : 1600 });
+// Pale scratches scored into the road by a bare rim or a dragging frame
+const gouges = new SkidMarks(scene, {
+  maxSegments: isMobile ? 600 : 1200, tyreWidth: 0.035, rubberBonus: 0,
+  threshold: 0.05, height: 0.0035, base: 0x4a4d50, mark: 0xb4b5b1,
+});
 // A wheel that has come off (one per corner)
 const looseWheels = [0, 1, 2, 3].map(() => new LooseWheel(scene, {
   rimGeo: carModel.rims.geometry, spokeGeo: carModel.spokes.geometry,
@@ -1148,6 +1276,20 @@ function updateSmoke(dt) {
     const sprayAmount = p.onGravel || p.onGrass || tyre.detached || speed < 1 ? 0
       : Math.min(1, fast * (0.9 * smoothWet + 2 * puddle) + 0.3 * skid * rain.wetness);
     spray.emitFrom(p.id, smokeWorld, sprayAmount, carVelocity, dt);
+    // Treaded tyres also pump water out sideways through their grooves:
+    // a sheet of spray from each side of the tyre, strongest from full wets,
+    // hardly any from slicks (they have no grooves to channel it)
+    if (!p.onGravel && !p.onGrass && !tyre.detached && speed > 3 && rain.wetness > 0.05) {
+      const channel = Math.min(1, (DRAIN[physics.tyreCompound] ?? 16) / 30);
+      const sheet = Math.min(1, Math.min(1, speed / 14) * (0.6 * smoothWet + 2.2 * puddle)) * channel;
+      const lx = Math.cos(physics.heading), lz = -Math.sin(physics.heading);
+      for (const side of [-1, 1]) {
+        sideOut.set(lx * side, 0, lz * side);
+        sideVel.copy(carVelocity).multiplyScalar(0.55).addScaledVector(sideOut, 2.5 + speed * 0.12);
+        sidePos.copy(smokeWorld).addScaledVector(sideOut, 0.12);
+        sideSpray.emitFrom(p.id + side, sidePos, sheet, sideVel, dt);
+      }
+    }
     // Grass: clippings and brown dust when dry; brown spray when wet, worse in mud
     // (whenever the car is driving on it, more the faster, and more again when sliding)
     const churn = p.onGrass && !tyre.detached && speed > 0.4 ? Math.min(1, 0.45 + 0.55 * Math.min(1, speed / 10) + skid) : 0;
@@ -1161,6 +1303,7 @@ function updateSmoke(dt) {
   smoke.update(dt);
   dust.update(dt);
   spray.update(dt);
+  sideSpray.update(dt);
   grassDust.update(dt);
   mudSpray.update(dt);
   grassBits.update(dt);
@@ -1196,8 +1339,24 @@ function updateSmoke(dt) {
   // Engine smoke: pours out once blown
   engineBayWorld.copy(ENGINE_BAY);
   carModel.car.localToWorld(engineBayWorld);
-  engineSmoke.emitFrom('engine', engineBayWorld, physics.engineBlown ? 1 : 0, carVelocity, dt);
+  const fire = physics.fireLevel;
+  engineSmoke.emitFrom('engine', engineBayWorld, Math.max(physics.engineBlown ? 1 : 0, fire * 0.9), carVelocity, dt);
   engineSmoke.update(dt);
+  // Steam from the radiator, flames from the engine bay
+  applyCrush();
+  radiatorWorld.set(RADIATOR.x, RADIATOR.y, RADIATOR.z - physics.noseCrush);
+  carModel.car.localToWorld(radiatorWorld);
+  steam.emitFrom('radiator', radiatorWorld, physics.steam, carVelocity, dt);
+  steam.update(dt);
+  flames.emitFrom('fire', engineBayWorld, fire, carVelocity, dt);
+  flameCore.emitFrom('fire', engineBayWorld, fire, carVelocity, dt);
+  flames.update(dt);
+  flameCore.update(dt);
+  if (fireLight) {
+    fireLight.position.copy(engineBayWorld);
+    fireLight.position.y += 0.5;
+    fireLight.intensity = fire > 0 ? fire * (4 + 2 * Math.sin(clock.elapsedTime * 23) + 1.5 * Math.random()) : 0;
+  }
 
   if (debrisPending) {
     debris.burst(engineBayWorld, carVelocity, physics.heading);
@@ -1211,7 +1370,7 @@ function updateSmoke(dt) {
   // Oil: drips below 10% health, pours once the engine has blown
   // (stops once the oil has all run out: there's nothing left to leak)
   const leakRate = !physics.leakingOil ? 0 : physics.engineBlown ? 2 : 1;
-  oil.update(dt, physics.x, physics.z, physics.heading, physics.vx, leakRate);
+  oil.update(dt, physics.x, physics.z, physics.heading, physics.vx, leakRate, physics.oilLevel);   // (thins out as it runs low)
 }
 
 // ---------------------------------------------------------------------
@@ -1327,6 +1486,16 @@ function collide(now) {
     if (k.c.kind === 'bollard') { k.c.hit?.({ x: k.px, z: k.pz }, { x: k.nx, z: k.nz }, -vn); continue; }
     const props = HIT[k.c.kind] || HIT.building;
     let bounce = props.bounce;
+    // Which part of the car hit: the push from the wall in the car's own
+    // terms (pushed backwards = a front hit, sideways = a side hit)
+    const nf = k.nx * fx + k.nz * fz, nl = k.nx * lx + k.nz * lz;
+    const zone = nf < -0.6 ? 'front' : nf > 0.6 ? 'rear' : nl > 0 ? 'right' : 'left';
+    const along = rx * fx + rz * fz, across = rx * lx + rz * lz;
+    const hitSpeed = -vn * (CRASH_SOFT[k.c.kind] ?? 1);
+    if (hitSpeed > 2.5 && now - lastCrashAt > 0.3) {
+      lastCrashAt = now;
+      physics.crashHit({ zone, speed: hitSpeed, along, across });
+    }
     // A proper hit: the barrier reacts (dents, squashes, cracks)
     if (k.c.hit && -vn > 1.5 && now - (lastHit.get(k.c) ?? -9) > 0.25) {
       lastHit.set(k.c, now);
@@ -1344,6 +1513,11 @@ function collide(now) {
     // Friction along the wall (no more than the push allows)
     const tx = -k.nz, tz = k.nx;
     const vt = (vx + w * rz) * tx + (vz - w * rx) * tz;
+    // Sliding along it on the car's side: scratches
+    if ((zone === 'left' || zone === 'right') && Math.abs(vt) > 2 && now - lastScratchAt > 0.05) {
+      lastScratchAt = now;
+      addScratch(along, zone === 'left', Math.min(1, Math.abs(vt) / 15));
+    }
     const rt = rz * tx - rx * tz;
     let jt = -vt / (1 / CAR_MASS + rt * rt / CAR_INERTIA);
     jt = Math.max(-props.grip * jn, Math.min(props.grip * jn, jt));
@@ -1512,8 +1686,9 @@ function updateCamera(dt) {
 function fitViewport() {
   smoke.setViewport(renderer.domElement.height, camera.fov);
   engineSmoke.setViewport(renderer.domElement.height, camera.fov);
+  for (const f of [steam, flames, flameCore]) f.setViewport(renderer.domElement.height, camera.fov);
   dust.setViewport(renderer.domElement.height, camera.fov);
-  for (const fx of [spray, grassDust, mudSpray]) fx.setViewport(renderer.domElement.height, camera.fov);
+  for (const fx of [spray, sideSpray, grassDust, mudSpray]) fx.setViewport(renderer.domElement.height, camera.fov);
   debris.setViewport(renderer.domElement.height, camera.fov);
   godRays.resize();
 }
@@ -1579,6 +1754,8 @@ renderer.setAnimationLoop(() => {
     flakes.clear();
     grassBits.clear();
     mudClumps.clear();
+    scratches.count = 0;
+    scratchNext = 0;
   }
   if (wasTapped('reverse')) physics.toggleReverse();
   if (wasTapped('shiftUp')) physics.shiftUp();
@@ -1646,7 +1823,8 @@ renderer.setAnimationLoop(() => {
   cockpit.drawScreen(dt, {
     speedKmh: physics.speedKmh, rpm: physics.rpm, redline: CATERHAM.redline, gearLabel: physics.gearLabel,
     limiter: physics.limiter, fuel: physics.fuelLevel, oil: physics.oilLevel, tyres: physics.tyres,
-    health: physics.engineHealth,
+    health: physics.engineHealth, tyreWindow: physics.tempWindow,
+    coolant: physics.coolantTemp, fire: physics.onFire,
   });
   updateSmoke(dt);
   releaseWheels();
@@ -1655,7 +1833,9 @@ renderer.setAnimationLoop(() => {
   // Rain: follows the weather setting; wets and dries the track, fills
   // puddles, washes oil and rubber away, and brings lightning in a storm
   rain.setLevel(sky.rainLevel);
+  updateWind(clock.elapsedTime);
   rain.update(dt, camera, carVelocity, sky.daylight);
+  physics.trackWetness = rain.wetness;
   rain.wetLook(ground.material, GROUND_DRY);
   oil.weather(dt, rain.intensity);
   skids.weather(dt, rain.intensity);
@@ -1699,6 +1879,7 @@ renderer.setAnimationLoop(() => {
       skid: carSpeed > 5 && (Math.abs(Math.atan2(physics.vy, Math.abs(physics.vx) + 0.1)) > 0.12
         || physics.tyreSlip.rear > 0.35 || physics.tyreSlip.front > 0.5),
       handbrake: !!input.handbrake,
+      coolant: physics.coolantTemp,
     },
     speedKmh: physics.speedKmh,
     rpm: physics.rpm,
@@ -1712,6 +1893,7 @@ renderer.setAnimationLoop(() => {
     clutchIn: physics.clutchIn,
     tyres: physics.tyres,
     tyreCompound: physics.tyreCompound,
+    tyreWindow: physics.tempWindow,
     time: clock.elapsedTime,
   });
   touchUI?.update({ transmission: physics.transmission, gearLabel: physics.gearLabel, muted: engineSound.muted, lights: lightsSetting });
