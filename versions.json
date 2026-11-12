@@ -4,11 +4,11 @@
     "cockpit.js": 10,
     "godrays.js": 1,
     "scenery.js": 5,
-    "updates.js": 27,
+    "updates.js": 28,
     "debris.js": 2,
     "effects.js": 2,
     "sky.js": 5,
-    "rendering.js": 18,
+    "rendering.js": 19,
     "rain.js": 3,
     "hud.js": 8,
     "physics.js": 7,
@@ -16,11 +16,12 @@
     "sound.js": 7,
     "grass.js": 4,
     "smoke.js": 3,
-    "input.js": 2,
-    "touch.js": 3,
+    "input.js": 3,
+    "touch.js": 4,
     "skids.js": 2,
     "tyres.js": 2,
-    "sepang.js": 4,
-    "flora.js": 2
+    "sepang.js": 5,
+    "flora.js": 2,
+    "racingline.js": 1
   }
 }
