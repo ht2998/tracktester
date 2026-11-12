@@ -15,7 +15,7 @@ import { Hud } from './hud.js';
 import { OilSlicks } from './oil.js';
 import { SkidMarks, TyreShreds } from './skids.js';
 import { buildScenery } from './scenery.js';
-import { GrassPatch } from './grass.js';
+import { GrassPatch, GrassField, StoneField } from './grass.js';
 import { SkySystem, TIME_SPEEDS } from './sky.js';
 import { EngineDebris } from './debris.js';
 import { TouchControls, isTouchDevice } from './touch.js';
@@ -47,7 +47,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 13;
+const BUILD = 14;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -205,7 +205,9 @@ grid.position.y = 0.002;
 if (!SEPANG) scene.add(grid);
 
 // SEPANG (sepang.js): the whole circuit, its buildings and barriers
-const sepang = SEPANG ? buildSepang(scene, { isMobile }) : null;
+// (gravel stone colours, for the textures and the loose stones)
+const GRAVEL_SHADES = ['#9c8158', '#c9b086', '#a88d61', '#d8c39c', '#8a7350', '#bfa476', '#b39769'];
+const sepang = SEPANG ? buildSepang(scene, { isMobile, gravelMaps: makeGravelMaps() }) : null;
 if (sepang) {
   sepang.grassTexture.repeat.set(3000 / 6, 3000 / 6);
   ground.material.map = sepang.grassTexture;
@@ -229,7 +231,10 @@ function inGravel(x, z) {
   return x > GRAVEL.minX && x < GRAVEL.maxX && z > GRAVEL.minZ && z < GRAVEL.maxZ;
 }
 
-function buildGravel() {
+// The gravel's look: a colour map and a bumpy normal map, each tile 3.5 m
+// across (stones about 1-3 cm). Used for the test area's gravel trap and
+// Sepang's gravel traps.
+function makeGravelMaps() {
   // Paint the stones twice: once in colour, and once as a height map (each
   // pebble a little dome) that becomes a normal map, so the light catches
   // every stone and the surface looks bumpy rather than printed flat.
@@ -243,7 +248,7 @@ function buildGravel() {
   c.fillRect(0, 0, size, size);
   h.fillStyle = '#000';
   h.fillRect(0, 0, size, size);
-  const shades = ['#9c8158', '#c9b086', '#a88d61', '#d8c39c', '#8a7350', '#bfa476', '#b39769'];
+  const shades = GRAVEL_SHADES;
   for (let i = 0; i < 9000; i++) {
     const x = Math.random() * size, y = Math.random() * size;
     const r = 1.6 + Math.random() * 3.2;
@@ -283,16 +288,21 @@ function buildGravel() {
     }
   }
   h.putImageData(normal, 0, 0);
-
-  const w = GRAVEL.maxX - GRAVEL.minX, d = GRAVEL.maxZ - GRAVEL.minZ;
   const colourMap = new THREE.CanvasTexture(colour);
   colourMap.colorSpace = THREE.SRGBColorSpace;
   const normalMap = new THREE.CanvasTexture(height);
   for (const t of [colourMap, normalMap]) {
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.repeat.set(w / 3.5, d / 3.5);      // each tile is 3.5 m: stones about 1-3 cm
     t.anisotropy = 4;
   }
+  return { colourMap, normalMap };
+}
+
+function buildGravel() {
+  const shades = GRAVEL_SHADES;
+  const { colourMap, normalMap } = makeGravelMaps();
+  const w = GRAVEL.maxX - GRAVEL.minX, d = GRAVEL.maxZ - GRAVEL.minZ;
+  for (const t of [colourMap, normalMap]) t.repeat.set(w / 3.5, d / 3.5);   // each tile is 3.5 m: stones about 1-3 cm
   const patch = new THREE.Mesh(
     new THREE.PlaneGeometry(w, d),
     new THREE.MeshStandardMaterial({ map: colourMap, normalMap, normalScale: new THREE.Vector2(0.8, 0.8), roughness: 1 })
@@ -328,10 +338,23 @@ if (!SEPANG) buildGravel();
 // Slippery and a bit draggy (see SURFACES.grass in physics.js); tyres
 // press it flat and leave dark brown tracks.
 const GRASS = { minX: -24, maxX: -5, minZ: 16, maxZ: 44 };
-// (at Sepang the grass is everywhere off the track: no tall tufts yet)
+// At Sepang the grass is everywhere off the track, so the 3D tufts grow
+// around the car (and fade out further away, where the painted grass takes
+// over), and the gravel traps get loose stones the same way. They keep a
+// little away from the edges, and out of the buildings.
+const surfaceClear = (want) => (x, z) => {
+  const S = sepang.surfaceAt;
+  return S(x, z) === want && S(x + 0.7, z) === want && S(x - 0.7, z) === want
+    && S(x, z + 0.7) === want && S(x, z - 0.7) === want && !(rain.roofAt(x, z) > 0);
+};
 const grass = SEPANG
-  ? { contains: (x, z) => sepang.surfaceAt(x, z) === 'grass', flatten() {} }
+  ? new GrassField(scene, surfaceClear('grass'), {
+    groundY: sepang.groundY, radius: isMobile ? 11 : 18, density: isMobile ? 10 : 20, maxTufts: isMobile ? 12000 : 40000,
+  })
   : new GrassPatch(scene, GRASS, { tufts: isMobile ? 9000 : 24000 });
+const stones = SEPANG
+  ? new StoneField(scene, surfaceClear('gravel'), { groundY: 0.0005, radius: isMobile ? 14 : 22, density: 7, maxStones: isMobile ? 1500 : 5000, shades: GRAVEL_SHADES })
+  : null;
 
 // ---------------------------------------------------------------------
 // CONES: drawn with INSTANCING (one cone model, drawn many times at once)
@@ -1877,6 +1900,8 @@ renderer.setAnimationLoop(() => {
   // puddles, washes oil and rubber away, and brings lightning in a storm
   rain.setLevel(sky.rainLevel);
   updateWind(clock.elapsedTime);
+  grass.update?.(physics.x, physics.z);      // (Sepang: tufts and stones grow around the car)
+  stones?.update(physics.x, physics.z);
   rain.update(dt, camera, carVelocity, sky.daylight);
   physics.trackWetness = rain.wetness;
   rain.wetLook(ground.material, GROUND_DRY);
