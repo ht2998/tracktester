@@ -21,11 +21,20 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 28;
+export const BUILD = 29;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 31, date: '12 Nov 2026', title: 'Lap timing, track map, real sun and thick jungle',
+    items: [
+      ['Lap and sector times', 'At Sepang a timing panel (top left) shows your lap time, the three sector times as you finish each (purple for a new best, yellow if slower), your last and best laps, and the live gap to your best lap (green ahead, red behind). Timing starts when you first cross the line. Leave the track and the lap goes grey and won\'t count as a best. Your bests are remembered', 'clock'],
+      ['Track map', 'A map of the circuit in the top right corner, north up, with the start line, the sector lines and an arrow for your car', 'phone'],
+      ['The real sun', 'The sun now follows its real path over Sepang for today\'s date: it rises in the east, passes high over the track (a little to the south at this time of year) and sets in the west around 7 pm, as it does in Malaysia (clocks there run about an hour ahead of the sun). The test area uses Singapore\'s sun', 'sunset'],
+      ['Thick jungle', 'The land around Sepang is now thick with trees further out, like the oil palm plantations and jungle round the real circuit, while the planting near the track stays as it was', 'grass'],
+    ],
+  },
   {
     id: 30, date: '12 Nov 2026', title: 'Racing line and braking zones at Sepang',
     items: [
