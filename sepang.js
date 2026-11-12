@@ -43,7 +43,7 @@ import {
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 2;
+export const BUILD = 3;
 
 // [x, z] in metres, in driving order (clockwise from the start/finish line)
 const OUTLINE = [[0.0,0.0],[-1.1,-301.1],[1.1,-314.8],[8.2,-326.7],[17.8,-334.5],[30.3,-338.2],[44.0,-337.7],[57.9,-331.6],[67.8,-319.1],[71.6,-303.0],[66.5,-284.9],[51.7,-251.7],[52.7,-240.1],[61.4,-229.8],[72.7,-225.7],[88.2,-227.7],[104.4,-236.7],[134.6,-257.7],[152.7,-266.2],[173.7,-271.1],[194.5,-272.6],[217.9,-270.7],[275.0,-260.6],[301.3,-249.4],[327.7,-232.9],[344.4,-217.1],[362.6,-193.4],[376.0,-169.0],[383.0,-143.9],[416.7,-3.4],[448.9,102.3],[473.0,173.2],[489.5,219.0],[494.5,234.8],[493.2,246.2],[486.2,255.5],[473.6,258.1],[366.4,268.9],[311.1,276.3],[243.7,287.6],[217.3,297.6],[198.1,309.6],[178.0,331.2],[164.1,353.1],[156.7,375.4],[154.0,397.6],[155.8,423.3],[163.8,450.0],[175.5,469.4],[211.0,508.3],[220.2,526.8],[227.5,555.2],[226.4,578.9],[221.5,601.9],[212.3,620.2],[197.7,636.0],[-46.0,819.4],[-57.2,819.6],[-69.5,814.0],[-143.2,773.8],[-149.6,762.9],[-151.5,750.5],[-147.8,566.0],[-154.4,391.9],[-162.4,296.1],[-169.0,286.6],[-180.8,282.8],[-194.9,289.7],[-237.2,354.2],[-253.1,367.8],[-275.7,376.4],[-298.8,379.9],[-331.2,376.5],[-358.1,370.0],[-384.2,361.8],[-416.9,343.1],[-449.7,316.3],[-456.9,302.5],[-458.0,289.7],[-454.3,275.6],[-446.0,264.8],[-257.0,67.5],[-250.5,53.2],[-247.9,34.3],[-251.5,13.2],[-284.6,-66.7],[-289.4,-87.7],[-290.8,-112.4],[-288.9,-133.7],[-278.6,-173.1],[-265.4,-199.4],[-250.1,-215.9],[-217.4,-237.1],[-193.6,-243.6],[-179.4,-243.8],[-164.3,-232.6],[-157.2,-210.8],[-69.8,636.8],[-60.2,649.6],[-40.9,660.0],[-23.8,656.8],[-6.9,642.9],[-1.1,618.2]];
@@ -248,7 +248,7 @@ function runoffTexture() {
 // ---------------------------------------------------------------------
 // BUILD
 // ---------------------------------------------------------------------
-export function buildSepang(scene, { isMobile = false } = {}) {
+export function buildSepang(scene, { isMobile = false, gravelMaps = null } = {}) {
   startScenery();
   const line = centreLine();
   const m = line.length;
@@ -288,10 +288,17 @@ export function buildSepang(scene, { isMobile = false } = {}) {
   // (painted lines sit on the tarmac: pulled slightly towards the camera
   // so they never flicker against it, even far away)
   const lineMat = new THREE.MeshStandardMaterial({ color: 0xf2f2ee, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
-  // (the pit entry and exit are pushed slightly back, under the track where they meet it)
-  const wedgeMat = new THREE.MeshStandardMaterial({ map: asphalt, roughness: 0.92, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+  // (the pit entry and exit sit 3 mm below the track, so the track wins
+  // where they overlap, but still well above the grass: they used to be
+  // pushed back by the graphics card instead, which at a distance pushed
+  // them right under the grass so they only showed up close by)
+  const wedgeMat = trackMat;
   const kerbMat = new THREE.MeshStandardMaterial({ map: kerbTexture(), roughness: 0.6 });
-  const gravelMat = new THREE.MeshStandardMaterial({ map: gravelTexture(), roughness: 1 });
+  // (the game hands over the test area's gravel look: stones with a bumpy
+  // normal map, a tile every 3.5 m)
+  const gravelMat = gravelMaps
+    ? new THREE.MeshStandardMaterial({ map: gravelMaps.colourMap, normalMap: gravelMaps.normalMap, normalScale: new THREE.Vector2(0.8, 0.8), roughness: 1 })
+    : new THREE.MeshStandardMaterial({ map: gravelTexture(), roughness: 1 });
   const runoffMat = new THREE.MeshStandardMaterial({ map: runoffTexture(), roughness: 0.85 });
   const netMat = new THREE.MeshStandardMaterial({ map: netTexture(), transparent: true, alphaTest: 0.3, roughness: 0.8 });
   const add = (geo, mat, receive = true) => {
@@ -372,7 +379,7 @@ export function buildSepang(scene, { isMobile = false } = {}) {
       return r;
     };
     const o0 = (p) => -inside * (half(p) + KERB), o1 = (p) => -inside * (half(p) + KERB + Math.max(0.5, roomAt(p)));
-    add(strip(line, c.a, c.b, o0, o1, 0.0005, gravel ? 6 : 4, gravel ? 6 : wide), gravel ? gravelMat : runoffMat);
+    add(strip(line, c.a, c.b, o0, o1, 0.0005, gravel ? 3.5 : 4, gravel ? 3.5 : wide), gravel ? gravelMat : runoffMat);
     paintBand(c.a, c.b, o0, o1, gravel ? 3 : 1);
     // barriers at the back of the run-off: Armco, with a tyre wall in front at the big stops
     // (only where there's proper room: none where another part of the track is close)
@@ -466,6 +473,7 @@ export function buildSepang(scene, { isMobile = false } = {}) {
     const shape = new THREE.Shape(pts.map(([x, z]) => new THREE.Vector2(x, -z)));
     const g = new THREE.ShapeGeometry(shape);
     g.rotateX(-Math.PI / 2);
+    g.translate(0, -0.003, 0);
     add(g, wedgeMat);
     const xs = pts.map((p) => p[0]), zs = pts.map((p) => p[1]);
     for (let x = Math.min(...xs); x <= Math.max(...xs); x += 0.5) {
