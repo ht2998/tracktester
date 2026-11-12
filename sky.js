@@ -28,7 +28,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 4;
+export const BUILD = 5;
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const smooth = (a, b, x) => {
@@ -543,7 +543,7 @@ export class SkySystem {
 
     // The wind high up slowly swings round (a full circle every half hour or so)
     this.windAngle = (this.windAngle ?? 0.38) + dt * 0.0035 + Math.sin(performance.now() / 97000) * dt * 0.002;
-    const windSpeed = 4.3;
+    const windSpeed = 4.3 + 9 * (this.gloom ?? 0);   // much windier in rain and storms: the clouds race over
     this.wind.set(Math.cos(this.windAngle) * windSpeed, Math.sin(this.windAngle) * windSpeed);
 
     // --- Clouds: more of them the cloudier it is, lit by the sun ---
