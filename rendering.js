@@ -47,7 +47,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 8;
+const BUILD = 9;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -510,6 +510,12 @@ function buildCar() {
   barTop.rotation.z = Math.PI / 2;
   car.add(barTop);
 
+  // --- Fuel filler cap: on the rear deck, on the car's left (the fuel
+  // gauge's arrow points this way) ---
+  const filler = part(new THREE.CylinderGeometry(0.055, 0.06, 0.03, 18), MAT.chrome, 0.3, 0.665, -1.12);
+  car.add(filler);
+  car.add(part(new THREE.BoxGeometry(0.07, 0.012, 0.016), MAT.chrome, 0.3, 0.684, -1.12));   // its flip handle
+
   // --- Rear wings (fenders over the back wheels) ---
   const rearWing = new THREE.BoxGeometry(0.3, 0.06, 0.8);
   car.add(part(rearWing, MAT.paint, -0.62, 0.64, -1.1));
@@ -623,9 +629,12 @@ const cockpit = new Cockpit(carModel.car, MAT, { isMobile, redline: CATERHAM.red
 // patterns, knobbly dirt tyres, snow chains (tyres.js)
 const tyreLooks = new TyreLooks(carModel.car, carModel.tyres, { radius: WHEEL_RADIUS, width: WHEEL_WIDTH });
 
-// HEADLIGHTS: G cycles off -> dipped -> main beam. Dipped lights the road
-// close ahead; main beam reaches much further.
-let lightsMode = 0;
+// HEADLIGHTS: G cycles off -> auto -> dipped -> main beam. Dipped lights
+// the road close ahead; main beam reaches much further. Auto (the default)
+// switches the dipped lights on by itself at dusk, at night and in rain.
+let lightsMode = 0;          // what the lights are doing now: 0 off, 1 dipped, 2 main beam
+let lightsSetting = 1;       // the switch: 0 off, 1 auto, 2 dipped, 3 main beam
+let autoLightsOn = false;
 const LIGHTS = [
   { intensity: 0, distance: 60, angle: 0.5, aim: [0, 0, 14], glow: 0 },
   { intensity: 90, distance: 70, angle: 0.55, aim: [0, 0, 14], glow: 1.2 },       // dipped
@@ -1575,7 +1584,16 @@ renderer.setAnimationLoop(() => {
   if (wasTapped('shiftUp')) physics.shiftUp();
   if (wasTapped('shiftDown')) physics.shiftDown();
   if (wasTapped('mute')) engineSound.setMuted(!engineSound.muted);
-  if (wasTapped('lights')) setLights((lightsMode + 1) % 3);
+  if (wasTapped('lights')) lightsSetting = (lightsSetting + 1) % 4;
+  // Auto: on when it gets dark or rains properly (off again a little later,
+  // so they don't flicker at the changeover)
+  if (lightsSetting === 1) {
+    const dark = sky.daylight < (autoLightsOn ? 0.42 : 0.35);
+    const wet = rain.intensity > (autoLightsOn ? 0.35 : 0.45);
+    autoLightsOn = dark || wet;
+  }
+  const wantLights = [0, autoLightsOn ? 1 : 0, 1, 2][lightsSetting];
+  if (wantLights !== lightsMode) setLights(wantLights);
   if (wasTapped('transmission')) {
     const next = TRANSMISSIONS[(TRANSMISSIONS.indexOf(physics.transmission) + 1) % TRANSMISSIONS.length];
     physics.setTransmission(next);
@@ -1672,6 +1690,16 @@ renderer.setAnimationLoop(() => {
     sky: { clock: sky.clock, hours: sky.hours, speed: sky.speed, locked: sky.locked,
            weather: sky.weather, changing: sky.changing, now: sky.weatherNow },
     lights: lightsMode,
+    lightsAuto: lightsSetting === 1,
+    warnings: {
+      absOff: physics.assistLevel('abs') === 0,
+      absWorking: physics.absActive,
+      tcsOff: physics.assistLevel('tcs') === 0,
+      tcsWorking: physics.tractionControl,
+      skid: carSpeed > 5 && (Math.abs(Math.atan2(physics.vy, Math.abs(physics.vx) + 0.1)) > 0.12
+        || physics.tyreSlip.rear > 0.35 || physics.tyreSlip.front > 0.5),
+      handbrake: !!input.handbrake,
+    },
     speedKmh: physics.speedKmh,
     rpm: physics.rpm,
     gearLabel: physics.gearLabel,
@@ -1686,7 +1714,7 @@ renderer.setAnimationLoop(() => {
     tyreCompound: physics.tyreCompound,
     time: clock.elapsedTime,
   });
-  touchUI?.update({ transmission: physics.transmission, gearLabel: physics.gearLabel, muted: engineSound.muted, lights: lightsMode });
+  touchUI?.update({ transmission: physics.transmission, gearLabel: physics.gearLabel, muted: engineSound.muted, lights: lightsSetting });
 
   if (cameraMode === 'cockpit') cockpit.renderMirrors(renderer, scene);
   renderer.render(scene, camera);
