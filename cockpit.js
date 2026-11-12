@@ -20,7 +20,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 8;
+export const BUILD = 9;
 
 const DRIVER_X = -0.18;
 // The steering wheel's centre and tilt
@@ -188,6 +188,7 @@ export class Cockpit {
     for (const d of dials) {
       const faceMat = new THREE.MeshBasicMaterial({ map: this.dialTexture(d), toneMapped: false });
       const face = mesh(new THREE.CircleGeometry(d.r, 32), faceMat, DRIVER_X + d.dx, 0.705, 0.148);
+      (this.dialFaces ||= []).push(face);
       face.rotation.y = Math.PI;                // facing the driver
       face.castShadow = false;
       g.add(face);
@@ -231,10 +232,10 @@ export class Cockpit {
     const SCREEN_H = 0.09, SCREEN_W = SCREEN_H * (680 / 264);   // (about 23 cm across)
     const screen = new THREE.Mesh(new THREE.PlaneGeometry(SCREEN_W, SCREEN_H),
       new THREE.MeshBasicMaterial({ map: this.screenTex, toneMapped: false }));
-    screen.position.set(DRIVER_X, 0.862, 0.172);
+    screen.position.set(DRIVER_X, 0.85, 0.14);         // (just in front of the windscreen and its frame)
     screen.rotation.set(-0.3, Math.PI, 0, 'YXZ');      // facing the driver, tipped back towards their eyes
     g.add(screen);
-    const pod = mesh(new THREE.BoxGeometry(SCREEN_W + 0.016, SCREEN_H + 0.014, 0.05), mats.black, 0, 0, 0.026);
+    const pod = mesh(new THREE.BoxGeometry(SCREEN_W + 0.016, SCREEN_H + 0.014, 0.035), mats.black, 0, 0, 0.018);
     pod.castShadow = false;
     const podHolder = new THREE.Group();
     podHolder.position.copy(screen.position);
@@ -244,7 +245,7 @@ export class Cockpit {
     hood.rotation.x = -0.12;                             // a little sun visor over the top
     podHolder.add(hood);
     g.add(podHolder);
-    const podStem = mesh(new THREE.BoxGeometry(0.08, 0.08, 0.04), mats.black, DRIVER_X, 0.775, 0.19);
+    const podStem = mesh(new THREE.BoxGeometry(0.08, 0.07, 0.05), mats.black, DRIVER_X, 0.775, 0.165);
     g.add(podStem);
     this.screenClock = 0;
 
@@ -436,8 +437,17 @@ export class Cockpit {
       m.glass.rotation.y = Math.PI - m.yaw;             // facing backwards, angled towards the driver
       g.add(m.glass);
       // stalk down to the body (side mirrors) or up from the screen frame (centre)
-      const stalkLen = m.pos.x === 0 ? 0.05 : 0.14;
-      g.add(mesh(new THREE.CylinderGeometry(0.008, 0.008, stalkLen, 8), mats.chrome, m.pos.x * 0.92, m.pos.y - stalkLen / 2 - 0.03, m.pos.z + 0.02));
+      if (m.pos.x === 0) {
+        // the centre one hangs on a short arm from the top of the windscreen frame
+        const A = new THREE.Vector3(0, 0.908, 0.19), B = new THREE.Vector3(0, m.pos.y - m.size[1] / 2 + 0.01, m.pos.z + 0.022);
+        const arm = mesh(new THREE.CylinderGeometry(0.007, 0.007, A.distanceTo(B), 8), mats.chrome, (A.x + B.x) / 2, (A.y + B.y) / 2, (A.z + B.z) / 2);
+        arm.quaternion.setFromUnitVectors(UP, B.clone().sub(A).normalize());
+        g.add(arm);
+        g.add(mesh(new THREE.BoxGeometry(0.04, 0.018, 0.02), mats.black, 0, 0.912, 0.19));   // the clamp on the frame
+      } else {
+        const stalkLen = 0.14;
+        g.add(mesh(new THREE.CylinderGeometry(0.008, 0.008, stalkLen, 8), mats.chrome, m.pos.x * 0.92, m.pos.y - stalkLen / 2 - 0.03, m.pos.z + 0.02));
+      }
     }
     this.mirrorFrame = 0;
 
@@ -493,6 +503,23 @@ export class Cockpit {
     t.colorSpace = THREE.SRGBColorSpace;
     t.anisotropy = 4;
     return t;
+  }
+
+  // The car's dials ARE the game's HUD: the rev counter and speedo on the
+  // dashboard show the very same drawings as the on-screen dials (needles,
+  // gear, shift and warning lights and all), so the printed faces, their
+  // own needles and the separate row of shift lights aren't needed
+  useHudDials(parts) {
+    if (!parts?.tach || !this.dialFaces) return;
+    this.hudDialTex = [parts.tach, parts.speedo].map((cv, i) => {
+      const t = new THREE.CanvasTexture(cv);
+      t.colorSpace = THREE.SRGBColorSpace;
+      t.anisotropy = 4;
+      this.dialFaces[i].material = new THREE.MeshBasicMaterial({ map: t, toneMapped: false, transparent: true });
+      return t;
+    });
+    for (const n of this.needles) n.visible = false;
+    for (const l of this.leds) l.visible = false;
   }
 
   // The shift pattern printed on top of the gear knob: R 1 3 5 / 2 4 6
@@ -713,7 +740,8 @@ export class Cockpit {
   drawScreen(dt, st) {
     this.screenClock -= dt;
     if (this.screenClock > 0) return;
-    this.screenClock = this.firstPerson ? 1 / 20 : 0.5;
+    this.screenClock = this.firstPerson ? 1 / 20 : 1 / 12;
+    if (this.hudDialTex) for (const t of this.hudDialTex) t.needsUpdate = true;
     if (st.hud?.tach) { this.drawHudScreen(st); return; }
     const c = this.screenCanvas.getContext('2d');
     const W = 512, H = 208;
