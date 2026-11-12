@@ -21,11 +21,23 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 9;
+export const BUILD = 10;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 16, date: '10 Nov 2026', title: 'Crashes',
+    items: [
+      ['Solid buildings and barriers', 'You can no longer drive through the garages, race control, walls, Armco, tyre walls or fences. Hit one and the car stops, bounces back a little, and spins if you hit it off-centre', 'barriers'],
+      ['Armco dents', 'Hit the Armco and the rails bend back around the impact and the posts lean over. Glancing hits slide you along it', 'barriers'],
+      ['Tyre walls squash', 'The stacks squash back and get knocked askew, and they push you back out', 'barriers'],
+      ['Catch fences bulge', 'The mesh stretches back and catches the car', 'barriers'],
+      ['Concrete cracks', 'Concrete walls don\'t move, but a hit leaves cracks (bigger the harder you hit) and knocks off chips', 'barriers'],
+      ['Garages are solid inside too', 'Drive into a bay and you\'ll hit the racking, the tool chests and the oil drums', 'garage'],
+      ['No rain indoors', 'Rain stops at the roofs of the garages and race control, so it\'s dry inside', 'rain'],
+    ],
+  },
   {
     id: 15, date: '10 Nov 2026', title: 'Tyre looks, cockpit dash and a new update screen',
     items: [
