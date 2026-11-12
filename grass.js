@@ -10,7 +10,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 3;
+export const BUILD = 4;
 
 const CELL = 0.5;   // metres: lookup grid for "which tufts are under this tyre?"
 const LENGTHS = [0.045, 0.085, 0.14];   // metres: short, medium, long
@@ -191,17 +191,20 @@ function seeded(seed) {
 class ChunkScatter {
   // meshes: one InstancedMesh per kind. make(rand, x, z) -> { kind, matrix,
   // colour } for one item at (x, z), or null to skip. perChunk: how many
-  // to try in each square. radius: how far from the car (metres).
-  constructor(meshes, { make, perChunk, radius }) {
+  // to try in each square at full density. near: everything this close
+  // (all round, for the mirrors and looking back). far: how far ahead in
+  // view. Further away they thin out (half beyond far/3, a quarter beyond
+  // far*0.6), where single tufts are too small to see one by one anyway.
+  constructor(meshes, { make, perChunk, near, far }) {
     this.meshes = meshes;
     this.make = make;
     this.perChunk = perChunk;
-    this.radius = radius;
+    this.near = near;
+    this.far = far;
     this.cache = new Map();       // square -> its items, while near
     this.flat = new Map();        // square -> which items are flattened (kept for good)
-    this.shown = [];              // squares drawn now, with where their items went
-    this.centreKey = null;
-    this._m = new THREE.Matrix4();
+    this.viewKey = null;
+    this.pending = false;         // squares still to grow (spread over a few frames)
     this._zero = new THREE.Matrix4().makeScale(0, 0, 0);
   }
 
@@ -209,62 +212,88 @@ class ChunkScatter {
     const key = cx * 100003 + cz;
     let c = this.cache.get(key);
     if (c) return c;
-    const rand = seeded(key * 2654435761 + 12345);
-    const items = [];
-    // (each item's matrix and colour are kept as plain numbers in one block
-    // per square, and copied straight into the meshes: cheap to redraw)
-    const mats = new Float32Array(this.perChunk * 16), cols = new Float32Array(this.perChunk * 3);
-    for (let i = 0; i < this.perChunk; i++) {
-      const x = (cx + rand()) * CHUNK, z = (cz + rand()) * CHUNK;
-      const it = this.make(rand, x, z, i);
-      if (!it) continue;
-      const n = items.length;
-      mats.set(it.matrix.elements, n * 16);
-      if (it.colour) { cols[n * 3] = it.colour.r; cols[n * 3 + 1] = it.colour.g; cols[n * 3 + 2] = it.colour.b; }
-      items.push({ kind: it.kind, x, z, i, n, slot: -1 });
-    }
-    c = { key, cx, cz, items, mats, cols };
+    c = {
+      key, cx, cz, items: [], tried: 0,
+      rand: seeded(key * 2654435761 + 12345),
+      // (each item's matrix and colour are kept as plain numbers in one
+      // block per square, and copied straight into the meshes)
+      mats: new Float32Array(this.perChunk * 16), cols: new Float32Array(this.perChunk * 3),
+    };
     this.cache.set(key, c);
     return c;
   }
 
-  // Call every frame with the car's (or camera's) position
-  // (the set is only rebuilt every 8 m or so, around the middle of the
-  // 8 m square the car is in, a little wider than needed so it always
-  // covers the radius: the far edge fades out on the graphics card anyway)
-  update(x, z) {
-    const bx = Math.floor(x / (2 * CHUNK)), bz = Math.floor(z / (2 * CHUNK));
-    const key = bx * 100003 + bz;
-    if (key === this.centreKey) return;
-    this.centreKey = key;
-    const cx = bx * 2 + 1, cz = bz * 2 + 1;               // the square at the middle of that 8 m block
-    const reach = Math.ceil((this.radius + CHUNK) / CHUNK);
+  // Grow a square's items up to the first `upTo` tries (always the same ones)
+  grow(c, upTo) {
+    while (c.tried < upTo) {
+      const i = c.tried++;
+      const x = (c.cx + c.rand()) * CHUNK, z = (c.cz + c.rand()) * CHUNK;
+      const it = this.make(c.rand, x, z, i);
+      if (!it) continue;
+      const n = c.items.length;
+      c.mats.set(it.matrix.elements, n * 16);
+      if (it.colour) { c.cols[n * 3] = it.colour.r; c.cols[n * 3 + 1] = it.colour.g; c.cols[n * 3 + 2] = it.colour.b; }
+      c.items.push({ kind: it.kind, x, z, i, n, slot: -1 });
+    }
+  }
+
+  // Call every frame with the camera's position, the way it's looking
+  // (dx, dz) and half the width of its view (radians). Rebuilds the set
+  // when the camera has moved 4 m or turned 12 degrees.
+  update(x, z, dx = 0, dz = 1, halfView = Math.PI) {
+    const cx = Math.floor(x / CHUNK), cz = Math.floor(z / CHUNK);
+    const heading = Math.atan2(dx, dz);
+    const key = `${cx},${cz},${Math.round(heading / 0.21)},${Math.round(halfView * 10)}`;
+    if (key === this.viewKey && !this.pending) return;
+    this.viewKey = key;
+    this.pending = false;
+    let budget = 60;              // new squares grown per frame (the rest next frame)
     const counts = this.meshes.map(() => 0);
     const caps = this.meshes.map((m) => m.instanceMatrix.count);
     const matArr = this.meshes.map((m) => m.instanceMatrix.array);
     const colArr = this.meshes.map((m) => m.instanceColor?.array);
     const zero = this._zero.elements;
+    const reach = Math.ceil(this.far / CHUNK) + 1;
     const keep = new Set();
-    this.shown = [];
-    for (let dx = -reach; dx <= reach; dx++) {
-      for (let dz = -reach; dz <= reach; dz++) {
-        if (Math.hypot(dx, dz) * CHUNK > this.radius + 2 * CHUNK) continue;
-        const c = this.chunk(cx + dx, cz + dz);
-        keep.add(c.key);
-        const flat = this.flat.get(c.key);
-        const mats = c.mats, cols = c.cols;
-        for (const it of c.items) {
-          const k = it.kind, n = counts[k];
-          if (n >= caps[k]) { it.slot = -1; continue; }
-          it.slot = n;
-          const dst = matArr[k], o = n * 16;
-          if (flat && flat.has(it.i)) { for (let j = 0; j < 16; j++) dst[o + j] = zero[j]; }
-          else { const src = it.n * 16; for (let j = 0; j < 16; j++) dst[o + j] = mats[src + j]; }
-          const dc = colArr[k];
-          if (dc) { const o3 = n * 3, s3 = it.n * 3; dc[o3] = cols[s3]; dc[o3 + 1] = cols[s3 + 1]; dc[o3 + 2] = cols[s3 + 2]; }
-          counts[k] = n + 1;
+    const list = [];
+    for (let ix = -reach; ix <= reach; ix++) {
+      for (let iz = -reach; iz <= reach; iz++) {
+        const mx = (cx + ix + 0.5) * CHUNK - x, mz = (cz + iz + 0.5) * CHUNK - z;
+        const d = Math.hypot(mx, mz);
+        if (d > this.far + CHUNK) continue;
+        if (d > this.near + CHUNK) {
+          // in view? (with a margin for the square's own size)
+          let off = Math.atan2(mx, mz) - heading;
+          off = Math.abs(Math.atan2(Math.sin(off), Math.cos(off)));
+          if (off > halfView + 0.25 + Math.atan2(CHUNK, d)) continue;
         }
-        this.shown.push(c);
+        list.push([cx + ix, cz + iz, d]);
+      }
+    }
+    list.sort((p, q) => p[2] - q[2]);          // nearest first (they matter most)
+    for (const [ux, uz, d] of list) {
+      const share = d < this.far / 3 ? 1 : d < this.far * 0.6 ? 0.5 : 0.25;
+      const want = Math.round(this.perChunk * share);
+      const c = this.chunk(ux, uz);
+      keep.add(c.key);
+      if (c.tried < want) {
+        if (budget <= 0) { this.pending = true; continue; }
+        budget--;
+        this.grow(c, want);
+      }
+      const flat = this.flat.get(c.key);
+      const mats = c.mats, cols = c.cols;
+      for (const it of c.items) {
+        if (it.i >= want) { it.slot = -1; continue; }
+        const k = it.kind, n = counts[k];
+        if (n >= caps[k]) { it.slot = -1; continue; }
+        it.slot = n;
+        const dst = matArr[k], o = n * 16;
+        if (flat && flat.has(it.i)) { for (let j = 0; j < 16; j++) dst[o + j] = zero[j]; }
+        else { const src = it.n * 16; for (let j = 0; j < 16; j++) dst[o + j] = mats[src + j]; }
+        const dc = colArr[k];
+        if (dc) { const o3 = n * 3, s3 = it.n * 3; dc[o3] = cols[s3]; dc[o3 + 1] = cols[s3 + 1]; dc[o3 + 2] = cols[s3 + 2]; }
+        counts[k] = n + 1;
       }
     }
     this.meshes.forEach((mesh, k) => {
@@ -272,8 +301,8 @@ class ChunkScatter {
       mesh.instanceMatrix.needsUpdate = true;
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     });
-    // forget squares that are well behind (they'll grow back the same)
-    if (this.cache.size > keep.size * 3) {
+    // forget squares that are well out of view (they'll grow back the same)
+    if (this.cache.size > keep.size * 2 + 200) {
       for (const k of this.cache.keys()) if (!keep.has(k)) this.cache.delete(k);
     }
   }
@@ -297,13 +326,13 @@ class ChunkScatter {
   }
 }
 
-// A whole circuit's grass, as 3D tufts around the car (beyond them, the
-// painted grass texture). isGrass(x, z): is that spot grass?
+// A whole circuit's grass, as 3D tufts everywhere the camera can see (out
+// to `far`, then the painted grass texture). isGrass(x, z): is that spot grass?
 export class GrassField {
-  constructor(scene, isGrass, { groundY = 0, radius = 18, density = 24, maxTufts = 40000 } = {}) {
+  constructor(scene, isGrass, { groundY = 0, near = 10, far = 70, density = 20, maxTufts = 60000 } = {}) {
     this.isGrass = isGrass;
     this.windUniforms = grassUniforms(groundY);
-    this.windUniforms.uFade.value.set(0, 0, radius);
+    this.windUniforms.uFade.value.set(0, 0, far);
     const geo = makeTuftGeometry();
     const mat = grassMaterial(this.windUniforms);
     const meshes = LENGTHS.map(() => {
@@ -321,7 +350,7 @@ export class GrassField {
     const tm = new THREE.Matrix4(), tc = new THREE.Color();
     this.scatter = new ChunkScatter(meshes, {
       perChunk: Math.round(density * CHUNK * CHUNK),
-      radius,
+      near, far,
       make: (rand, x, z) => {
         const r1 = rand(), r2 = rand(), r3 = rand(), r4 = rand(), r5 = rand(), r6 = rand(), r7 = rand();
         if (!isGrass(x, z)) return null;
@@ -339,11 +368,12 @@ export class GrassField {
   contains(x, z) { return this.isGrass(x, z); }
   flatten(x, z, r) { this.scatter.flatten(x, z, r); }
 
-  // Every frame: where the car is, the wind and the time
-  update(x, z) {
+  // Every frame: where the camera is, which way it looks (dx, dz) and
+  // half the width of its view (radians)
+  update(x, z, dx, dz, halfView) {
     this.windUniforms.uFade.value.x = x;
     this.windUniforms.uFade.value.y = z;
-    this.scatter.update(x, z);
+    this.scatter.update(x, z, dx, dz, halfView);
   }
 
   setWind(x, z, time) {
@@ -352,10 +382,10 @@ export class GrassField {
   }
 }
 
-// Loose stones on gravel traps, around the car (like the test area's
-// gravel trap). isGravel(x, z): is that spot gravel?
+// Loose stones on gravel traps, everywhere the camera can see (like the
+// test area's gravel trap). isGravel(x, z): is that spot gravel?
 export class StoneField {
-  constructor(scene, isGravel, { groundY = 0, radius = 22, density = 6, maxStones = 4000, shades = ['#a88c5f'] } = {}) {
+  constructor(scene, isGravel, { groundY = 0, near = 10, far = 45, density = 6, maxStones = 8000, shades = ['#a88c5f'] } = {}) {
     const mesh = new THREE.InstancedMesh(
       new THREE.DodecahedronGeometry(1, 0),
       new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, flatShading: true }),
@@ -370,7 +400,7 @@ export class StoneField {
     const tm = new THREE.Matrix4(), tc = new THREE.Color();
     this.scatter = new ChunkScatter([mesh], {
       perChunk: Math.round(density * CHUNK * CHUNK),
-      radius,
+      near, far,
       make: (rand, x, z) => {
         const a = rand(), b = rand(), c = rand(), d = rand(), f = rand(), g = rand(), h = rand(), k = rand();
         if (!isGravel(x, z)) return null;
@@ -383,5 +413,5 @@ export class StoneField {
     });
   }
 
-  update(x, z) { this.scatter.update(x, z); }
+  update(x, z, dx, dz, halfView) { this.scatter.update(x, z, dx, dz, halfView); }
 }
