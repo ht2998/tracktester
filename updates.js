@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 21;
+export const BUILD = 22;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 24, date: '12 Nov 2026', title: 'No more googly eyes',
+    items: [
+      ['Proper headlights', 'The headlights were shiny chrome balls with a flat disc on the front, and the dark road reflecting in their bottoms made them look like eyes looking down. Now each is a real lamp: a satin chrome bowl, a domed glass front over a silver reflector, and a chrome rim. A crash knocks each one askew its own way', 'lights'],
+    ],
+  },
   {
     id: 23, date: '12 Nov 2026', title: 'Engine damage is a chance',
     items: [
