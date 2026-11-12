@@ -15,7 +15,7 @@ import { setTouch, tap } from './input.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 1;
+export const BUILD = 2;
 
 export function isTouchDevice() {
   return window.matchMedia('(pointer: coarse)').matches
@@ -358,7 +358,7 @@ export class TouchControls {
     this.reverseBtn.classList.toggle('active', gearLabel === 'R');
     const soundText = muted ? 'Sound: off' : 'Sound: on';
     if (this.soundItem.textContent !== soundText) this.soundItem.textContent = soundText;
-    const lightsText = ['Lights: off', 'Lights: dipped', 'Lights: main beam'][lights];
+    const lightsText = ['Lights: off', 'Lights: auto', 'Lights: dipped', 'Lights: main beam'][lights];
     if (this.lightsItem.textContent !== lightsText) this.lightsItem.textContent = lightsText;
   }
 }
