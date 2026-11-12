@@ -20,7 +20,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 6;
+export const BUILD = 7;
 
 const DRIVER_X = -0.18;
 // The steering wheel's centre and tilt
@@ -223,12 +223,12 @@ export class Cockpit {
     // the on-screen dials go away and everything shows here instead:
     // shift lights, gear, speed, revs, fuel, oil, the four tyres, warnings
     this.screenCanvas = document.createElement('canvas');
-    this.screenCanvas.width = 512;
-    this.screenCanvas.height = 208;
+    this.screenCanvas.width = 680;
+    this.screenCanvas.height = 264;
     this.screenTex = new THREE.CanvasTexture(this.screenCanvas);
     this.screenTex.colorSpace = THREE.SRGBColorSpace;
     this.screenTex.anisotropy = 4;
-    const SCREEN_W = 0.22, SCREEN_H = 0.0894;
+    const SCREEN_H = 0.09, SCREEN_W = SCREEN_H * (680 / 264);   // (about 23 cm across)
     const screen = new THREE.Mesh(new THREE.PlaneGeometry(SCREEN_W, SCREEN_H),
       new THREE.MeshBasicMaterial({ map: this.screenTex, toneMapped: false }));
     screen.position.set(DRIVER_X, 0.862, 0.172);
@@ -709,7 +709,8 @@ export class Cockpit {
   drawScreen(dt, st) {
     this.screenClock -= dt;
     if (this.screenClock > 0) return;
-    this.screenClock = this.firstPerson ? 1 / 15 : 0.5;
+    this.screenClock = this.firstPerson ? 1 / 20 : 0.5;
+    if (st.hud?.tach) { this.drawHudScreen(st); return; }
     const c = this.screenCanvas.getContext('2d');
     const W = 512, H = 208;
     const now = performance.now();
@@ -809,6 +810,41 @@ export class Cockpit {
         c.font = font(18);
         c.fillText(text, 214, 162);
       }
+    }
+    this.screenTex.needsUpdate = true;
+  }
+
+  // The screen as a copy of the on-screen dashboard: the same tyre bars,
+  // rev counter (with the gear), speedo (with the shift and warning lights),
+  // and fuel and oil gauges, laid out in a row like they are on screen
+  drawHudScreen(st) {
+    const c = this.screenCanvas.getContext('2d');
+    const W = this.screenCanvas.width, H = this.screenCanvas.height;
+    const h = st.hud;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.fillStyle = '#07090b';
+    c.fillRect(0, 0, W, H);
+    const pad = 10, gap = 10;
+    const aspect = (cv) => (cv.height ? cv.width / cv.height : 1);
+    // Sizes relative to the rev counter's (D), shrunk to fit the width
+    const widthFor = (D) => D * 0.75 * aspect(h.tyres) + D + D * 0.82 + (D - 8) / 2 + 3 * gap;
+    let D = H - 2 * pad;
+    if (widthFor(D) > W - 2 * pad) D *= (W - 2 * pad - 3 * gap) / (widthFor(D) - 3 * gap);
+    const tyreH = D * 0.75, tyreW = tyreH * aspect(h.tyres);   // tyre bars a bit bigger than on screen, to read at a glance
+    const spD = D * 0.82, smallD = (D - 8) / 2;
+    const top = (H - D) / 2;
+    let x = (W - widthFor(D)) / 2;
+    const draw = (cv, x0, y0, w, hh) => { if (cv && cv.width) c.drawImage(cv, x0, y0, w, hh); };
+    draw(h.tyres, x, (H - tyreH) / 2, tyreW, tyreH); x += tyreW + gap;
+    draw(h.tach, x, top, D, D); x += D + gap;
+    draw(h.speedo, x, top + (D - spD) / 2, spD, spD); x += spD + gap;
+    draw(h.fuel, x, top, smallD, smallD);
+    draw(h.oil, x, top + smallD + 8, smallD, smallD);
+    // A fire flashes a red border round the whole screen
+    if (st.fire && (performance.now() % 500) < 250) {
+      c.strokeStyle = '#ff3b30';
+      c.lineWidth = 8;
+      c.strokeRect(4, 4, W - 8, H - 8);
     }
     this.screenTex.needsUpdate = true;
   }
