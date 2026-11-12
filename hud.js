@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 3;
+export const BUILD = 4;
 
 const COLORS = {
   face: '#15181c',
@@ -540,7 +540,7 @@ function roundRect(g, x, y, w, h, r) {
 // ---------------------------------------------------------------------
 export class Hud {
   constructor({ redline, maxSpeed = 240, onTransmission, onAssist, onTyres, tyreOptions = {}, compact = false,
-                timeSpeeds = [60], onSky = {}, onWhatsNew = null }) {
+                timeSpeeds = [60], onSky = {}, onWhatsNew = null, track = 'test', onTrack = null }) {
     this.timeSpeeds = timeSpeeds;
     this.onSky = onSky;
     this.onTyres = onTyres;
@@ -749,6 +749,22 @@ export class Hud {
     this.clockText.id = 'clock';
     document.body.appendChild(this.clockText);
 
+    // Where to drive: picking another place reloads the game to build it
+    const trackHeading = document.createElement('div');
+    trackHeading.className = 'sp-heading';
+    trackHeading.textContent = 'Track';
+    const trackBox = document.createElement('div');
+    trackBox.className = 'tyre-box';
+    const trackSel = document.createElement('select');
+    trackSel.setAttribute('aria-label', 'Track');
+    trackSel.innerHTML = '<option value="test">Test area</option><option value="sepang">Sepang (flat mock-up)</option>';
+    trackSel.value = track;
+    trackSel.addEventListener('change', () => { trackSel.blur(); onTrack?.(trackSel.value); });
+    const trackNote = document.createElement('span');
+    trackNote.className = 'gb-note';
+    trackNote.textContent = 'Changing reloads the game';
+    trackBox.append(trackSel, trackNote);
+
     // What's new: the update screen, any time
     const newsBtn = document.createElement('button');
     newsBtn.type = 'button';
@@ -757,7 +773,7 @@ export class Hud {
     newsBtn.textContent = "What's new";
     newsBtn.addEventListener('click', () => { newsBtn.blur(); onWhatsNew?.(); });
 
-    panel.append(gearHeading, gearGroup, assistHeading, ...assistButtons, tyreHeading, tyreBox, skyHeading, skyBox, newsBtn);
+    panel.append(trackHeading, trackBox, gearHeading, gearGroup, assistHeading, ...assistButtons, tyreHeading, tyreBox, skyHeading, skyBox, newsBtn);
     this.side.append(handle, panel);
     document.body.appendChild(this.side);
 
