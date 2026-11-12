@@ -21,11 +21,19 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 22;
+export const BUILD = 23;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 25, date: '12 Nov 2026', title: 'Real grass and gravel at Sepang',
+    items: [
+      ['3D grass at Sepang', 'The same 3D grass as the test area now grows all round Sepang: short, medium and long tufts that sway in the wind and get pressed flat where you drive over them (and stay flat). It grows around the car and fades into the painted grass further away, so it stays smooth on phones too', 'grass'],
+      ['Proper gravel traps', 'Sepang\'s gravel traps have the test area\'s gravel: bumpy stones that catch the light, with loose 3D stones scattered on top near the car. They sound the same too (the crunch on gravel and the swish on grass)', 'gravel'],
+      ['Pit lane entry and exit', 'Fixed the pit lane entry and exit only appearing when you got close: they now show from any distance, like the rest of the track', 'car'],
+    ],
+  },
   {
     id: 24, date: '12 Nov 2026', title: 'No more googly eyes',
     items: [
