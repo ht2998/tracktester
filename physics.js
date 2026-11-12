@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 4;
+export const BUILD = 5;
 
 const G = 9.81;   // gravity, m/s²
 const RPM_PER_RADS = 60 / (2 * Math.PI);
@@ -48,6 +48,7 @@ export const CATERHAM = {
   // --- Tyres ---
   tyreWearBase: 1 / 300000,  // wear per metre rolled in a straight line (Sports Medium)
   tyreWearCorner: 0.00002,   // extra wear per metre at the grip limit, scaled by the tyre's load
+  tyreWearBrake: 0.000005,   // extra wear per metre braking at the limit, scaled by the tyre's load
   tyreWearSkid: 0.0024,      // wear per metre of tyre actually sliding over the road
   tyreWearFlat: 0.00003,     // extra wear per metre driving on a deflated tyre
   flatSink: 0.085,           // metres a fully deflated tyre lets that corner drop
@@ -105,6 +106,19 @@ export const CATERHAM = {
 // Intermediates and wets are slower on dry tarmac and wear fast there (they
 // overheat); they're for rain, which comes with weather. Dirt and snow tyres
 // are poor on tarmac and come into their own off it.
+// TYRE TEMPERATURE: each tyre warms up as it works (cornering, braking,
+// sliding, spinning) and cools in the passing air, much faster in the rain.
+// Each kind grips best inside its own window (°C); colder it grips less
+// (slicks most of all), hotter it grips a little less and wears faster.
+export const AMBIENT_TEMP = 28;
+export const TEMP_WINDOW = {
+  slick: { lo: 85, hi: 110, cold: 0.2 },
+  road: { lo: 60, hi: 95, cold: 0.08 },
+  wet: { lo: 45, hi: 80, cold: 0.06 },
+  dirt: { lo: 45, hi: 85, cold: 0.06 },
+  snow: { lo: -5, hi: 45, cold: 0.03 },
+};
+
 export const TYRES = {
   CH: { name: 'Comfort Hard', group: 'Comfort', kind: 'road', grip: 0.78, wear: 0.4 },
   CM: { name: 'Comfort Medium', group: 'Comfort', kind: 'road', grip: 0.82, wear: 0.5 },
@@ -184,6 +198,7 @@ export class CarPhysics {
     // How fast the tyres wear compared with normal (the rain sets this: wet
     // tyres last far longer on a wet track, everything runs cooler)
     this.wearScale = () => 1;
+    this.trackWetness = 0;     // how wet the track is (0-1), set by the game: cools the tyres
     this.reset();
   }
 
@@ -232,6 +247,116 @@ export class CarPhysics {
     this.knock = 0;           // 0-1, rod knock from oil starvation (for the sound)
     this.limiterClock = 0;
     this.events = [];         // shift events for the sound to pick up
+    // --- Crash damage (all repaired on reset) ---
+    this.radiator = 1;        // 1 = intact, 0 = smashed (a nose-first hit)
+    this.coolant = 1;         // coolant left in the system (leaks from a holed radiator)
+    this.coolantTemp = 0.45;  // engine temperature gauge: ~0.45 normal, 1 = boiling
+    this.fuelLeak = 0;        // litres per second leaking from a split tank (rear hits)
+    this.wheelBend = [0, 0, 0, 0];   // each wheel knocked out of line, radians (+ = toe out to the left)
+    this.noseCrush = 0;       // metres the nose has been pushed in
+    this.tailCrush = 0;       // metres the back has been pushed in
+    this.onFire = false;      // engine bay fire
+    this.fireLevel = 0;       // 0-1, how big the flames are
+    this.fireTime = 0;        // seconds since it caught
+  }
+
+  // --- Crash damage ---
+  // A hit from the game's collisions. zone: 'front', 'rear', 'left' or
+  // 'right' (which part of the car hit); speed: how fast that part was going
+  // into the barrier (m/s); along: where along the car (+ = towards the
+  // front, metres from the middle); across: + = left side.
+  // What breaks depends on where and how hard:
+  //   front: crumples the nose and holes the radiator; hit it again (or
+  //          very hard) and the engine behind it gets damaged too
+  //   rear:  crumples the tail and can split the fuel tank
+  //   side:  bends the wheel on that corner out of line (the car pulls),
+  //          and a hard one can puncture the tyre
+  //   big hits on a damaged engine, or with fuel leaking, can start a fire
+  crashHit({ zone, speed, along = 0, across = 0 }) {
+    if (!(speed > 2.5)) return;
+    const v = speed;
+    const wheelNear = (front, left) => (front ? 0 : 2) + (left ? 0 : 1);
+    const bend = (i, amount, dir) => {
+      this.wheelBend[i] = clamp(this.wheelBend[i] + Math.min(0.03, amount) * dir, -0.06, 0.06);
+    };
+    if (zone === 'front') {
+      const wasHoled = this.radiator < 0.75;
+      this.noseCrush = Math.min(0.32, this.noseCrush + Math.max(0, v - 3) * 0.022);
+      this.radiator = Math.max(0, this.radiator - Math.max(0, v - 3.5) / 14);
+      // The engine sits right behind the radiator: it takes the next hit
+      if (v > 6 && (wasHoled || v > 15)) this.damageEngine((v - 6) / (wasHoled ? 12 : 20));
+      // Off-centre: the front wheel on that side gets knocked back too
+      if (Math.abs(across) > 0.5 && v > 5) bend(wheelNear(true, across > 0), (v - 5) * 0.0025, across > 0 ? 1 : -1);
+    } else if (zone === 'rear') {
+      this.tailCrush = Math.min(0.25, this.tailCrush + Math.max(0, v - 3) * 0.018);
+      if (v > 7) this.fuelLeak = Math.min(0.6, this.fuelLeak + (v - 7) * 0.025);
+      if (Math.abs(across) > 0.5 && v > 5) bend(wheelNear(false, across > 0), (v - 5) * 0.0025, across > 0 ? 1 : -1);
+    } else {
+      const left = zone === 'left';
+      const front = along > -0.2;
+      const i = wheelNear(front, left);
+      bend(i, (v - 2.5) * 0.004, left ? -1 : 1);       // pushed in towards the car
+      if (v > 8) this.puncture(i, 0.04 * (v - 8));
+    }
+    // Fire: a big hit on a badly damaged engine, or with fuel spilling out
+    const fireChance = (this.engineHealth < 0.35 && v > 8 ? 0.35 : 0)
+      + (this.fuelLeak > 0 && v > 10 ? 0.3 : 0) + (v > 25 ? 0.25 : 0);
+    if (!this.onFire && Math.random() < fireChance) this.catchFire();
+    this.events.push({ type: 'crash', zone, speed: v });
+  }
+
+  // Damage the engine directly (crash, overheating). Blows at zero.
+  damageEngine(amount) {
+    if (this.engineBlown || !(amount > 0)) return;
+    this.engineHealth = Math.max(0, this.engineHealth - amount);
+    if (this.engineHealth <= 0) this.blowEngine();
+  }
+
+  catchFire() {
+    if (this.onFire) return;
+    this.onFire = true;
+    this.fireTime = 0;
+    this.events.push({ type: 'fire' });
+  }
+
+  // --- Cooling: a holed radiator leaks coolant; with too little coolant the
+  // engine overheats (the gauge climbs, steam pours out) and then cooks
+  // itself. Also the fire, and fuel leaking from a split tank. ---
+  updateDamage(dt) {
+    const effort = this.engineDead ? 0 : 0.25 + 0.75 * clamp(this.rpm / this.spec.redline, 0, 1) * (0.4 + 0.6 * this.throttleAmount);
+    if (this.radiator < 1 && this.coolant > 0) {
+      this.coolant = Math.max(0, this.coolant - (1 - this.radiator) * 0.035 * dt);
+    }
+    const cooling = (0.35 + 0.65 * this.radiator) * clamp(this.coolant / 0.5, 0, 1);
+    const target = this.engineDead ? 0.25
+      : 0.42 + 0.1 * effort + (1 - cooling) * (0.25 + 0.75 * effort);
+    this.coolantTemp += (target - this.coolantTemp) * Math.min(1, (target > this.coolantTemp ? 0.07 : 0.03) * dt);
+    if (this.coolantTemp > 1 && !this.engineBlown) {
+      this.damageEngine((this.coolantTemp - 1) * 0.25 * dt + 0.003 * dt);
+      if (this.engineBlown && Math.random() < 0.3) this.catchFire();
+    }
+    // Fuel from a split tank (faster while the car is moving and sloshing it)
+    if (this.fuelLeak > 0 && this.fuel > 0) {
+      this.fuel = Math.max(0, this.fuel - this.fuelLeak * 0.12 * dt);
+    }
+    // Fire: grows quickly, eats the engine, then burns itself out once
+    // there's nothing much left to burn
+    if (this.onFire) {
+      this.fireTime += dt;
+      const fuelLeft = this.fuelLeak > 0 ? Math.min(1, this.fuel / 4) : 1;
+      const dying = this.fireTime > 30 ? Math.max(0, 1 - (this.fireTime - 30) / 15) : 1;
+      this.fireLevel = Math.min(1, this.fireTime / 2) * dying * (0.4 + 0.6 * fuelLeft);
+      this.damageEngine(0.07 * this.fireLevel * dt);
+      if (dying <= 0) { this.onFire = false; this.fireLevel = 0; }
+    }
+  }
+
+  // How much steam is coming off the radiator (0-1): leaking or boiling
+  get steam() {
+    if (this.radiator >= 1 && this.coolantTemp < 0.95) return 0;
+    const leaking = this.coolant > 0 ? (1 - this.radiator) * 0.6 : 0;
+    const boiling = clamp((this.coolantTemp - 0.9) / 0.15, 0, 1);
+    return clamp(leaking + boiling, 0, 1);
   }
 
   // --- Tyres ---
@@ -244,6 +369,7 @@ export class CarPhysics {
     // wheel has come off and that corner is scraping along on the frame
     this.tyres = WHEEL_ORDER.map(() => ({
       wear: 0, pressure: 1, leak: 0, blown: false, shred: 0, rim: false, heat: 0, rimWear: 0, detached: false,
+      temp: AMBIENT_TEMP,   // tread temperature, °C
     }));
     this.wheelLoad = [0, 0, 0, 0];
     this.tyreSink = [0, 0, 0, 0];   // how far each corner sits lower (flat tyres), metres
@@ -298,7 +424,20 @@ export class CarPhysics {
     const compound = TYRES[this.tyreCompound];
     const wearGrip = 1 - 0.35 * Math.pow(t.wear, 1.4);          // worn tyres grip less
     const pressureGrip = 0.5 + 0.5 * Math.pow(t.pressure, 0.6);  // a flat still grips, badly
-    return compound.grip * wearGrip * pressureGrip;
+    return compound.grip * wearGrip * pressureGrip * this.tempGrip(t);
+  }
+
+  // The temperature range the fitted tyres work best in, °C { lo, hi }
+  get tempWindow() {
+    return TEMP_WINDOW[TYRES[this.tyreCompound].kind] || TEMP_WINDOW.road;
+  }
+
+  // How much of its grip a tyre has at its temperature (1 = in its window)
+  tempGrip(t) {
+    const w = TEMP_WINDOW[TYRES[this.tyreCompound].kind] || TEMP_WINDOW.road;
+    if (t.temp < w.lo) return 1 - w.cold * Math.min(1, (w.lo - t.temp) / Math.max(10, w.lo - AMBIENT_TEMP));
+    if (t.temp > w.hi) return 1 - Math.min(0.25, (t.temp - w.hi) / 60);
+    return 1;
   }
 
   // An assist's level, 0 (off) to 5 (strongest)
@@ -394,7 +533,8 @@ export class CarPhysics {
     const s = this.spec;
     if (this.leakingOil) {
       // A cracked engine drips; a blown one pours
-      const drain = this.engineBlown ? s.oilPourRate : s.oilLeakRate;
+      // (slower as it runs low: less oil, less pressure pushing it out)
+      const drain = (this.engineBlown ? s.oilPourRate : s.oilLeakRate) * (0.3 + 0.7 * Math.min(1, this.oilLevel / 0.25));
       this.oilLevel = Math.max(0, this.oilLevel - drain * dt);
     }
     if (this.engineBlown) {
@@ -458,6 +598,7 @@ export class CarPhysics {
     const h = dt / steps;
     for (let i = 0; i < steps; i++) this.step(controls, h);
     this.updateOil(dt);
+    this.updateDamage(dt);
     // Safety net: if anything ever produces an invalid number, put the
     // car back at the start rather than letting it vanish
     if (!Number.isFinite(this.x + this.z + this.heading + this.vx + this.vy + this.yawRate + this.rpm)) {
@@ -491,7 +632,11 @@ export class CarPhysics {
     const frontRims = (this.tyres[0].rim ? 1 : 0) + (this.tyres[1].rim ? 1 : 0);
     const frontGone = (this.tyres[0].detached ? 1 : 0) + (this.tyres[1].detached ? 1 : 0);
     steerLimit *= (1 - 0.18 * frontRims) * (1 - 0.35 * frontGone);   // a missing front wheel: hardly any steering
-    const target = c.steer * steerLimit + (frontRims ? (Math.random() - 0.5) * 0.02 * frontRims : 0);
+    // Bent wheels from a crash pull the car to one side (the driver has to
+    // hold some opposite lock to go straight)
+    const wb = this.wheelBend;
+    const pull = 0.5 * (wb[0] + wb[1]) + 0.35 * (wb[2] + wb[3]);
+    const target = c.steer * steerLimit + pull + (frontRims ? (Math.random() - 0.5) * 0.02 * frontRims : 0);
     const turningIn = !countersteering && Math.abs(target) > Math.abs(this.steer)
       && Math.sign(target) === Math.sign(this.steer || target);
     const rate = (turningIn ? s.steerSpeed / Math.pow(speedFactor, 1.5) : s.steerSpeed) * (1 - 0.35 * frontRims);
@@ -894,11 +1039,12 @@ export class CarPhysics {
     // Sideways acceleration (smoothed), for next step's weight shift
     this.latAccel += (this.vx * this.yawRate - this.latAccel) * Math.min(1, 8 * h);
 
-    this.updateTyres(h, { useFront, useRear, slideFront, slideRear, wheelspinAmount, handbrake: c.handbrake, m, L });
+    this.updateTyres(h, { useFront, useRear, slideFront, slideRear, wheelspinAmount, handbrake: c.handbrake, m, L,
+      brakeFront: frontBrake / Math.max(1, maxFront), brakeRear: rearBrake / Math.max(1, maxRear) });
   }
 
   // --- Tyre wear, pressure and how low each corner sits ---
-  updateTyres(h, { useFront, useRear, slideFront, slideRear, wheelspinAmount, handbrake, m, L }) {
+  updateTyres(h, { useFront, useRear, slideFront, slideRear, wheelspinAmount, handbrake, m, L, brakeFront = 0, brakeRear = 0 }) {
     const s = this.spec;
     const compound = TYRES[this.tyreCompound];
     const speed = Math.hypot(this.vx, this.vy);
@@ -912,17 +1058,32 @@ export class CarPhysics {
 
       // How fast this tyre's rubber is sliding over the road
       // (understeer scrub at the front is much gentler than a sideways slide)
-      let slip = speed * (w.front ? 0.25 * slideFront : slideRear);
-      if (!w.front) slip = Math.max(slip, wheelspinAmount * 15);    // spinning up
+      let slip = speed * (w.front ? 0.05 * slideFront : slideRear);
+      if (!w.front) slip = Math.max(slip, wheelspinAmount * 8);    // spinning up
       if (this.wheelsLocked) slip = Math.max(slip, speed * 0.3);    // brakes locked: flat-spotting
       if (handbrake && !w.front) slip = Math.max(slip, speed * 0.3); // handbrake: rears locked
 
       const use = w.front ? useFront : useRear;
-      let wear = s.tyreWearBase * dist                              // straight line: all equal
-        + s.tyreWearCorner * loadShare * use * use * dist          // cornering: the loaded outer tyre most
+      const braking = w.front ? brakeFront : brakeRear;              // share of its grip used for braking
+      // --- Temperature: heated by the work it does, cooled by the air (and
+      // much more by rain and spray) ---
+      const work = 0.28 * loadShare * use * speed * (w.front ? 1.15 : 1)    // cornering (the steering fronts work hardest)
+        + 0.1 * loadShare * braking * speed                                // braking
+        + 1.2 * Math.sqrt(Math.max(loadShare, 0)) * slip                   // sliding or spinning
+        + 0.04 * speed;                                                    // just rolling
+      const heatUp = compound.kind === 'slick' ? 1.6 : 1;   // sticky slick rubber heats up more as it works
+      const cooling = (0.03 + 0.005 * speed) * (1 + 3 * this.trackWetness);
+      t.temp += (work * heatUp - cooling * (t.temp - AMBIENT_TEMP)) * 0.25 * h;
+      const win = TEMP_WINDOW[compound.kind] || TEMP_WINDOW.road;
+      const overheat = t.temp > win.hi ? Math.min(2.5, 1 + (t.temp - win.hi) / 25) : 1;   // too hot: wears faster
+
+      let wear = (s.tyreWearBase * dist                             // straight line: all equal
+        + s.tyreWearCorner * loadShare * use * use * dist * (w.front ? 1.25 : 1)   // cornering: the loaded outer (front) tyre most
+        + s.tyreWearBrake * loadShare * braking * braking * dist)  // braking: the loaded fronts most
         + s.tyreWearSkid * Math.sqrt(Math.max(loadShare, 0)) * slip * h
         + s.tyreWearFlat * (1 - t.pressure) * (1 - t.pressure) * dist;   // driving on a flat chews it up
-      t.wear = Math.min(1, t.wear + wear * compound.wear * this.wearScale());
+      wear += 0.004 * Math.abs(this.wheelBend[i]) * dist;    // a bent wheel scrubs along sideways
+      t.wear = Math.min(1, t.wear + wear * compound.wear * this.wearScale() * overheat);
 
       // Slow puncture: air escapes, more slowly as the tyre empties
       if (t.leak > 0 && t.pressure > 0) {
