@@ -16,7 +16,7 @@
 // area gets broadleaf trees and conifers round its edges.
 import * as THREE from 'three';
 
-export const BUILD = 2;
+export const BUILD = 3;
 
 // The same random numbers every time (so the forest is always the same)
 function seeded(seed) {
@@ -81,24 +81,24 @@ const col = (hex) => new THREE.Color(hex);
 const shade = (base, y, lo, hi, dark = 0.55) => base.clone().multiplyScalar(dark + (1 - dark) * Math.min(1, Math.max(0, (y - lo) / (hi - lo))));
 
 // Broadleaf tree: a trunk, a few branches and a crown of several blobs
-function broadleaf(rand, { height = 9, leaf = 0x3f6b2a } = {}) {
+function broadleaf(rand, { height = 9, leaf = 0x3f6b2a, simple = false } = {}) {
   const trunkB = new Builder(), leafB = new Builder();
   const bark = col(0x5a4632);
   const trunkH = height * 0.45;
   trunkB.add(new THREE.CylinderGeometry(0.22, 0.34, trunkH, 8, 1), M(0, trunkH / 2, 0), (x, y) => shade(bark, y, 0, trunkH, 0.75));
-  for (let k = 0; k < 3; k++) {
+  for (let k = 0; k < (simple ? 0 : 3); k++) {
     const a = rand() * Math.PI * 2;
     trunkB.add(new THREE.CylinderGeometry(0.07, 0.13, height * 0.3, 6, 1),
       M(Math.sin(a) * 0.5, trunkH + height * 0.08, Math.cos(a) * 0.5, 1, 1, 1, Math.cos(a) * 0.6, 0, -Math.sin(a) * 0.6), () => bark);
   }
   const green = col(leaf);
   const crownY = trunkH + height * 0.25, crownR = height * 0.3;
-  const blobs = 4 + Math.floor(rand() * 2);
+  const blobs = simple ? 3 : 4 + Math.floor(rand() * 2);
   for (let k = 0; k < blobs; k++) {
     const a = (k / blobs) * Math.PI * 2 + rand();
     const r = crownR * (0.55 + rand() * 0.3);
     const off = k === 0 ? 0 : crownR * 0.55;
-    leafB.add(lumpyBall(rand), M(Math.sin(a) * off, crownY + (k === 0 ? crownR * 0.25 : (rand() - 0.3) * crownR * 0.5), Math.cos(a) * off, r, r * 0.8, r),
+    leafB.add(lumpyBall(rand, simple ? 0 : 1), M(Math.sin(a) * off, crownY + (k === 0 ? crownR * 0.25 : (rand() - 0.3) * crownR * 0.5), Math.cos(a) * off, r, r * 0.8, r),
       (x, y) => shade(green, y, crownY - crownR, crownY + crownR, 0.5));
   }
   return { trunk: trunkB.build(), leaves: leafB.build() };
@@ -118,27 +118,28 @@ function conifer(rand, { height = 11 } = {}) {
 }
 
 // Oil palm: a rough, slightly leaning trunk and a crown of long drooping fronds
-function palm(rand, { height = 8 } = {}) {
+function palm(rand, { height = 8, simple = false } = {}) {
   const trunkB = new Builder(), leafB = new Builder();
   const bark = col(0x6b5a44), green = col(0x4f7a2c);
   const lean = (rand() - 0.5) * 0.25;
-  const segs = 6;
+  const segs = simple ? 3 : 6;
   for (let k = 0; k < segs; k++) {
     const y = (k / segs) * height;
     trunkB.add(new THREE.CylinderGeometry(0.26, 0.3, height / segs + 0.02, 7, 1),
       M(Math.sin(lean) * y * 0.15, y + height / segs / 2, 0, 1, 1, 1, 0, 0, lean * 0.15), () => shade(bark, k, 0, segs, 0.7));
   }
   const top = new THREE.Vector3(Math.sin(lean) * height * 0.15, height, 0);
-  const fronds = 10 + Math.floor(rand() * 4);
+  const fronds = simple ? 8 : 10 + Math.floor(rand() * 4);
   for (let f = 0; f < fronds; f++) {
     const a = (f / fronds) * Math.PI * 2 + rand() * 0.3;
     const len = 3.6 + rand() * 1.2;
     const up = 0.5 - rand() * 0.4;
     // a frond: a tapering strip that rises then droops (4 pieces)
     let px = top.x, py = top.y, pz = top.z;
-    for (let s = 0; s < 4; s++) {
-      const t0 = s / 4, t1 = (s + 1) / 4;
-      const segLen = len / 4;
+    const pieces = simple ? 2 : 4;
+    for (let s = 0; s < pieces; s++) {
+      const t0 = s / pieces, t1 = (s + 1) / pieces;
+      const segLen = len / pieces;
       const pitch = up - (t0 + t1) * 0.55;            // droops more towards the tip
       const w0 = 0.45 * (1 - t0 * 0.8), w1 = 0.45 * (1 - t1 * 0.8);
       const dx = Math.sin(a) * Math.cos(pitch) * segLen, dy = Math.sin(pitch) * segLen, dz = Math.cos(a) * Math.cos(pitch) * segLen;
@@ -150,7 +151,7 @@ function palm(rand, { height = 8 } = {}) {
       ];
       quad.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
       quad.computeVertexNormals?.();
-      leafB.add(quad, new THREE.Matrix4(), () => shade(green, s, 0, 4, 0.7));
+      leafB.add(quad, new THREE.Matrix4(), () => shade(green, s, 0, pieces, 0.7));
       px += dx; py += dy; pz += dz;
     }
   }
@@ -223,7 +224,9 @@ function swayMaterial(uniforms, { sway, flutter, side = THREE.FrontSide, roughne
 // list to add solid tree trunks to.
 // seed: which random forest (different for each call); density: share of
 // the usual number of plants.
-export function buildFlora(scene, { isMobile = false, style = 'tropical', area, canPlace, colliders = null, shadows = true, seed = null, density = 1, groves = true }) {
+// forest: just trees, lots of them, in simpler shapes (for the thick woods
+// further out, where you only see them from a distance)
+export function buildFlora(scene, { isMobile = false, style = 'tropical', area, canPlace, colliders = null, shadows = true, seed = null, density = 1, groves = true, forest = false }) {
   const uniforms = { uWind: { value: new THREE.Vector2() }, uTime: { value: 0 } };
   const rand = seeded(seed ?? (style === 'tropical' ? 1234 : 4321));
   const treeMats = {
@@ -236,7 +239,13 @@ export function buildFlora(scene, { isMobile = false, style = 'tropical', area, 
   // The kinds of plant (a few shapes of each, so they don't all look alike)
   const kinds = [];
   const addKind = (name, model, count, opts) => kinds.push({ name, model, count: Math.round(count * density * (isMobile ? 0.3 : 1)), ...opts });
-  if (style === 'tropical') {
+  if (forest) {
+    const tropical = style === 'tropical';
+    for (let k = 0; k < 3; k++) {
+      if (tropical) addKind('palm', palm(rand, { height: 8 + k * 1.5, simple: true }), 900, { gap: 6, clear: 0, trunkR: 0.3 });
+      addKind('tree', broadleaf(rand, { height: 13 + k * 4, leaf: [0x2f5a22, 0x3a6527, 0x2b5320][k], simple: true }), tropical ? 1100 : 1200, { gap: 7, clear: 0, trunkR: 0.45 });
+    }
+  } else if (style === 'tropical') {
     for (let k = 0; k < 3; k++) addKind('palm', palm(rand, { height: 7 + k * 1.5 }), 380, { gap: 7, clear: 16, trunkR: 0.3 });
     for (let k = 0; k < 3; k++) addKind('tree', broadleaf(rand, { height: 10 + k * 3, leaf: [0x3f6b2a, 0x35602a, 0x4a7530][k] }), 300, { gap: 9, clear: 18, trunkR: 0.4 });
     addKind('shrub', shrub(rand, { size: 1.3 }), 900, { gap: 4, clear: 9 });
@@ -261,7 +270,7 @@ export function buildFlora(scene, { isMobile = false, style = 'tropical', area, 
       : [[kind.model, kind.name === 'grass' ? grassMat : shrubMat]];
     const meshes = parts.map(([geo, mat]) => {
       const mesh = new THREE.InstancedMesh(geo, mat, Math.max(1, kind.count));
-      mesh.castShadow = shadows && isTree && !isMobile;
+      mesh.castShadow = shadows && isTree && !isMobile && !forest;
       mesh.receiveShadow = true;
       mesh.count = 0;
       scene.add(mesh);
