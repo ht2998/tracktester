@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 7;
+export const BUILD = 8;
 
 const COLORS = {
   face: '#15181c',
@@ -1001,6 +1001,12 @@ export class Hud {
     tw.changing.checked = changing;
     const nowText = changing ? `Now: ${now}` : '';
     if (tw.now.textContent !== nowText) tw.now.textContent = nowText;
+  }
+
+  // The dashboard's drawings, for the car's own dash screen to copy
+  get parts() {
+    return { tyres: this.tyreBars.canvas, tach: this.tach.canvas, speedo: this.speedo.canvas,
+             fuel: this.fuelGauge.canvas, oil: this.oilGauge.canvas };
   }
 
   // In the driver's-eye view the dials are on the car's own dashboard, so
