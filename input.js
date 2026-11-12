@@ -7,7 +7,7 @@
 //   Space            = handbrake
 //   X (hold)         = clutch: rev the engine freely, let go to dump it
 //   F (hold)         = horn
-//   G                = headlights: off / dipped / main beam
+//   G                = headlights: off / auto / dipped / main beam
 //   Q / E  or  , / . = shift down / up (manual gearbox; Q from 1st = reverse)
 //   R                = reverse on / off (automatic and CVT, when stopped)
 //   T                = change gearbox (manual / automatic / CVT)
@@ -18,7 +18,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 1;
+export const BUILD = 2;
 
 const held = new Set();      // keys being held down right now
 const tapped = new Set();    // one-off presses waiting to be used
