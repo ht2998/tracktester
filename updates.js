@@ -21,11 +21,38 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 24;
+export const BUILD = 27;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 29, date: '12 Nov 2026', title: 'Trees in the test area',
+    items: [
+      ['Grassy islands', 'The test area\'s open ground now has round islands of grass dotted around it (real grass to drive on), each with its own trees, bushes and long grass, so there\'s scenery to drive round and between. The area round the start, the buildings and the gravel trap stays open for driving, and the woods are still round the far edges', 'grass'],
+    ],
+  },
+  {
+    id: 28, date: '12 Nov 2026', title: 'Trees, bushes and tall grass',
+    items: [
+      ['A tropical Sepang', 'Sepang is surrounded by oil palms, broadleaf rainforest trees, bushes (some flowering pink, like bougainvillea) and clumps of tall grass, gathered into woods with clearings between, all kept well back from the track, the run-offs and the buildings', 'grass'],
+      ['Woods round the test area', 'The test area has broadleaf trees, conifers, bushes and long grass round the edges of the driving ground', 'grass'],
+      ['They sway in the wind', 'Tall grass bends and shivers a lot, bushes a little, and the trees just gently, in gusts that roll across the ground, stronger in a storm', 'storm'],
+      ['Solid trunks', 'Drive off far enough to hit a tree and its trunk stops you (and dents the car) like a wall', 'debris'],
+    ],
+  },
+  {
+    id: 27, date: '12 Nov 2026', title: 'Four-wheel physics',
+    items: [
+      ['Four real tyres', 'The car used to be worked out like a bike: one front tyre and one rear tyre. Now each of the four tyres grips on its own, with its own load, slip angle and spin. Grip builds up, peaks and then fades as a tyre slides, so you can feel the limit coming. One wheel on the grass or a kerb now really upsets the car', 'tyres'],
+      ['Suspension', 'The car sits on four springs and dampers with anti-roll bars: it dives when you brake, squats when you accelerate and leans in corners, and that weight moving around changes how much each tyre can grip. You can see the body move and the wheels ride up and down underneath it', 'car'],
+      ['Wheels that spin and lock on their own', 'Each wheel has its own spin: one can lock under braking or spin up on its own. ABS now eases each wheel separately and lets off enough to keep you steering while braking, and traction control watches the rear wheels directly', 'tyres'],
+      ['Limited-slip differential', 'The rear wheels can turn at different speeds round a corner, but the differential stops one from spinning up alone, like the real car', 'car'],
+      ['Bumps and kerbs', 'The track has small bumps and ripples, kerbs stand 2-3 cm proud and shake the car, the grass at Sepang is 4 cm below the track (drop a wheel off and that corner drops), and the yellow sausage kerbs are real humps that throw the car up', 'grass'],
+      ['No power steering', 'Like a real Caterham, bumps and kerbs knock the steering: you can see the wheel kick in the driver\'s hands, and a little of it reaches the tyres', 'cockpit'],
+      ['Steering at speed', 'A bit more steering lock is allowed at speed, which the four-tyre car needs to get round fast corners', 'cockpit'],
+    ],
+  },
   {
     id: 26, date: '12 Nov 2026', title: 'Dents, scratches, the dash HUD and grass to the horizon',
     items: [
