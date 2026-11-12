@@ -20,7 +20,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 4;
+export const BUILD = 5;
 
 const m4 = new THREE.Matrix4();
 const q = new THREE.Quaternion();
@@ -439,82 +439,150 @@ function buildConcreteWalls(scene, runs) {
     if (cracks.length > 40) scene.remove(cracks.shift());
     return { chips: Math.min(14, Math.round(speed * 0.8)) };
   };
-  for (const [ax, az, bx, bz] of runs) {
-    addCollider(Math.min(ax, bx) - T / 2, Math.max(ax, bx) + T / 2, Math.min(az, bz), Math.max(az, bz), 'concrete', { hit: crackAt });
-  }
+  // one hit box per block, so walls at any angle fit snugly
+  for (const p of pieces) pieceBox(addCollider(0, 0, 0, 0, 'concrete', { hit: crackAt }), p.x, p.z, p.angle, p.len, T);
   return runs.map(([ax, az, bx, bz]) => box(Math.min(ax, bx) - T / 2, 0, Math.min(az, bz) - T / 2,
     Math.max(ax, bx) + T / 2, H, Math.max(az, bz) + T / 2, 0.55));
 }
 
-// Armco: two W-profile steel rails on posts every 2 m
-function buildArmco(scene, runs) {
-  const STEP = 2;
-  const posts = runs.flatMap(([ax, az, bx, bz]) => along(ax, az, bx, bz, STEP));
-  const rails = runs.flatMap(([ax, az, bx, bz]) => along(ax, az, bx, bz, STEP).slice(0, -1).map((p, i, arr) => {
-    const t = (i + 0.5) / arr.length;
-    return { x: ax + (bx - ax) * t, z: az + (bz - az) * t, angle: p.angle, len: p.len };
-  }));
-  const steel = new THREE.MeshStandardMaterial({ color: 0xb9c0c6, roughness: 0.35, metalness: 0.8 });
-  const postMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.12, 0.85, 0.12), new THREE.MeshStandardMaterial({ color: 0x6b7178, roughness: 0.6, metalness: 0.5 }), posts.length);
-  posts.forEach((p, i) => {
-    q.setFromAxisAngle(UP, p.angle);
-    postMesh.setMatrixAt(i, m4.compose(pos.set(p.x, 0.425, p.z), q, scl.set(1, 1, 1)));
-  });
-  // The W profile: three thin strips at slight angles make it catch the light
-  const railGeo = new THREE.BoxGeometry(0.04, 0.31, STEP);
-  const railMesh = new THREE.InstancedMesh(railGeo, steel, rails.length * 2);
-  rails.forEach((p, i) => {
-    q.setFromAxisAngle(UP, p.angle);
-    for (const [k, y] of [[0, 0.55], [1, 0.82]]) {
-      railMesh.setMatrixAt(i * 2 + k, m4.compose(pos.set(p.x, y, p.z), q, scl.set(1, 1, p.len / STEP)));
-    }
-  });
-  postMesh.castShadow = railMesh.castShadow = true;
-  scene.add(postMesh, railMesh);
+// A straight barrier run, cut into short stations so it can bend anywhere
+// along its length: s = distance along, u = direction along, a = across
+// (+a = to the left of someone walking from start to end)
+function makeRun(ax, az, bx, bz, spacing) {
+  const len = Math.hypot(bx - ax, bz - az);
+  const angle = Math.atan2(bx - ax, bz - az);
+  const n = Math.max(2, Math.round(len / spacing) + 1);
+  const u = { x: Math.sin(angle), z: Math.cos(angle) };
+  const a = across(angle);
+  const s = Array.from({ length: n }, (_, i) => (i / (n - 1)) * len);
+  return { ax, az, len, angle, n, u, a, s, ds: len / (n - 1) };
+}
+// Where a point is along a run (0..len), and whether it's on the run's left
+const runPos = (r, p) => Math.max(0, Math.min(r.len, (p.x - r.ax) * r.u.x + (p.z - r.az) * r.u.z));
+const gauss = (d, sigma) => Math.exp(-(d * d) / (2 * sigma * sigma));
 
-  // Dents: a hit pushes the rails back around the impact (most at the
-  // middle, easing off over a few metres either side) and bends the posts
-  // over. Each 2 m section is its own hit box, so a dent moves it back.
-  rails.forEach((p) => { p.dent = 0; p.collider = pieceBox(addCollider(0, 0, 0, 0, 'armco', { hit: (pt, n, v) => dentAt(pt, n, v) }), p.x, p.z, p.angle, p.len, 0.22); });
-  posts.forEach((p) => { p.dent = 0; });
-  const redraw = () => {
-    rails.forEach((p, i) => {
-      const a = across(p.angle);
-      const prev = rails[i - 1]?.dent ?? p.dent, next = rails[i + 1]?.dent ?? p.dent;
-      const bend = Math.atan((next - prev) / (2 * p.len));
-      q.setFromAxisAngle(UP, p.angle + bend);
-      for (const [k, y] of [[0, 0.55], [1, 0.82]]) {
-        railMesh.setMatrixAt(i * 2 + k, m4.compose(pos.set(p.x + a.x * p.dent, y - Math.abs(p.dent) * 0.12, p.z + a.z * p.dent), q, scl.set(1, 1, p.len / STEP / Math.cos(bend))));
+// Armco: two W-profile steel rails on posts every 2 m. Each rail is one
+// continuous strip with a bend point every 25 cm, so a hit bends it in a
+// smooth curve exactly where (and as wide as) the car struck, deepest at
+// the bottom rail (the height a car hits). Posts lean over only as far as
+// the rail is pushed at that post.
+function buildArmco(scene, runs) {
+  const SP = 0.25, POST_EVERY = 8;                     // posts every 2 m
+  const RAILS = [{ y: 0.55, give: 1 }, { y: 0.82, give: 0.6 }];
+  // The W profile (across, up) of each rail, relative to its centre
+  const PROFILE = [[0, 0.155], [0.035, 0.08], [0.005, 0], [0.035, -0.08], [0, -0.155]];
+  const list = runs.map(([ax, az, bx, bz]) => makeRun(ax, az, bx, bz, SP));
+  let verts = 0, posts = 0;
+  for (const r of list) {
+    r.v0 = verts;
+    verts += r.n * RAILS.length * PROFILE.length;
+    r.dent = RAILS.map(() => new Float32Array(r.n));
+    r.posts = [];
+    for (let i = 0; i < r.n; i += POST_EVERY) r.posts.push({ i, k: posts++ });
+    if ((r.n - 1) % POST_EVERY) r.posts.push({ i: r.n - 1, k: posts++ });
+  }
+  const position = new Float32Array(verts * 3);
+  const index = [];
+  for (const r of list) {
+    RAILS.forEach((_, k) => {
+      const base = r.v0 + k * r.n * PROFILE.length;
+      for (let i = 0; i < r.n - 1; i++) {
+        for (let j = 0; j < PROFILE.length - 1; j++) {
+          const p = base + i * PROFILE.length + j, q2 = p + PROFILE.length;
+          index.push(p, q2, p + 1, p + 1, q2, q2 + 1);
+        }
       }
-      pieceBox(p.collider, p.x + a.x * p.dent, p.z + a.z * p.dent, p.angle, p.len, 0.22);
     });
-    posts.forEach((p, i) => {
-      const near = rails.filter((r) => Math.hypot(r.x - p.x, r.z - p.z) < STEP * 0.6);
-      p.dent = near.length ? near.reduce((s2, r) => s2 + r.dent, 0) / near.length : 0;
-      const a = across(p.angle);
-      const lean = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(Math.sin(p.angle), 0, Math.cos(p.angle)), -p.dent * 0.9);
-      q.setFromAxisAngle(UP, p.angle).premultiply(lean);
-      postMesh.setMatrixAt(i, m4.compose(pos.set(p.x + a.x * p.dent * 0.6, 0.425, p.z + a.z * p.dent * 0.6), q, scl.set(1, 1, 1)));
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(position, 3).setUsage(THREE.DynamicDrawUsage));
+  geo.setIndex(index);
+  const steel = new THREE.MeshStandardMaterial({ color: 0xb9c0c6, roughness: 0.35, metalness: 0.8, side: THREE.DoubleSide });
+  const railMesh = new THREE.Mesh(geo, steel);
+  railMesh.castShadow = railMesh.receiveShadow = true;
+  railMesh.frustumCulled = false;
+  const postMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.12, 0.85, 0.12),
+    new THREE.MeshStandardMaterial({ color: 0x6b7178, roughness: 0.6, metalness: 0.5 }), posts);
+  postMesh.castShadow = true;
+  scene.add(railMesh, postMesh);
+
+  const tilt = new THREE.Quaternion(), turn = new THREE.Quaternion(), axis = new THREE.Vector3();
+  const draw = (r) => {
+    RAILS.forEach((rail, k) => {
+      const base = r.v0 + k * r.n * PROFILE.length;
+      for (let i = 0; i < r.n; i++) {
+        const d = r.dent[k][i];
+        const cx = r.ax + r.u.x * r.s[i] + r.a.x * d, cz = r.az + r.u.z * r.s[i] + r.a.z * d;
+        const sag = Math.abs(d) * 0.12;                 // a crushed rail sags a little
+        PROFILE.forEach(([px, py], j) => {
+          const o = (base + i * PROFILE.length + j) * 3;
+          position[o] = cx + r.a.x * px;
+          position[o + 1] = rail.y + py - sag;
+          position[o + 2] = cz + r.a.z * px;
+        });
+      }
     });
-    railMesh.instanceMatrix.needsUpdate = true;
+    for (const p of r.posts) {
+      const d = r.dent[0][p.i];
+      // the post leans with the bottom rail (tilting about the run's own
+      // direction moves its top across the run)
+      axis.set(r.u.x, 0, r.u.z);
+      const lean = Math.min(0.9, Math.abs(d) * 1.1) * Math.sign(d);
+      tilt.setFromAxisAngle(axis, -lean);
+      turn.setFromAxisAngle(UP, r.angle).premultiply(tilt);
+      postMesh.setMatrixAt(p.k, m4.compose(pos.set(
+        r.ax + r.u.x * r.s[p.i] + r.a.x * d * 0.5, 0.425 - Math.abs(d) * 0.05,
+        r.az + r.u.z * r.s[p.i] + r.a.z * d * 0.5), turn, scl.set(1, 1, 1)));
+    }
+    // Hit boxes: a 1 m piece every 4 stations, where the bottom rail now is
+    for (const c of r.boxes) {
+      let d = 0;
+      for (let i = c.i0; i <= c.i1; i++) if (Math.abs(r.dent[0][i]) > Math.abs(d)) d = r.dent[0][i];
+      const sm = (r.s[c.i0] + r.s[c.i1]) / 2;
+      pieceBox(c.collider, r.ax + r.u.x * sm + r.a.x * d, r.az + r.u.z * sm + r.a.z * d, r.angle, r.s[c.i1] - r.s[c.i0], 0.22);
+    }
+  };
+  for (const r of list) {
+    r.boxes = [];
+    for (let i0 = 0; i0 < r.n - 1; i0 += 4) {
+      const c = { i0, i1: Math.min(r.n - 1, i0 + 4) };
+      c.collider = addCollider(0, 0, 0, 0, 'armco', { hit: (pt, nrm, v) => dentAt(r, pt, nrm, v) });
+      r.boxes.push(c);
+    }
+    draw(r);
+  }
+  const finish = () => {
+    geo.attributes.position.needsUpdate = true;
+    geo.computeVertexNormals();
+    geo.computeBoundingSphere();
     postMesh.instanceMatrix.needsUpdate = true;
   };
-  const dentAt = (point, normal, speed) => {
+  finish();
+  // A hit: the dent is deepest where the car struck and fades out either
+  // side; harder hits push further and spread wider
+  const dentAt = (r, point, normal, speed) => {
     if (speed < 1.5) return null;
-    for (const p of rails) {
-      const d = alongDist(point, p.x, p.z, p.angle);
-      if (d > 3.5) continue;
-      const fall = Math.pow(Math.cos((Math.PI / 2) * d / 3.5), 2);
-      const a = across(p.angle);
-      const away = -(normal.x * a.x + normal.z * a.z);            // +1: pushed along `across`
-      const room = 0.8 - Math.abs(p.dent);                         // it can only bend so far
-      p.dent += Math.sign(away) * Math.max(0, Math.min(room, 0.045 * speed * fall));
-    }
-    redraw();
+    const s0 = runPos(r, point);
+    const away = -Math.sign(normal.x * r.a.x + normal.z * r.a.z) || 1;
+    const push = 0.045 * speed;
+    const sigma = 0.7 + 0.015 * speed;
+    RAILS.forEach((rail, k) => {
+      const dent = r.dent[k];
+      for (let i = 0; i < r.n; i++) {
+        const f = gauss(r.s[i] - s0, sigma);
+        if (f < 0.01) continue;
+        const room = Math.max(0, 0.9 - Math.abs(dent[i]));
+        dent[i] += away * Math.min(room, push * f * rail.give);
+      }
+    });
+    draw(r);
+    finish();
     return { absorb: 0.5 };
   };
-  return runs.map(([ax, az, bx, bz]) => box(Math.min(ax, bx) - 0.1, 0, Math.min(az, bz) - 0.1,
-    Math.max(ax, bx) + 0.1, 1, Math.max(az, bz) + 0.1, 0.35));
+  return list.map((r) => {
+    const bx = r.ax + r.u.x * r.len, bz = r.az + r.u.z * r.len;
+    return box(Math.min(r.ax, bx) - 0.1, 0, Math.min(r.az, bz) - 0.1, Math.max(r.ax, bx) + 0.1, 1, Math.max(r.az, bz) + 0.1, 0.35);
+  });
 }
 
 // Tyre barrier: stacks of old tyres, bolted together, with a belt of
@@ -598,16 +666,20 @@ function buildTyreWalls(scene, runs) {
     Math.max(ax, bx) + R + STEP, HIGH * 0.22, Math.max(az, bz) + R + STEP, 0.2));
 }
 
-// Catch fence: tall steel posts with chain-link mesh between them, and a
-// section at the top that leans in over the track (like the debris fences
-// at street circuits such as Singapore). Each run is [ax, az, bx, bz, lean]:
-// lean = which side of the fence the track is on, so the top leans over it.
-// +1 = to the left of someone walking from a to b (towards +x for a run
-// along +z), -1 = to their right.
+// Catch fence: tall posts every 3 m with chain-link mesh between them, and
+// a top section that leans in over the track. The mesh is one continuous
+// sheet per run with points every 25 cm along and 30 cm up, so a hit caves
+// it in just where the car struck: deepest at car height, fading out above
+// and to the sides, and wider and deeper for harder hits. The mesh stays
+// tied to the posts; a post leans over only as much as the mesh pulls on
+// it, and the leaning top section and its arms move with the posts and the
+// top of the mesh. Each run is [ax, az, bx, bz, lean]: lean = which side
+// the track is on (+1 = left of someone walking from a to b).
 function buildFences(scene, runs) {
-  const H = 3.6, STEP = 3;
-  const TOP = 1.1, TILT = 0.75;                     // the top section: 1.1 m long, ~43 degrees in
-  const mesh = canvasTexture(64, 64, (g, w, h) => {
+  const H = 3.6, POST = 3, SP = 0.25, ROW = 0.3;
+  const TOP = 1.1, TILT = 0.75, TOP_ROWS = 4;        // the top section: 1.1 m long, ~43 degrees in
+  const ROWS = Math.round(H / ROW) + 1;              // points up the main mesh
+  const tex = canvasTexture(64, 64, (g, w, h) => {
     g.clearRect(0, 0, w, h);
     g.strokeStyle = 'rgba(200,205,210,0.95)';
     g.lineWidth = 2;
@@ -615,109 +687,160 @@ function buildFences(scene, runs) {
     g.moveTo(0, h / 2); g.lineTo(w / 2, 0); g.lineTo(w, h / 2); g.lineTo(w / 2, h); g.closePath();
     g.stroke();
   });
-  const panels = [];
-  const posts = [];
-  for (const [ax, az, bx, bz, lean = 1] of runs) {
-    const pts = along(ax, az, bx, bz, STEP);
-    posts.push(...pts.map((p) => ({ ...p, lean })));
-    pts.slice(0, -1).forEach((p, i) => {
-      const n = pts[i + 1];
-      panels.push({ x: (p.x + n.x) / 2, z: (p.z + n.z) / 2, angle: p.angle, len: p.len, lean });
-    });
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  const list = runs.map(([ax, az, bx, bz, lean = 1]) => Object.assign(makeRun(ax, az, bx, bz, SP), { lean }));
+  let verts = 0, topVerts = 0, posts = 0;
+  for (const r of list) {
+    r.v0 = verts; verts += r.n * ROWS;
+    r.t0 = topVerts; topVerts += r.n * TOP_ROWS;
+    r.raw = new Float32Array(r.n * ROWS);           // how far each point has been pushed (before the posts hold it)
+    const every = Math.max(1, Math.round(POST / r.ds));
+    r.posts = [];
+    for (let i = 0; i < r.n; i += every) r.posts.push({ i, k: posts++, lean: 0 });
+    if (r.posts[r.posts.length - 1].i !== r.n - 1) r.posts.push({ i: r.n - 1, k: posts++, lean: 0 });
   }
-  // The leaning top: tipped about the line of the fence, towards the track
-  const tilted = new THREE.Quaternion();
-  const tilt = new THREE.Quaternion();
-  const ACROSS = new THREE.Vector3(1, 0, 0);
-  const topPose = (angle, lean) => {
-    tilted.setFromAxisAngle(UP, angle + Math.PI / 2);
-    tilt.setFromAxisAngle(ACROSS, TILT * lean);
-    return tilted.multiply(tilt);
-  };
-  // Where the middle of the top section sits, relative to the top of a post
-  const topOffset = (angle, lean) => {
-    const out = Math.sin(TILT) * TOP / 2 * lean;     // across, towards the track
-    return { x: Math.cos(angle) * out, y: H + Math.cos(TILT) * TOP / 2, z: -Math.sin(angle) * out };
-  };
-  mesh.repeat.set(STEP / 0.12, H / 0.12);          // 12 cm diamonds
-  const panelMesh = new THREE.InstancedMesh(
-    new THREE.PlaneGeometry(1, H),
-    new THREE.MeshStandardMaterial({ map: mesh, transparent: true, alphaTest: 0.3, side: THREE.DoubleSide, metalness: 0.6, roughness: 0.5 }),
-    panels.length
-  );
-  panels.forEach((p, i) => {
-    q.setFromAxisAngle(UP, p.angle + Math.PI / 2);   // the plane faces across the run
-    panelMesh.setMatrixAt(i, m4.compose(pos.set(p.x, H / 2, p.z), q, scl.set(p.len, 1, 1)));
-  });
-  const postMesh = new THREE.InstancedMesh(
-    new THREE.CylinderGeometry(0.05, 0.05, H + 0.3, 8),
-    new THREE.MeshStandardMaterial({ color: 0x8a9096, roughness: 0.5, metalness: 0.6 }),
-    posts.length
-  );
-  posts.forEach((p, i) => postMesh.setMatrixAt(i, m4.compose(pos.set(p.x, (H + 0.3) / 2, p.z), q.identity(), scl.set(1, 1, 1))));
-  postMesh.castShadow = true;
-
-  // The leaning top section: mesh panels plus an angled arm on every post
-  const topMeshTex = mesh.clone();
-  topMeshTex.needsUpdate = true;
-  topMeshTex.repeat.set(STEP / 0.12, TOP / 0.12);
-  const topPanels = new THREE.InstancedMesh(
-    new THREE.PlaneGeometry(1, TOP),
-    new THREE.MeshStandardMaterial({ map: topMeshTex, transparent: true, alphaTest: 0.3, side: THREE.DoubleSide, metalness: 0.6, roughness: 0.5 }),
-    panels.length
-  );
-  panels.forEach((p, i) => {
-    const o = topOffset(p.angle, p.lean);
-    topPanels.setMatrixAt(i, m4.compose(pos.set(p.x + o.x, o.y, p.z + o.z), topPose(p.angle, p.lean), scl.set(p.len, 1, 1)));
-  });
-  const arms = new THREE.InstancedMesh(
-    new THREE.CylinderGeometry(0.04, 0.04, TOP + 0.1, 8),
-    postMesh.material,
-    posts.length
-  );
-  posts.forEach((p, i) => {
-    const o = topOffset(p.angle, p.lean);
-    arms.setMatrixAt(i, m4.compose(pos.set(p.x + o.x, o.y, p.z + o.z), topPose(p.angle, p.lean), scl.set(1, 1, 1)));
-  });
-  arms.castShadow = true;
-  scene.add(panelMesh, postMesh, topPanels, arms);
-
-  // Bulging back: a hit stretches the mesh back around the impact and
-  // bends the posts. Each panel between posts is its own hit box.
-  panels.forEach((p) => { p.dent = 0; p.collider = pieceBox(addCollider(0, 0, 0, 0, 'fence', { hit: (pt, n, v) => bulgeAt(pt, n, v) }), p.x, p.z, p.angle, p.len, 0.12); });
-  const bulgeAt = (point, normal, speed) => {
-    if (speed < 1.5) return null;
-    for (const p of panels) {
-      const d = alongDist(point, p.x, p.z, p.angle);
-      if (d > 4.5) continue;
-      const fall = Math.pow(Math.cos((Math.PI / 2) * d / 4.5), 2);
-      const a = across(p.angle);
-      const away = -Math.sign(normal.x * a.x + normal.z * a.z);
-      p.dent += away * Math.max(0, Math.min(0.9 - Math.abs(p.dent), 0.06 * speed * fall));
+  // Main mesh and the leaning top: grids of points
+  const grid = (count, rowsOf, startOf) => {
+    const position = new Float32Array(count * 3), uv = new Float32Array(count * 2), index = [];
+    for (const r of list) {
+      const base = startOf(r), rows = rowsOf;
+      for (let i = 0; i < r.n; i++) {
+        for (let j = 0; j < rows; j++) {
+          const v = base + i * rows + j;
+          uv[v * 2] = r.s[i] / 0.12;                   // 12 cm diamonds
+          uv[v * 2 + 1] = (rows === ROWS ? j * ROW : j * TOP / (TOP_ROWS - 1)) / 0.12;
+          if (i < r.n - 1 && j < rows - 1) index.push(v, v + rows, v + 1, v + 1, v + rows, v + rows + 1);
+        }
+      }
     }
-    panels.forEach((p, i) => {
-      const a = across(p.angle);
-      q.setFromAxisAngle(UP, p.angle + Math.PI / 2);
-      panelMesh.setMatrixAt(i, m4.compose(pos.set(p.x + a.x * p.dent, H / 2, p.z + a.z * p.dent), q, scl.set(p.len, 1, 1)));
-      const o = topOffset(p.angle, p.lean);
-      topPanels.setMatrixAt(i, m4.compose(pos.set(p.x + o.x + a.x * p.dent * 0.5, o.y, p.z + o.z + a.z * p.dent * 0.5), topPose(p.angle, p.lean), scl.set(p.len, 1, 1)));
-      pieceBox(p.collider, p.x + a.x * p.dent, p.z + a.z * p.dent, p.angle, p.len, 0.12);
-    });
-    posts.forEach((p, i) => {
-      const near = panels.filter((pp) => Math.hypot(pp.x - p.x, pp.z - p.z) < STEP * 0.6);
-      const dent = near.length ? near.reduce((s2, pp) => s2 + pp.dent, 0) / near.length : 0;
-      const lean = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(Math.sin(p.angle), 0, Math.cos(p.angle)), -dent * 0.35);
-      const a = across(p.angle);
-      postMesh.setMatrixAt(i, m4.compose(pos.set(p.x + a.x * dent * 0.4, (H + 0.3) / 2, p.z + a.z * dent * 0.4), lean, scl.set(1, 1, 1)));
-    });
-    panelMesh.instanceMatrix.needsUpdate = true;
-    topPanels.instanceMatrix.needsUpdate = true;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(position, 3).setUsage(THREE.DynamicDrawUsage));
+    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    geo.setIndex(index);
+    return geo;
+  };
+  const meshGeo = grid(verts, ROWS, (r) => r.v0);
+  const topGeo = grid(topVerts, TOP_ROWS, (r) => r.t0);
+  const meshMat = new THREE.MeshStandardMaterial({ map: tex, transparent: true, alphaTest: 0.3, side: THREE.DoubleSide, metalness: 0.6, roughness: 0.5 });
+  const sheet = new THREE.Mesh(meshGeo, meshMat);
+  const topSheet = new THREE.Mesh(topGeo, meshMat);
+  sheet.frustumCulled = topSheet.frustumCulled = false;
+  const postMat = new THREE.MeshStandardMaterial({ color: 0x8a9096, roughness: 0.5, metalness: 0.6 });
+  const postGeo = new THREE.CylinderGeometry(0.05, 0.05, H + 0.3, 8);
+  postGeo.translate(0, (H + 0.3) / 2, 0);            // pivot at the foot, so it leans from the ground
+  const postMesh = new THREE.InstancedMesh(postGeo, postMat, posts);
+  const armGeo = new THREE.CylinderGeometry(0.04, 0.04, TOP + 0.1, 8);
+  armGeo.translate(0, (TOP + 0.1) / 2, 0);           // pivot at the post top
+  const arms = new THREE.InstancedMesh(armGeo, postMat, posts);
+  postMesh.castShadow = arms.castShadow = true;
+  scene.add(sheet, topSheet, postMesh, arms);
+
+  // How far the finished mesh is pushed at station i, row j: tied to the
+  // posts (which lean as straight lines from the ground), free to bulge
+  // most halfway between them
+  const shape = (r, i, y, raw) => {
+    let a = r.posts[0], b = r.posts[r.posts.length - 1];
+    for (let k = 0; k < r.posts.length - 1; k++) if (i >= r.posts[k].i && i <= r.posts[k + 1].i) { a = r.posts[k]; b = r.posts[k + 1]; break; }
+    const t = b.i > a.i ? (i - a.i) / (b.i - a.i) : 0;
+    const held = (a.lean + (b.lean - a.lean) * t) * y;    // the line between the two posts
+    return held + (raw - held) * Math.sin(Math.PI * t);
+  };
+  const v3 = new THREE.Vector3(), dir = new THREE.Vector3(), quat = new THREE.Quaternion();
+  const draw = (r) => {
+    // Posts lean with the mesh pulling on them at about car height
+    const at = Math.round(1.0 / ROW);
+    for (const p of r.posts) {
+      p.lean = Math.max(-0.28, Math.min(0.28, 0.3 * r.raw[p.i * ROWS + at] / 1.0));   // (posts are stiff: they lean a little, the mesh between them bulges)
+    }
+    const P = meshGeo.attributes.position.array;
+    for (let i = 0; i < r.n; i++) {
+      const bx = r.ax + r.u.x * r.s[i], bz = r.az + r.u.z * r.s[i];
+      for (let j = 0; j < ROWS; j++) {
+        const y = j * ROW;
+        const d = shape(r, i, y, r.raw[i * ROWS + j]);
+        const o = (r.v0 + i * ROWS + j) * 3;
+        P[o] = bx + r.a.x * d; P[o + 1] = y; P[o + 2] = bz + r.a.z * d;
+      }
+      // The leaning top carries on from the top of the mesh, tilted in over the track
+      const topD = shape(r, i, H, r.raw[i * ROWS + ROWS - 1]);
+      const T = topGeo.attributes.position.array;
+      for (let j = 0; j < TOP_ROWS; j++) {
+        const t = (j / (TOP_ROWS - 1)) * TOP;
+        const out = Math.sin(TILT) * t * r.lean, up = Math.cos(TILT) * t;
+        const o = (r.t0 + i * TOP_ROWS + j) * 3;
+        T[o] = bx + r.a.x * (topD + out); T[o + 1] = H + up; T[o + 2] = bz + r.a.z * (topD + out);
+      }
+    }
+    for (const p of r.posts) {
+      const bx = r.ax + r.u.x * r.s[p.i], bz = r.az + r.u.z * r.s[p.i];
+      // the post: from its foot towards (lean across, 1 up)
+      dir.set(r.a.x * p.lean, 1, r.a.z * p.lean).normalize();
+      quat.setFromUnitVectors(UP, dir);
+      postMesh.setMatrixAt(p.k, m4.compose(pos.set(bx, 0, bz), quat, scl.set(1, 1, 1)));
+      // the arm: from the post's top, the same tilt as the top mesh
+      const topX = bx + r.a.x * p.lean * H, topZ = bz + r.a.z * p.lean * H;
+      dir.set(r.a.x * Math.sin(TILT) * r.lean, Math.cos(TILT), r.a.z * Math.sin(TILT) * r.lean).normalize();
+      quat.setFromUnitVectors(UP, dir);
+      arms.setMatrixAt(p.k, m4.compose(pos.set(topX, H, topZ), quat, scl.set(1, 1, 1)));
+    }
+    // Hit boxes: half-metre pieces where the mesh now is at car height
+    const row = Math.round(0.6 / ROW);
+    for (const c of r.boxes) {
+      let d = 0;
+      for (let i = c.i0; i <= c.i1; i++) {
+        const v = shape(r, i, row * ROW, r.raw[i * ROWS + row]);
+        if (Math.abs(v) > Math.abs(d)) d = v;
+      }
+      const sm = (r.s[c.i0] + r.s[c.i1]) / 2;
+      pieceBox(c.collider, r.ax + r.u.x * sm + r.a.x * d, r.az + r.u.z * sm + r.a.z * d, r.angle, r.s[c.i1] - r.s[c.i0], 0.12);
+    }
+  };
+  const finish = () => {
+    for (const g of [meshGeo, topGeo]) {
+      g.attributes.position.needsUpdate = true;
+      g.computeVertexNormals();
+      g.computeBoundingSphere();
+    }
     postMesh.instanceMatrix.needsUpdate = true;
+    arms.instanceMatrix.needsUpdate = true;
+  };
+  for (const r of list) {
+    r.boxes = [];
+    for (let i0 = 0; i0 < r.n - 1; i0 += 2) {
+      const c = { i0, i1: Math.min(r.n - 1, i0 + 2) };
+      c.collider = addCollider(0, 0, 0, 0, 'fence', { hit: (pt, nrm, v) => caveAt(r, pt, nrm, v) });
+      r.boxes.push(c);
+    }
+    draw(r);
+  }
+  finish();
+  // A hit caves the mesh in around the impact
+  const caveAt = (r, point, normal, speed) => {
+    if (speed < 1.5) return null;
+    const s0 = runPos(r, point);
+    const away = -Math.sign(normal.x * r.a.x + normal.z * r.a.z) || 1;
+    const push = 0.06 * speed;
+    const sigma = 0.7 + 0.02 * speed;
+    for (let i = 0; i < r.n; i++) {
+      const f = gauss(r.s[i] - s0, sigma);
+      if (f < 0.01) continue;
+      for (let j = 0; j < ROWS; j++) {
+        const y = j * ROW;
+        const h = y <= 1.0 ? 1 : gauss(y - 1.0, 0.8);    // car height, fading above
+        const k = i * ROWS + j;
+        const room = Math.max(0, 1.3 - Math.abs(r.raw[k]));
+        r.raw[k] += away * Math.min(room, push * f * h);
+      }
+    }
+    draw(r);
+    finish();
     return { absorb: 0.6 };
   };
   // Mesh lets most sound through: only a faint, rattly reflection
-  return runs.map(([ax, az, bx, bz]) => box(Math.min(ax, bx) - 0.05, 0, Math.min(az, bz) - 0.05,
-    Math.max(ax, bx) + 0.05, H + 0.8, Math.max(az, bz) + 0.05, 0.12));
+  return list.map((r) => {
+    const bx = r.ax + r.u.x * r.len, bz = r.az + r.u.z * r.len;
+    return box(Math.min(r.ax, bx) - 0.05, 0, Math.min(r.az, bz) - 0.05, Math.max(r.ax, bx) + 0.05, H + 0.8, Math.max(r.az, bz) + 0.05, 0.12);
+  });
 }
 
 // ---------------------------------------------------------------------
@@ -725,6 +848,20 @@ function buildFences(scene, runs) {
 // +x is to its left). Keeps clear of the slalom cones (x = +-1.5,
 // z = 25-151), the cone ring (around -40, 40) and the gravel trap.
 // ---------------------------------------------------------------------
+// For other tracks (sepang.js): start a fresh list of hit boxes and roofs,
+// build with the pieces above, then attach the lists to the echo surfaces
+export function startScenery() {
+  COLLIDERS = [];
+  ROOFS = [];
+}
+export function finishScenery(echoes) {
+  echoes.colliders = COLLIDERS;
+  echoes.roofs = ROOFS;
+  return echoes;
+}
+export function addRoof(minX, maxX, minZ, maxZ, height) { ROOFS.push({ minX, maxX, minZ, maxZ, height }); }
+export { buildGarages, buildOffice, buildConcreteWalls, buildArmco, buildTyreWalls, buildFences, addCollider, canvasTexture, along, box as echoBox };
+
 export function buildScenery(scene) {
   COLLIDERS = [];
   ROOFS = [];
