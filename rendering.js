@@ -47,7 +47,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 10;
+const BUILD = 11;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -478,14 +478,41 @@ function rodSet(rods, material) {
   return mesh;
 }
 
+// A box with rounded edges and corners (radius r), centred on the origin
+function roundedBox(w, h, d, r, segments = 3) {
+  r = Math.max(0.002, Math.min(r, w / 2 - 0.002, h / 2 - 0.002, d / 2 - 0.002));
+  const x = w / 2 - r, y = h / 2 - r, e = 0.001;
+  const s = new THREE.Shape();
+  s.moveTo(-x + e, -y);
+  s.lineTo(x - e, -y); s.quadraticCurveTo(x, -y, x, -y + e);
+  s.lineTo(x, y - e); s.quadraticCurveTo(x, y, x - e, y);
+  s.lineTo(-x + e, y); s.quadraticCurveTo(-x, y, -x, y - e);
+  s.lineTo(-x, -y + e); s.quadraticCurveTo(-x, -y, -x + e, -y);
+  const g = new THREE.ExtrudeGeometry(s, {
+    depth: d - 2 * r, bevelEnabled: true, bevelThickness: r, bevelSize: r,
+    bevelSegments: segments, curveSegments: 2,
+  });
+  g.center();
+  return g;
+}
+
 function buildCar() {
   const car = new THREE.Group();
 
-  // --- Main body tub ---
-  car.add(part(new THREE.BoxGeometry(0.9, 0.5, 1.9), MAT.paint, 0, 0.4, -0.35));
+  // --- Main body tub: a solid lower half, then an open-topped cockpit with
+  // a footwell running forward under the scuttle (the seats, pedals and
+  // driver's legs are in cockpit.js). Rounded edges all round. ---
+  car.add(part(roundedBox(0.9, 0.32, 1.9, 0.05), MAT.paint, 0, 0.31, -0.35));          // lower tub (floor at 0.47)
+  for (const side of [-1, 1]) {
+    car.add(part(roundedBox(0.04, 0.22, 1.9, 0.018), MAT.paint, side * 0.43, 0.56, -0.35));   // cockpit sides
+  }
+  car.add(part(roundedBox(0.9, 0.22, 0.04, 0.018), MAT.paint, 0, 0.56, -1.28));          // back of the cockpit
+  car.add(part(roundedBox(0.9, 0.04, 0.62, 0.018), MAT.paint, 0, 0.65, -0.98));          // rear deck behind the seats
+  car.add(part(roundedBox(0.9, 0.04, 0.44, 0.018), MAT.paint, 0, 0.65, 0.39));           // scuttle over the footwell
+  car.add(part(roundedBox(0.9, 0.22, 0.04, 0.018), MAT.paint, 0, 0.56, 0.58));           // front bulkhead
 
   // --- Long nose (aluminium, like a classic Seven) ---
-  const nose = part(new THREE.BoxGeometry(0.62, 0.34, 0.9), MAT.aluminium, 0, 0.38, 1.05);
+  const nose = part(roundedBox(0.62, 0.34, 0.9, 0.06, 4), MAT.aluminium, 0, 0.38, 1.05);
   car.add(nose);
   // Grille at the very front
   const grille = part(new THREE.BoxGeometry(0.5, 0.26, 0.02), MAT.black, 0, 0.38, 1.505);
@@ -493,11 +520,10 @@ function buildCar() {
   const crush = { nose, grille, lamps: [], tail: [] };   // parts that get pushed in by crashes
 
   // --- Bonnet top between cockpit and nose ---
-  car.add(part(new THREE.BoxGeometry(0.62, 0.04, 0.5), MAT.aluminium, 0, 0.56, 0.5));
+  car.add(part(roundedBox(0.66, 0.04, 0.16, 0.015), MAT.aluminium, 0, 0.58, 0.66));
 
-  // --- Cockpit opening and seats ---
-  car.add(part(new THREE.BoxGeometry(0.76, 0.02, 0.85), MAT.interior, 0, 0.651, -0.25));
-  // (the seats, steering wheel, levers, mirrors and the driver are in cockpit.js)
+  // (the seats, floor, pedals, steering wheel, levers, mirrors and the
+  // driver are in cockpit.js)
 
   // --- Windscreen ---
   const screen = part(new THREE.PlaneGeometry(0.82, 0.26), MAT.glass, 0, 0.78, 0.22);
@@ -520,10 +546,10 @@ function buildCar() {
   car.add(part(new THREE.BoxGeometry(0.07, 0.012, 0.016), MAT.chrome, 0.3, 0.684, -1.12));   // its flip handle
 
   // --- Rear wings (fenders over the back wheels) ---
-  const rearWing = new THREE.BoxGeometry(0.3, 0.06, 0.8);
+  const rearWing = roundedBox(0.3, 0.06, 0.8, 0.025);
   car.add(part(rearWing, MAT.paint, -0.62, 0.64, -1.1));
   car.add(part(rearWing, MAT.paint, 0.62, 0.64, -1.1));
-  const rearWingSide = new THREE.BoxGeometry(0.3, 0.25, 0.06);
+  const rearWingSide = roundedBox(0.3, 0.25, 0.06, 0.02);
   for (const side of [-1, 1]) {
     const w = part(rearWingSide, MAT.paint, side * 0.62, 0.52, -1.48);
     car.add(w);
@@ -1819,6 +1845,7 @@ renderer.setAnimationLoop(() => {
     steer: physics.steer, gear: physics.gear, transmission: physics.transmission,
     handbrake: !!input.handbrake, rpm: physics.rpm, redline: CATERHAM.redline,
     speedKmh: physics.speedKmh, lean: physics.yawRate * physics.vx,
+    throttle: input.throttle, brake: input.brake, clutch: physics.clutchIn, horn: !!input.horn,
   });
   cockpit.drawScreen(dt, {
     speedKmh: physics.speedKmh, rpm: physics.rpm, redline: CATERHAM.redline, gearLabel: physics.gearLabel,
