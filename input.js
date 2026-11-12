@@ -18,7 +18,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 2;
+export const BUILD = 3;
 
 const held = new Set();      // keys being held down right now
 const tapped = new Set();    // one-off presses waiting to be used
@@ -37,6 +37,7 @@ const TAP_KEYS = {
   KeyT: 'transmission',
   KeyM: 'mute',
   KeyG: 'lights',
+  KeyL: 'racingLine',
 };
 
 const GAME_KEYS = new Set([
