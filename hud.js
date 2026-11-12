@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 6;
+export const BUILD = 7;
 
 const COLORS = {
   face: '#15181c',
@@ -257,7 +257,29 @@ const STYLE = `
   place-items: center;
 }
 #sidepanel .sp-handle svg { transition: transform 220ms ease; }
-#sidepanel.open .sp-handle svg { transform: rotate(180deg); }
+#sidepanel.open .sp-handle .sp-arrow { transform: rotate(180deg); }
+#sidepanel .sp-handle .sp-gear { display: none; }
+/* Phones and tablets: a bigger tab with a settings cog and a label, so
+   it's easy to spot and to hit with a thumb */
+#sidepanel.compact { --sp-shift: calc(100% - 34px); }
+#sidepanel.compact.open { --sp-shift: 0px; }
+#sidepanel.compact .sp-handle {
+  width: 34px; height: 84px; gap: 4px;
+  grid-template-rows: auto auto;
+  place-content: center;
+  border: 1.5px solid ${COLORS.needle};
+  border-right: none;
+  color: ${COLORS.needle};
+}
+#sidepanel.compact .sp-handle .sp-gear { display: block; }
+#sidepanel.compact .sp-handle .sp-arrow { width: 10px; height: 16px; }
+/* Until it's been opened once, the tab gently pulses so people notice it */
+@keyframes sp-hint {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 122, 26, 0); }
+  50% { box-shadow: -2px 0 14px 3px rgba(255, 122, 26, 0.55); }
+}
+#sidepanel.hint:not(.open) .sp-handle { animation: sp-hint 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { #sidepanel.hint:not(.open) .sp-handle { animation: none; } }
 #sidepanel .sp-panel {
   display: flex;
   flex-direction: column;
@@ -741,11 +763,22 @@ export class Hud {
     handle.type = 'button';
     handle.setAttribute('aria-label', 'Car settings');
     handle.setAttribute('aria-expanded', 'false');
-    handle.innerHTML = '<svg width="12" height="20" viewBox="0 0 12 20" aria-hidden="true">'
+    handle.innerHTML = '<svg class="sp-gear" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">'
+      + '<path fill="currentColor" d="M19.4 13a7.5 7.5 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.6 7.6 0 0 0-1.7-1L15 3.3h-4l-.4 2.6a7.6 7.6 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.5 7.5 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.6 7.6 0 0 0 1.7 1l.4 2.6h4l.4-2.6a7.6 7.6 0 0 0 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg>'
+      + '<svg class="sp-arrow" width="12" height="20" viewBox="0 0 12 20" aria-hidden="true">'
       + '<path d="M9 3 L3 10 L9 17" fill="none" stroke="currentColor" stroke-width="2.4" '
       + 'stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    if (compact) this.side.classList.add('compact');
+    // Pulse the tab until the first time it's opened (remembered)
+    let seen = false;
+    try { seen = localStorage.getItem('tracktester-panel-seen') === '1'; } catch (e) { /* storage blocked */ }
+    if (!seen) this.side.classList.add('hint');
     handle.addEventListener('click', () => {
       const open = this.side.classList.toggle('open');
+      if (open && this.side.classList.contains('hint')) {
+        this.side.classList.remove('hint');
+        try { localStorage.setItem('tracktester-panel-seen', '1'); } catch (e) { /* storage blocked */ }
+      }
       handle.setAttribute('aria-expanded', String(open));
       // Lets the touch controls step out of the way while the panel is open
       window.dispatchEvent(new CustomEvent('sidepanel', { detail: { open } }));
