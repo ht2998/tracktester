@@ -20,7 +20,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 5;
+export const BUILD = 6;
 
 const DRIVER_X = -0.18;
 // The steering wheel's centre and tilt
@@ -37,8 +37,24 @@ const UPPER_ARM = 0.3, FOREARM = 0.29;
 // Levers on the tunnel between the seats
 const STICK_BASE = new THREE.Vector3(0.0, 0.655, -0.12);
 const STICK_LEN = 0.17;
-const BRAKE_BASE = new THREE.Vector3(0.06, 0.655, -0.4);
-const BRAKE_LEN = 0.2;
+const BRAKE_BASE = new THREE.Vector3(0.035, 0.675, -0.4);
+const BRAKE_LEN = 0.22;
+// Floor of the cockpit (the top of the lower tub in rendering.js)
+const FLOOR_Y = 0.472;
+// Hips, and the legs: thigh and shin lengths
+const HIP_L = new THREE.Vector3(DRIVER_X + 0.085, 0.665, -0.5);
+const HIP_R = new THREE.Vector3(DRIVER_X - 0.085, 0.665, -0.5);
+const THIGH = 0.38, SHIN = 0.47;     // (the shin includes the height of the boot)
+// Pedals, left to right as the driver sees them (the driver's left is +x).
+// Each hangs from a pivot at the top; travel = how far it swings when pressed
+const PEDALS = {
+  clutch: { x: DRIVER_X + 0.085, travel: 0.42 },
+  brake: { x: DRIVER_X - 0.005, travel: 0.16 },
+  throttle: { x: DRIVER_X - 0.085, travel: 0.34 },
+};
+const PEDAL_PIVOT_Y = 0.63, PEDAL_PIVOT_Z = 0.42, PEDAL_ARM = 0.13;
+// Where the left foot rests when it's not on the clutch
+const FOOTREST = new THREE.Vector3(DRIVER_X + 0.1, FLOOR_Y + 0.045, 0.38);
 // Manual H pattern: [across (-1 = driver's left ... +1), forward (+1) / back (-1)]
 const H_PATTERN = { '-1': [1.4, -1], 0: [0, 0], 1: [-1, 1], 2: [-1, -1], 3: [0, 1], 4: [0, -1], 5: [1, 1] };
 
@@ -46,6 +62,14 @@ const UP = new THREE.Vector3(0, 1, 0);
 // Dial needles: start 2.2 rad anticlockwise from straight up (bottom left)
 // and sweep 4.2 rad clockwise (to bottom right)
 const SWEEP_START = 2.2, SWEEP = 4.2;
+
+// A rounded limb segment of radius r and length len, from its base (at the
+// origin) up the y axis: stretched a little per frame if needed
+function limbGeometry(r, len) {
+  const g = new THREE.CapsuleGeometry(r, Math.max(0.001, len - 2 * r), 6, 14);
+  g.translate(0, len / 2, 0);
+  return g;
+}
 
 function mesh(geo, mat, x = 0, y = 0, z = 0) {
   const m = new THREE.Mesh(geo, mat);
@@ -111,8 +135,42 @@ export class Cockpit {
       const headrest = mesh(new THREE.BoxGeometry(0.2, 0.12, 0.06), leather, 0, 0.44, -0.08);
       headrest.rotation.x = -0.22;
       seat.add(headrest);
+      // the cushion, on a shell down to the floor
+      seat.add(mesh(new THREE.BoxGeometry(0.32, 0.05, 0.44), leather, 0, -0.015, 0.12));
+      seat.add(mesh(new THREE.BoxGeometry(0.3, 0.655 - FLOOR_Y - 0.04, 0.4), mats.black, 0, -(0.655 - FLOOR_Y) / 2 - 0.02, 0.1));
       g.add(seat);
     }
+
+    // --- The cockpit itself: a floor running forward into the footwell,
+    // a transmission tunnel between the seats, and trimmed sides ---
+    const trim = new THREE.MeshStandardMaterial({ color: 0x232427, roughness: 0.9 });
+    g.add(mesh(new THREE.BoxGeometry(0.8, 0.006, 1.92), trim, 0, FLOOR_Y + 0.003, -0.32));          // floor mat
+    const tunnel = mesh(new THREE.BoxGeometry(0.12, 0.655 - FLOOR_Y + 0.02, 1.15), leather, 0, (0.655 + FLOOR_Y) / 2 + 0.01, -0.2);
+    g.add(tunnel);
+    for (const side of [-1, 1]) {
+      g.add(mesh(new THREE.BoxGeometry(0.006, 0.19, 1.86), trim, side * 0.406, FLOOR_Y + 0.1, -0.35));   // side trim
+    }
+    g.add(mesh(new THREE.BoxGeometry(0.8, 0.19, 0.006), trim, 0, FLOOR_Y + 0.1, 0.556));               // footwell front
+
+    // --- Pedals: clutch, brake and throttle, hanging from a box under the
+    // scuttle. The driver's feet press them (see update) ---
+    const pedalMetal = new THREE.MeshStandardMaterial({ color: 0x9aa0a6, metalness: 0.85, roughness: 0.35 });
+    const padGrip = new THREE.MeshStandardMaterial({ color: 0x2b2d31, metalness: 0.4, roughness: 0.6 });
+    g.add(mesh(new THREE.BoxGeometry(0.3, 0.03, 0.1), mats.black, DRIVER_X, PEDAL_PIVOT_Y + 0.015, PEDAL_PIVOT_Z + 0.02));   // pedal box
+    this.pedals = {};
+    for (const [name, p] of Object.entries(PEDALS)) {
+      const pivot = new THREE.Group();
+      pivot.position.set(p.x, PEDAL_PIVOT_Y, PEDAL_PIVOT_Z);
+      pivot.add(mesh(new THREE.BoxGeometry(0.012, PEDAL_ARM, 0.012), pedalMetal, 0, -PEDAL_ARM / 2, 0));
+      const pad = mesh(new THREE.BoxGeometry(name === 'throttle' ? 0.045 : 0.06, name === 'throttle' ? 0.08 : 0.055, 0.01),
+        padGrip, 0, -PEDAL_ARM, -0.008);
+      pad.rotation.x = 0.35;                     // tipped back towards the driver's foot
+      pivot.add(pad);
+      g.add(pivot);
+      this.pedals[name] = { pivot, travel: p.travel, at: 0 };
+    }
+    const rest = mesh(new THREE.BoxGeometry(0.07, 0.01, 0.1), padGrip, FOOTREST.x, FLOOR_Y + 0.012, FOOTREST.z + 0.03);   // rubber heel pad
+    g.add(rest);
 
     // --- Dashboard: a padded panel across the front of the cockpit, with
     // a rev counter and speedo in front of the driver ---
@@ -207,6 +265,10 @@ export class Cockpit {
     const hub = mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.03, 18), mats.black, 0, 0, 0.01);
     hub.rotation.x = Math.PI / 2;
     this.wheelSpin.add(hub);
+    this.hub = hub;                    // the horn pad: pressed in while the horn sounds
+    const hornMark = mesh(new THREE.CircleGeometry(0.018, 18), mats.chrome, 0, 0.0155, 0);
+    hornMark.rotation.x = -Math.PI / 2;
+    hub.add(hornMark);
     for (const a of [Math.PI / 2, -Math.PI / 2, Math.PI]) {          // three spokes: left, right, bottom
       const spoke = mesh(new THREE.BoxGeometry(0.018, WHEEL_R, 0.008), mats.chrome, Math.sin(a) * WHEEL_R / 2, Math.cos(a) * WHEEL_R / 2, 0.004);
       spoke.rotation.z = -a;
@@ -226,17 +288,39 @@ export class Cockpit {
     }
 
     // --- Gear lever and handbrake on the tunnel ---
+    // Gear lever: a chrome shaft with a collar, a leather gaiter round its
+    // base, and a round knob with the shift pattern printed on top
     this.stick = new THREE.Group();
     this.stick.position.copy(STICK_BASE);
-    this.stick.add(mesh(new THREE.CylinderGeometry(0.008, 0.01, STICK_LEN, 8), mats.chrome, 0, STICK_LEN / 2, 0));
-    this.stick.add(mesh(new THREE.SphereGeometry(0.022, 14, 10), mats.black, 0, STICK_LEN, 0));
+    this.stick.add(mesh(new THREE.CylinderGeometry(0.0075, 0.011, STICK_LEN, 12), mats.chrome, 0, STICK_LEN / 2, 0));
+    this.stick.add(mesh(new THREE.CylinderGeometry(0.013, 0.013, 0.012, 14), mats.chrome, 0, STICK_LEN * 0.62, 0));   // collar
+    const knob = mesh(new THREE.SphereGeometry(0.024, 20, 14), mats.black, 0, STICK_LEN, 0);
+    knob.scale.set(1, 0.9, 1);
+    this.stick.add(knob);
+    const pattern = new THREE.Mesh(new THREE.CircleGeometry(0.017, 24),
+      new THREE.MeshStandardMaterial({ map: this.shiftPatternTexture(), roughness: 0.4, transparent: true }));
+    pattern.position.set(0, STICK_LEN + 0.0205, 0);
+    pattern.rotation.set(-Math.PI / 2, 0, Math.PI);       // flat on top, readable from the seat
+    this.stick.add(pattern);
     g.add(this.stick);
-    g.add(mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.02, 12), leather, STICK_BASE.x, 0.66, STICK_BASE.z));   // the gaiter
+    const gaiter = mesh(new THREE.CylinderGeometry(0.016, 0.05, 0.06, 16, 3), leather, STICK_BASE.x, STICK_BASE.y + 0.03, STICK_BASE.z);
+    g.add(gaiter);
+    g.add(mesh(new THREE.BoxGeometry(0.12, 0.008, 0.12), mats.chrome, STICK_BASE.x, STICK_BASE.y + 0.002, STICK_BASE.z));   // trim ring
+    // Handbrake: a ratchet housing on the tunnel, the lever pivoting on it,
+    // a rubber grip and the release button on the end
+    g.add(mesh(new THREE.BoxGeometry(0.04, 0.03, 0.12), mats.black, BRAKE_BASE.x, BRAKE_BASE.y - 0.012, BRAKE_BASE.z + 0.04));
     this.brake = new THREE.Group();
     this.brake.position.copy(BRAKE_BASE);
-    this.brake.add(mesh(new THREE.BoxGeometry(0.02, 0.02, BRAKE_LEN), mats.chrome, 0, 0, BRAKE_LEN / 2));
-    this.brake.add(mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.08, 10), mats.black, 0, 0, BRAKE_LEN - 0.03));
-    this.brake.children[1].rotation.x = Math.PI / 2;
+    this.brake.add(mesh(new THREE.BoxGeometry(0.018, 0.024, BRAKE_LEN), mats.chrome, 0, 0, BRAKE_LEN / 2));
+    const hbGrip = mesh(new THREE.CapsuleGeometry(0.016, 0.08, 6, 14), mats.black, 0, 0, BRAKE_LEN - 0.05);
+    hbGrip.rotation.x = Math.PI / 2;
+    this.brake.add(hbGrip);
+    const button = mesh(new THREE.CylinderGeometry(0.007, 0.007, 0.016, 12), mats.chrome, 0, 0, BRAKE_LEN + 0.006);
+    button.rotation.x = Math.PI / 2;
+    this.brake.add(button);
+    const quadrant = mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.006, 20, 1, false, 0, Math.PI / 2), mats.chrome, 0, 0, 0.005);
+    quadrant.rotation.set(0, 0, Math.PI / 2);            // the toothed ratchet plate on the side
+    this.brake.add(quadrant);
     g.add(this.brake);
     this.stickAt = { across: 0, fore: 0 };
     this.brakeUp = 0;
@@ -245,12 +329,18 @@ export class Cockpit {
     this.driver = new THREE.Group();
     g.add(this.driver);
     // (sitting up straight against the seat: shoulders over the hips, head on top)
-    const torso = mesh(new THREE.CylinderGeometry(0.155, 0.135, 0.33, 14), suit, DRIVER_X, 0.8, -0.535);
-    torso.scale.z = 0.65;
+    // Torso: a smooth turned shape, waist to shoulders, flattened front to back
+    const torsoProfile = [[0.001, -0.17], [0.125, -0.165], [0.135, -0.1], [0.145, 0], [0.158, 0.08], [0.155, 0.13], [0.125, 0.165], [0.06, 0.185], [0.001, 0.19]]
+      .map(([r, y]) => new THREE.Vector2(r, y));
+    const torso = mesh(new THREE.LatheGeometry(torsoProfile, 24), suit, DRIVER_X, 0.8, -0.535);
+    torso.scale.z = 0.66;
     torso.rotation.x = -0.1;
     this.driver.add(torso);
-    this.driver.add(mesh(new THREE.SphereGeometry(0.072, 12, 10), suitPlain, DRIVER_X, 0.94, -0.535));   // shoulders/collar
-    for (const s of [SHOULDER_L, SHOULDER_R]) this.driver.add(mesh(new THREE.SphereGeometry(0.053, 12, 10), suitPlain, s.x, s.y, s.z));
+    // Hips and seat of the pants, sitting in the cushion
+    const pelvis = mesh(new THREE.SphereGeometry(0.15, 20, 14), suitPlain, DRIVER_X, 0.665, -0.53);
+    pelvis.scale.set(1, 0.5, 0.75);
+    this.driver.add(pelvis);
+    for (const s of [SHOULDER_L, SHOULDER_R]) this.driver.add(mesh(new THREE.SphereGeometry(0.055, 16, 12), suitPlain, s.x, s.y, s.z));
     // Harness: two shoulder belts and a lap belt, with the buckle in the middle
     for (const sx of [-0.07, 0.07]) {
       const belt = mesh(new THREE.BoxGeometry(0.045, 0.3, 0.012), strap, DRIVER_X + sx, 0.8, -0.44);
@@ -281,18 +371,43 @@ export class Cockpit {
     visor.scale.copy(helmet.scale);
     this.head.add(visor);
     this.driver.add(this.head);
-    // Arms: upper arm and forearm each a stretched cylinder, placed every frame
-    const limbGeo = new THREE.CylinderGeometry(1, 1, 1, 10);
-    limbGeo.translate(0, 0.5, 0);
-    this.arms = ['left', 'right'].map(() => {
-      const upper = mesh(limbGeo, suit);
-      const fore = mesh(limbGeo, suit);
-      const elbow = mesh(new THREE.SphereGeometry(0.042, 10, 8), suit);
-      const hand = mesh(new THREE.SphereGeometry(0.035, 10, 8), glove);
-      hand.scale.set(1, 0.8, 1.3);
+    // Arms: rounded upper arm and forearm, placed every frame. Gloved hands
+    // with a thumb.
+    const upperGeo = limbGeometry(0.046, UPPER_ARM), foreGeo = limbGeometry(0.039, FOREARM);
+    upperGeo.userData.len = UPPER_ARM; foreGeo.userData.len = FOREARM;
+    this.arms = ['left', 'right'].map((side) => {
+      const upper = mesh(upperGeo, suit);
+      const fore = mesh(foreGeo, suit);
+      const elbow = mesh(new THREE.SphereGeometry(0.043, 14, 10), suit);
+      const hand = new THREE.Group();
+      const palm = mesh(new THREE.SphereGeometry(0.036, 16, 12), glove);
+      palm.scale.set(1, 0.75, 1.35);
+      const thumb = mesh(new THREE.CapsuleGeometry(0.012, 0.03, 4, 10), glove, (side === 'left' ? -1 : 1) * 0.03, 0.01, 0.01);
+      thumb.rotation.z = (side === 'left' ? 1 : -1) * 0.9;
+      hand.add(palm, thumb);
+      const cuff = mesh(new THREE.CylinderGeometry(0.036, 0.04, 0.03, 14), glove, 0, -0.035, 0);
+      hand.add(cuff);
       this.driver.add(upper, fore, elbow, hand);
-      return { upper, fore, elbow, hand, blend: 0, target: new THREE.Vector3() };
+      return { upper, fore, elbow, hand, blend: 0, target: new THREE.Vector3(), horn: 0 };
     });
+    // Legs: thigh and shin to a racing boot on each pedal
+    const thighGeo = limbGeometry(0.064, THIGH), shinGeo = limbGeometry(0.048, SHIN);
+    thighGeo.userData.len = THIGH; shinGeo.userData.len = SHIN;
+    const boot = new THREE.MeshStandardMaterial({ color: 0x18191b, roughness: 0.6 });
+    this.legs = ['left', 'right'].map(() => {
+      const thigh = mesh(thighGeo, suit);
+      const shin = mesh(shinGeo, suit);
+      const knee = mesh(new THREE.SphereGeometry(0.056, 14, 10), suit);
+      const foot = new THREE.Group();
+      const sole = mesh(new THREE.CapsuleGeometry(0.035, 0.15, 4, 12), boot, 0, 0, 0.07);
+      sole.rotation.x = Math.PI / 2;                 // lying along the foot, toe forward
+      sole.scale.set(1.05, 1, 0.8);
+      foot.add(sole);
+      foot.add(mesh(new THREE.CylinderGeometry(0.042, 0.045, 0.07, 14), boot, 0, 0.03, 0));   // ankle of the boot
+      this.driver.add(thigh, shin, knee, foot);
+      return { thigh, shin, knee, foot, at: new THREE.Vector3() };
+    });
+    this.hornPress = 0;
 
     // --- Mirrors: a centre one on top of the windscreen, and one on each side ---
     const s = isMobile ? 0.5 : 1;
@@ -380,6 +495,29 @@ export class Cockpit {
     return t;
   }
 
+  // The shift pattern printed on top of the gear knob: R 1 3 5 / 2 4 6
+  shiftPatternTexture() {
+    const S = 128, cv = document.createElement('canvas');
+    cv.width = cv.height = S;
+    const c = cv.getContext('2d');
+    c.fillStyle = '#111214';
+    c.beginPath(); c.arc(S / 2, S / 2, S / 2, 0, Math.PI * 2); c.fill();
+    c.strokeStyle = '#e8e8e8';
+    c.lineWidth = 5;
+    c.beginPath();
+    c.moveTo(28, 64); c.lineTo(100, 64);                         // across
+    for (const x of [28, 52, 76, 100]) { c.moveTo(x, 64); c.lineTo(x, x === 28 ? 34 : 34); if (x !== 28) { c.moveTo(x, 64); c.lineTo(x, 94); } }
+    c.stroke();
+    c.fillStyle = '#e8e8e8';
+    c.font = 'bold 20px Arial, sans-serif';
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    [['R', 28, 22], ['1', 52, 22], ['3', 76, 22], ['5', 100, 22], ['2', 52, 106], ['4', 76, 106], ['6', 100, 106]]
+      .forEach(([t, x, y]) => c.fillText(t, x, y));
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }
+
   // Hide the helmet when looking out through it
   setFirstPerson(on) {
     this.firstPerson = on;
@@ -394,6 +532,14 @@ export class Cockpit {
     } else {
       this.shiftHold = transmission === 'manual' ? 0.42 : 0.5;   // the hand goes to the lever
     }
+  }
+
+  // The middle of the steering wheel, just in front of the horn pad
+  hubPoint(out) {
+    out.set(0, 0, 0.05);
+    this._e.set(WHEEL_TILT, Math.PI, 0);
+    out.applyEuler(this._e);
+    return out.add(WHEEL_CENTRE);
   }
 
   // A point on the steering wheel rim, at angle `a` (0 = top; + towards the
@@ -420,22 +566,62 @@ export class Cockpit {
     const pole = this._c.set(outward, -0.9, -0.2);
     pole.addScaledVector(dir, -pole.dot(dir)).normalize();
     const elbow = this._d.copy(shoulder).addScaledVector(dir, along).addScaledVector(pole, lift);
-    this.setLimb(arm.upper, shoulder, elbow, 0.045);
-    this.setLimb(arm.fore, elbow, hand, 0.038);
+    this.setLimb(arm.upper, shoulder, elbow);
+    this.setLimb(arm.fore, elbow, hand);
     arm.elbow.position.copy(elbow);
     arm.hand.position.copy(hand);
     arm.hand.quaternion.copy(arm.fore.quaternion);
   }
 
-  setLimb(m, a, b, r) {
+  // Point a limb segment from a to b (stretched or squashed a touch along
+  // its length if they're not quite its own length apart)
+  setLimb(m, a, b) {
     const dir = new THREE.Vector3().subVectors(b, a);
     const len = dir.length();
     m.position.copy(a);
     m.quaternion.setFromUnitVectors(UP, dir.divideScalar(len || 1));
-    m.scale.set(r, len, r);
+    m.scale.set(1, len / (m.geometry.userData.len || 1), 1);
   }
 
-  // Every frame. state: { steer, gear, transmission, handbrake, rpm, redline, speedKmh, lean }
+  // Two-bone reach (an arm or a leg): from the root towards the target,
+  // bending at the joint towards `pole`. Returns the joint and end points.
+  reach(root, target, l1, l2, pole, jointOut, endOut) {
+    const d = this._a.subVectors(target, root);
+    let len = d.length();
+    const maxLen = l1 + l2 - 0.005;
+    if (len > maxLen) { d.multiplyScalar(maxLen / len); len = maxLen; }
+    endOut.copy(root).add(d);
+    const dir = d.normalize();
+    const along = (l1 * l1 - l2 * l2 + len * len) / (2 * len);
+    const lift = Math.sqrt(Math.max(0, l1 * l1 - along * along));
+    const p = this._c.copy(pole);
+    p.addScaledVector(dir, -p.dot(dir)).normalize();
+    jointOut.copy(root).addScaledVector(dir, along).addScaledVector(p, lift);
+  }
+
+  // A pedal's pad, where the sole of the foot presses it (cockpit space)
+  pedalPad(name, out) {
+    const p = this.pedals[name];
+    const ang = -p.at * p.travel;                       // pressing swings the pad forward
+    return out.set(PEDALS[name].x, PEDAL_PIVOT_Y - Math.cos(ang) * PEDAL_ARM, PEDAL_PIVOT_Z + Math.sin(-ang) * PEDAL_ARM - 0.02);
+  }
+
+  // One leg from the hip to the foot (the boot's ball on `ballAt`)
+  placeLeg(leg, hip, ballAt, outward) {
+    // the ankle sits behind and below the ball of the foot
+    const ankleTarget = this._b.copy(ballAt).add(this._d.set(0, -0.035, -0.11));
+    const knee = new THREE.Vector3(), ankle = new THREE.Vector3();
+    this.reach(hip, ankleTarget, THIGH, SHIN, this._d.set(outward * 0.1, 1, 0), knee, ankle);
+    this.setLimb(leg.thigh, hip, knee);
+    this.setLimb(leg.shin, knee, ankle);
+    leg.knee.position.copy(knee);
+    leg.foot.position.copy(ankle);
+    // the boot points from the ankle to the ball of the foot
+    leg.foot.lookAt(this._d.copy(ballAt).applyMatrix4(this.group.matrixWorld));
+  }
+
+  // Every frame. state: { steer, gear, transmission, handbrake, rpm, redline,
+  // speedKmh, lean, throttle, brake, clutch, horn }
   update(dt, st) {
     // Steering wheel
     const turn = st.steer * STEER_RATIO;
@@ -481,13 +667,41 @@ export class Cockpit {
       away = new THREE.Vector3(0, STICK_LEN, 0).applyEuler(this.stick.rotation).add(STICK_BASE);
     }
     left.blend += ((away ? 1 : 0) - left.blend) * (1 - Math.exp(-dt / 0.07));
+    // Horn: the right hand leaves the rim and presses the middle of the wheel
+    right.horn += ((st.horn ? 1 : 0) - right.horn) * (1 - Math.exp(-dt / 0.06));
+    this.hornPress = right.horn;
+    this.hub.position.z = 0.01 - 0.006 * right.horn;     // the pad sinks in a little
     const handL = away ? onWheelL.lerp(away, left.blend) : onWheelL.lerp(left.target, left.blend);
     if (away) left.target.copy(away);
     // (an automatic's paddle pull: the fingers reach back a touch)
     const pull = Math.max(this.paddles.up.t, this.paddles.down.t) * 0.12;
     onWheelR.z -= pull;
+    if (right.horn > 0.01) onWheelR.lerp(this.hubPoint(new THREE.Vector3()), right.horn);
     this.placeArm(left, SHOULDER_L, handL, 1);
     this.placeArm(right, SHOULDER_R, onWheelR, -1);
+
+    // Pedals follow the controls (quickly, like a foot does)
+    const pk = 1 - Math.exp(-dt / 0.05);
+    const press = { clutch: st.clutch ? 1 : 0, brake: Math.min(1, st.brake || 0), throttle: Math.min(1, st.throttle || 0) };
+    for (const [name, p] of Object.entries(this.pedals)) {
+      p.at += (press[name] - p.at) * pk;
+      p.pivot.rotation.x = -p.at * p.travel;
+    }
+    // Feet: the right one covers the throttle, moving across to the brake
+    // when braking; the left one rests on the footrest unless the clutch is in
+    const [legL, legR] = this.legs;
+    this.rightFoot = this.rightFoot ?? 0;               // 0 = throttle, 1 = brake
+    this.rightFoot += ((press.brake > 0.02 ? 1 : 0) - this.rightFoot) * (1 - Math.exp(-dt / 0.06));
+    const onThrottle = this.pedalPad('throttle', new THREE.Vector3());
+    const onBrake = this.pedalPad('brake', new THREE.Vector3());
+    const footR = onThrottle.lerp(onBrake, this.rightFoot);
+    footR.z -= 0.04 * Math.sin(this.rightFoot * Math.PI);   // lifted off in between
+    footR.y += 0.03 * Math.sin(this.rightFoot * Math.PI);
+    this.leftFoot = this.leftFoot ?? 0;
+    this.leftFoot += ((press.clutch > 0 || this.pedals.clutch.at > 0.05 ? 1 : 0) - this.leftFoot) * (1 - Math.exp(-dt / 0.06));
+    const footL = new THREE.Vector3().copy(FOOTREST).lerp(this.pedalPad('clutch', new THREE.Vector3()), this.leftFoot);
+    this.placeLeg(legL, HIP_L, footL, 1);
+    this.placeLeg(legR, HIP_R, footR, -1);
   }
 
   // Redraw the dash display. st: { speedKmh, rpm, redline, gearLabel, limiter,
