@@ -16,7 +16,7 @@ import { setTouch, tap } from './input.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 3;
+export const BUILD = 4;
 
 export function isTouchDevice() {
   return window.matchMedia('(pointer: coarse)').matches
@@ -251,7 +251,8 @@ export class TouchControls {
     };
     this.soundItem = item('Sound: on', 'mute');
     this.lightsItem = item('Lights: off', 'lights');
-    this.sheet.append(item('Switch camera', 'camera'), this.lightsItem, item('Reset car', 'reset'), this.soundItem);
+    this.lineItem = item('Racing line: on', 'racingLine');
+    this.sheet.append(item('Switch camera', 'camera'), this.lightsItem, this.lineItem, item('Reset car', 'reset'), this.soundItem);
 
     // --- Horn, and the lights button beside it ---
     const horn = this.holdButton('Horn', 't-horn small', 'horn');
@@ -375,7 +376,7 @@ export class TouchControls {
   }
 
   // Called every frame: shows the right buttons for the current gearbox
-  update({ transmission, gearLabel, muted, lights = 0 }) {
+  update({ transmission, gearLabel, muted, lights = 0, racingLine = null }) {
     const manual = transmission === 'manual';
     this.downBtn.style.display = manual ? '' : 'none';
     this.upBtn.classList.toggle('hidden', !manual);
@@ -383,6 +384,9 @@ export class TouchControls {
     this.reverseBtn.classList.toggle('active', gearLabel === 'R');
     const soundText = muted ? 'Sound: off' : 'Sound: on';
     if (this.soundItem.textContent !== soundText) this.soundItem.textContent = soundText;
+    const lineText = racingLine == null ? '' : racingLine ? 'Racing line: on' : 'Racing line: off';
+    if (this.lineItem.textContent !== lineText) this.lineItem.textContent = lineText;
+    this.lineItem.style.display = racingLine == null ? 'none' : '';      // (only where there's a racing line)
     const lightsText = ['Lights: off', 'Lights: auto', 'Lights: dipped', 'Lights: main beam'][lights];
     if (this.lightsItem.textContent !== lightsText) this.lightsItem.textContent = lightsText;
     const short = ['OFF', 'AUTO', 'ON', 'MAIN'][lights];
