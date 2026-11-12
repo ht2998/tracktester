@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 19;
+export const BUILD = 20;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 22, date: '12 Nov 2026', title: 'Hands on the wheel',
+    items: [
+      ['Always a hand on the wheel', 'Fixed the wheel turning with no hands on it when you sounded the horn while shifting: if the left hand is on the gear stick or handbrake, the right hand stays on the rim and presses the horn with its thumb', 'driver'],
+    ],
+  },
   {
     id: 21, date: '12 Nov 2026', title: 'The dashboard, on the dashboard',
     items: [
