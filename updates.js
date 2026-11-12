@@ -21,11 +21,18 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 16;
+export const BUILD = 17;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 19, date: '12 Nov 2026', title: 'Easier on phones',
+    items: [
+      ['Settings tab is easier to find', 'On phones and tablets the settings tab on the right edge is bigger, with an orange cog, and it glows gently until you open it the first time', 'phone'],
+      ['Headlights button', 'A lights button beside the horn: tap it to switch between off, auto, on and main beam. It shows which one it\'s on (green when on, blue on main beam)', 'lights'],
+    ],
+  },
   {
     id: 18, date: '12 Nov 2026', title: 'Crash damage, fire, tyre temperatures and wind',
     items: [
