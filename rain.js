@@ -23,7 +23,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 1;
+export const BUILD = 2;
 
 // How hard it rains at each level (0-1)
 export const RAIN_LEVELS = { drizzle: 0.12, light: 0.3, moderate: 0.52, heavy: 0.78, storm: 1 };
@@ -56,8 +56,10 @@ void main() {
 
 export class RainSystem {
   // spots: { puddles: [{x, z, r}], mud: [{x, z, r}] } where water and mud can gather
-  constructor(scene, { isMobile = false, spots }) {
+  // roofs: [{ minX, maxX, minZ, maxZ, height }]: rain stops on them
+  constructor(scene, { isMobile = false, spots, roofs = [] }) {
     this.scene = scene;
+    this.roofs = roofs;
     this.isMobile = isMobile;
     this.level = null;            // null = no rain, else a key of RAIN_LEVELS
     this.intensity = 0;           // how hard it's raining right now (eases in and out)
@@ -260,6 +262,12 @@ export class RainSystem {
 
   // Rain streaks falling around the camera; each drop that reaches the
   // ground may leave a splash (or a ripple, in a puddle)
+  // The height rain stops at: a roof, or the ground
+  roofAt(x, z) {
+    for (const r of this.roofs) if (x > r.minX && x < r.maxX && z > r.minZ && z < r.maxZ) return r.height;
+    return 0;
+  }
+
   updateDrops(dt, camera, carVel, rain) {
     const active = Math.round(this.maxDrops * smooth(0, 1, rain));
     this.rain.visible = active > 0;
@@ -285,9 +293,11 @@ export class RainSystem {
       const v = this.dropSpeed[i];
       y -= v * dt;
       x += wind.x * dt; z += wind.z * dt;
-      if (y <= 0) {
+      const floor = this.roofAt(x, z);
+      if (y <= floor) {
         // Landed: a crown splash, or a ripple if it fell in a puddle
-        if (splashes > 0 && Math.abs(x - cx) < 9 && Math.abs(z - cz) < 9) {
+        // (none on a roof: you wouldn't see them up there)
+        if (!floor && splashes > 0 && Math.abs(x - cx) < 9 && Math.abs(z - cz) < 9) {
           splashes--;
           if (this.puddleAt(x, z) > 0.15) this.spawnFx(this.ripples, x, 0.012, z, rand(0.12, 0.28), rand(0.5, 0.8));
           else if (this.wetness > 0.15) this.spawnFx(this.crowns, x, 0.004, z, rand(0.025, 0.05), rand(0.14, 0.22));
@@ -297,6 +307,9 @@ export class RainSystem {
       // keep the drops in a box that follows the camera
       if (x - cx > BOX) x -= 2 * BOX; else if (x - cx < -BOX) x += 2 * BOX;
       if (z - cz > BOX) z -= 2 * BOX; else if (z - cz < -BOX) z += 2 * BOX;
+      // never inside a building: a drop that ends up under a roof starts again above it
+      const roof = this.roofAt(x, z);
+      if (roof && y < roof) y = roof + rand(0.5, TOP);
       d[i * 3] = x; d[i * 3 + 1] = y; d[i * 3 + 2] = z;
       // The streak points along the drop's motion as you see it from the
       // moving car: it slants towards you when you drive fast
