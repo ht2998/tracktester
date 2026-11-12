@@ -4,7 +4,7 @@
     "cockpit.js": 4,
     "godrays.js": 1,
     "scenery.js": 5,
-    "updates.js": 11,
+    "updates.js": 12,
     "debris.js": 2,
     "effects.js": 1,
     "sky.js": 4,
@@ -19,7 +19,7 @@
     "input.js": 1,
     "touch.js": 1,
     "skids.js": 2,
-    "tyres.js": 1,
+    "tyres.js": 2,
     "sepang.js": 1
   }
 }
