@@ -1,10 +1,10 @@
 {
   "_note": "The latest version of each file. The game checks this (bypassing the browser's saved copies) against the files it actually loaded.",
   "files": {
-    "cockpit.js": 7,
+    "cockpit.js": 8,
     "godrays.js": 1,
     "scenery.js": 5,
-    "updates.js": 19,
+    "updates.js": 20,
     "debris.js": 2,
     "effects.js": 2,
     "sky.js": 5,
