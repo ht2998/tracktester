@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 4;
+export const BUILD = 5;
 
 const COLORS = {
   face: '#15181c',
@@ -433,6 +433,112 @@ function drawHeadlightLamp(g, cx, cy, size, main) {
   g.restore();
 }
 
+// --- Warning lamps (drawn on a 24 x 16 grid, centred on cx, cy) ---
+function lampStyle(g, color, u) {
+  g.fillStyle = color;
+  g.strokeStyle = color;
+  g.lineWidth = Math.max(1.1, 1.5 * u);
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  g.shadowColor = color;
+  g.shadowBlur = 5 * u;
+}
+// ABS: the letters in a circle, with a bracket either side (the brake drum)
+function drawAbsLamp(g, cx, cy, width, color) {
+  const u = width / 24;
+  g.save();
+  lampStyle(g, color, u);
+  g.beginPath(); g.arc(cx, cy, 6.5 * u, 0, Math.PI * 2); g.stroke();
+  g.beginPath(); g.arc(cx, cy, 9.5 * u, Math.PI * 0.72, Math.PI * 1.28); g.stroke();
+  g.beginPath(); g.arc(cx, cy, 9.5 * u, -Math.PI * 0.28, Math.PI * 0.28); g.stroke();
+  g.shadowBlur = 0;
+  g.font = `700 ${Math.round(5.4 * u)}px ${FONT}`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText('ABS', cx, cy + 0.4 * u);
+  g.restore();
+}
+// Traction control: the letters TCS (with OFF under them when it's switched off)
+function drawTcsLamp(g, cx, cy, width, color, off) {
+  const u = width / 24;
+  g.save();
+  lampStyle(g, color, u);
+  g.shadowBlur = 4 * u;
+  g.font = `700 ${Math.round(7.5 * u)}px ${FONT}`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText('TCS', cx, cy - (off ? 2.5 * u : 0));
+  if (off) {
+    g.font = `700 ${Math.round(5 * u)}px ${FONT}`;
+    g.fillText('OFF', cx, cy + 5 * u);
+  }
+  g.restore();
+}
+// Skid: a car from behind with two wavy skid lines under it
+function drawSkidLamp(g, cx, cy, width, color) {
+  const u = width / 24;
+  const x0 = cx - 12 * u, y0 = cy - 8 * u;
+  const P = (x, y) => [x0 + x * u, y0 + y * u];
+  g.save();
+  lampStyle(g, color, u);
+  g.beginPath();                        // the car
+  [[6, 7], [8, 2], [16, 2], [18, 7], [19, 7], [19, 10], [5, 10], [5, 7]].forEach(([x, y], i) => (i ? g.lineTo(...P(x, y)) : g.moveTo(...P(x, y))));
+  g.closePath();
+  g.fill();
+  for (const sx of [7, 15]) {           // the wavy skid lines
+    g.beginPath();
+    g.moveTo(...P(sx, 12));
+    g.bezierCurveTo(...P(sx + 2, 13), ...P(sx - 1, 14.5), ...P(sx + 1.5, 16));
+    g.stroke();
+  }
+  g.restore();
+}
+// Handbrake: a (!) in a circle, in red
+function drawHandbrakeLamp(g, cx, cy, width, color) {
+  const u = width / 24;
+  g.save();
+  lampStyle(g, color, u);
+  g.beginPath(); g.arc(cx, cy, 6.5 * u, 0, Math.PI * 2); g.stroke();
+  g.beginPath(); g.arc(cx, cy, 9.5 * u, Math.PI * 0.72, Math.PI * 1.28); g.stroke();
+  g.beginPath(); g.arc(cx, cy, 9.5 * u, -Math.PI * 0.28, Math.PI * 0.28); g.stroke();
+  g.shadowBlur = 0;
+  g.font = `800 ${Math.round(9 * u)}px ${FONT}`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText('!', cx, cy + 0.5 * u);
+  g.restore();
+}
+// Fuel: a petrol pump, and a little arrow pointing to the side of the car
+// the filler cap is on (on this car, the left)
+function drawFuelPump(g, cx, cy, width, color, side = -1) {
+  const u = width / 24;
+  const x0 = cx - 12 * u, y0 = cy - 8 * u;
+  const P = (x, y) => [x0 + x * u, y0 + y * u];
+  g.save();
+  g.fillStyle = color;
+  g.strokeStyle = color;
+  g.lineWidth = Math.max(1, 1.4 * u);
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  g.beginPath();                        // the pump body, with its window cut out
+  g.moveTo(...P(7, 2)); g.lineTo(...P(14, 2)); g.lineTo(...P(14, 15)); g.lineTo(...P(7, 15)); g.closePath();
+  g.moveTo(...P(8.5, 3.5)); g.lineTo(...P(8.5, 7)); g.lineTo(...P(12.5, 7)); g.lineTo(...P(12.5, 3.5)); g.closePath();
+  g.fill('evenodd');
+  g.beginPath();                        // the hose and nozzle
+  g.moveTo(...P(14, 5)); g.lineTo(...P(16.5, 5)); g.lineTo(...P(17.5, 7)); g.lineTo(...P(17.5, 12));
+  g.quadraticCurveTo(...P(17.5, 13.5), ...P(16, 13)); g.lineTo(...P(15.5, 11));
+  g.stroke();
+  // the filler-side arrow
+  const ax = side < 0 ? 2 : 22;
+  g.beginPath();
+  g.moveTo(...P(ax, 8.5));
+  g.lineTo(...P(ax - side * 3, 6));
+  g.lineTo(...P(ax - side * 3, 11));
+  g.closePath();
+  g.fill();
+  g.restore();
+}
+
 function drawCheckEngine(g, cx, cy, width, color) {
   const u = width / 24;   // drawn on a 24 x 16 grid
   const x0 = cx - 12 * u, y0 = cy - 8 * u;
@@ -834,7 +940,8 @@ export class Hud {
   }
 
   update({ speedKmh, rpm, gearLabel, limiter, transmission, engineHealth = 1, oilLevel = 1,
-           fuelLevel = 1, assists = {}, clutchIn = false, tyres = null, tyreCompound = 'SM', lights = 0, sky = null, time }) {
+           fuelLevel = 1, assists = {}, clutchIn = false, tyres = null, tyreCompound = 'SM', lights = 0, lightsAuto = false, sky = null, time,
+           warnings = {} }) {
     if (sky) this.updateSky(sky);
     this.tyreBars.draw(tyres, tyreCompound, time);
     if (this.tyreSelect && document.activeElement !== this.tyreSelect && this.tyreSelect.value !== tyreCompound) {
@@ -867,7 +974,16 @@ export class Hud {
       }
     }
     // Headlights on: a small green (dipped) or blue (main beam) lamp, left of the needle hub
-    if (lights) drawHeadlightLamp(tg, tR - tR * 0.3, tR + tR * 0.08, tR * 0.28, lights === 2);
+    if (lights) {
+      drawHeadlightLamp(tg, tR - tR * 0.3, tR + tR * 0.08, tR * 0.28, lights === 2);
+      if (lightsAuto) {                   // an A beside it: the lights are on automatically
+        tg.fillStyle = lights === 2 ? '#3b8cff' : '#39c86a';
+        tg.font = `700 ${Math.round(tR * 0.13)}px ${FONT}`;
+        tg.textAlign = 'center';
+        tg.textBaseline = 'middle';
+        tg.fillText('A', tR - tR * 0.11, tR + tR * 0.1);
+      }
+    }
     tg.fillStyle = limiter ? COLORS.redline : COLORS.ink;
     tg.font = `700 ${Math.round(tR * 0.42)}px ${FONT}`;
     tg.textAlign = 'center';
@@ -881,6 +997,24 @@ export class Hud {
     const sg = s.ctx;
     const sR = s.size / 2;
     this.drawShiftLights(sg, sR, sR - sR * 0.18, sR, rpm, limiter, transmission, time);
+    // Warning lamps in a row across the middle: only the ones that are on
+    //   ABS:       flashes while it's stopping the wheels locking; steady if switched off
+    //   TCS:       flashes while it's cutting power; steady (with OFF) if switched off
+    //   skid:      flashes while the car is sliding sideways
+    //   handbrake: red while it's pulled
+    {
+      const w = warnings;
+      const flash = Math.floor(time * 6) % 2 === 0;
+      const lamps = [];
+      if (w.absWorking) { if (flash) lamps.push((x) => drawAbsLamp(sg, x, ly, lw, COLORS.ledAmber)); else lamps.push(null); }
+      else if (w.absOff) lamps.push((x) => drawAbsLamp(sg, x, ly, lw, COLORS.ledAmber));
+      if (w.tcsWorking) { if (flash) lamps.push((x) => drawTcsLamp(sg, x, ly, lw, COLORS.ledAmber, false)); else lamps.push(null); }
+      else if (w.tcsOff) lamps.push((x) => drawTcsLamp(sg, x, ly, lw, COLORS.ledAmber, true));
+      if (w.skid) { if (flash) lamps.push((x) => drawSkidLamp(sg, x, ly, lw, COLORS.ledAmber)); else lamps.push(null); }
+      if (w.handbrake) lamps.push((x) => drawHandbrakeLamp(sg, x, ly, lw, COLORS.redline));
+      const lw = sR * 0.3, ly = sR + sR * 0.22, gap = sR * 0.34;
+      lamps.forEach((draw, k) => draw?.(sR + (k - (lamps.length - 1) / 2) * gap));
+    }
     sg.fillStyle = COLORS.ink;
     sg.font = `700 ${Math.round(sR * 0.34)}px ${FONT}`;
     sg.textAlign = 'center';
@@ -889,7 +1023,7 @@ export class Hud {
     s.drawNeedle(speedKmh);
 
     // --- Small gauges: the needle turns red and the label flashes when low ---
-    this.drawSmallGauge(this.fuelGauge, 'Fuel', fuelLevel, 0.1, time);
+    this.drawSmallGauge(this.fuelGauge, 'Fuel', fuelLevel, 0.1, time, true);
     const o = this.oilGauge;
     o.beginFrame();
     const og = o.ctx;
@@ -922,12 +1056,15 @@ export class Hud {
     }
   }
 
-  drawSmallGauge(dial, label, level, lowAt, time) {
+  drawSmallGauge(dial, label, level, lowAt, time, pump = false) {
     dial.beginFrame();
     const g = dial.ctx;
     const R = dial.size / 2;
     const low = level < lowAt;
-    if (!low || Math.floor(time * 3) % 2 === 0) {
+    if (pump) {
+      // the fuel gauge shows a pump, with the filler-side arrow (flashes when low)
+      if (!low || Math.floor(time * 3) % 2 === 0) drawFuelPump(g, R, R - R * 0.36, R * 0.62, low ? COLORS.redline : COLORS.inkSoft, -1);
+    } else if (!low || Math.floor(time * 3) % 2 === 0) {
       g.fillStyle = low ? COLORS.redline : COLORS.inkSoft;
       g.font = `600 ${Math.round(R * 0.3)}px ${FONT}`;
       g.textAlign = 'center';
