@@ -24,6 +24,8 @@ import { GodRays, BUILD as GODRAYS_BUILD } from './godrays.js';
 import { RainSystem } from './rain.js';
 import { buildSepang } from './sepang.js';
 import * as sepangFile from './sepang.js';
+import { buildFlora } from './flora.js';
+import * as floraFile from './flora.js';
 import { Cockpit, EYE } from './cockpit.js';
 import { TyreLooks } from './tyres.js';
 import * as tyresFile from './tyres.js';
@@ -47,7 +49,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 15;
+const BUILD = 18;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -56,7 +58,7 @@ const updateScreen = startUpdates({
   'smoke.js': smokeFile.BUILD, 'hud.js': hudFile.BUILD, 'oil.js': oilFile.BUILD,
   'skids.js': skidsFile.BUILD, 'scenery.js': sceneryFile.BUILD, 'grass.js': grassFile.BUILD,
   'sky.js': skyFile.BUILD, 'debris.js': debrisFile.BUILD, 'touch.js': touchFile.BUILD,
-  'rain.js': rainFile.BUILD, 'effects.js': effectsFile.BUILD, 'cockpit.js': cockpitFile.BUILD, 'tyres.js': tyresFile.BUILD, 'sepang.js': sepangFile.BUILD,
+  'rain.js': rainFile.BUILD, 'effects.js': effectsFile.BUILD, 'cockpit.js': cockpitFile.BUILD, 'tyres.js': tyresFile.BUILD, 'sepang.js': sepangFile.BUILD, 'flora.js': floraFile.BUILD,
 });
 
 // ---------------------------------------------------------------------
@@ -387,6 +389,102 @@ if (!SEPANG) buildCones();
 // Buildings, walls, barriers and fences (scenery.js). Their surfaces are
 // registered for echoes once the sound is set up, further down.
 const echoSurfaces = sepang ? sepang.echoes : buildScenery(scene);
+
+// GRASSY ISLANDS on the test area's open ground: round patches of grass
+// (real grass to drive on) scattered round the middle, each with its own
+// trees, bushes and long grass. The area round the start, the buildings
+// and the gravel trap stays open tarmac for driving.
+const ISLANDS = [];
+if (!SEPANG) {
+  let t = 777;
+  const rnd = () => { t = (t * 16807) % 2147483647; return t / 2147483647; };
+  const blocked = (x, z, r) => (echoSurfaces.colliders || []).some((c) => x + r > c.minX - 6 && x - r < c.maxX + 6 && z + r > c.minZ - 6 && z - r < c.maxZ + 6)
+    || (echoSurfaces.roofs || []).some((c) => x + r > c.minX - 6 && x - r < c.maxX + 6 && z + r > c.minZ - 6 && z - r < c.maxZ + 6);
+  for (let tries = 0; tries < 400 && ISLANDS.length < (isMobile ? 16 : 26); tries++) {
+    const a = rnd() * Math.PI * 2, d = 95 + rnd() * 200, r = 10 + rnd() * 22;
+    const x = Math.sin(a) * d, z = Math.cos(a) * d;
+    if (Math.hypot(x, z) - r < 80) continue;                                  // keep the middle open
+    if (ISLANDS.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + r + 25)) continue;   // room to drive between them
+    if (blocked(x, z, r)) continue;
+    ISLANDS.push({ x, z, r });
+  }
+  const islandMat = new THREE.MeshStandardMaterial({ color: 0x55743a, roughness: 1 });
+  for (const isl of ISLANDS) {
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(isl.r, 40), islandMat);
+    disc.rotation.x = -Math.PI / 2;
+    disc.position.set(isl.x, 0.003, isl.z);
+    disc.receiveShadow = true;
+    scene.add(disc);
+  }
+}
+const onIsland = (x, z, margin = 0) => ISLANDS.some((o) => Math.hypot(x - o.x, z - o.z) < o.r - margin);
+
+// TREES, BUSHES AND TALL GRASS (flora.js): at Sepang a tropical mix all
+// round the circuit, kept well back from the track, run-offs and buildings;
+// at the test area, woods round the edges of the driving ground. The tree
+// trunks are solid.
+const flora = (() => {
+  const colliders = echoSurfaces.colliders || (echoSurfaces.colliders = []);
+  const roofs = echoSurfaces.roofs || [];
+  // anything solid nearby? (sorted into 20 m squares so it's quick to check)
+  const solid = new Map();
+  for (const c of colliders) {
+    for (let bx = Math.floor(c.minX / 20); bx <= Math.floor(c.maxX / 20); bx++) {
+      for (let bz = Math.floor(c.minZ / 20); bz <= Math.floor(c.maxZ / 20); bz++) {
+        const key = bx * 100003 + bz;
+        if (!solid.has(key)) solid.set(key, []);
+        solid.get(key).push(c);
+      }
+    }
+  }
+  const nearSolid = (x, z, r) => {
+    for (let bx = Math.floor((x - r) / 20); bx <= Math.floor((x + r) / 20); bx++) {
+      for (let bz = Math.floor((z - r) / 20); bz <= Math.floor((z + r) / 20); bz++) {
+        for (const c of solid.get(bx * 100003 + bz) || []) {
+          if (x > c.minX - r && x < c.maxX + r && z > c.minZ - r && z < c.maxZ + r) return true;
+        }
+      }
+    }
+    return false;
+  };
+  const underRoof = (x, z) => roofs.some((r) => x > r.minX - 3 && x < r.maxX + 3 && z > r.minZ - 3 && z < r.maxZ + 3);
+  if (SEPANG) {
+    const S = sepang.surfaceAt;
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const pnt of sepang.line) { minX = Math.min(minX, pnt.x); maxX = Math.max(maxX, pnt.x); minZ = Math.min(minZ, pnt.z); maxZ = Math.max(maxZ, pnt.z); }
+    const ring = [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]];
+    return buildFlora(scene, {
+      isMobile, style: 'tropical',
+      area: { minX: minX - 260, maxX: maxX + 260, minZ: minZ - 260, maxZ: maxZ + 260 },
+      colliders,
+      canPlace: (x, z, clear) => {
+        if (S(x, z) !== 'grass') return false;
+        for (const [dx, dz] of ring) {
+          if (S(x + dx * clear, z + dz * clear) !== 'grass' || S(x + dx * clear * 0.5, z + dz * clear * 0.5) !== 'grass') return false;
+        }
+        return !underRoof(x, z) && !nearSolid(x, z, 3);
+      },
+    });
+  }
+  // on the islands (trees a few metres in from the edge, so you can drive
+  // round them), and woods beyond the far edges of the ground
+  const onIslands = buildFlora(scene, {
+    isMobile, style: 'temperate', seed: 99, density: 0.6, groves: false,
+    area: { minX: -310, maxX: 310, minZ: -310, maxZ: 310 },
+    colliders,
+    canPlace: (x, z, clear, isTree) => onIsland(x, z, isTree ? 3 : 0.8) && !nearSolid(x, z, 2),
+  });
+  const woods = buildFlora(scene, {
+    isMobile, style: 'temperate',
+    area: { minX: -480, maxX: 480, minZ: -480, maxZ: 480 },
+    colliders,
+    canPlace: (x, z) => !(Math.abs(x) < 310 && Math.abs(z) < 310) && !underRoof(x, z) && !nearSolid(x, z, 4),
+  });
+  return {
+    count: onIslands.count + woods.count,
+    setWind(x, z, t) { onIslands.setWind(x, z, t); woods.setWind(x, z, t); },
+  };
+})();
 
 // ---------------------------------------------------------------------
 // RAIN (rain.js): falling rain, a wet track that dries out afterwards,
@@ -791,7 +889,7 @@ const spinMatrix = new THREE.Matrix4();
 
 function updateWheels(steer, spin) {
   WHEELS.forEach(([x, y, z, isFront], i) => {
-    wheelPos.set(x, y, z);
+    wheelPos.set(x, y + wheelLift[physicsWheel(x, isFront)], z);
     // A deflated tyre: the top keeps its shape while the bottom squashes flat
     // and bulges out where it meets the road. The rim stays round.
     const tyre = physics.tyres[physicsWheel(x, isFront)];
@@ -815,7 +913,8 @@ function updateWheels(steer, spin) {
     const rimScale = tyre.rim ? Math.min(1, (WHEEL_RADIUS - physics.tyreSink[pi]) / (WHEEL_RADIUS * 0.62)) : 1;
     wheelScale.set(1, rimScale, rimScale);
     for (let k = 0; k < 2; k++) {
-      wheelEuler.set(spin + k * Math.PI / 2, isFront ? steer : 0, 0);
+      // (each wheel turns at its own speed: a locked wheel stops, a spinning one blurs)
+      wheelEuler.set((physics.w4 ? physics.w4.angle[pi] : spin) + k * Math.PI / 2, isFront ? steer : 0, 0);
       wheelRot.setFromEuler(wheelEuler);
       wheelMatrix.compose(wheelPos, wheelRot, wheelScale);
       if (k === 0) {
@@ -828,7 +927,7 @@ function updateWheels(steer, spin) {
         const tall = (hubUp + outer) / (2 * WHEEL_RADIUS);
         squashMatrix.makeScale((1 + bulge * 0.35) * (tyre.blown ? 1 + (Math.random() - 0.5) * 0.06 : 1),
           tall, (1 + bulge * 0.6) * shrink).multiply(spinMatrix);
-        squashMatrix.setPosition(x, y + (outer - hubUp) / 2, z);
+        squashMatrix.setPosition(x, wheelPos.y + (outer - hubUp) / 2, z);
         carModel.tyres.setMatrixAt(i, squashMatrix);
         tyreLooks.setMatrixAt(i, squashMatrix);
         carModel.rims.setMatrixAt(i, wheelMatrix);
@@ -852,23 +951,20 @@ const bodyLean = { heave: 0, roll: 0, pitch: 0 };
 const HUB_X = [TRACK_HALF, -TRACK_HALF, TRACK_HALF, -TRACK_HALF];   // FL FR RL RR (+x = left)
 const HUB_Z = [FRONT_AXLE, FRONT_AXLE, REAR_AXLE, REAR_AXLE];
 
+// The car sits on its suspension (physics.js): the body rises, dips,
+// pitches and leans on its springs, and each wheel moves up and down
+// under it to stay on the road (over bumps and kerbs, or when a flat tyre
+// lets that corner drop).
+const wheelLift = [0, 0, 0, 0];
 function fitBodyToTyres(dt) {
-  const hub = physics.tyreSink.map((sink) => WHEEL_RADIUS - sink);
-  const mean = hub.reduce((a, b) => a + b, 0) / 4;
-  let sx = 0, sz = 0, xx = 0, zz = 0;
+  const body = physics.body;
+  bodyLean.heave = body.heave;
+  bodyLean.pitch = body.pitch;
+  bodyLean.roll = body.roll;
   for (let i = 0; i < 4; i++) {
-    sx += hub[i] * HUB_X[i]; xx += HUB_X[i] * HUB_X[i];
-    sz += (hub[i] - mean) * HUB_Z[i]; zz += HUB_Z[i] * HUB_Z[i];
-  }
-  const b = sx / xx;          // height change per metre to the left
-  const c = sz / zz;          // height change per metre forwards
-  const k = Math.min(1, 10 * dt);   // settle smoothly
-  bodyLean.heave += (mean - WHEEL_RADIUS - bodyLean.heave) * k;
-  bodyLean.roll += (Math.atan(b) - bodyLean.roll) * k;
-  bodyLean.pitch += (-Math.atan(c) - bodyLean.pitch) * k;
-  // Where each hub ends up, and so how squashed each tyre must be to reach the road
-  for (let i = 0; i < 4; i++) {
-    const hubHeight = mean + b * HUB_X[i] + c * HUB_Z[i];
+    wheelLift[i] = body.travel[i];                     // how far the wheel has moved up into the body
+    // how squashed each tyre must be to reach the road (flat tyres)
+    const hubHeight = WHEEL_RADIUS - physics.tyreSink[i];
     tyreHub[i] = hubHeight;
     tyreSquash[i] = Math.max(0.62, Math.min(1, (hubHeight + WHEEL_RADIUS) / (2 * WHEEL_RADIUS)));
   }
@@ -1079,7 +1175,7 @@ const shreds = new TyreShreds(scene, skids, { max: isMobile ? 40 : 60 });
 // physics.js) or 'tarmac'. There's a gravel trap and a grass patch so far.
 // (Sepang also has kerbs: grippy like tarmac when dry, slippery when wet)
 const surfaceAt = sepang ? sepang.surfaceAt
-  : (x, z) => (inGravel(x, z) ? 'gravel' : grass.contains(x, z) ? 'grass' : 'tarmac');
+  : (x, z) => (inGravel(x, z) ? 'gravel' : grass.contains(x, z) || onIsland(x, z) ? 'grass' : 'tarmac');
 const dirtTyres = () => TYRES[physics.tyreCompound].kind === 'dirt';
 // IN THE WET: grip depends on how much water each tyre can clear away.
 // Every second, a tyre has to push aside (water depth x tyre width x speed)
@@ -1132,6 +1228,42 @@ physics.surfaceGrip = (x, z) => {
   const g = wetGrip(x, z);
   const onOil = oil.gripAt(x, z);
   return g * (onOil < 1 ? onOil : skids.gripAt(x, z));
+};
+// THE ROAD'S SHAPE under each wheel (for the suspension): tarmac isn't
+// perfectly flat, so there are very gentle swells and small ripples a few
+// millimetres high; kerbs stand 2-3 cm proud with a ripple you feel through
+// the car; grass and gravel are lumpy; at Sepang the grass is 4 cm below
+// the track, so dropping a wheel off the edge drops that corner; and
+// sausage kerbs are 22 cm humps the wheels ride up over.
+const ROAD_BUMP = (x, z) => 0.0035 * Math.sin(x * 0.83 + z * 0.37) * Math.sin(z * 0.91 - x * 0.21)
+  + 0.0016 * Math.sin(x * 3.1 + 1.3) * Math.sin(z * 2.7 + 0.4) + 0.0007 * Math.sin(x * 9.7) * Math.sin(z * 8.3);
+const sausageCells = new Map();
+for (const sk of sepang?.sausages || []) {
+  const key = `${Math.floor(sk.x / 2)},${Math.floor(sk.z / 2)}`;
+  if (!sausageCells.has(key)) sausageCells.set(key, []);
+  sausageCells.get(key).push({ x: sk.x, z: sk.z, fx: Math.sin(sk.heading), fz: Math.cos(sk.heading) });
+}
+function sausageHeight(x, z) {
+  const cx = Math.floor(x / 2), cz = Math.floor(z / 2);
+  let best = 0;
+  for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+    const list = sausageCells.get(`${cx + dx},${cz + dz}`);
+    if (!list) continue;
+    for (const sk of list) {
+      const rx = x - sk.x, rz = z - sk.z;
+      const along = rx * sk.fx + rz * sk.fz, across = rx * sk.fz - rz * sk.fx;
+      if (Math.abs(along) < 0.9 && Math.abs(across) < 0.22) best = Math.max(best, Math.sqrt(0.0484 - across * across));
+    }
+  }
+  return best;
+}
+physics.roadHeight = (x, z) => {
+  const surface = surfaceAt(x, z);
+  const bump = ROAD_BUMP(x, z);
+  if (surface === 'kerb') return 0.025 + 0.006 * Math.sin((x + z) * 6) + bump + (sausageCells.size ? sausageHeight(x, z) : 0);
+  if (surface === 'grass') return (SEPANG ? sepang.groundY : 0) + 4 * bump + 0.006 * Math.sin(x * 5.3) * Math.sin(z * 4.9) + (sausageCells.size ? sausageHeight(x, z) : 0);
+  if (surface === 'gravel') return 3 * bump + 0.008 * Math.sin(x * 7.1 + z * 2) * Math.sin(z * 6.7);
+  return bump + (sausageCells.size ? sausageHeight(x, z) : 0);
 };
 // Loose ground also drags the tyres back as they plough through it (mud
 // most of all), and so does deep water
@@ -1322,11 +1454,12 @@ function updateWind(t) {
   groundWind.z = (sky.wind.y / len) * speed;
   rain.wind = groundWind;
   grass.setWind?.(groundWind.x, groundWind.z, t);
+  flora.setWind(groundWind.x, groundWind.z, t);
   for (const [sys, k] of WIND_USERS) { sys.wind = { x: groundWind.x * k, z: groundWind.z * k }; }
 }
 
 // How hard each kind of barrier hits the car (soft tyre walls are kinder)
-const CRASH_SOFT = { tyres: 0.55, fence: 0.7, armco: 0.85, concrete: 1, building: 1 };
+const CRASH_SOFT = { tyres: 0.55, fence: 0.7, armco: 0.85, concrete: 1, building: 1, tree: 0.95 };
 
 // Tan dust kicked up by tyres rolling through the gravel (instead of tyre smoke)
 const dust = new TyreSmoke(scene, {
@@ -1563,6 +1696,7 @@ const HIT = {
   armco: { bounce: 0.15, grip: 0.25 },      // you slide along it
   tyres: { bounce: 0.4, grip: 0.7 },        // springy, and grabby
   fence: { bounce: 0.05, grip: 0.6 },       // catches you
+  tree: { bounce: 0.2, grip: 0.55 },        // a solid trunk
 };
 // Points round the edge of the car, every 30 cm or so (car's own space: x = left, z = forward)
 const CAR_POINTS = [];
@@ -1995,7 +2129,7 @@ renderer.setAnimationLoop(() => {
   carModel.car.rotation.set(bodyLean.pitch, physics.heading, bodyLean.roll, 'YXZ');
   updateWheels(physics.steer, physics.wheelSpin);
   cockpit.update(dt, {
-    steer: physics.steer, gear: physics.gear, transmission: physics.transmission,
+    steer: physics.steer, kick: physics.steerKick || 0, gear: physics.gear, transmission: physics.transmission,
     handbrake: !!input.handbrake, rpm: physics.rpm, redline: CATERHAM.redline,
     speedKmh: physics.speedKmh, lean: physics.yawRate * physics.vx,
     throttle: input.throttle, brake: input.brake, clutch: physics.clutchIn, horn: !!input.horn,
