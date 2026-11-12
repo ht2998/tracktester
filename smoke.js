@@ -9,7 +9,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 2;
+export const BUILD = 3;
 
 const vertexShader = /* glsl */ `
   attribute float aSize;
@@ -45,10 +45,14 @@ export class TyreSmoke {
   //   wind       - breeze that carries puffs away, m/s ({ x, z })
   //   carry      - how much of the car's speed a puff keeps (smoke hangs
   //                back; spray flung off the tyres keeps more)
+  //   glow       - adds light instead of covering (flames)
+  //   shrink     - puffs get smaller as they go instead of spreading (flames)
   constructor(scene, {
     maxParticles = 400, puffsPerSecond = 30, color = 0xdcdcdc,
     thickness = 1, sizeScale = 1, rise = 1, lifeScale = 1, wind = { x: 0, z: 0 }, carry = 0.12,
+    glow = false, shrink = false,
   } = {}) {
+    this.shrink = shrink;
     this.carry = carry;
     this.max = maxParticles;
     this.rate = puffsPerSecond;   // per source, at full strength
@@ -86,6 +90,7 @@ export class TyreSmoke {
       fragmentShader,
       transparent: true,
       depthWrite: false,
+      blending: glow ? THREE.AdditiveBlending : THREE.NormalBlending,
     });
 
     this.points = new THREE.Points(geo, this.material);
@@ -133,6 +138,7 @@ export class TyreSmoke {
     this.startSize[i] = (0.4 + Math.random() * 0.3) * this.sizeScale;    // metres
     // A harder slide makes thicker, bigger clouds
     this.endSize[i] = (2.6 + Math.random() * 1.6) * this.sizeScale * (0.85 + 0.35 * strength);
+    if (this.shrink) this.endSize[i] = this.startSize[i] * 0.15;
     this.startAlpha[i] = Math.min(0.95, (0.2 * strength + 0.14 * strength * strength + 0.04) * this.thickness);
   }
 
