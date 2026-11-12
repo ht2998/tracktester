@@ -25,6 +25,8 @@ import { RainSystem } from './rain.js';
 import { buildSepang } from './sepang.js';
 import * as sepangFile from './sepang.js';
 import { buildFlora } from './flora.js';
+import { RacingLine } from './racingline.js';
+import * as racingLineFile from './racingline.js';
 import * as floraFile from './flora.js';
 import { Cockpit, EYE } from './cockpit.js';
 import { TyreLooks } from './tyres.js';
@@ -49,7 +51,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 18;
+const BUILD = 19;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -58,7 +60,7 @@ const updateScreen = startUpdates({
   'smoke.js': smokeFile.BUILD, 'hud.js': hudFile.BUILD, 'oil.js': oilFile.BUILD,
   'skids.js': skidsFile.BUILD, 'scenery.js': sceneryFile.BUILD, 'grass.js': grassFile.BUILD,
   'sky.js': skyFile.BUILD, 'debris.js': debrisFile.BUILD, 'touch.js': touchFile.BUILD,
-  'rain.js': rainFile.BUILD, 'effects.js': effectsFile.BUILD, 'cockpit.js': cockpitFile.BUILD, 'tyres.js': tyresFile.BUILD, 'sepang.js': sepangFile.BUILD, 'flora.js': floraFile.BUILD,
+  'rain.js': rainFile.BUILD, 'effects.js': effectsFile.BUILD, 'cockpit.js': cockpitFile.BUILD, 'tyres.js': tyresFile.BUILD, 'sepang.js': sepangFile.BUILD, 'flora.js': floraFile.BUILD, 'racingline.js': racingLineFile.BUILD,
 });
 
 // ---------------------------------------------------------------------
@@ -210,6 +212,13 @@ if (!SEPANG) scene.add(grid);
 // (gravel stone colours, for the textures and the loose stones)
 const GRAVEL_SHADES = ['#9c8158', '#c9b086', '#a88d61', '#d8c39c', '#8a7350', '#bfa476', '#b39769'];
 const sepang = SEPANG ? buildSepang(scene, { isMobile, gravelMaps: makeGravelMaps() }) : null;
+// The racing line, braking zones, corner panel, distance boards and old
+// rubber on the track (racingline.js). On by default; L (or the phone
+// menu) switches the line and the corner panel off and on.
+const racing = sepang ? new RacingLine(scene, { line: sepang.line, corners: sepang.cornerList || [], car: CATERHAM, isMobile }) : null;
+let racingLineOn = true;
+try { racingLineOn = localStorage.getItem('tracktester-racingline') !== 'off'; } catch (e) { /* storage blocked */ }
+racing?.setVisible(racingLineOn);
 if (sepang) {
   sepang.grassTexture.repeat.set(3000 / 6, 3000 / 6);
   ground.material.map = sepang.grassTexture;
@@ -1227,7 +1236,7 @@ physics.surfaceGrip = (x, z) => {
   }
   const g = wetGrip(x, z);
   const onOil = oil.gripAt(x, z);
-  return g * (onOil < 1 ? onOil : skids.gripAt(x, z));
+  return g * (onOil < 1 ? onOil : skids.gripAt(x, z)) * (racing ? racing.rubberGrip(x, z) : 1);   // (old rubber: a touch more grip)
 };
 // THE ROAD'S SHAPE under each wheel (for the suspension): tarmac isn't
 // perfectly flat, so there are very gentle swells and small ripples a few
@@ -2075,6 +2084,16 @@ renderer.setAnimationLoop(() => {
   if (wasTapped('shiftDown')) physics.shiftDown();
   if (wasTapped('mute')) engineSound.setMuted(!engineSound.muted);
   if (wasTapped('lights')) lightsSetting = (lightsSetting + 1) % 4;
+  if (wasTapped('racingLine') && racing) {
+    racingLineOn = !racingLineOn;
+    racing.setVisible(racingLineOn);
+    try { localStorage.setItem('tracktester-racingline', racingLineOn ? 'on' : 'off'); } catch (e) { /* storage blocked */ }
+  }
+  if (racing) {
+    // the plan's grip: the tyres fitted, less in the wet
+    const gripNow = 1.3 * TYRES[physics.tyreCompound].grip * (1 - 0.3 * rain.wetness);
+    racing.update(dt, physics.x, physics.z, physics.heading, Math.hypot(physics.vx, physics.vy), gripNow, rain.intensity);
+  }
   // Auto: on when it gets dark or rains properly (off again a little later,
   // so they don't flicker at the changeover)
   if (lightsSetting === 1) {
@@ -2219,7 +2238,7 @@ renderer.setAnimationLoop(() => {
     tyreWindow: physics.tempWindow,
     time: clock.elapsedTime,
   });
-  touchUI?.update({ transmission: physics.transmission, gearLabel: physics.gearLabel, muted: engineSound.muted, lights: lightsSetting });
+  touchUI?.update({ transmission: physics.transmission, gearLabel: physics.gearLabel, muted: engineSound.muted, lights: lightsSetting, racingLine: racing ? racingLineOn : null });
 
   if (cameraMode === 'cockpit') cockpit.renderMirrors(renderer, scene);
   renderer.render(scene, camera);
