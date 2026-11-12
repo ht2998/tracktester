@@ -21,11 +21,21 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 17;
+export const BUILD = 18;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 20, date: '12 Nov 2026', title: 'A proper cockpit and driver',
+    items: [
+      ['Legs and pedals', 'The cockpit now has a real footwell with clutch, brake and throttle pedals. The driver has legs: the right foot works the throttle and moves across to the brake, and the left foot rests on the floor until you press the clutch. You can see the knees move from the driver\'s seat', 'cockpit'],
+      ['Horn', 'Press the horn and the driver\'s right hand presses the middle of the steering wheel, which has a horn button now', 'driver'],
+      ['Gear stick and handbrake', 'The gear stick has a leather gaiter, a chrome collar and a knob with the gear pattern printed on top. The handbrake has a rubber grip, a release button and a ratchet', 'cockpit'],
+      ['Smoother driver', 'Rounded arms and legs, a properly shaped body, hips, gloves with thumbs and racing boots', 'driver'],
+      ['Smoother car', 'The body, nose and rear wings have rounded edges instead of sharp corners, and the cockpit is open and deep instead of a flat lid with the seats on top', 'car'],
+    ],
+  },
   {
     id: 19, date: '12 Nov 2026', title: 'Easier on phones',
     items: [
