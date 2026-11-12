@@ -24,7 +24,7 @@
 //    Rubbered-in track grips a little better. Rain washes it away.
 import * as THREE from 'three';
 
-export const BUILD = 1;
+export const BUILD = 2;
 
 const G = 9.81;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -611,5 +611,283 @@ class CornerPanel {
     g.lineTo(ex - ty * 13, ey + tx * 13);
     g.lineTo(ex + ty * 13, ey - tx * 13);
     g.closePath(); g.fill();
+  }
+}
+
+// =====================================================================
+// LAP AND SECTOR TIMING. The lap is split into three sectors like the real
+// circuit's timing: S1 from the line to the straight between T4 and T5, S2
+// on to the straight between T11 and T12, S3 back to the line. The timer
+// starts when you first cross the line. Each sector's time shows as you
+// finish it: purple for your best ever, yellow if slower. The live gap to
+// your best lap shows as you go (green ahead, red behind). Leave the track
+// (all four wheels off it, more or less) and the lap is invalid: it's
+// still timed but won't count as a best. Bests are remembered.
+// =====================================================================
+export class LapTimer {
+  constructor(racing, { onTrack, storeKey = 'tracktester-sepang-best' }) {
+    this.r = racing;
+    this.onTrack = onTrack;          // (x, z) -> is that on the track (tarmac or kerb)?
+    this.storeKey = storeKey;
+    const m = racing.m;
+    // the sector lines: midway along the straights after T4 and T11
+    const between = (a, b) => {
+      const ca = racing.corners[a - 1], cb = racing.corners[b - 1];
+      if (!ca || !cb) return Math.round(m * (a < 8 ? 0.33 : 0.66));
+      const end = ((ca.b % m) + m) % m, start = ((cb.a % m) + m) % m;
+      const gap = (start - end + m) % m;
+      if (gap > m / 2) return Math.round((start + end) / 2) % m;   // (the two corners run into each other)
+      return (end + Math.round(gap / 2)) % m;
+    };
+    this.cuts = [between(4, 5), between(11, 12), 0];          // where S1, S2 and S3 end
+    this.best = { lap: null, sectors: [null, null, null], splits: null };
+    try { Object.assign(this.best, JSON.parse(localStorage.getItem(storeKey) || '{}')); } catch (e) { /* storage blocked */ }
+    this.running = false;
+    this.lap = 0;
+    this.t = 0;
+    this.sector = 0;
+    this.sectorStart = 0;
+    this.sectorTimes = [null, null, null];
+    this.sectorState = ['', '', ''];
+    this.valid = true;
+    this.offFor = 0;
+    this.last = null;
+    this.lastIdx = null;
+    this.splits = new Float64Array(Math.ceil(m / 10) + 1).fill(-1);   // time at every 20 m (for the live gap)
+    this.flash = 0;
+    this.buildPanel();
+  }
+
+  buildPanel() {
+    // (built piece by piece)
+    const make = (tag, cls, parent, text = '') => { const e = document.createElement(tag); e.className = cls; e.textContent = text; parent.appendChild(e); return e; };
+    const el = document.createElement('div');
+    el.id = 'lap-panel';
+    const main = make('div', 'lp-row lp-main', el);
+    this.lapEl = make('span', 'lp-lap', main, 'LAP –');
+    this.timeEl = make('span', 'lp-time', main, '0:00.000');
+    this.deltaEl = make('div', 'lp-row lp-delta', el);
+    const secs = make('div', 'lp-sectors', el);
+    this.sEls = [1, 2, 3].map((k) => make('span', 'lp-s', secs, `S${k} –`));
+    const small = make('div', 'lp-row lp-small', el);
+    this.lastEl = make('span', 'lp-last', small, 'LAST –');
+    this.bestEl = make('span', 'lp-best', small, 'BEST –');
+    const style = document.createElement('style');
+    style.textContent = `
+      #lap-panel { position: fixed; left: calc(10px + env(safe-area-inset-left)); top: calc(10px + env(safe-area-inset-top));
+        min-width: 190px; padding: 6px 10px 7px; border-radius: 9px; background: rgba(8, 10, 14, 0.6); color: #f2f2f2;
+        font: 600 14px "Barlow Condensed", "Arial Narrow", Arial, sans-serif; pointer-events: none; z-index: 30; letter-spacing: 0.03em; }
+      #lap-panel .lp-row { display: flex; justify-content: space-between; gap: 12px; }
+      #lap-panel .lp-main { font-size: 22px; line-height: 1.1; }
+      #lap-panel .lp-lap { opacity: 0.75; font-size: 16px; align-self: center; }
+      #lap-panel .lp-time { font-variant-numeric: tabular-nums; }
+      #lap-panel.invalid .lp-time { color: #9a9a9a; text-decoration: line-through; }
+      #lap-panel .lp-delta { font-size: 15px; justify-content: flex-end; min-height: 17px; font-variant-numeric: tabular-nums; }
+      #lap-panel .lp-delta.ahead { color: #34d058; }
+      #lap-panel .lp-delta.behind { color: #ff5a4e; }
+      #lap-panel .lp-sectors { display: flex; gap: 4px; margin: 3px 0; }
+      #lap-panel .lp-s { flex: 1; text-align: center; padding: 1px 3px; border-radius: 4px; background: rgba(255,255,255,0.08); font-size: 13px; font-variant-numeric: tabular-nums; }
+      #lap-panel .lp-s.purple { background: #8a3ad6; color: #fff; }
+      #lap-panel .lp-s.yellow { background: #d8b11c; color: #111; }
+      #lap-panel .lp-s.current { outline: 1.5px solid rgba(255,255,255,0.6); }
+      #lap-panel .lp-small { font-size: 13px; opacity: 0.85; font-variant-numeric: tabular-nums; }
+      @media (max-width: 700px), (max-height: 500px) {
+        #lap-panel { top: calc(60px + env(safe-area-inset-top)); min-width: 150px; padding: 4px 8px 5px; font-size: 12px; }
+        #lap-panel .lp-main { font-size: 17px; }
+        #lap-panel .lp-lap { font-size: 13px; }
+        #lap-panel .lp-delta { font-size: 12px; min-height: 14px; }
+        #lap-panel .lp-s { font-size: 11px; }
+        #lap-panel .lp-small { font-size: 11px; }
+      }`;
+    document.head.appendChild(style);
+    document.body.appendChild(el);
+    this.el = el;
+  }
+
+  // Back to the start (the car was reset): the lap in progress is dropped
+  abort() {
+    this.running = false;
+    this.lastIdx = null;
+    this.sectorTimes = [null, null, null];
+    this.sectorState = ['', '', ''];
+  }
+
+  save() {
+    try { localStorage.setItem(this.storeKey, JSON.stringify({ lap: this.best.lap, sectors: this.best.sectors, splits: this.best.splits })); } catch (e) { /* storage blocked */ }
+  }
+
+  // Every frame, after the racing line has found the car (racing.near)
+  update(dt, x, z) {
+    const m = this.r.m, idx = this.r.near;
+    if (this.running) this.t += dt;
+    const prev = this.lastIdx;
+    this.lastIdx = idx;
+    // off the track? (more than half a second with the middle of the car off it)
+    if (this.running) {
+      this.offFor = this.onTrack(x, z) ? 0 : this.offFor + dt;
+      if (this.offFor > 0.5) this.valid = false;
+      const slot = Math.floor(idx / 10);
+      if (this.splits[slot] < 0) this.splits[slot] = this.t;
+    }
+    if (prev != null) {
+      const step = (idx - prev + m) % m;
+      if (step > 0 && step < 60) {                     // moving forwards along the track
+        const crossed = (cut) => ((cut - prev + m) % m) > 0 && ((cut - prev + m) % m) <= step;
+        // the line: start, or finish a lap
+        if (crossed(0)) {
+          if (this.running && this.sector === 2) this.finishSector(2, true);
+          this.startLap();
+        } else if (this.running && this.sector < 2 && crossed(this.cuts[this.sector])) {
+          this.finishSector(this.sector, false);
+        }
+      }
+    }
+    this.draw();
+  }
+
+  startLap() {
+    this.running = true;
+    this.lap += 1;
+    this.t = 0;
+    this.sector = 0;
+    this.sectorStart = 0;
+    this.sectorTimes = [null, null, null];
+    this.sectorState = ['', '', ''];
+    this.valid = true;
+    this.offFor = 0;
+    this.splits.fill(-1);
+    this.splits[0] = 0;
+  }
+
+  finishSector(k, lapDone) {
+    const time = this.t - this.sectorStart;
+    this.sectorTimes[k] = time;
+    const bestS = this.best.sectors[k];
+    if (this.valid && (bestS == null || time < bestS)) { this.best.sectors[k] = time; this.sectorState[k] = 'purple'; }
+    else this.sectorState[k] = 'yellow';
+    this.sectorStart = this.t;
+    this.sector = k + 1;
+    if (lapDone) {
+      this.last = { time: this.t, valid: this.valid };
+      if (this.valid && (this.best.lap == null || this.t < this.best.lap)) {
+        this.best.lap = this.t;
+        this.best.splits = Array.from(this.splits);
+      }
+      this.save();
+      this.flash = 4;      // show the finished lap's sectors for a few seconds
+      this.finishedSectors = [...this.sectorTimes];
+      this.finishedStates = [...this.sectorState];
+    } else {
+      this.save();
+    }
+  }
+
+  draw() {
+    const fmt = (t) => t == null ? '–' : `${Math.floor(t / 60)}:${(t % 60).toFixed(3).padStart(6, '0')}`;
+    const short = (t) => t == null ? '–' : t < 60 ? t.toFixed(2) : fmt(t);
+    this.flash = Math.max(0, this.flash - 1 / 60);
+    const showDone = this.flash > 0 && this.finishedSectors;
+    this.lapEl.textContent = this.running ? `LAP ${this.lap}` : 'OUT LAP';
+    this.timeEl.textContent = this.running ? fmt(this.t) : '–:––.–––';
+    this.el.classList.toggle('invalid', this.running && !this.valid);
+    // the gap to the best lap at this point
+    const slot = Math.floor(this.r.near / 10);
+    const ref = this.best.splits?.[slot];
+    if (this.running && ref != null && ref >= 0 && this.splits[slot] >= 0) {
+      const d = this.splits[slot] - ref;
+      this.deltaEl.textContent = `${d >= 0 ? '+' : '−'}${Math.abs(d).toFixed(2)}`;
+      this.deltaEl.className = `lp-row lp-delta ${d < 0 ? 'ahead' : 'behind'}`;
+    } else {
+      this.deltaEl.textContent = '';
+    }
+    for (let k = 0; k < 3; k++) {
+      const t = showDone ? this.finishedSectors[k] : this.sectorTimes[k];
+      const st = showDone ? this.finishedStates[k] : this.sectorState[k];
+      const txt = `S${k + 1} ${short(t)}`;
+      if (this.sEls[k].textContent !== txt) this.sEls[k].textContent = txt;
+      this.sEls[k].className = `lp-s ${st}${!showDone && this.running && this.sector === k ? ' current' : ''}`;
+    }
+    this.lastEl.textContent = `LAST ${this.last ? fmt(this.last.time) + (this.last.valid ? '' : '*') : '–'}`;
+    this.bestEl.textContent = `BEST ${fmt(this.best.lap)}`;
+  }
+}
+
+// =====================================================================
+// TRACK MAP in the corner: the whole circuit from above (north up), the
+// three sectors in slightly different shades, the start line, and a dot
+// for the car (with a little arrow showing which way it's going).
+// =====================================================================
+export class TrackMap {
+  constructor(racing, cuts) {
+    this.r = racing;
+    const cv = document.createElement('canvas');
+    cv.id = 'track-map';
+    const style = document.createElement('style');
+    style.textContent = `
+      #track-map { position: fixed; right: calc(10px + env(safe-area-inset-right)); top: calc(36px + env(safe-area-inset-top));
+        width: 150px; height: 150px; pointer-events: none; z-index: 30; border-radius: 10px; background: rgba(8, 10, 14, 0.45); }
+      @media (max-width: 700px), (max-height: 500px) { #track-map { width: 96px; height: 96px; top: calc(32px + env(safe-area-inset-top)); } }`;
+    document.head.appendChild(style);
+    document.body.appendChild(cv);
+    this.cv = cv;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = cv.height = Math.round(150 * dpr);
+    // the circuit scaled into the square
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const p of racing.pts) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z); }
+    const W = cv.width, pad = W * 0.09;
+    const scale = (W - 2 * pad) / Math.max(maxX - minX, maxZ - minZ);
+    const ox = (W - (maxX - minX) * scale) / 2, oz = (W - (maxZ - minZ) * scale) / 2;
+    this.map = (x, z) => [ox + (x - minX) * scale, oz + (z - minZ) * scale];     // north (-z) up
+    // the track, drawn once
+    this.base = document.createElement('canvas');
+    this.base.width = this.base.height = W;
+    const g = this.base.getContext('2d');
+    const m = racing.m;
+    const shades = ['#e8e8e8', '#bfc3c8', '#e8e8e8'];
+    const sectorOf = (i) => (i < cuts[0] ? 0 : i < cuts[1] ? 1 : 2);
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    g.lineWidth = W * 0.035; g.strokeStyle = 'rgba(0,0,0,0.55)';
+    g.beginPath();
+    racing.pts.forEach((p, i) => { const [a, b] = this.map(p.x, p.z); if (i) g.lineTo(a, b); else g.moveTo(a, b); });
+    g.closePath(); g.stroke();
+    g.lineWidth = W * 0.018;
+    for (let s = 0; s < 3; s++) {
+      g.strokeStyle = shades[s];
+      g.beginPath();
+      let started = false;
+      for (let i = 0; i <= m; i++) {
+        const p = racing.pts[i % m];
+        if (sectorOf(i % m) !== s && !(i === m && s === 2)) { started = false; continue; }
+        const [a, b] = this.map(p.x, p.z);
+        if (!started) { g.moveTo(a, b); started = true; } else g.lineTo(a, b);
+      }
+      g.stroke();
+    }
+    // start line and sector marks
+    const mark = (i, colour) => {
+      const p = racing.pts[i];
+      const [a, b] = this.map(p.x, p.z);
+      g.strokeStyle = colour; g.lineWidth = W * 0.012;
+      g.beginPath(); g.moveTo(a - p.nx * W * 0.04, b - p.nz * W * 0.04); g.lineTo(a + p.nx * W * 0.04, b + p.nz * W * 0.04); g.stroke();
+    };
+    mark(0, '#ff3b30');
+    mark(cuts[0], '#ffd23c');
+    mark(cuts[1], '#ffd23c');
+  }
+
+  update(x, z, heading) {
+    const g = this.cv.getContext('2d'), W = this.cv.width;
+    g.clearRect(0, 0, W, W);
+    g.drawImage(this.base, 0, 0);
+    const [a, b] = this.map(x, z);
+    const fx = Math.sin(heading), fz = Math.cos(heading);
+    g.fillStyle = '#ffd23c'; g.strokeStyle = '#111'; g.lineWidth = W * 0.01;
+    g.beginPath();
+    const s = W * 0.045;
+    g.moveTo(a + fx * s, b + fz * s);
+    g.lineTo(a - fx * s * 0.6 + fz * s * 0.6, b - fz * s * 0.6 - fx * s * 0.6);
+    g.lineTo(a - fx * s * 0.6 - fz * s * 0.6, b - fz * s * 0.6 + fx * s * 0.6);
+    g.closePath(); g.fill(); g.stroke();
   }
 }
