@@ -21,11 +21,29 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 15;
+export const BUILD = 16;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 18, date: '12 Nov 2026', title: 'Crash damage, fire, tyre temperatures and wind',
+    items: [
+      ['Crash damage depends on the hit', 'Nose first: the nose crumples and the radiator gets holed (steam, leaking coolant). Hit the front again, or very hard, and the engine behind it gets damaged. Backwards into a wall: the tail crumples and the fuel tank can split and leak. Side hits knock that wheel out of line, so the car pulls to one side, and a hard one can puncture the tyre. Soft tyre walls do less damage than concrete', 'debris'],
+      ['Overheating', 'With a holed radiator the coolant runs out, the engine gets hotter (new temperature light: amber when hot, flashing red when boiling) and then cooks itself if you keep pushing', 'gauges'],
+      ['Fire', 'A big hit on a badly damaged engine, or with fuel leaking, can set the engine bay alight: flames, black smoke and an orange glow. The fire wrecks the engine and burns out after a while. Backspace repairs everything', 'fire'],
+      ['Scratches', 'Scrape along a wall and the side of the car gets scratched down to bare metal, where it touched', 'sparks'],
+      ['Tyre temperatures', 'Tyres warm up as they work (cornering, braking, sliding) and cool in the air, and much faster in the rain. Each type grips best in its own range; cold or overheated tyres grip less, and hot ones wear faster. The tyre bars show each tyre\'s temperature: blue cold, green right, red hot', 'tyres'],
+      ['Tyres last longer', 'Fixed tyres wearing out in under a lap: the front tyres were being worn as if they were sliding whenever they were near their grip limit. Wheelspin wears the rears less too', 'tyres'],
+      ['Better tyres in the rain', 'Tyres wear less in the wet (it keeps them cool), wet tyres clear more water and grip better in it, and treaded tyres throw sheets of water out to the sides', 'aquaplane'],
+      ['Easier to read dash in the driver\'s view', 'The dash screen is bigger and sits in a pod on top of the dash, straight ahead, seen through the top of the steering wheel, so the gear stick can\'t hide it. Each tyre shows its temperature and how much tread is left', 'cockpit'],
+      ['Wind', 'It\'s breezy on a clear day and blows hard in a storm, in gusts: the rain slants, the clouds race across, the grass sways, and smoke, steam and dust blow away downwind', 'storm'],
+      ['Bare rims and lost wheels', 'A bare rim now scores pale grey lines into the road instead of tyre marks, the flying bits are lighter metal flakes, and a corner with its wheel gone no longer throws sparks', 'wheeloff'],
+      ['Rims stay inside the tyres', 'Fixed the rim sometimes poking through a squashed tyre', 'tread'],
+      ['Oil runs out gradually', 'As the oil runs low the trail gets thinner and patchier, then only the odd drop', 'debris'],
+      ['Update screen once', 'The update screen now only pops up once for each update, not every time you open or refresh the game', 'update'],
+    ],
+  },
   {
     id: 17, date: '12 Nov 2026', title: 'Sepang, and barriers that bend where you hit them',
     items: [
@@ -216,6 +234,7 @@ export const UPDATES = [
 
 const FONT = '"Barlow Condensed", "Arial Narrow", sans-serif';
 const SEEN_KEY = 'tracktester-last-update';
+const STALE_KEY = 'tracktester-stale-shown';   // which old files we've already warned about
 const RETRY_KEY = 'tracktester-refreshed';
 
 const store = {
@@ -362,6 +381,12 @@ function steeringWheel(c, x, y, r) {
 
 const PICTURES = {
   car(c) { sky(c, '#7fb6ea', '#cfe4f5'); car(c, 100, 124, 1.15); },
+  fire(c) {
+    sky(c, '#2a2f3a', '#5a5f66');
+    car(c, 100, 124, 1.15);
+    for (let k = 0; k < 9; k++) circle(c, 190 + (k % 3) * 9 - 9, 40 - k * 3, 22 - k * 1.5, `rgba(40, 40, 42, ${0.55 - k * 0.05})`);   // smoke
+    for (let k = 0; k < 7; k++) circle(c, 186 + Math.sin(k * 2.1) * 9, 96 - k * 7, 12 - k * 1.3, k < 3 ? '#ff6a1a' : '#ffc640');   // flames
+  },
   gauges(c) {
     c.fillStyle = '#15181c'; c.fillRect(0, 0, PW, PH);
     for (let i = 0; i < 10; i++) circle(c, 70 + i * 20, 18, 6, i < 4 ? '#2bdc4a' : i < 7 ? '#ff2a2a' : '#1b1f25');
@@ -1001,14 +1026,22 @@ export function startUpdates(loaded) {
       store.remove(RETRY_KEY, 'sessionStorage');
     }
     screen.setStatus(result);
+    // Old copies loaded (after the automatic refresh tried): say so once for
+    // that set of old files, not every time the page loads
     const stillOld = result.known && result.stale.length;
-    if (missed.length || stillOld) {
+    const staleKey = stillOld ? result.stale.map((f) => `${f.file}:${f.have}`).sort().join(',') : '';
+    const staleNew = stillOld && store.get(STALE_KEY) !== staleKey;
+    if (stillOld) store.set(STALE_KEY, staleKey);
+    if (missed.length || staleNew) {
       if (firstVisit) screen.show(UPDATES.slice(0, 1), 'The latest update');
       else if (missed.length) {
         screen.show(missed, missed.length === 1 ? '1 update since your last visit'
           : `${missed.length} updates since your last visit`);
       } else screen.show(UPDATES.slice(0, 1), 'Some files are out of date');
     }
+    // It only opens by itself once per update: showing it counts as seen,
+    // even if the page is reloaded without closing it
+    if (missed.length) store.set(SEEN_KEY, String(UPDATES[0].id));
   });
 
   // From the side panel: the full list
