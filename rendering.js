@@ -45,7 +45,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 6;
+const BUILD = 7;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -365,6 +365,7 @@ function pickPuddleSpots(count) {
 }
 const rain = new RainSystem(scene, {
   isMobile,
+  roofs: echoSurfaces.roofs || [],         // rain stops on the garage and race control roofs
   spots: {
     puddles: pickPuddleSpots(isMobile ? 12 : 18),
     // Mud: low spots in the grass patch
@@ -1114,6 +1115,7 @@ function updateSmoke(dt) {
   mudSpray.update(dt);
   grassBits.update(dt);
   mudClumps.update(dt);
+  chips.update(dt);
 
   // Skid marks: each tyre marks the tarmac while it slides, spins or locks
   // (not the gravel). Tyre squeal follows the same skid measure as the marks,
@@ -1160,6 +1162,118 @@ function updateSmoke(dt) {
   // (stops once the oil has all run out: there's nothing left to leak)
   const leakRate = !physics.leakingOil ? 0 : physics.engineBlown ? 2 : 1;
   oil.update(dt, physics.x, physics.z, physics.heading, physics.vx, leakRate);
+}
+
+// ---------------------------------------------------------------------
+// CRASHES: the car against buildings, walls and barriers
+// The car is a rectangle seen from above; everything it can hit is a box
+// (scenery.js). Each step, find the deepest overlap, push the car back out,
+// and bounce it off: the part of its motion into the wall is stopped (and a
+// little sent back), the part along the wall is slowed by friction, and a
+// hit off the car's centre sets it spinning, as in a real crash.
+// Barriers give way: Armco dents, tyre walls squash back, fences bulge,
+// concrete cracks (and throws chips). Buildings don't move.
+// ---------------------------------------------------------------------
+const COLLIDERS = echoSurfaces.colliders || [];
+const CAR_FRONT = 1.53, CAR_REAR = 1.52, CAR_HALF_W = 0.8;
+const CAR_MASS = CATERHAM.mass || 560;
+const CAR_INERTIA = CAR_MASS * ((CAR_FRONT + CAR_REAR) ** 2 + (2 * CAR_HALF_W) ** 2) / 12;
+// bounce: how much speed into the wall comes back out; grip: friction along it
+const HIT = {
+  building: { bounce: 0.15, grip: 0.5 },
+  concrete: { bounce: 0.2, grip: 0.45 },
+  armco: { bounce: 0.15, grip: 0.25 },      // you slide along it
+  tyres: { bounce: 0.4, grip: 0.7 },        // springy, and grabby
+  fence: { bounce: 0.05, grip: 0.6 },       // catches you
+};
+// Points round the edge of the car, every 30 cm or so (car's own space: x = left, z = forward)
+const CAR_POINTS = [];
+for (let x = -CAR_HALF_W; x <= CAR_HALF_W + 1e-6; x += CAR_HALF_W / 3) CAR_POINTS.push([x, CAR_FRONT], [x, -CAR_REAR]);
+for (let z = -CAR_REAR + 0.3; z < CAR_FRONT - 0.1; z += 0.3) CAR_POINTS.push([CAR_HALF_W, z], [-CAR_HALF_W, z]);
+const lastHit = new Map();
+const chips = new FlyingBits(scene, { max: isMobile ? 80 : 140, colours: [0xb8b5ae, 0xa9a59c, 0xd0cdc5], size: [0.02, 0.06], flat: false });
+const chipVel = new THREE.Vector3();
+
+function findContact() {
+  const cx = physics.x, cz = physics.z, h = physics.heading;
+  const fx = Math.sin(h), fz = Math.cos(h), lx = Math.cos(h), lz = -Math.sin(h);
+  let best = null;
+  const consider = (depth, nx, nz, px, pz, c) => {
+    if (depth > 0 && (!best || depth > best.depth)) best = { depth, nx, nz, px, pz, c };
+  };
+  for (const c of COLLIDERS) {
+    if (c.maxX < cx - 2.2 || c.minX > cx + 2.2 || c.maxZ < cz - 2.2 || c.minZ > cz + 2.2) continue;
+    // Corners and edges of the car inside the box: pushed out through the
+    // nearest face that's on the car's side of the box
+    for (const [px, pz] of CAR_POINTS) {
+      const wx = cx + fx * pz + lx * px, wz = cz + fz * pz + lz * px;
+      if (wx <= c.minX || wx >= c.maxX || wz <= c.minZ || wz >= c.maxZ) continue;
+      const faces = [
+        [wx - c.minX, -1, 0, cx < c.minX], [c.maxX - wx, 1, 0, cx > c.maxX],
+        [wz - c.minZ, 0, -1, cz < c.minZ], [c.maxZ - wz, 0, 1, cz > c.maxZ],
+      ];
+      const facing = faces.filter((f) => f[3]);
+      const pick = (facing.length ? facing : faces).reduce((a, b) => (b[0] < a[0] ? b : a));
+      consider(pick[0], pick[1], pick[2], wx, wz, c);
+    }
+    // Corners of the box inside the car (a post or the corner of a wall
+    // poking into the car's side): the car is pushed off it
+    for (const [bx, bz] of [[c.minX, c.minZ], [c.minX, c.maxZ], [c.maxX, c.minZ], [c.maxX, c.maxZ]]) {
+      const rx = bx - cx, rz = bz - cz;
+      const along = rx * fx + rz * fz, side = rx * lx + rz * lz;
+      if (along >= CAR_FRONT || along <= -CAR_REAR || Math.abs(side) >= CAR_HALF_W) continue;
+      const edges = [
+        [CAR_FRONT - along, -fx, -fz], [along + CAR_REAR, fx, fz],
+        [CAR_HALF_W - side, -lx, -lz], [side + CAR_HALF_W, lx, lz],
+      ];
+      const e = edges.reduce((a, b) => (b[0] < a[0] ? b : a));
+      consider(e[0], e[1], e[2], bx, bz, c);
+    }
+  }
+  return best;
+}
+
+function collide(now) {
+  for (let iter = 0; iter < 4; iter++) {
+    const k = findContact();
+    if (!k) return;
+    physics.x += k.nx * k.depth;
+    physics.z += k.nz * k.depth;
+    const h = physics.heading;
+    const fx = Math.sin(h), fz = Math.cos(h), lx = Math.cos(h), lz = -Math.sin(h);
+    let vx = fx * physics.vx + lx * physics.vy, vz = fz * physics.vx + lz * physics.vy;
+    let w = physics.yawRate;
+    const rx = k.px - physics.x, rz = k.pz - physics.z;
+    const pvx = vx + w * rz, pvz = vz - w * rx;                     // how fast that part of the car is moving
+    const vn = pvx * k.nx + pvz * k.nz;
+    if (vn >= 0) continue;                                          // already moving away
+    const props = HIT[k.c.kind] || HIT.building;
+    let bounce = props.bounce;
+    // A proper hit: the barrier reacts (dents, squashes, cracks)
+    if (k.c.hit && -vn > 1.5 && now - (lastHit.get(k.c) ?? -9) > 0.25) {
+      lastHit.set(k.c, now);
+      const res = k.c.hit({ x: k.px, z: k.pz }, { x: k.nx, z: k.nz }, -vn);
+      if (res?.absorb) bounce *= 1 - res.absorb;                    // a barrier that gives way bounces you back less
+      if (res?.chips) {
+        chipVel.set(k.nx * 3, 0, k.nz * 3).addScaledVector(carVelocity, 0.3);
+        for (let i = 0; i < res.chips; i++) chips.spawn({ x: k.px, z: k.pz }, chipVel, 1);
+      }
+    }
+    // Stop (and bounce) the motion into the wall
+    const rn = rz * k.nx - rx * k.nz;
+    const jn = -(1 + bounce) * vn / (1 / CAR_MASS + rn * rn / CAR_INERTIA);
+    vx += jn * k.nx / CAR_MASS; vz += jn * k.nz / CAR_MASS; w += rn * jn / CAR_INERTIA;
+    // Friction along the wall (no more than the push allows)
+    const tx = -k.nz, tz = k.nx;
+    const vt = (vx + w * rz) * tx + (vz - w * rx) * tz;
+    const rt = rz * tx - rx * tz;
+    let jt = -vt / (1 / CAR_MASS + rt * rt / CAR_INERTIA);
+    jt = Math.max(-props.grip * jn, Math.min(props.grip * jn, jt));
+    vx += jt * tx / CAR_MASS; vz += jt * tz / CAR_MASS; w += rt * jt / CAR_INERTIA;
+    physics.vx = vx * fx + vz * fz;
+    physics.vy = vx * lx + vz * lz;
+    physics.yawRate = w;
+  }
 }
 
 // ---------------------------------------------------------------------
@@ -1392,7 +1506,14 @@ renderer.setAnimationLoop(() => {
   }
 
   const input = readControls();
-  physics.update(input, dt);
+  // Fast cars move in smaller steps, so they can't skip through a thin
+  // barrier between one frame and the next
+  const stepSpeed = Math.hypot(physics.vx, physics.vy);
+  const steps = Math.min(6, Math.max(1, Math.ceil(stepSpeed * dt / 0.3)));
+  for (let k = 0; k < steps; k++) {
+    physics.update(input, dt / steps);
+    collide(clock.elapsedTime);
+  }
   engineSound.setHorn(input.horn);
   // Brake lights: bright while braking, dim red with the lights on
   carModel.tailLens.emissiveIntensity = input.brake > 0.05 ? 2.2 : lightsMode ? 0.6 : 0;
