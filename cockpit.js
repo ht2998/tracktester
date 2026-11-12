@@ -20,7 +20,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 9;
+export const BUILD = 10;
 
 const DRIVER_X = -0.18;
 // The steering wheel's centre and tilt
@@ -651,7 +651,7 @@ export class Cockpit {
   // speedKmh, lean, throttle, brake, clutch, horn }
   update(dt, st) {
     // Steering wheel
-    const turn = st.steer * STEER_RATIO;
+    const turn = st.steer * STEER_RATIO + (st.kick || 0) * 4; // (+ the road knocking the wheel: no power steering)
     this.wheelSpin.rotation.z = turn;
     // Paddles flick back after a pull
     for (const p of Object.values(this.paddles)) {
