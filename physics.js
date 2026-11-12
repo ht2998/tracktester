@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 2;
+export const BUILD = 3;
 
 const G = 9.81;   // gravity, m/s²
 const RPM_PER_RADS = 60 / (2 * Math.PI);
@@ -22,8 +22,8 @@ export const CATERHAM = {
   inertia: 680,           // how hard it is to spin the car (kg·m²)
   cgToFront: 1.15,        // metres from the centre of mass to the front axle
   cgToRear: 1.05,         // metres from the centre of mass to the rear axle
-  frontGrip: 1.15,        // tyre grip (1.0 = ordinary road tyre on dry tarmac)
-  rearGrip: 1.32,         // sticky track-day tyres; a bit more at the back keeps it stable
+  frontGrip: 1.38,        // tyre grip (1.0 = ordinary road tyre on dry tarmac): raised ~20% so it feels planted
+  rearGrip: 1.58,         // sticky track-day tyres; a bit more at the back keeps it stable
   maxPushShare: 0.92,     // most of the rear grip the engine can use for pushing
   cgHeight: 0.38,         // metres: weight shifts back when accelerating, forward when braking
   downforce: 0.55,        // N per (m/s)²: small, but presses the tyres down at speed
@@ -788,8 +788,9 @@ export class CarPhysics {
     // spin, and spinning tyres lose most of their sideways grip: that's what
     // lets the car swing round into a donut. At high speed in a tall gear the
     // engine can't overpower them, so fast corners stay stable.
-    const wheelspinAmount = clamp((requestedPush / maxRear - 1) / 0.8, 0, 1);
-    maxRearSide *= 1 - 0.65 * wheelspinAmount;
+    // (gentler than before: a bit of wheelspin no longer throws the back out)
+    const wheelspinAmount = clamp((requestedPush / maxRear - 1) / 1.2, 0, 1);
+    maxRearSide *= 1 - 0.45 * wheelspinAmount;
     this.lastWheelspin = throttle > 0 ? wheelspinAmount : 0;   // for the revs next step
 
     const forceX = drive - resist;
