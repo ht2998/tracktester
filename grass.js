@@ -10,7 +10,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 1;
+export const BUILD = 2;
 
 const CELL = 0.5;   // metres: lookup grid for "which tufts are under this tyre?"
 const LENGTHS = [0.045, 0.085, 0.14];   // metres: short, medium, long
@@ -59,6 +59,25 @@ export class GrassPatch {
     // Three lengths of grass, mixed in patches (longer in some spots)
     const geo = makeTuftGeometry();
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide });
+    // Swaying in the wind: the tips bend downwind, more for long grass, in
+    // gusts that roll across the patch (done on the graphics card)
+    this.windUniforms = { uWind: { value: new THREE.Vector2() }, uTime: { value: 0 } };
+    mat.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, this.windUniforms);
+      shader.vertexShader = 'uniform vec2 uWind;\nuniform float uTime;\n' + shader.vertexShader.replace('#include <project_vertex>', `
+        vec4 mvPosition = vec4( transformed, 1.0 );
+        #ifdef USE_INSTANCING
+          mvPosition = instanceMatrix * mvPosition;
+        #endif
+        float hgt = max(mvPosition.y - 0.004, 0.0);
+        float wave = sin(uTime * 1.9 - dot(mvPosition.xz, normalize(uWind + vec2(1e-4))) * 0.45);
+        float flutter = sin(uTime * 7.0 + mvPosition.x * 3.1 + mvPosition.z * 2.3);
+        float bendAmt = hgt * hgt * (0.55 + 0.35 * wave) * 0.5;
+        mvPosition.xz += uWind * bendAmt + normalize(uWind + vec2(1e-4)) * flutter * hgt * 0.03 * length(uWind) * 0.2;
+        mvPosition.y -= bendAmt * length(uWind) * 0.25;
+        mvPosition = modelViewMatrix * mvPosition;
+        gl_Position = projectionMatrix * mvPosition;`);
+    };
     this.meshes = LENGTHS.map(() => {
       const mesh = new THREE.InstancedMesh(geo, mat, tufts);
       mesh.count = 0;
@@ -92,6 +111,12 @@ export class GrassPatch {
       this.grid.get(key).push(tuft);
     }
     this._zero = new THREE.Matrix4().makeScale(0, 0, 0);
+  }
+
+  // The wind at ground level (m/s, x and z) and the time, every frame
+  setWind(x, z, time) {
+    this.windUniforms.uWind.value.set(x, z);
+    this.windUniforms.uTime.value = time;
   }
 
   contains(x, z) {
