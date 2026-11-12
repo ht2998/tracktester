@@ -4,11 +4,11 @@
     "cockpit.js": 10,
     "godrays.js": 1,
     "scenery.js": 5,
-    "updates.js": 28,
+    "updates.js": 29,
     "debris.js": 2,
     "effects.js": 2,
-    "sky.js": 5,
-    "rendering.js": 19,
+    "sky.js": 6,
+    "rendering.js": 20,
     "rain.js": 3,
     "hud.js": 8,
     "physics.js": 7,
@@ -21,7 +21,7 @@
     "skids.js": 2,
     "tyres.js": 2,
     "sepang.js": 5,
-    "flora.js": 2,
-    "racingline.js": 1
+    "flora.js": 3,
+    "racingline.js": 2
   }
 }
