@@ -20,7 +20,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 7;
+export const BUILD = 8;
 
 const DRIVER_X = -0.18;
 // The steering wheel's centre and tilt
@@ -667,8 +667,12 @@ export class Cockpit {
       away = new THREE.Vector3(0, STICK_LEN, 0).applyEuler(this.stick.rotation).add(STICK_BASE);
     }
     left.blend += ((away ? 1 : 0) - left.blend) * (1 - Math.exp(-dt / 0.07));
-    // Horn: the right hand leaves the rim and presses the middle of the wheel
-    right.horn += ((st.horn ? 1 : 0) - right.horn) * (1 - Math.exp(-dt / 0.06));
+    // Horn: the right hand leaves the rim and presses the middle of the
+    // wheel. But one hand always stays on the wheel: if the left one is busy
+    // with the gear stick or handbrake, the right keeps hold of the rim and
+    // just reaches in with its thumb
+    const hornReach = !st.horn ? 0 : left.blend > 0.05 || away ? 0.3 : 1;
+    right.horn += (hornReach - right.horn) * (1 - Math.exp(-dt / 0.06));
     this.hornPress = right.horn;
     this.hub.position.z = 0.01 - 0.006 * right.horn;     // the pad sinks in a little
     const handL = away ? onWheelL.lerp(away, left.blend) : onWheelL.lerp(left.target, left.blend);
