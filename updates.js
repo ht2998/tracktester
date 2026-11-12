@@ -21,11 +21,21 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 23;
+export const BUILD = 24;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 26, date: '12 Nov 2026', title: 'Dents, scratches, the dash HUD and grass to the horizon',
+    items: [
+      ['The body really dents', 'Crashes used to just slide and squash the nose as one solid block. Now every body panel is made of a fine mesh that gets pushed in around exactly where you hit, deepest in the middle and crumpled at the edges, and the dents add up hit after hit. Front, back and sides all dent, the grille, headlights and tail lights move with the metal around them, and Backspace straightens it all out', 'debris'],
+      ['The car\'s dials are the HUD', 'The rev counter and speedo on the car\'s dashboard now show the very same dials as the on-screen HUD (needles, gear, shift and warning lights), all the time and from every camera. The screen above the wheel shows the whole HUD row and updates smoothly in every view. Only in the driver\'s view does the on-screen HUD go away', 'gauges'],
+      ['Mirror on the windscreen', 'The windscreen has a thin frame now, and the rear-view mirror hangs from the middle of its top bar instead of floating in the air', 'cockpit'],
+      ['Grass and gravel as far as you can see', 'At Sepang the 3D grass and loose gravel stones now fill everything the camera can see (about 70 m ahead on computers, 35 m on phones), thinning out with distance, instead of only a circle round the car', 'grass'],
+      ['Scratches stay on the car', 'Scratches are shorter and always sit on the face of the panel they\'re on, clear of its rounded edges, instead of long lines sticking out past the end of the bodywork. They move with any dent under them too', 'sparks'],
+    ],
+  },
   {
     id: 25, date: '12 Nov 2026', title: 'Real grass and gravel at Sepang',
     items: [
