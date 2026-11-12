@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 3;
+export const BUILD = 4;
 
 const G = 9.81;   // gravity, m/s²
 const RPM_PER_RADS = 60 / (2 * Math.PI);
@@ -32,7 +32,8 @@ export const CATERHAM = {
   frontStiffness: 38000,  // how sharply the front tyres respond to steering
   rearStiffness: 42000,   // how sharply the rear tyres respond
   maxReverseSpeed: 6,     // m/s
-  brakeForce: 8500,       // N
+  brakeForce: 9500,       // N
+  brakeBias: 0.74,        // share of the braking done by the front tyres (more at the front keeps the light rear stable)
   handbrakeLockGrip: 0.85,// braking from locked rear tyres, as a share of their grip
   lockedBrakeGrip: 0.8,   // braking from locked (skidding) tyres, as a share of full grip
   handbrakeRearGrip: 0.35,// rear grip left while the handbrake is on
@@ -721,31 +722,41 @@ export class CarPhysics {
     // Footbrake: the tyres can only take so much braking. Ask for more than
     // they can grip and the wheels lock: a locked tyre slides (less braking)
     // and a locked front tyre can't steer. ABS stops just short of locking.
+    //
+    // The brakes are split between the axles (brakeBias to the front, like a
+    // real car), and each tyre's grip is shared between braking and turning:
+    // the harder an axle brakes, the less it can corner. That keeps the car
+    // stable when you brake and turn in together: the front and rear both
+    // lose some cornering grip, instead of the light rear end letting go.
     const brakeGrip = maxFront + maxRear;          // most braking the tyres can give
     const brakeDemand = brakePedal * s.brakeForce;
-    let footBrake = brakeDemand;
+    let frontBrake = brakeDemand * s.brakeBias, rearBrake = brakeDemand * (1 - s.brakeBias);
     this.wheelsLocked = false;
     this.absActive = false;
     if (brakeDemand > 0 && Math.abs(this.vx) > 1.5) {
       const absLevel = this.assistLevel('abs');
       if (absLevel > 0) {
-        // Lower ABS levels let the tyres slip closer to locking: a touch
-        // more stopping power, but less grip left over for steering
-        const allowed = (0.95 + 0.01 * (5 - absLevel)) * brakeGrip;
-        if (brakeDemand > allowed) {
-          footBrake = allowed;
-          this.absActive = true;
-          this.absSteerLoss = 0.12 * (5 - absLevel);   // level 5: none, level 1: about half
-        }
-      } else if (brakeDemand > brakeGrip) {
-        footBrake = s.lockedBrakeGrip * brakeGrip;
+        // ABS holds each axle just short of locking. Lower levels let the
+        // tyres slip closer to it: a touch more stopping power, but less
+        // grip left over for steering.
+        const allow = 0.86 + 0.02 * (5 - absLevel);
+        if (frontBrake > allow * maxFront) { frontBrake = allow * maxFront; this.absActive = true; }
+        // (the rear is held further from locking, so it keeps grip to stay in line)
+        if (rearBrake > (allow - 0.2) * maxRear) { rearBrake = (allow - 0.2) * maxRear; this.absActive = true; }
+      } else if (frontBrake > maxFront || rearBrake > maxRear) {
+        frontBrake = Math.min(frontBrake, s.lockedBrakeGrip * maxFront);
+        rearBrake = Math.min(rearBrake, s.lockedBrakeGrip * maxRear);
         this.wheelsLocked = true;
       }
     }
-    if (!this.absActive) this.absSteerLoss = 0;
+    this.absSteerLoss = 0;
+    const footBrake = frontBrake + rearBrake;
     let brake = footBrake + (c.handbrake ? s.handbrakeLockGrip * maxRear : 0);
-    // Locked tyres have almost no sideways grip: the car goes straight on
-    let maxFrontSide = this.wheelsLocked ? maxFront * 0.12 : maxFront * (1 - this.absSteerLoss);
+    // Locked tyres have almost no sideways grip: the car goes straight on.
+    // Otherwise each axle corners with whatever grip braking leaves it.
+    const sideLeft = (grip, used) => Math.sqrt(Math.max(0, grip * grip - used * used));
+    let maxFrontSide = this.wheelsLocked ? maxFront * 0.12 : Math.max(0.3 * maxFront, sideLeft(maxFront, frontBrake));
+    const rearBrakeUse = this.wheelsLocked ? 0 : rearBrake;
 
     // A bad downshift briefly locks the rear wheels with engine braking
     let lockGripLoss = 0;
@@ -780,10 +791,19 @@ export class CarPhysics {
     const requestedPush = Math.abs(drive);   // before grip limits it (for wheelspin smoke)
     const rearPush = Math.min(Math.abs(drive), maxRear * s.maxPushShare);
     drive = Math.sign(drive) * rearPush;
-    let maxRearSide = Math.sqrt(Math.max(0, maxRear * maxRear - rearPush * rearPush));
+    let maxRearSide = Math.sqrt(Math.max(0, maxRear * maxRear - rearPush * rearPush - rearBrakeUse * rearBrakeUse));
+    maxRearSide = Math.max(maxRearSide, 0.3 * maxRear * (rearBrakeUse > 0 ? 1 : 0));
     if (c.handbrake) maxRearSide *= s.handbrakeRearGrip;   // like driving on ice
     if (this.wheelsLocked) maxRearSide *= 0.3;
     maxRearSide *= 1 - lockGripLoss;
+    // Stability under braking: when braking shifts the weight forward, the
+    // front can grip far more than the light rear, and turning in would
+    // swing the back round (the classic way to spin into a hairpin). The
+    // front is held to what the rear can match, so braking into a corner
+    // gives a little understeer instead. (Throttle and handbrake slides are
+    // left alone: you can still kick the back out on purpose.)
+    const rearCanHold = sideLeft(maxRear, rearBrakeUse);
+    maxFrontSide = Math.min(maxFrontSide, 1.08 * rearCanHold * s.cgToRear / s.cgToFront);
     // When the engine overpowers the rear tyres (low gears, full throttle) they
     // spin, and spinning tyres lose most of their sideways grip: that's what
     // lets the car swing round into a donut. At high speed in a tall gear the
@@ -841,7 +861,7 @@ export class CarPhysics {
     // Remember the acceleration for next step's weight transfer (smoothed,
     // like the car's body settling on its springs)
     const accelNow = forceX / m - (vxBeforeBrake - this.vx) / h;
-    if (Number.isFinite(accelNow)) this.accelX += (accelNow - this.accelX) * Math.min(1, 8 * h);
+    if (Number.isFinite(accelNow)) this.accelX += (accelNow - this.accelX) * Math.min(1, 5 * h);
 
     // Come to a full stop instead of creeping forever
     if (!c.throttle && !c.brake && Math.abs(this.vx) < 0.05) {
