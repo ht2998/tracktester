@@ -1,18 +1,18 @@
 {
   "_note": "The latest version of each file. The game checks this (bypassing the browser's saved copies) against the files it actually loaded.",
   "files": {
-    "cockpit.js": 10,
+    "cockpit.js": 11,
     "godrays.js": 1,
     "scenery.js": 5,
-    "updates.js": 31,
+    "updates.js": 32,
     "debris.js": 2,
     "effects.js": 2,
     "sky.js": 6,
-    "rendering.js": 20,
+    "rendering.js": 21,
     "rain.js": 3,
-    "hud.js": 8,
-    "physics.js": 9,
-    "oil.js": 3,
+    "hud.js": 9,
+    "physics.js": 10,
+    "oil.js": 4,
     "sound.js": 7,
     "grass.js": 4,
     "smoke.js": 3,
@@ -20,7 +20,7 @@
     "touch.js": 4,
     "skids.js": 2,
     "tyres.js": 2,
-    "sepang.js": 5,
+    "sepang.js": 6,
     "flora.js": 3,
     "racingline.js": 3
   }
