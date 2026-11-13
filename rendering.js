@@ -31,6 +31,8 @@ import * as floraFile from './flora.js';
 import { Cockpit, EYE } from './cockpit.js';
 import { TyreLooks } from './tyres.js';
 import { setGround, groundAt } from './ground.js';
+import { buildScorpion, TANK_EYE } from './tank.js';
+import * as tankFile from './tank.js';
 import * as groundFile from './ground.js';
 import * as tyresFile from './tyres.js';
 import * as cockpitFile from './cockpit.js';
@@ -53,7 +55,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 25;
+const BUILD = 26;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -62,7 +64,7 @@ const updateScreen = startUpdates({
   'smoke.js': smokeFile.BUILD, 'hud.js': hudFile.BUILD, 'oil.js': oilFile.BUILD,
   'skids.js': skidsFile.BUILD, 'scenery.js': sceneryFile.BUILD, 'grass.js': grassFile.BUILD,
   'sky.js': skyFile.BUILD, 'debris.js': debrisFile.BUILD, 'touch.js': touchFile.BUILD,
-  'rain.js': rainFile.BUILD, 'effects.js': effectsFile.BUILD, 'cockpit.js': cockpitFile.BUILD, 'tyres.js': tyresFile.BUILD, 'sepang.js': sepangFile.BUILD, 'flora.js': floraFile.BUILD, 'racingline.js': racingLineFile.BUILD, 'ground.js': groundFile.BUILD,
+  'rain.js': rainFile.BUILD, 'effects.js': effectsFile.BUILD, 'cockpit.js': cockpitFile.BUILD, 'tyres.js': tyresFile.BUILD, 'sepang.js': sepangFile.BUILD, 'flora.js': floraFile.BUILD, 'racingline.js': racingLineFile.BUILD, 'ground.js': groundFile.BUILD, 'tank.js': tankFile.BUILD,
 });
 
 // ---------------------------------------------------------------------
@@ -1046,6 +1048,35 @@ function buildCar() {
 const carModel = buildCar();
 // The cockpit and the driver (cockpit.js)
 const cockpit = new Cockpit(carModel.car, MAT, { isMobile, redline: CATERHAM.redline });
+
+// SECRET: type F V 1 0 1 on the keyboard to swap the car for an FV101
+// Scorpion-inspired light tank (tank.js), and again to swap back.
+// (For now it drives with the car's physics.)
+const tank = buildScorpion();
+scene.add(tank.group);
+let tankMode = false;
+let secretKeys = '';
+const toast = document.createElement('div');
+toast.style.cssText = 'position:fixed;left:50%;top:18%;transform:translateX(-50%);padding:10px 18px;border-radius:10px;background:rgba(20,24,16,0.85);color:#d8e2b8;font:700 18px system-ui,sans-serif;letter-spacing:0.08em;pointer-events:none;opacity:0;transition:opacity 0.4s;z-index:20';
+document.body.appendChild(toast);
+let toastTimer = null;
+function showToast(text) {
+  toast.textContent = text;
+  toast.style.opacity = '1';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toast.style.opacity = '0'; }, 2200);
+}
+window.addEventListener('keydown', (e) => {
+  if (!e.key || e.key.length !== 1) return;
+  secretKeys = (secretKeys + e.key.toUpperCase()).slice(-5);
+  if (secretKeys === 'FV101') {
+    secretKeys = '';
+    tankMode = !tankMode;
+    carModel.car.visible = !tankMode;
+    tank.group.visible = tankMode;
+    showToast(tankMode ? 'FV101 SCORPION' : 'BACK IN THE CAR');
+  }
+});
 // Each kind of tyre has its own look: F1-style coloured bands, tread
 // patterns, knobbly dirt tyres, snow chains (tyres.js)
 const tyreLooks = new TyreLooks(carModel.car, carModel.tyres, { radius: WHEEL_RADIUS, width: WHEEL_WIDTH });
@@ -2281,7 +2312,7 @@ function updateCamera(dt) {
     }
     carModel.car.updateMatrixWorld();
     const mount = ON_CAR[cameraMode];
-    camera.position.copy(mount.spot);
+    camera.position.copy(tankMode ? TANK_EYE : mount.spot);   // (in the tank: looking out of the commander's hatch)
     carModel.car.localToWorld(camera.position);
     carModel.car.getWorldQuaternion(carTurn);
     lookEuler.set(mount.pitch + look.pitch, Math.PI + look.yaw, 0);   // the camera looks along -z; the car faces +z
@@ -2470,6 +2501,14 @@ renderer.setAnimationLoop(() => {
     carModel.car.rotation.set(bodyLean.pitch + slopeView.pitch, physics.heading, bodyLean.roll + slopeView.roll, 'YXZ');
   }
   updateWheels(physics.steer, physics.wheelSpin);
+  // The tank (secret): sits where the car is, each track running at the
+  // speed of its own side
+  if (tankMode) {
+    tank.group.position.copy(carModel.car.position);
+    tank.group.quaternion.copy(carModel.car.quaternion);
+    tank.update(dt, physics.vx - physics.yawRate * 0.88, physics.vx + physics.yawRate * 0.88);
+    tank.setLights(lightsMode > 0);
+  }
   cockpit.update(dt, {
     steer: physics.steer, kick: physics.steerKick || 0, gear: physics.gear, transmission: physics.transmission,
     handbrake: !!input.handbrake, rpm: physics.rpm, redline: CATERHAM.redline,
