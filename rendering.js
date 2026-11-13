@@ -53,7 +53,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 23;
+const BUILD = 25;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -296,7 +296,7 @@ if (sepang) liftOntoGround([...scene.children].filter((o) => !beforeTrack.has(o)
 if (sepang) {
   sepang.grassTexture.repeat.set(3000 / 6, 3000 / 6);
   ground.material.map = sepang.grassTexture;
-  ground.position.y = sepang.groundY + sepang.terrain.mean - 0.06;   // the open plain beyond, just under the hills' edges
+  ground.position.y = sepang.groundY + sepang.terrain.base - 0.06;   // the open plain beyond: below the lowest point, so it's never above the ground
   // the rolling grass round the circuit (the same texture, lined up)
   const hills = new THREE.Mesh(sepang.terrain.geometry(sepang.groundY, 3000), ground.material);
   hills.receiveShadow = true;
@@ -434,7 +434,8 @@ const GRASS = { minX: -24, maxX: -5, minZ: 16, maxZ: 44 };
 const surfaceClear = (want) => (x, z) => {
   const S = sepang.surfaceAt;
   return S(x, z) === want && S(x + 0.7, z) === want && S(x - 0.7, z) === want
-    && S(x, z + 0.7) === want && S(x, z - 0.7) === want && !(rain.roofAt(x, z) > 0);
+    && S(x, z + 0.7) === want && S(x, z - 0.7) === want && !(rain.roofAt(x, z) > 0)
+    && sepang.cleanly(want, x, z);   // (grass never on the gravel, gravel stones never on the grass)
 };
 const grass = SEPANG
   ? new GrassField(scene, surfaceClear('grass'), {
@@ -1426,7 +1427,7 @@ placeAtStart();
 // Oil dripped by a badly damaged engine. Tyres on oil lose grip.
 const oil = new OilSlicks(scene, { colour: 0xc4891f });   // (engine oil: honey-coloured when fresh, see below)
 // Coolant: pink-red, watery, dripping from the radiator at the front
-const coolant = new OilSlicks(scene, { colour: 0xe0336e, ahead: 1.45, slickGrip: 0.55, roughness: 0.05, metalness: 0.1, maxSegments: 900, maxPuddles: 60 });
+const coolant = new OilSlicks(scene, { colour: 0xe0336e, ahead: 1.45, slickGrip: 0.55, roughness: 0.05, metalness: 0.1, maxSegments: 900, maxPuddles: 60, flowSpeed: 6, flowTime: 15, amount: 0.6, evaporate: 0.012 });   // (runs like water; about 4.5 litres of it against 7 of oil, and it dries up in the heat)
 // The engine oil's colour: honey-yellow when fresh, going brown then black
 // the further you drive, and milky tan once coolant gets into it
 const OIL_HONEY = new THREE.Color(0xc4891f), OIL_BROWN = new THREE.Color(0x4b2c12), OIL_BLACK = new THREE.Color(0x120e0b), OIL_MILKY = new THREE.Color(0xcbb08f);
@@ -1810,7 +1811,8 @@ const ENGINE_BAY = new THREE.Vector3(0, 0.62, 0.95);
 // Sparks and flying metal when the engine blows
 const debris = new EngineDebris(scene, { maxSparks: isMobile ? 140 : 220, chunkCount: isMobile ? 8 : 12 });
 debris.setViewport(renderer.domElement.height, camera.fov);
-let debrisPending = false;   // set when the engine blows, fired once the engine bay position is known
+let debrisPending = false;
+let bodySparks = 0;   // sparks owed from bodywork scraping the road   // set when the engine blows, fired once the engine bay position is known
 const engineBayWorld = new THREE.Vector3();
 
 const SMOKE_POINTS = [
@@ -2070,6 +2072,7 @@ function findContact() {
 }
 
 function collide(now) {
+  if (physics.air && physics.airHeight > 0.9) return;   // flying over the barriers
   for (let iter = 0; iter < 4; iter++) {
     const k = findContact();
     if (!k) return;
@@ -2251,7 +2254,7 @@ window.addEventListener('pointerup', endLook);
 window.addEventListener('pointercancel', endLook);
 
 function updateCamera(dt) {
-  const gy = physics.ground.y;
+  const gy = physics.air ? physics.pose.y : physics.ground.y;   // (follows the car up into the air)
   carPos.set(physics.x, gy, physics.z);
   forward.set(Math.sin(physics.heading), 0, Math.cos(physics.heading));
 
@@ -2435,6 +2438,14 @@ renderer.setAnimationLoop(() => {
     }
     if (e.type === 'wheelOff') wheelOffPending.push(e.wheel);
     if (e.type === 'coolantBurst') coolantBurst = Math.max(coolantBurst, 0.7 * e.strength);
+    // landing hard on the bodywork (a rollover, a bad landing): a dent where it struck
+    if (e.type === 'bodyHit' && e.speed > 4.5) {
+      const [lx, ly, lz] = e.local;
+      const depth = Math.min(0.2, (e.speed - 4) * 0.02), radius = 0.22 + Math.min(0.2, e.speed * 0.01);
+      dents.push({ x: lx, y: Math.min(ly, 0.8), z: lz, dx: -Math.sign(lx) * 0.4, dy: ly > 0.6 ? -0.9 : 0, dz: -Math.sign(lz) * 0.4 * (Math.abs(lz) > 1 ? 1 : 0), depth, r: radius, seed: Math.random() * 100 });
+      if (dents.length > 40) dents.shift();
+      reshapeBody();
+    }
   }
 
   // Move the car model to where the physics says it is
@@ -2448,8 +2459,16 @@ renderer.setAnimationLoop(() => {
   const ease = 1 - Math.exp(-dt / 0.06);
   slopeView.pitch += (-Math.atan(GRD.slopeF) - slopeView.pitch) * ease;
   slopeView.roll += (Math.atan(GRD.slopeL) - slopeView.roll) * ease;
-  carModel.car.position.set(physics.x, GRD.y + bodyLean.heave, physics.z);
-  carModel.car.rotation.set(bodyLean.pitch + slopeView.pitch, physics.heading, bodyLean.roll + slopeView.roll, 'YXZ');
+  if (physics.air) {
+    // flying, tipping or upside down: drawn exactly as the free 3D body is
+    const P = physics.pose;
+    carModel.car.position.set(P.x, P.y, P.z);
+    carModel.car.quaternion.set(P.q[0], P.q[1], P.q[2], P.q[3]);
+    slopeView.pitch = -Math.atan(GRD.slopeF); slopeView.roll = Math.atan(GRD.slopeL);
+  } else {
+    carModel.car.position.set(physics.x, GRD.y + bodyLean.heave, physics.z);
+    carModel.car.rotation.set(bodyLean.pitch + slopeView.pitch, physics.heading, bodyLean.roll + slopeView.roll, 'YXZ');
+  }
   updateWheels(physics.steer, physics.wheelSpin);
   cockpit.update(dt, {
     steer: physics.steer, kick: physics.steerKick || 0, gear: physics.gear, transmission: physics.transmission,
@@ -2509,7 +2528,15 @@ renderer.setAnimationLoop(() => {
     if (t.rim) rimSlide = Math.max(rimSlide, i < 2 ? Math.min(1, physics.tyreSlip.front * 2.5) : physics.tyreSlip.rear);
   });
   engineSound.setRimScrape(physics.rimsDown, carSpeed, rimSlide);
-  engineSound.setFrameScrape?.(physics.framesDown, carSpeed);
+  // (the bodywork scraping along the ground after a rollover sounds like a dragging frame)
+  engineSound.setFrameScrape?.(Math.max(physics.framesDown || 0, physics.air ? Math.min(2, physics.fb.scrape / 3) : 0), carSpeed);
+  // ...and throws sparks off the tarmac
+  if (physics.air && physics.fb.scrape > 1.5 && physics.fb.scrapeAt && surfaceAt(physics.fb.scrapeAt[0], physics.fb.scrapeAt[2]) !== 'grass') {
+    bodySparks += Math.min(60, physics.fb.scrape * 6) * dt;
+    const at = { x: physics.fb.scrapeAt[0], y: physics.fb.scrapeAt[1] + 0.05, z: physics.fb.scrapeAt[2] };
+    while (bodySparks >= 1) { debris.spawnRimSpark(at, carVelocity, physics.heading); bodySparks -= 1; }
+    debris.sparks.geometry.attributes.aSize.needsUpdate = true;
+  }
   engineSound.setRain?.(rain.intensity, rain.wetness, carSpeed, puddleUnder);
   engineSound.setMud?.(mudUnder, carSpeed);
 
