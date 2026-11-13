@@ -51,7 +51,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 20;
+const BUILD = 21;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -804,40 +804,51 @@ function buildCar() {
   // --- Suspension: double wishbones, uprights, dampers, tie rods, driveshafts ---
   // Every rod links a point on the body to a point on the wheel's upright,
   // so the wheels are properly attached instead of floating.
+  // Each end of a rod is either bolted to the body (it stays put) or moves
+  // with a wheel: m = 1 rides fully with the upright, m = 0.6 sits 60% of
+  // the way out along a wishbone, and t = true also swings round with the
+  // steering. So when a wheel rises over a bump, the wishbones pivot up
+  // with it, the damper squeezes, and the tie rod follows the steering.
   const arms = [];
   const dampers = [];
+  // a rod: [inner point, outer point, radius, which wheel (0 FL 1 FR 2 RL 3 RR), m of each end, steer]
+  const rod = (list, p1, p2, radius, w, m1, m2, steers = false) => list.push({ p1, p2, radius, w, m1, m2, steers });
   for (const s of [-1, 1]) {
     const F = FRONT_AXLE;
     const R = REAR_AXLE;
+    const fw = s > 0 ? 0 : 1, rw = s > 0 ? 2 : 3;   // (+x is the car's left)
 
     // Front lower wishbone (two legs meeting at the upright)
-    arms.push([[s * 0.30, 0.22, F + 0.18], [s * 0.56, 0.24, F], 0.014]);
-    arms.push([[s * 0.30, 0.22, F - 0.18], [s * 0.56, 0.24, F], 0.014]);
+    rod(arms, [s * 0.30, 0.22, F + 0.18], [s * 0.56, 0.24, F], 0.014, fw, 0, 1);
+    rod(arms, [s * 0.30, 0.22, F - 0.18], [s * 0.56, 0.24, F], 0.014, fw, 0, 1);
     // Front upper wishbone
-    arms.push([[s * 0.30, 0.47, F + 0.14], [s * 0.54, 0.42, F], 0.012]);
-    arms.push([[s * 0.30, 0.47, F - 0.14], [s * 0.54, 0.42, F], 0.012]);
+    rod(arms, [s * 0.30, 0.47, F + 0.14], [s * 0.54, 0.42, F], 0.012, fw, 0, 1);
+    rod(arms, [s * 0.30, 0.47, F - 0.14], [s * 0.54, 0.42, F], 0.012, fw, 0, 1);
     // Front upright (joins the wishbone ends, carries the wheel)
-    arms.push([[s * 0.56, 0.24, F], [s * 0.54, 0.42, F], 0.022]);
-    // Steering tie rod
-    arms.push([[s * 0.30, 0.30, F - 0.12], [s * 0.55, 0.31, F - 0.10], 0.010]);
+    rod(arms, [s * 0.56, 0.24, F], [s * 0.54, 0.42, F], 0.022, fw, 1, 1);
+    // Steering tie rod (its outer end swings round with the steering)
+    rod(arms, [s * 0.30, 0.30, F - 0.12], [s * 0.55, 0.31, F - 0.10], 0.010, fw, 0, 1, true);
     // Front coil-over damper (lower wishbone up to the chassis)
-    dampers.push([[s * 0.48, 0.24, F + 0.02], [s * 0.31, 0.53, F + 0.08], 0.03]);
+    rod(dampers, [s * 0.48, 0.24, F + 0.02], [s * 0.31, 0.53, F + 0.08], 0.03, fw, 0.7, 0);
 
     // Rear lower wishbone
-    arms.push([[s * 0.44, 0.20, R + 0.20], [s * 0.56, 0.22, R], 0.014]);
-    arms.push([[s * 0.44, 0.20, R - 0.20], [s * 0.56, 0.22, R], 0.014]);
+    rod(arms, [s * 0.44, 0.20, R + 0.20], [s * 0.56, 0.22, R], 0.014, rw, 0, 1);
+    rod(arms, [s * 0.44, 0.20, R - 0.20], [s * 0.56, 0.22, R], 0.014, rw, 0, 1);
     // Rear upper wishbone
-    arms.push([[s * 0.44, 0.45, R + 0.15], [s * 0.55, 0.42, R], 0.012]);
-    arms.push([[s * 0.44, 0.45, R - 0.15], [s * 0.55, 0.42, R], 0.012]);
+    rod(arms, [s * 0.44, 0.45, R + 0.15], [s * 0.55, 0.42, R], 0.012, rw, 0, 1);
+    rod(arms, [s * 0.44, 0.45, R - 0.15], [s * 0.55, 0.42, R], 0.012, rw, 0, 1);
     // Rear upright
-    arms.push([[s * 0.56, 0.22, R], [s * 0.55, 0.42, R], 0.022]);
+    rod(arms, [s * 0.56, 0.22, R], [s * 0.55, 0.42, R], 0.022, rw, 1, 1);
     // Driveshaft from the differential to the wheel
-    arms.push([[s * 0.40, 0.30, R], [s * 0.57, 0.30, R], 0.028]);
+    rod(arms, [s * 0.40, 0.30, R], [s * 0.57, 0.30, R], 0.028, rw, 0, 1);
     // Rear coil-over damper
-    dampers.push([[s * 0.52, 0.23, R + 0.06], [s * 0.45, 0.58, R + 0.12], 0.03]);
+    rod(dampers, [s * 0.52, 0.23, R + 0.06], [s * 0.45, 0.58, R + 0.12], 0.03, rw, 0.85, 0);
   }
-  car.add(rodSet(arms, MAT.arm));
-  car.add(rodSet(dampers, MAT.damper));
+  const armMesh = rodSet(arms.map((r) => [r.p1, r.p2, r.radius]), MAT.arm);
+  const damperMesh = rodSet(dampers.map((r) => [r.p1, r.p2, r.radius]), MAT.damper);
+  for (const mesh of [armMesh, damperMesh]) mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  car.add(armMesh, damperMesh);
+  const linkage = { arms, dampers, armMesh, damperMesh };
 
   // --- Wheels: drawn with INSTANCING ---
   // One tyre, rim and spoke model, each drawn several times in a single step.
@@ -858,7 +869,7 @@ function buildCar() {
     car.add(mesh);
   }
 
-  return { car, tyres, rims, spokes, headLens, beam, tailLens, crush };
+  return { car, tyres, rims, spokes, headLens, beam, tailLens, crush, linkage };
 }
 
 const carModel = buildCar();
@@ -915,7 +926,45 @@ const tyreHub = [WHEEL_RADIUS, WHEEL_RADIUS, WHEEL_RADIUS, WHEEL_RADIUS];   // h
 const squashMatrix = new THREE.Matrix4();
 const spinMatrix = new THREE.Matrix4();
 
+// Moves the suspension links to follow each wheel (see buildCar)
+const linkA = new THREE.Vector3(), linkB = new THREE.Vector3(), linkDir = new THREE.Vector3(), linkMid = new THREE.Vector3();
+const linkQ = new THREE.Quaternion(), linkS = new THREE.Vector3(), linkM = new THREE.Matrix4(), LINK_UP = new THREE.Vector3(0, 1, 0);
+function placeLinkEnd(out, p, m, w, steersWith, steer) {
+  out.fromArray(p);
+  const tyre = physics.tyres[w];
+  // a wheel that's come off leaves its links hanging down at full droop
+  const lift = tyre.detached ? -0.08 : wheelLift[w];
+  out.y += lift * m;
+  if (steersWith && m > 0 && !tyre.detached) {
+    // swing round the kingpin (the upright's line) with the steering
+    const px = Math.sign(p[0]) * 0.55, pz = FRONT_AXLE;
+    const dx = out.x - px, dz = out.z - pz, c = Math.cos(steer), s = Math.sin(steer);
+    out.x = px + dx * c + dz * s;
+    out.z = pz - dx * s + dz * c;
+  }
+  return out;
+}
+function updateLinks(list, mesh, steer) {
+  list.forEach((r, i) => {
+    const gone = physics.tyres[r.w].detached && r.m1 === 1;   // (the upright left with the wheel)
+    if (gone) { mesh.setMatrixAt(i, HIDDEN); return; }
+    placeLinkEnd(linkA, r.p1, r.m1, r.w, r.steers && r.m1 > 0, steer);
+    placeLinkEnd(linkB, r.p2, r.m2, r.w, r.steers, steer);
+    linkDir.subVectors(linkB, linkA);
+    const length = linkDir.length();
+    linkMid.addVectors(linkA, linkB).multiplyScalar(0.5);
+    linkQ.setFromUnitVectors(LINK_UP, linkDir.divideScalar(length));
+    linkS.set(r.radius, length, r.radius);
+    linkM.compose(linkMid, linkQ, linkS);
+    mesh.setMatrixAt(i, linkM);
+  });
+  mesh.instanceMatrix.needsUpdate = true;
+}
+
 function updateWheels(steer, spin) {
+  const L = carModel.linkage;
+  updateLinks(L.arms, L.armMesh, steer);
+  updateLinks(L.dampers, L.damperMesh, steer);
   WHEELS.forEach(([x, y, z, isFront], i) => {
     wheelPos.set(x, y + wheelLift[physicsWheel(x, isFront)], z);
     // A deflated tyre: the top keeps its shape while the bottom squashes flat
@@ -1184,7 +1233,18 @@ function placeAtStart() {
 placeAtStart();
 
 // Oil dripped by a badly damaged engine. Tyres on oil lose grip.
-const oil = new OilSlicks(scene);
+const oil = new OilSlicks(scene, { colour: 0xc4891f });   // (engine oil: honey-coloured when fresh, see below)
+// Coolant: pink-red, watery, dripping from the radiator at the front
+const coolant = new OilSlicks(scene, { colour: 0xe0336e, ahead: 1.45, slickGrip: 0.55, roughness: 0.05, metalness: 0.1, maxSegments: 900, maxPuddles: 60 });
+// The engine oil's colour: honey-yellow when fresh, going brown then black
+// the further you drive, and milky tan once coolant gets into it
+const OIL_HONEY = new THREE.Color(0xc4891f), OIL_BROWN = new THREE.Color(0x4b2c12), OIL_BLACK = new THREE.Color(0x120e0b), OIL_MILKY = new THREE.Color(0xcbb08f);
+function oilColourNow(out) {
+  const km = physics.distance / 1000;
+  out.copy(OIL_HONEY).lerp(OIL_BROWN, Math.min(1, Math.max(0, (km - 2) / 14)));
+  if (km > 16) out.lerp(OIL_BLACK, Math.min(1, (km - 16) / 30));
+  return out.lerp(OIL_MILKY, physics.oilMilky * 0.85);
+}
 // Rubber from skidding tyres. Oil wins if both are on the same spot.
 const skids = new SkidMarks(scene);
 // Tyre tracks in the gravel: the same marks, in the gravel dust's shade
@@ -1254,7 +1314,7 @@ physics.surfaceGrip = (x, z) => {
     return g;
   }
   const g = wetGrip(x, z);
-  const onOil = oil.gripAt(x, z);
+  const onOil = Math.min(oil.gripAt(x, z), coolant.gripAt(x, z));   // (coolant is slippery too)
   return g * (onOil < 1 ? onOil : skids.gripAt(x, z)) * (racing ? racing.rubberGrip(x, z) : 1);   // (old rubber: a touch more grip)
 };
 // THE ROAD'S SHAPE under each wheel (for the suspension): tarmac isn't
@@ -1349,6 +1409,14 @@ const flameCore = new TyreSmoke(scene, {
 flameCore.setViewport(renderer.domElement.height, camera.fov);
 // The fire's flickering orange glow on the car and the ground (not on
 // phones: an extra light costs every surface some drawing time)
+// Coolant bursting out of a holed radiator: a quick pink spray
+const coolantMist = new TyreSmoke(scene, {
+  maxParticles: isMobile ? 120 : 200, puffsPerSecond: isMobile ? 60 : 90,
+  color: 0xf06090, thickness: 1.6, sizeScale: 0.32, rise: 0.6, lifeScale: 0.45,
+  wind: { x: 0.8, z: 0.4 }, carry: 0.6,
+});
+coolantMist.setViewport(renderer.domElement.height, camera.fov);
+let coolantBurst = 0;      // seconds of spray left
 const fireLight = isMobile ? null : new THREE.PointLight(0xff7a2a, 0, 10, 2);
 if (fireLight) scene.add(fireLight);
 const RADIATOR = new THREE.Vector3(0, 0.42, 1.5);
@@ -1524,7 +1592,7 @@ const mudSpray = new TyreSmoke(scene, {
 mudSpray.setViewport(renderer.domElement.height, camera.fov);
 // How much of the ground wind each cloud of smoke or spray feels
 WIND_USERS.push([smoke, 0.5], [engineSmoke, 0.6], [steam, 0.6], [flames, 0.3], [flameCore, 0.3],
-  [dust, 0.4], [spray, 0.5], [sideSpray, 0.4], [grassDust, 0.4], [mudSpray, 0.2]);
+  [dust, 0.4], [spray, 0.5], [sideSpray, 0.4], [grassDust, 0.4], [mudSpray, 0.2], [coolantMist, 0.5]);
 // Bits flung by the tyres: grass clippings, and clumps of mud
 const grassBits = new FlyingBits(scene, {
   max: isMobile ? 160 : 300, colours: [0x4f7a2c, 0x5d8a33, 0x3f6524, 0x6e9440], size: [0.025, 0.06], flat: true,
@@ -1671,12 +1739,18 @@ function updateSmoke(dt) {
   engineBayWorld.copy(ENGINE_BAY);
   carModel.car.localToWorld(engineBayWorld);
   const fire = physics.fireLevel;
-  engineSmoke.emitFrom('engine', engineBayWorld, Math.max(physics.engineBlown ? 1 : 0, fire * 0.9), carVelocity, dt);
+  engineSmoke.emitFrom('engine', engineBayWorld, Math.max(physics.engineBlown ? 1 : 0, fire * 0.9, physics.oilSmoke), carVelocity, dt);   // (black smoke: blown, burning, or cooking its oil)
   engineSmoke.update(dt);
   // Steam from the radiator, flames from the engine bay
   radiatorWorld.set(RADIATOR.x, RADIATOR.y, RADIATOR.z - physics.noseCrush);
   carModel.car.localToWorld(radiatorWorld);
-  steam.emitFrom('radiator', radiatorWorld, physics.steam, carVelocity, dt);
+  // the pressurised coolant bursting out: a pink spray with a cloud of steam
+  if (coolantBurst > 0) {
+    coolantBurst -= dt;
+    coolantMist.emitFrom('radiator', radiatorWorld, 1, carVelocity, dt);
+  }
+  coolantMist.update(dt);
+  steam.emitFrom('radiator', radiatorWorld, coolantBurst > 0 ? 1 : physics.steam, carVelocity, dt);
   steam.update(dt);
   flames.emitFrom('fire', engineBayWorld, fire, carVelocity, dt);
   flameCore.emitFrom('fire', engineBayWorld, fire, carVelocity, dt);
@@ -1700,7 +1774,11 @@ function updateSmoke(dt) {
   // Oil: drips below 10% health, pours once the engine has blown
   // (stops once the oil has all run out: there's nothing left to leak)
   const leakRate = !physics.leakingOil ? 0 : physics.engineBlown ? 2 : 1;
+  oilColourNow(oil.oilColour);
   oil.update(dt, physics.x, physics.z, physics.heading, physics.vx, leakRate, physics.oilLevel);   // (thins out as it runs low)
+  // coolant: pours just after the radiator bursts, then drips while there's any left
+  const coolantRate = physics.radiator < 1 && physics.coolant > 0.01 ? (coolantBurst > 0 ? 2 : 1) : 0;
+  coolant.update(dt, physics.x, physics.z, physics.heading, physics.vx, coolantRate, physics.coolant);
 }
 
 // ---------------------------------------------------------------------
@@ -2028,7 +2106,7 @@ function updateCamera(dt) {
 function fitViewport() {
   smoke.setViewport(renderer.domElement.height, camera.fov);
   engineSmoke.setViewport(renderer.domElement.height, camera.fov);
-  for (const f of [steam, flames, flameCore]) f.setViewport(renderer.domElement.height, camera.fov);
+  for (const f of [steam, flames, flameCore, coolantMist]) f.setViewport(renderer.domElement.height, camera.fov);
   dust.setViewport(renderer.domElement.height, camera.fov);
   for (const fx of [spray, sideSpray, grassDust, mudSpray]) fx.setViewport(renderer.domElement.height, camera.fov);
   debris.setViewport(renderer.domElement.height, camera.fov);
@@ -2088,6 +2166,8 @@ renderer.setAnimationLoop(() => {
     physics.reset();   // also repairs the engine
     placeAtStart();
     oil.clear();
+    coolant.clear();
+    coolantBurst = 0;
     debris.clear();
     shreds.clear();
     blowoutPending.length = 0;
@@ -2159,6 +2239,7 @@ renderer.setAnimationLoop(() => {
       blowoutPending.push(e.wheel);
     }
     if (e.type === 'wheelOff') wheelOffPending.push(e.wheel);
+    if (e.type === 'coolantBurst') coolantBurst = Math.max(coolantBurst, 0.7 * e.strength);
   }
 
   // Move the car model to where the physics says it is
@@ -2172,7 +2253,7 @@ renderer.setAnimationLoop(() => {
     steer: physics.steer, kick: physics.steerKick || 0, gear: physics.gear, transmission: physics.transmission,
     handbrake: !!input.handbrake, rpm: physics.rpm, redline: CATERHAM.redline,
     speedKmh: physics.speedKmh, lean: physics.yawRate * physics.vx,
-    throttle: input.throttle, brake: input.brake, clutch: physics.clutchIn, horn: !!input.horn,
+    throttle: input.throttle, brake: input.brake, clutch: physics.clutchPedal, horn: !!input.horn,
   });
   cockpit.drawScreen(dt, {
     speedKmh: physics.speedKmh, rpm: physics.rpm, redline: CATERHAM.redline, gearLabel: physics.gearLabel,
@@ -2201,6 +2282,7 @@ renderer.setAnimationLoop(() => {
   physics.trackWetness = rain.wetness;
   rain.wetLook(ground.material, GROUND_DRY);
   oil.weather(dt, rain.intensity);
+  coolant.weather(dt, rain.intensity);
   skids.weather(dt, rain.intensity);
   if (rain.flash > 0) sky.flash = Math.max(sky.flash ?? 0, rain.flash);
   if (rain.thunderNow) engineSound.playThunder?.(rain.thunderNow.strength);
