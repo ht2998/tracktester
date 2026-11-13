@@ -11,7 +11,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 5;
+export const BUILD = 8;
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -196,6 +196,120 @@ class EnginePulses extends AudioWorkletProcessor {
   }
 }
 registerProcessor('engine-pulses', EnginePulses);
+
+// ---------------------------------------------------------------------
+// The heavy vehicle's engine (the secret one): a 4.2-litre straight six,
+// six uneven firings every two turns, labouring under 8 tonnes, with a
+// soft tap at idle, the hull booming, a deep sub-rumble, and the tracks
+// clanking and roaring. Built the same way as the preview that was
+// approved: each sound is a set of ringing tones struck by each event.
+// ---------------------------------------------------------------------
+class HeavyEngine extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [
+      { name: 'rpm', defaultValue: 680, minValue: 0, maxValue: 6000, automationRate: 'k-rate' },
+      { name: 'load', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+      { name: 'speed', defaultValue: 0, minValue: 0, maxValue: 40, automationRate: 'k-rate' },
+    ];
+  }
+  constructor() {
+    super();
+    // a ringing tone: [freq, decay seconds, amplitude]
+    const bank = (modes) => modes.map(([f, d, a]) => ({ f, d, a, y1: 0, y2: 0 }));
+    this.dark = bank([[78, 0.030, 1.0], [165, 0.020, 0.6], [310, 0.010, 0.25]]);
+    this.bright = bank([[240, 0.012, 0.5], [520, 0.006, 0.35], [1100, 0.003, 0.15]]);
+    this.lug = bank([[62, 0.035, 1.0], [118, 0.02, 0.7], [380, 0.006, 0.3]]);
+    this.hull = bank([[34, 0.09, 1.0], [52, 0.06, 0.6]]);
+    this.tapB = bank([[420, 0.007, 0.8], [780, 0.005, 0.6], [1300, 0.003, 0.25]]);
+    this.thudB = bank([[70, 0.02, 1.0], [120, 0.012, 0.5]]);
+    this.clankB = bank([[1700, 0.004, 0.5], [2600, 0.003, 0.4], [3900, 0.002, 0.3]]);
+    for (const b of [this.dark, this.bright, this.lug, this.hull, this.tapB, this.thudB, this.clankB]) {
+      for (const m of b) {
+        const w = 2 * Math.PI * m.f / sampleRate, r = Math.exp(-1 / (sampleRate * m.d));
+        m.c1 = 2 * r * Math.cos(w); m.c2 = -r * r; m.gain = m.a * Math.sin(w);
+      }
+    }
+    this.gain = [1.0, 0.93, 1.06, 0.97, 1.03, 0.9];   // each cylinder a touch different (firing order 1-5-3-6-2-4)
+    this.cyl = 0; this.phase = 0; this.tickPhase = 0; this.linkPhase = 0; this.whinePhase = 0;
+    this.burstB = 0; this.burstL = 0; this.burstT = 0; this.burstC = 0;
+    this.subA = 0; this.subB = 0; this.subC = 0; this.subD = 0;
+    this.inA = 0; this.inB = 0; this.roarA = 0; this.roarB = 0;
+    this.burstDecay = Math.exp(-1 / (sampleRate * 0.004));
+    this.bigNorm = 1 / 3.19;   // the preview's loudness, so it sounds the same
+  }
+  run(bank, x) {
+    let out = 0;
+    for (const m of bank) {
+      const y = m.c1 * m.y1 + m.c2 * m.y2 + x * m.gain;
+      m.y2 = m.y1; m.y1 = y; out += y;
+    }
+    return out;
+  }
+  gauss() { return (Math.random() + Math.random() + Math.random() - 1.5) * 2; }
+  process(inputs, outputs, parameters) {
+    const out = outputs[0][0];
+    if (!out) return true;
+    const rpm = parameters.rpm[0], load = parameters.load[0], spd = parameters.speed[0];
+    const lugAmt = Math.max(0, Math.min(1, load * (1.15 - rpm / 4500)));
+    const fires = rpm / 60 * 3, ticks = rpm / 120, links = spd / 0.135;
+    const tapAmt = Math.max(0, Math.min(1, (1400 - rpm) / 700));
+    const subLevel = (0.35 + 0.65 * rpm / 4300) * 2.2;
+    const intakeLevel = Math.pow(load * rpm / 4300, 1.5) * 0.08;
+    const roarLevel = Math.pow(spd / 22, 1.2) * 0.5;
+    const whineLevel = 0.015 * spd / 22;
+    const linkHit = Math.min(1, spd / 3);
+    const drive = 1.2 + 2.2 * lugAmt, after = 1 / (1 + 0.6 * lugAmt);
+    // simple filters for the noises (one-pole steps)
+    const kSub = 1 - Math.exp(-2 * Math.PI * 45 / sampleRate);
+    const kInLo = 1 - Math.exp(-2 * Math.PI * 500 / sampleRate), kInHi = 1 - Math.exp(-2 * Math.PI * 1800 / sampleRate);
+    const kRoLo = 1 - Math.exp(-2 * Math.PI * 60 / sampleRate), kRoHi = 1 - Math.exp(-2 * Math.PI * 400 / sampleRate);
+    for (let i = 0; i < out.length; i++) {
+      let pd = 0, pb = 0, pl = 0, tk = 0, lk = 0;
+      // a firing: uneven strength and timing, the odd weak one
+      this.phase += fires / sampleRate;
+      if (this.phase >= 1) {
+        this.phase -= 1 + this.gauss() * 0.035;
+        this.cyl = (this.cyl + 1) % 6;
+        let g = this.gain[this.cyl] * (0.8 + 0.2 * load) * (1 + 0.16 * this.gauss());
+        if (Math.random() < 0.025) g *= 0.45;
+        pd = g; pb = g * load; pl = g * lugAmt;
+        this.burstB += pb * 0.25; this.burstL += pl * 0.4;
+      }
+      // the idle tap, once per camshaft turn
+      this.tickPhase += ticks / sampleRate;
+      if (this.tickPhase >= 1) { this.tickPhase -= 1 + this.gauss() * 0.01; tk = (0.7 + 0.3 * Math.random()) * tapAmt; this.burstT += tk * 0.12; }
+      // a track link slapping down
+      this.linkPhase += links / sampleRate;
+      if (this.linkPhase >= 1) { this.linkPhase -= 1; lk = (0.5 + 0.5 * Math.random()) * linkHit; this.burstC += lk * 0.3; }
+      const n1 = Math.random() * 2 - 1;
+      let engine = this.run(this.dark, pd) + 0.8 * (this.run(this.bright, pb) + this.burstB * n1)
+        + 1.1 * (this.run(this.lug, pl) + this.burstL * (Math.random() * 2 - 1));
+      engine = Math.tanh(engine * drive) * after;
+      const hull = 0.9 * this.run(this.hull, pd);
+      // deep sub-rumble: noise through four smoothing steps
+      this.subA += (this.gauss() - this.subA) * kSub; this.subB += (this.subA - this.subB) * kSub;
+      this.subC += (this.subB - this.subC) * kSub; this.subD += (this.subC - this.subD) * kSub;
+      const sub = this.subD * subLevel * 6;
+      // intake roar: a band of noise
+      const nn = Math.random() * 2 - 1;
+      this.inA += (nn - this.inA) * kInHi; this.inB += (this.inA - this.inB) * kInLo;
+      const intake = (this.inA - this.inB) * intakeLevel * 2.5;
+      const tap = this.run(this.tapB, tk) + this.burstT * (Math.random() * 2 - 1);
+      const thud = this.run(this.thudB, lk);
+      const clank = this.run(this.clankB, lk) + this.burstC * (Math.random() * 2 - 1);
+      this.roarA += (Math.random() * 2 - 1 - this.roarA) * kRoHi; this.roarB += (this.roarA - this.roarB) * kRoLo;
+      const roar = (this.roarA - this.roarB) * roarLevel * 2;
+      this.whinePhase = (this.whinePhase + spd * 38 / sampleRate) % 1;
+      const whine = whineLevel * Math.sin(2 * Math.PI * this.whinePhase);
+      this.burstB *= this.burstDecay; this.burstL *= this.burstDecay; this.burstT *= this.burstDecay; this.burstC *= this.burstDecay;
+      const mix = 1.2 * (engine + intake + hull + 0.5 * sub) + 0.2 * tap + 0.55 * thud + 0.12 * clank + 0.25 * roar + whine;
+      out[i] = Math.tanh(mix * this.bigNorm * 0.9) * 0.9;
+    }
+    for (let ch = 1; ch < outputs[0].length; ch++) outputs[0][ch].set(out);
+    return true;
+  }
+}
+registerProcessor('heavy-engine', HeavyEngine);
 `;
 
 // Short white-noise recording, made once and reused (for gear-shift clacks)
@@ -865,6 +979,48 @@ export class EngineSound {
     this.sloshGain = ctx.createGain();
     this.sloshGain.gain.value = 0;
     this.sloshSrc.connect(sloshTone).connect(this.sloshGain).connect(this.carBus);
+    // ...and the "psssht": water sheeting off the tyres in a hissing spray
+    const psshSrc = ctx.createBufferSource();
+    psshSrc.buffer = this.noise;
+    psshSrc.loop = true;
+    const psshBand = ctx.createBiquadFilter();
+    psshBand.type = 'bandpass';
+    psshBand.frequency.value = 3800;
+    psshBand.Q.value = 0.6;
+    const psshAir = ctx.createBiquadFilter();
+    psshAir.type = 'highshelf';
+    psshAir.frequency.value = 6000;
+    psshAir.gain.value = 6;
+    this.psshGain = ctx.createGain();
+    this.psshGain.gain.value = 0;
+    this.psshBand = psshBand;
+    psshSrc.connect(psshBand).connect(psshAir).connect(this.psshGain).connect(this.carBus);
+    this.lastPuddle = 0;
+    this.psshLevel = 0;
+
+    // --- Mud: the puddle "psssht", a little deeper, plus a breathy
+    // "pfffff" like the air rushing out of a burst tyre ---
+    const mudHissSrc = ctx.createBufferSource();
+    mudHissSrc.buffer = this.noise;
+    mudHissSrc.loop = true;
+    const mudBand = ctx.createBiquadFilter();
+    mudBand.type = 'bandpass';
+    mudBand.frequency.value = 2200;
+    mudBand.Q.value = 0.6;
+    this.mudBand = mudBand;
+    this.mudGain = ctx.createGain();
+    this.mudGain.gain.value = 0;
+    mudHissSrc.connect(mudBand).connect(this.mudGain).connect(this.carBus);
+    this.mudSrc = ctx.createBufferSource();
+    this.mudSrc.buffer = this.noise;
+    this.mudSrc.loop = true;
+    const pff = ctx.createBiquadFilter();                      // the same shape as a blowout's rush of air
+    pff.type = 'bandpass';
+    pff.frequency.value = 1600;
+    pff.Q.value = 0.9;
+    this.mudPffGain = ctx.createGain();
+    this.mudPffGain.gain.value = 0;
+    this.mudSrc.connect(pff).connect(this.mudPffGain).connect(this.carBus);
 
     // --- Frame scraping along the road (a wheel has come off) ---
     const frameSrc = ctx.createBufferSource();
@@ -890,7 +1046,7 @@ export class EngineSound {
     frameSrc.connect(frameHigh).connect(frameHighLevel).connect(frameGrit);
     frameGrit.connect(this.frameGain).connect(this.carBus);
 
-    for (const n of [this.patterSrc, roarSrc, swishSrc, this.sloshSrc, frameSrc]) n.start(ctx.currentTime);
+    for (const n of [this.patterSrc, roarSrc, swishSrc, this.sloshSrc, psshSrc, mudHissSrc, this.mudSrc, frameSrc]) n.start(ctx.currentTime);
     this.squelchSrc.start(ctx.currentTime);
     const startAt = ctx.currentTime;
     squealNoise.start(startAt);
@@ -903,9 +1059,25 @@ export class EngineSound {
       ctx.audioWorklet.addModule(url).then(() => {
         this.voice = new AudioWorkletNode(ctx, 'engine-pulses', { outputChannelCount: [1] });
         this.voice.parameters.get('cylinders').value = this.spec.cylinders;
-        this.voice.connect(this.engineInput);
+        this.carVoiceGain = ctx.createGain();
+        this.voice.connect(this.carVoiceGain).connect(this.engineInput);
+        // the heavy vehicle's own engine and tracks (silent until it's used)
+        this.heavy = new AudioWorkletNode(ctx, 'heavy-engine', { outputChannelCount: [1] });
+        this.heavyGain = ctx.createGain();
+        this.heavyGain.gain.value = 0;
+        this.heavy.connect(this.heavyGain).connect(this.carBus);
+        this.setHeavy(this.heavyOn);
       }).catch((err) => console.warn('Engine sound could not start:', err));
     }
+  }
+
+  // Swap between the car's engine and the heavy vehicle's
+  setHeavy(on) {
+    this.heavyOn = !!on;
+    if (!this.ctx || !this.heavyGain) return;
+    const t = this.ctx.currentTime;
+    this.heavyGain.gain.setTargetAtTime(on ? 0.85 : 0, t, 0.1);
+    this.carVoiceGain.gain.setTargetAtTime(on ? 0 : 1, t, 0.1);
   }
 
   setMuted(muted) {
@@ -929,6 +1101,11 @@ export class EngineSound {
     this.lastLoad = load;
     const loadEase = rising ? 0.15 : 0.25;
 
+    if (this.heavy && this.heavyOn) {
+      this.heavy.parameters.get('rpm').setTargetAtTime(rpm, t, 0.08);
+      this.heavy.parameters.get('load').setTargetAtTime(clamp(car.engineLoad ?? 0, 0, 1), t, loadEase);
+      this.heavy.parameters.get('speed').setTargetAtTime(Math.abs(car.vx || 0), t, 0.1);
+    }
     if (this.voice) {
       this.voice.parameters.get('rpm').setTargetAtTime(rpm, t, 0.03);
       this.voice.parameters.get('load').setTargetAtTime(load, t, loadEase);
@@ -1090,10 +1267,31 @@ export class EngineSound {
     // Wet road: the tyres swish (more the faster and wetter)
     const moving = Math.min(1, speed / 25);
     this.swishGain.gain.setTargetAtTime(0.16 * wet * moving, t, 0.15);
-    // Puddles: an uneven, sloshing splash (jumps about from moment to moment)
-    const slosh = puddle * Math.min(1, speed / 8) * (0.45 + Math.random() * 0.55);
-    this.sloshGain.gain.setTargetAtTime(0.5 * slosh, t, 0.05);
+    // Puddles: a hissing "psssht" of spray (a burst as you hit the water,
+    // then a steady hiss while you're in it), with an uneven slosh underneath
+    const inWater = puddle * Math.min(1, speed / 6);
+    const hit = Math.max(0, puddle - this.lastPuddle) * Math.min(1, speed / 6);
+    this.lastPuddle = puddle;
+    const hiss = Math.min(1.2, 0.75 * inWater * (0.5 + 0.5 * Math.min(1, speed / 25)) + 0.8 * hit);
+    this.psshGain.gain.setTargetAtTime(0.55 * hiss, t, hiss > this.psshLevel ? 0.07 : 0.15);   // swells in smoothly
+    this.psshLevel = hiss;
+    this.psshBand.frequency.setTargetAtTime(2600 + 2200 * Math.min(1, speed / 30), t, 0.1);
+    const slosh = inWater * (0.45 + Math.random() * 0.55);
+    this.sloshGain.gain.setTargetAtTime(0.25 * slosh, t, 0.05);
     this.sloshSrc.playbackRate.setTargetAtTime(1.1 + 1.2 * moving + Math.random() * 0.3, t, 0.08);
+  }
+
+  // Mud: amount 0-1 (how much the tyres are churning through it), speed m/s
+  setMud(amount, speed) {
+    if (!this.ctx || !this.mudGain) return;
+    const t = this.ctx.currentTime;
+    const level = amount * Math.min(1, speed / 4);
+    // the psssht, a little deeper than in a puddle (and smooth to start)
+    this.mudGain.gain.setTargetAtTime(0.45 * level * (0.6 + 0.4 * Math.min(1, speed / 20)), t, level > (this.mudLevel || 0) ? 0.07 : 0.15);
+    this.mudBand.frequency.setTargetAtTime(1900 + 1500 * Math.min(1, speed / 30), t, 0.1);
+    // the pfffff, breathing a little unevenly
+    this.mudPffGain.gain.setTargetAtTime(0.5 * level * (0.75 + Math.random() * 0.25), t, 0.09);
+    this.mudLevel = level;
   }
 
   // A corner scraping along on its frame (the wheel has come off)
