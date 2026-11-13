@@ -21,11 +21,28 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 29;
+export const BUILD = 31;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 33, date: '13 Nov 2026', title: 'Flat tyres, GT-style braking zones, fainter rubber',
+    items: [
+      ['No more chattering wheel', 'Fixed a wheel flicking up and down really fast after a puncture (or running over engine debris, which punctures tyres): how far a soft tyre lets the car drop used to depend on the weight on it that instant, and the new suspension and the tyre kept chasing each other. Now a flat tyre settles the corner down smoothly', 'tyres'],
+      ['Braking zones like Gran Turismo', 'The racing line stays yellow all the way round. Braking zones are their own red patch on the track: a bright red bar where to hit the brakes, fading out towards the corner. Once you\'re in a zone it stays put until its end, and the brake point no longer wobbles as your speed changes', 'lights'],
+      ['Fainter rubber', 'The old rubbered-in tyre marks are now thin, faded grey streaks you mostly notice where lots of them overlap, instead of thick black bands. They still give the same little bit of extra grip', 'drift'],
+    ],
+  },
+  {
+    id: 32, date: '12 Nov 2026', title: 'Better traction out of fast corners',
+    items: [
+      ['Inside tyres stay planted', 'Coming out of fast corners like Sepang\'s turn 4, the inside rear tyre was being lifted almost off the road, so it spun up the moment you touched the throttle. The suspension is now set up more like the real car (a softer anti-roll bar at the front and none at the back), so the inside tyres keep more weight and grip', 'tyres'],
+      ['Settles quicker', 'Firmer dampers stop the body bouncing on after a corner, and the tyres soak up tiny ripples in the road instead of being jolted by them at speed', 'car'],
+      ['Smoother pedals', 'Keyboard keys and phone pedal buttons are either on or off, so the throttle now squeezes on over about a third of a second, like a foot, instead of slamming to full and spinning the rear tyres. It still comes off straight away when you let go, and the brake comes on a little quicker', 'phone'],
+      ['Steady steering', 'The steering wheel still visibly kicks over bumps and kerbs, but that kick no longer turns the front tyres, which was making the car twitchy at speed', 'cockpit'],
+    ],
+  },
   {
     id: 31, date: '12 Nov 2026', title: 'Lap timing, track map, real sun and thick jungle',
     items: [
