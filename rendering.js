@@ -55,7 +55,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 27;
+const BUILD = 28;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -1082,6 +1082,7 @@ window.addEventListener('keydown', (e) => {
       physics.ground.synced = false;
     }
     setCrashBox(tankMode);
+    engineSound.setHeavy?.(tankMode);   // its own engine and tracks
     carModel.car.visible = !tankMode;
     tank.group.visible = tankMode;
     showToast(tankMode ? 'FV101 SCORPION' : 'BACK IN THE CAR');
