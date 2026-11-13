@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 9;
+export const BUILD = 10;
 
 const COLORS = {
   face: '#15181c',
@@ -669,6 +669,21 @@ class TyreBars {
         g.strokeStyle = ring;
         g.lineWidth = Math.max(1.5, this.h * 0.035);
         g.strokeRect(x - 1.5, y - 1.5, bw + 3, bh + 3);
+      }
+      // Brake disc temperature: a thin bar beside each tyre (on the inside),
+      // filling up as it heats: grey when cold, green when working, then
+      // orange, and flashing red when it's so hot it's fading
+      if (t.brakeTemp != null) {
+        const bx = col === 0 ? x + bw + gapX * 0.18 : x - gapX * 0.18 - gapX * 0.22;
+        const bwid = gapX * 0.22;
+        const fill = Math.max(0.06, Math.min(1, (t.brakeTemp - 30) / 870));
+        g.fillStyle = 'rgba(255,255,255,0.08)';
+        g.fillRect(bx, y, bwid, bh);
+        const bt = t.brakeTemp;
+        let c = bt < 150 ? '#8a9099' : bt < 500 ? '#4cc36a' : bt < 600 ? '#f0a020' : '#ff3b2f';
+        if (bt >= 600 && Math.floor(time * 5) % 2 === 1) c = '#7a1a14';
+        g.fillStyle = c;
+        g.fillRect(bx, y + bh * (1 - fill), bwid, bh * fill);
       }
       // Temperature, on a dark tab across the middle of the bar
       if (!t.rim && t.temp != null) {
