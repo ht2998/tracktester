@@ -21,11 +21,18 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 32;
+export const BUILD = 33;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 35, date: '13 Nov 2026', title: 'Hands on the levers, thumb on the horn',
+    items: [
+      ['Handbrake and gear lever wait for the hand', 'Pulling the handbrake used to snap the lever up and the hand jumped straight onto it. Now the driver\'s left hand reaches over first, and the lever only moves once he\'s got hold of it: he pulls it up, holds it while it\'s on, and pushes it back down before his hand returns to the wheel. The gear lever works the same way: hand to the knob, then the lever moves into the next gear', 'cockpit'],
+      ['Thumb on the horn', 'When the left hand is busy with a lever and you sound the horn, the right hand keeps hold of the wheel and presses the horn with its thumb. The thumb now points at the middle of the wheel and reaches the horn however far the wheel is turned, instead of only when it\'s straight', 'driver'],
+    ],
+  },
   {
     id: 34, date: '13 Nov 2026', title: 'Real coolant and oil, moving suspension, fixes',
     items: [
