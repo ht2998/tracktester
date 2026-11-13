@@ -24,7 +24,7 @@
 //    Rubbered-in track grips a little better. Rain washes it away.
 import * as THREE from 'three';
 
-export const BUILD = 2;
+export const BUILD = 3;
 
 const G = 9.81;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -196,7 +196,7 @@ export class RacingLine {
       gr.addColorStop(0.75, 'rgba(255,255,255,0.9)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
       g.fillStyle = gr; g.fillRect(0, 0, w, h);
     });
-    this.zoneGeo = ribbon(this.pts, -1.1, 1.1, 0.0035, 8);
+    this.zoneGeo = ribbon(this.pts, -1.7, 1.7, 0.0035, 8);
     this.zoneMat = new THREE.MeshBasicMaterial({ map: soft, vertexColors: true, transparent: true, depthWrite: false, toneMapped: false,
       polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     this.zoneMesh = new THREE.Mesh(this.zoneGeo, this.zoneMat);
@@ -270,19 +270,46 @@ export class RacingLine {
   paintStatic() {
     const lc = this.lineGeo.attributes.color, zc = this.zoneGeo.attributes.color;
     if (!lc?.array || !zc?.array) return;
-    for (let k = 0; k <= this.m; k++) this.paintPoint(k, this.brakeHard[k % this.m]);
+    const m = this.m;
+    for (let k = 0; k <= m; k++) this.paintPoint(k, 0);
+    // each braking run of the plan gets a zone
+    for (let i = 0; i < m; i++) {
+      if (this.brakeHard[i] > 0 && this.brakeHard[(i - 1 + m) % m] === 0) {
+        let n = 0;
+        while (n < m && this.brakeHard[(i + n) % m] > 0) n++;
+        this.paintZone(i, n, true, false);
+      }
+    }
+    // (remembered, to put back where the car's own zones were painted)
+    this.staticZone = Float32Array.from({ length: m }, (_, i) => zc.array[i * 8 + 3]);
     lc.needsUpdate = true; zc.needsUpdate = true;
   }
 
-  paintPoint(k, brake) {
+  // Like Gran Turismo: the line itself always stays the same yellow; the
+  // braking zone is its own red patch on the track, starting with a bright
+  // red bar where to hit the brakes, then fading out towards the corner.
+  paintPoint(k, zoneAlpha) {
     const lc = this.lineGeo.attributes.color.array, zc = this.zoneGeo.attributes.color.array;
-    // yellow, turning red where you brake
-    const r = 1, g = brake > 0.05 ? 0.85 * (1 - brake) * 0.4 + 0.1 : 0.85, b = brake > 0.05 ? 0.1 : 0.15;
-    const a = 0.95;
-    lc.set([r, g, b, a, r, g, b, a], k * 8);
-    const za = brake > 0.05 ? 0.25 + 0.45 * brake : 0;
-    zc.set([0.95, 0.1, 0.08, za, 0.95, 0.1, 0.08, za], k * 8);
-    if (k === 0) { lc.set([r, g, b, a, r, g, b, a], this.m * 8); zc.set([0.95, 0.1, 0.08, za, 0.95, 0.1, 0.08, za], this.m * 8); }
+    const line = [1, 0.84, 0.16, 0.95, 1, 0.84, 0.16, 0.95];
+    const zone = [0.95, 0.12, 0.08, zoneAlpha, 0.95, 0.12, 0.08, zoneAlpha];
+    lc.set(line, k * 8);
+    zc.set(zone, k * 8);
+    if (k === 0) { lc.set(line, this.m * 8); zc.set(zone, this.m * 8); }
+  }
+
+  // A braking zone from point `from`, n points long. withStart: draw the
+  // bright bar at its start (not when the car is already inside it).
+  paintZone(from, n, withStart, live = true) {
+    const m = this.m;
+    for (let r = 0; r < n; r++) {
+      const t = n > 1 ? r / (n - 1) : 1;
+      let a = 0.42 - 0.28 * t;                          // fades towards the corner
+      if (withStart && r < 1) a = 0.9;                  // the brake point
+      if (r >= n - 2) a *= 0.5;                         // soft end
+      const i = (from + r) % m;
+      this.paintPoint(i, a);
+      if (live) this.dynamicPainted?.add(i);
+    }
   }
 
   // Distance boards: 150, 100 and 50 m before the turn-in of each big stop,
@@ -364,7 +391,8 @@ export class RacingLine {
       gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(0.3, 'rgba(0,0,0,1)'); gr.addColorStop(0.7, 'rgba(0,0,0,1)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
       g.fillStyle = gr; g.fillRect(0, 0, w, h);
     });
-    this.rubberMat = new THREE.MeshBasicMaterial({ color: 0x0c0c0c, map: streakTex, alphaMap: null, vertexColors: true, transparent: true,
+    this.rubberMat = new THREE.MeshBasicMaterial({ color: 0x26272a,   // worn-in grey-black, not ink
+      map: streakTex, alphaMap: null, vertexColors: true, transparent: true,
       depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
     // (the streak texture's brightness is used as its see-through-ness)
     this.rubberMat.onBeforeCompile = (shader) => {
@@ -386,20 +414,20 @@ export class RacingLine {
           const seg = [];
           for (let k = i0 + lateStart; k <= i1; k++) seg.push(pts[((k % m) + m) % m]);
           if (seg.length < 3) continue;
-          const w = 0.16 + rand() * 0.08;
+          const w = 0.07 + rand() * 0.05;                     // (half-width: thin streaks)
           const g = ribbon(seg, (p, k) => side + wander + 0.25 * Math.sin(k * 0.05 + wobble) - w, (p, k) => side + wander + 0.25 * Math.sin(k * 0.05 + wobble) + w, 0.0012, 6, false);
           const c = g.attributes.color;
           if (c?.array) {
             for (let k = 0; k < seg.length; k++) {
               const t = k / (seg.length - 1);
               const fade = Math.min(1, t * 6, (1 - t) * 4);                // fade in and out at the ends
-              const a = strength(k + i0 + lateStart) * fade * (0.35 + 0.4 * rand());
+              const a = strength(k + i0 + lateStart) * fade * (0.08 + 0.14 * rand());   // faded: you see them where many overlap
               c.array.set([1, 1, 1, a, 1, 1, 1, a], k * 8);
               // remember how rubbered-in this bit of track is
               const p = seg[k];
               for (const o of [side + wander - 0.2, side + wander + 0.2]) {
                 const key = `${Math.floor((p.x + p.nx * o) / 2)},${Math.floor((p.z + p.nz * o) / 2)}`;
-                this.rubberGrid.set(key, Math.min(1, (this.rubberGrid.get(key) || 0) + a * 0.25));
+                this.rubberGrid.set(key, Math.min(1, (this.rubberGrid.get(key) || 0) + a * 0.8));   // (the grip stays the same however faint they look)
               }
             }
           }
@@ -465,7 +493,8 @@ export class RacingLine {
     let v = speed;
     const mass = this.car.mass + 70, g = this.grip;
     if (!this.dynamicPainted) this.dynamicPainted = new Set();
-    for (const k of this.dynamicPainted) this.paintPoint(k, this.brakeHard[k % m]);
+    // (put back the plan's colours where the car's own were painted last frame)
+    for (const k of this.dynamicPainted) this.paintPoint(k, this.staticZone ? this.staticZone[k % m] : 0);
     this.dynamicPainted.clear();
     // Speed the car could carry if it keeps its foot down from its real
     // speed; wherever that's more than the plan allows, it has to be
@@ -475,20 +504,36 @@ export class RacingLine {
       const engine = 150000 / (mass * Math.max(vv, 4)) - (this.car.drag * vv * vv) / mass;
       return Math.min(61, Math.sqrt(vv * vv + 2 * Math.max(0, engine) * pts[i].ds));
     };
+    // Still braking for a stop that's already showing? Keep it showing
+    // (without the start bar) until its end, so it doesn't flicker on and
+    // off as your speed follows the braking curve.
     let k = 0;
+    if (this.latch != null) {
+      const remain = (this.latch - best + m) % m;
+      if (remain > 0 && remain < 260) {
+        this.paintZone(best, remain + 1, false);
+        v = this.vPlan[this.latch];
+        k = remain + 1;
+      } else {
+        this.latch = null;
+      }
+    }
     while (k <= ahead) {
       const i = (best + k) % m;
-      if (v > this.vPlan[i] + 0.3) {
+      // (on the plan's own speed, its braking zone shows as planned)
+      if (v > this.vPlan[i] + 0.3 || (this.brakeHard[i] > 0 && v > this.vPlan[i] - 1.5)) {
         let q = k;
         while (q < ahead && this.vPlan[(best + q + 1) % m] <= this.vPlan[(best + q) % m] + 0.05) q++;
-        const vEnd = this.vPlan[(best + q) % m];
-        const need = (v * v - vEnd * vEnd) / (2 * Math.max(2, (q - k) * 2)) / (1.15 * g * G);
-        for (let r = k; r <= q; r++) {
-          const ir = (best + r) % m;
-          this.paintPoint(ir, clamp(Math.max(need, this.brakeHard[ir]), 0.3, 1));
-          this.dynamicPainted.add(ir);
-        }
-        v = vEnd;
+        // (a start that's only wobbled a few metres since last frame stays put)
+        const end = (best + q) % m;
+        this.zoneStart ??= new Map();
+        let from = i;
+        const was = this.zoneStart.get(end);
+        if (was != null && Math.abs(((was - i + m + m / 2) % m) - m / 2) <= 3 && ((end - was + m) % m) <= q) from = was;
+        this.zoneStart.set(end, from);
+        this.paintZone(from, ((end - from + m) % m) + 1, true);
+        if (k <= 2) this.latch = end;                      // reached the brake point: hold this zone
+        v = this.vPlan[(best + q) % m];
         k = q + 1;
         continue;
       }
