@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 7;
+export const BUILD = 9;
 
 const G = 9.81;   // gravity, m/s²
 const RPM_PER_RADS = 60 / (2 * Math.PI);
@@ -75,8 +75,8 @@ export const CATERHAM = {
   // Stiffer at the front than the back keeps it stable at the limit.
   suspension: {
     springFront: 28000, springRear: 26000,   // N per metre
-    damperFront: 1700, damperRear: 1600,     // N per m/s
-    arbFront: 13000, arbRear: 6000,          // N per metre of difference side to side
+    damperFront: 2600, damperRear: 2500,     // N per m/s (firm, so the body settles quickly)
+    arbFront: 9000, arbRear: 0,              // N per metre of difference side to side (like the real car: none at the back, which keeps the inside rear tyre loaded)
     bumpStop: 0.055, bumpStopRate: 250000,   // the rubber stops at the end of the travel
     pitchInertia: 700, rollInertia: 150,     // kg·m² of the body on its springs
   },
@@ -729,9 +729,15 @@ export class CarPhysics {
       mu[i] = (w.front ? s.frontGrip : s.rearGrip) * this.surfaceGrip(wx, wz) * this.tyreGrip(i);
       soft[i] = firm(this.tyres[i]);
       // the road's height under the wheel (bumps, kerbs), less however far a
-      // flat tyre or bare rim lets that corner drop
-      const road = this.roadHeight(wx, wz) - this.tyreSink[i];
-      W4.roadRate[i] = W4.roadSet ? clamp((road - W4.road[i]) / h, -3, 3) : 0;
+      // flat tyre or bare rim lets that corner drop. The tyre's own rubber
+      // soaks up ripples shorter than its footprint, so what the suspension
+      // feels is the road smoothed over the last ~40 cm rolled (without
+      // this, tiny ripples at speed felt like hammer blows and kept
+      // unloading the tyres)
+      const raw = this.roadHeight(wx, wz) - this.tyreSink[i];
+      const rolled = Math.hypot(this.vx, this.vy) * h;
+      const road = W4.roadSet ? W4.road[i] + (raw - W4.road[i]) * (1 - Math.exp(-rolled / 0.4 - h / 0.08)) : raw;
+      W4.roadRate[i] = W4.roadSet ? clamp((road - W4.road[i]) / h, -1.5, 1.5) : 0;
       W4.road[i] = road;
     });
     W4.roadSet = true;
@@ -955,7 +961,7 @@ export class CarPhysics {
     const ack = 0.12 * d * Math.abs(d) / Math.max(1e-3, s.maxSteer);
     // (and no power steering: bumps under one front wheel knock the steering
     // a little, a bit of which reaches the tyres)
-    const bumpSteer = W4.kick * 0.1;
+    const bumpSteer = 0;      // (the kick shows on the steering wheel; feeding it to the tyres made the car nervous)
     const delta = [d + Math.max(0, ack) + wb[0] * 0.5 + bumpSteer, d + Math.min(0, ack) + wb[1] * 0.5 + bumpSteer, wb[2] * 0.35, wb[3] * 0.35];
     const cosD = delta.map(Math.cos), sinD = delta.map(Math.sin);
     const A = [Lf, Lf, -Lr, -Lr], B = [tH, -tH, tH, -tH];
@@ -974,9 +980,13 @@ export class CarPhysics {
         const bodyVel = W4.heaveV - A[i] * W4.pitchV + B[i] * W4.rollV;
         comp[i] = W4.road[i] - bodyAt;
         const front = i < 2;
+        // (dampers go softer on fast, sharp bumps, like real ones do: the
+        // force builds more slowly past about 0.3 m/s)
+        const dv = W4.roadRate[i] - bodyVel, knee = 0.3;
+        const damp = Math.abs(dv) < knee ? dv : Math.sign(dv) * (knee + 0.5 * (Math.abs(dv) - knee));
         let f = (front ? staticF + aeroF : staticR + aeroR)
           + (front ? susp.springFront : susp.springRear) * comp[i]
-          + (front ? susp.damperFront : susp.damperRear) * (W4.roadRate[i] - bodyVel);
+          + (front ? susp.damperFront : susp.damperRear) * damp;
         if (comp[i] > susp.bumpStop) f += susp.bumpStopRate * (comp[i] - susp.bumpStop);   // hitting the bump stops
         W4.spring[i] = f;
       }
@@ -1221,12 +1231,16 @@ export class CarPhysics {
       }
       if (t.blown) t.wear = 1;
 
-      // A soft tyre lets its corner sit lower, more so when it's carrying weight.
-      // On the bare rim, it's the full drop.
-      this.tyreSink[i] = t.detached ? s.frameSink
+      // A soft tyre lets its corner sit lower; on the bare rim, it's the
+      // full drop. (Worked out from the car's settled weight, not the load
+      // this instant, and eased in: the suspension now reacts to it, and
+      // the two used to chase each other, making the wheel chatter.)
+      const sinkTarget = t.detached ? s.frameSink
         : t.rim ? s.rimSink + (s.frameSink * 0.85 - s.rimSink) * t.rimWear
         : t.blown ? s.flatSink + (s.rimSink - s.flatSink) * t.shred
-        : s.flatSink * Math.pow(1 - t.pressure, 1.2) * (0.6 + 0.4 * clamp(loadShare, 0, 2));
+        : s.flatSink * Math.pow(1 - t.pressure, 1.2) * 0.9;
+      const maxStep = 0.25 * h;                              // at most 25 cm a second
+      this.tyreSink[i] += clamp(sinkTarget - this.tyreSink[i], -maxStep, maxStep);
     });
   }
 
