@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 9;
+export const BUILD = 10;
 
 const G = 9.81;   // gravity, m/s²
 const RPM_PER_RADS = 60 / (2 * Math.PI);
@@ -78,6 +78,7 @@ export const CATERHAM = {
     damperFront: 2600, damperRear: 2500,     // N per m/s (firm, so the body settles quickly)
     arbFront: 9000, arbRear: 0,              // N per metre of difference side to side (like the real car: none at the back, which keeps the inside rear tyre loaded)
     bumpStop: 0.055, bumpStopRate: 250000,   // the rubber stops at the end of the travel
+    droop: 0.07,                             // how far a wheel can hang below its normal height (m) before the damper is fully stretched
     pitchInertia: 700, rollInertia: 150,     // kg·m² of the body on its springs
   },
 
@@ -273,6 +274,7 @@ export class CarPhysics {
     this.fuel = this.spec.fuelCapacity;   // litres in the tank (resets full)
     this.misfiring = false;   // sputtering on the last drops of fuel
     this.clutchIn = false;    // X held: engine disconnected from the wheels
+    this.clutchPedal = 0;     // 0 = foot off the clutch, 1 = pedal to the floor
     this.clutchWasIn = false;
     this.clutchDump = 0;      // seconds left of a clutch-dump kick
     this.dumpStrength = 0;
@@ -287,6 +289,11 @@ export class CarPhysics {
     this.wheelBend = [0, 0, 0, 0];   // each wheel knocked out of line, radians (+ = toe out to the left)
     this.noseCrush = 0;       // metres the nose has been pushed in
     this.tailCrush = 0;       // metres the back has been pushed in
+    this.dryTime = 0;         // seconds the engine has run with (almost) no coolant
+    this.oilSmoke = 0;        // 0-1: black smoke from oil cooking in an overheated engine
+    this.overheatKnock = 0;   // 0-1: pre-ignition knock from a cooking engine
+    this.oilMilky = 0;        // 0-1: coolant mixed into the oil (milky)
+    this.distance = 0;        // metres driven since the last reset (the oil darkens with it)
     this.onFire = false;      // engine bay fire
     this.fireLevel = 0;       // 0-1, how big the flames are
     this.fireTime = 0;        // seconds since it caught
@@ -298,7 +305,7 @@ export class CarPhysics {
       slipAngle: [0, 0, 0, 0],  // each tyre's slip angle (radians)
       absK: [1, 1, 1, 1],       // ABS: how much brake each wheel is allowed
       tcsCut: 1,                // traction control: share of the power let through
-      Fz: [0, 0, 0, 0], spring: [0, 0, 0, 0], comp: [0, 0, 0, 0],
+      Fz: [0, 0, 0, 0], spring: [0, 0, 0, 0], comp: [0, 0, 0, 0], hanging: [false, false, false, false],
       road: [0, 0, 0, 0], roadRate: [0, 0, 0, 0], roadSet: false, at: new Float64Array(8),
       heave: 0, pitch: 0, roll: 0, heaveV: 0, pitchV: 0, rollV: 0, ax: 0, ay: 0,
       synced: false, lastVx: 0,
@@ -331,7 +338,16 @@ export class CarPhysics {
     if (zone === 'front') {
       const wasHoled = this.radiator < 0.75;
       this.noseCrush = Math.min(0.32, this.noseCrush + Math.max(0, v - 3) * 0.022);
+      const radBefore = this.radiator;
       this.radiator = Math.max(0, this.radiator - Math.max(0, v - 3.5) / 14);
+      // The cooling system is under pressure: a holed radiator doesn't just
+      // seep, it bursts out in a pink spray (and steam) right away
+      if (this.radiator < radBefore && this.coolant > 0.05) {
+        this.events.push({ type: 'coolantBurst', strength: clamp((radBefore - this.radiator) * 2, 0.3, 1) });
+        this.coolant = Math.max(0, this.coolant - (radBefore - this.radiator) * 0.25);
+      }
+      // a big one can crack the head: coolant gets into the oil
+      if (v > 12) this.oilMilky = Math.min(1, this.oilMilky + (v - 12) * 0.03);
       // The engine sits right behind the radiator, so the next hit MAY reach
       // it (or a very hard first one): more likely the harder you hit, and
       // how badly varies. A light knock usually gets away with it.
@@ -385,8 +401,23 @@ export class CarPhysics {
     const target = this.engineDead ? 0.25
       : 0.42 + 0.1 * effort + (1 - cooling) * (0.25 + 0.75 * effort);
     this.coolantTemp += (target - this.coolantTemp) * Math.min(1, (target > this.coolantTemp ? 0.07 : 0.03) * dt);
-    if (this.coolantTemp > 1 && !this.engineBlown) {
-      this.damageEngine((this.coolantTemp - 1) * 0.25 * dt + 0.003 * dt);
+    // --- Running dry: with the coolant gone the engine cooks. The oil
+    // thins and burns (black smoke pours out, starting about half a minute
+    // in), the fuel goes off by itself before the spark (pre-ignition) and
+    // it starts to knock, a metallic tapping, losing power; then it seizes
+    // and dies, about a minute in. Working it hard makes it all faster;
+    // idling slows it down. Overheating also lets coolant into the oil.
+    if (!this.engineDead && this.coolant < 0.12) {
+      this.dryTime += dt * (0.5 + 0.8 * effort);
+    }
+    this.oilSmoke = this.engineBlown ? 0 : clamp((this.dryTime - 24) / 14, 0, 1);
+    this.overheatKnock = this.engineBlown ? 0 : clamp((this.dryTime - 38) / 8, 0, 1);
+    if (this.oilSmoke > 0) this.oilLevel = Math.max(0, this.oilLevel - 0.004 * this.oilSmoke * dt);   // burning it off
+    // (a cooking engine's head gasket lets coolant seep into the oil: it turns milky)
+    if (this.coolantTemp > 1 || this.dryTime > 10) this.oilMilky = Math.min(1, this.oilMilky + (0.006 + 0.01 * Math.max(0, this.coolantTemp - 1)) * dt);
+    if (this.dryTime > 20 && !this.engineBlown) {
+      const wornTo = 1 - clamp((this.dryTime - 20) / 36, 0, 1);         // gone at about 56 s
+      if (this.engineHealth > wornTo) this.damageEngine(this.engineHealth - wornTo);
       if (this.engineBlown && Math.random() < 0.3) this.catchFire();
     }
     // Fuel from a split tank (faster while the car is moving and sloshing it)
@@ -599,7 +630,7 @@ export class CarPhysics {
     // harder the engine is worked, the faster it destroys itself. At 0% it's
     // a ticking time bomb: you can hear the rods knocking.
     const starvation = clamp((0.3 - this.oilLevel) / 0.3, 0, 1);
-    this.knock = starvation;
+    this.knock = Math.max(starvation, this.overheatKnock);      // (or the knock of an overheated engine)
     if (starvation > 0) {
       const effort = 0.2 + 0.8 * clamp(this.rpm / s.redline, 0, 1);
       this.engineHealth -= starvation * effort * s.starvationDamage * dt;
@@ -833,6 +864,12 @@ export class CarPhysics {
     }
     this.clutchWasIn = clutchIn;
     this.clutchIn = clutchIn;
+    // How far down the driver's left foot has the clutch pedal (for the
+    // cockpit): all the way with X, a quick dip for each manual gear change,
+    // and easing up as the clutch bites when pulling away
+    this.clutchPedal = clutchIn ? 1
+      : this.transmission === 'manual' && this.shiftTimer > 0 ? 1
+      : clutchSlipping && this.transmission !== 'cvt' ? clamp(Math.exp(-Math.max(0, this.launchTime) / s.clutchBite) * 1.3, 0, 1) : 0;
     if (clutchIn) targetRpm = throttle ? s.redline + 300 : s.idleRpm;
     if (this.clutchDump > 0) {
       this.clutchDump -= h;
@@ -883,7 +920,8 @@ export class CarPhysics {
       engineTorque *= 1 + 1.4 * this.dumpStrength * (this.clutchDump / 0.35);
     }
     // Last drops of fuel: the engine sputters, cutting out now and then
-    this.misfiring = !dead && this.fuel < s.fuelReserve;
+    this.misfiring = !dead && (this.fuel < s.fuelReserve || this.overheatKnock > 0.3);
+    if (!dead && this.overheatKnock > 0) engineTorque *= 1 - 0.45 * this.overheatKnock;   // knocking: losing power
     if (this.misfiring && Math.random() < 0.5 * (1 - this.fuel / s.fuelReserve)) engineTorque = Math.min(engineTorque, 0);
     if (dead) engineTorque = 0;
     if (this.gear === -1 && this.vx < -s.maxReverseSpeed) engineTorque = Math.min(engineTorque, 0);
@@ -979,6 +1017,12 @@ export class CarPhysics {
         const bodyAt = W4.heave - A[i] * W4.pitch + B[i] * W4.roll;
         const bodyVel = W4.heaveV - A[i] * W4.pitchV + B[i] * W4.rollV;
         comp[i] = W4.road[i] - bodyAt;
+        // Fully stretched: the wheel can only drop so far below the body.
+        // If the road falls away further (a crest, a jump, a ledge) the
+        // wheel hangs at its limit, in the air, carrying nothing.
+        const hanging = comp[i] < -susp.droop;
+        if (hanging) comp[i] = -susp.droop;
+        W4.hanging[i] = hanging;
         const front = i < 2;
         // (dampers go softer on fast, sharp bumps, like real ones do: the
         // force builds more slowly past about 0.3 m/s)
@@ -994,7 +1038,7 @@ export class CarPhysics {
       const arbF = susp.arbFront * (comp[0] - comp[1]), arbR = susp.arbRear * (comp[2] - comp[3]);
       W4.spring[0] += arbF; W4.spring[1] -= arbF; W4.spring[2] += arbR; W4.spring[3] -= arbR;
       for (let i = 0; i < 4; i++) {
-        Fz[i] = Math.max(0, W4.spring[i]);            // a wheel in the air carries nothing
+        Fz[i] = W4.hanging[i] ? 0 : Math.max(0, W4.spring[i]);   // a wheel in the air carries nothing
         const extra = Fz[i] - (i < 2 ? staticF : staticR);
         heaveF += extra;
         pitchM -= A[i] * extra;
@@ -1104,6 +1148,7 @@ export class CarPhysics {
       this.z += (cs * this.vx - sn * this.vy) * h2;
     }
     for (let i = 0; i < 4; i++) loads[i] = Fz[i];
+    this.distance += Math.hypot(this.vx, this.vy) * h;
 
     // Come to a full stop instead of creeping forever
     if (!c.throttle && Math.abs(this.vx) < 0.15 && Math.abs(this.vy) < 0.15 && (c.brake || c.handbrake || Math.abs(this.vx) < 0.05)) {
