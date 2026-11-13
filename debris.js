@@ -11,9 +11,15 @@
 import * as THREE from 'three';
 import { groundAt } from './ground.js';
 
+// How steeply the ground rises towards +x and +z at a point (rise per metre)
+function slopeAt(x, z) {
+  const e = 0.3;
+  return [(groundAt(x + e, z) - groundAt(x - e, z)) / (2 * e), (groundAt(x, z + e) - groundAt(x, z - e)) / (2 * e)];
+}
+
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 3;
+export const BUILD = 4;
 
 const GRAVITY = 9.81;
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -466,6 +472,11 @@ export class EngineDebris {
 
     // --- Metal ---
     for (const p of this.pieces) {
+      // a round piece lying still on a slope steep enough starts rolling again
+      if (p.resting && p.rolls && p.rolling) {
+        const [gx, gz] = slopeAt(p.pos.x, p.pos.z);
+        if (0.714 * GRAVITY * Math.hypot(gx, gz) > (p.lumpy ? 1.6 : 0.25) * 1.15) p.resting = false;
+      }
       if (!p.resting) this.stepPiece(p, dt);
       this.drawPiece(p);
     }
@@ -484,18 +495,22 @@ export class EngineDebris {
     // Hit the ground: bounce, losing energy each time
     if (p.pos.y < floor) {
       p.pos.y = floor;
-      if (p.vel.y < 0) {
+      if (p.vel.y < -0.6) {
         p.vel.y = -p.vel.y * p.bounce;
-        // Each impact with the tarmac scrubs off some sideways speed too
+        // Each real impact with the tarmac scrubs off some sideways speed too
+        // (not just sitting on it, or rolling along it)
         p.vel.x *= 0.7;
         p.vel.z *= 0.7;
-      }
+      } else if (p.vel.y < 0) p.vel.y = 0;
       if (Math.abs(p.vel.y) < 0.4) p.vel.y = 0;
       if (p.rolls) p.rolling = true;
     }
 
     if (p.rolling && p.vel.y === 0) {
-      // Rolling along the ground on its side
+      // Rolling along the ground on its side (and downhill, on a slope)
+      const [gx, gz] = slopeAt(p.pos.x, p.pos.z);
+      p.vel.x -= 0.714 * GRAVITY * gx * dt;      // (a rolling cylinder feels 5/7 of the pull)
+      p.vel.z -= 0.714 * GRAVITY * gz * dt;
       const speed = Math.hypot(p.vel.x, p.vel.z);
       // Gently curve, and slow down from rolling resistance (lumpy things far faster)
       const turn = p.curve * dt * Math.min(1, speed);
@@ -503,12 +518,12 @@ export class EngineDebris {
       const vx = p.vel.x * c - p.vel.z * s;
       p.vel.z = p.vel.x * s + p.vel.z * c;
       p.vel.x = vx;
-      const slow = (p.lumpy ? 3.2 : 1.3) * dt + 0.6 * dt * speed;
+      const slow = (p.lumpy ? 1.6 : 0.25) * dt + 0.6 * dt * speed;
       const scale = speed > 0 ? Math.max(0, speed - slow) / speed : 0;
       p.vel.x *= scale;
       p.vel.z *= scale;
       p.rollAngle += (speed / p.rollRadius) * dt;
-      if (speed < 0.03) { p.vel.set(0, 0, 0); p.resting = true; }
+      if (speed < 0.03 && 0.714 * GRAVITY * Math.hypot(gx, gz) <= (p.lumpy ? 1.6 : 0.25) * 1.15) { p.vel.set(0, 0, 0); p.resting = true; }   // (unless the slope keeps it rolling)
     } else if (onGround && p.vel.y === 0 && p.flat) {
       // Engine parts: scrape along and topple over onto their flat side
       p.settling = true;
