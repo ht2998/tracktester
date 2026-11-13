@@ -14,7 +14,7 @@ import { groundAt } from './ground.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 3;
+export const BUILD = 4;
 
 const rand = (a, b) => a + Math.random() * (b - a);
 
@@ -225,7 +225,17 @@ export class LooseWheel {
     // Rolling resistance (much more once it's lying down)
     const down = this.lean / (Math.PI / 2);
     const slow = 1.9 + 6 * down * down;              // a loose wheel scrubs and wobbles: stops in about 100 m from 70 km/h
-    const k = speed > 0 ? Math.max(0, speed - slow * dt) / speed : 0;
+    // Still up and rolling on a slope: it speeds up downhill, slows uphill
+    if (speed > 0.2 && down < 0.5) {
+      const e = 0.4;
+      const gx = (groundAt(this.x + e, this.z) - groundAt(this.x - e, this.z)) / (2 * e);
+      const gz = (groundAt(this.x, this.z + e) - groundAt(this.x, this.z - e)) / (2 * e);
+      const along = (gx * this.vx + gz * this.vz) / speed;           // the slope in the way it's rolling
+      const pull = -0.5 * 9.81 * along * (1 - down) * dt;             // (a hoop feels about half the pull)
+      this.vx += (this.vx / speed) * pull; this.vz += (this.vz / speed) * pull;
+    }
+    const sp2 = Math.hypot(this.vx, this.vz);
+    const k = sp2 > 1e-6 ? Math.max(0, sp2 - slow * dt) / sp2 : 0;
     this.vx *= k; this.vz *= k;
     this.x += this.vx * dt; this.z += this.vz * dt;
     // Hops and bounces
