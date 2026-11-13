@@ -24,7 +24,7 @@
 //    Rubbered-in track grips a little better. Rain washes it away.
 import * as THREE from 'three';
 
-export const BUILD = 3;
+export const BUILD = 4;
 
 const G = 9.81;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -166,7 +166,7 @@ export class RacingLine {
       .map((c, k) => {
         let turn = 0;                                     // how far it turns, in total (radians)
         for (let i = c.a; i <= c.b; i++) { const p = this.pts[((i % m) + m) % m]; turn += p.curve * p.ds; }
-        return { ...c, number: k + 1, turn };
+        return { ...c, number: c.number ?? k + 1, turn };
       });
 
     // --- 2. Speeds (worked out again whenever the grip changes) ---
@@ -670,14 +670,15 @@ class CornerPanel {
 // still timed but won't count as a best. Bests are remembered.
 // =====================================================================
 export class LapTimer {
-  constructor(racing, { onTrack, storeKey = 'tracktester-sepang-best' }) {
+  constructor(racing, { onTrack, storeKey = 'tracktester-sepang-best-v2' }) {
     this.r = racing;
     this.onTrack = onTrack;          // (x, z) -> is that on the track (tarmac or kerb)?
     this.storeKey = storeKey;
     const m = racing.m;
     // the sector lines: midway along the straights after T4 and T11
     const between = (a, b) => {
-      const ca = racing.corners[a - 1], cb = racing.corners[b - 1];
+      const byNo = (n) => racing.corners.filter((c) => c.number === n);
+      const ca = byNo(a).pop(), cb = byNo(b)[0];   // (the end of the one, the start of the next)
       if (!ca || !cb) return Math.round(m * (a < 8 ? 0.33 : 0.66));
       const end = ((ca.b % m) + m) % m, start = ((cb.a % m) + m) % m;
       const gap = (start - end + m) % m;
