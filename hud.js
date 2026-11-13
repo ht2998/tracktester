@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 8;
+export const BUILD = 9;
 
 const COLORS = {
   face: '#15181c',
@@ -749,11 +749,10 @@ export class Hud {
     dash.append(this.tyreBars.canvas, this.tach.canvas, this.speedo.canvas, smallGauges);
     document.body.appendChild(dash);
 
-    // Clutch status: a tiny line of text at the top of the screen
+    // (The old "Clutch engaged" line is gone: the clutch pedal in the
+    // cockpit shows it now. Kept off-screen so nothing else has to change.)
     this.clutchText = document.createElement('div');
     this.clutchText.id = 'clutch-status';
-    this.clutchText.textContent = 'Clutch engaged';
-    document.body.appendChild(this.clutchText);
 
     // Side panel: an arrow on the right edge opens Gearbox and Assists
     this.side = document.createElement('div');
