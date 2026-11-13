@@ -7,10 +7,11 @@
 // =====================================================================
 
 import * as THREE from 'three';
+import { groundAt } from './ground.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 4;
+export const BUILD = 5;
 
 const CELL = 0.5;   // metres: lookup grid for "which tufts are under this tyre?"
 const LENGTHS = [0.045, 0.085, 0.14];   // metres: short, medium, long
@@ -61,15 +62,20 @@ function grassMaterial(uniforms) {
       #ifdef USE_INSTANCING
         mvPosition = instanceMatrix * mvPosition;
       #endif
+      // (where this tuft's roots are: each tuft sits on the ground at its own height, on the hills)
+      float baseY = uBase;
+      #ifdef USE_INSTANCING
+      baseY = instanceMatrix[3][1];
+      #endif
       // far edge of a field that follows the car: tufts shrink into the ground
       #ifdef USE_INSTANCING
       if (uFade.z > 0.0) {
-        vec3 root = vec3(instanceMatrix[3][0], uBase, instanceMatrix[3][2]);
+        vec3 root = vec3(instanceMatrix[3][0], baseY, instanceMatrix[3][2]);
         float fade = smoothstep(uFade.z, uFade.z * 0.7, distance(root.xz, uFade.xy));
         mvPosition.xyz = root + (mvPosition.xyz - root) * fade;
       }
       #endif
-      float hgt = max(mvPosition.y - uBase, 0.0);
+      float hgt = max(mvPosition.y - baseY, 0.0);
       float wave = sin(uTime * 1.9 - dot(mvPosition.xz, normalize(uWind + vec2(1e-4))) * 0.45);
       float flutter = sin(uTime * 7.0 + mvPosition.x * 3.1 + mvPosition.z * 2.3);
       float bendAmt = hgt * hgt * (0.55 + 0.35 * wave) * 0.5;
@@ -358,7 +364,7 @@ export class GrassField {
         const kind = patchiness > 0.45 ? 2 : patchiness > -0.35 ? 1 : 0;
         const len = LENGTHS[kind] * (0.8 + r2 * 0.4);
         q.setFromAxisAngle(up, r3 * Math.PI * 2);
-        tm.compose(p.set(x, groundY, z), q, sc.set(1 + r4 * 0.4, len, 1 + r5 * 0.4));
+        tm.compose(p.set(x, groundY + groundAt(x, z), z), q, sc.set(1 + r4 * 0.4, len, 1 + r5 * 0.4));
         tc.setHSL(0.22 + r6 * 0.06, 0.35, 0.72 + r7 * 0.2);
         return { kind, matrix: tm, colour: tc };
       },
@@ -406,7 +412,7 @@ export class StoneField {
         if (!isGravel(x, z)) return null;
         const r = 0.012 + a * b * 0.035;
         q.setFromEuler(e.set(c * 6, d * 6, f * 6));
-        tm.compose(p.set(x, groundY + r * 0.25, z), q,
+        tm.compose(p.set(x, groundY + groundAt(x, z) + r * 0.25, z), q,
           sc.set(r * (0.8 + g * 0.5), r * (0.5 + h * 0.3), r * (0.8 + k * 0.5)));
         return { kind: 0, matrix: tm, colour: tc.set(shades[Math.floor(a * 997) % shades.length]) };
       },
