@@ -11,10 +11,11 @@
 // =====================================================================
 
 import * as THREE from 'three';
+import { groundAt, lieOnGround } from './ground.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 4;
+export const BUILD = 5;
 
 const CELL = 2;   // metres: size of each square in the lookup grid
 const LOBES_PER_PUDDLE = 5;   // main pool + up to 4 lobes
@@ -203,8 +204,8 @@ export class OilSlicks {
     const { ax, az, bx, bz } = sg;
     const len = Math.hypot(bx - ax, bz - az);
     const w = sg.w * (1 + 1.6 * (sg.wash || 0));
-    this._p.set((ax + bx) / 2, 0.004, (az + bz) / 2);
-    this._q.setFromAxisAngle(this._up, Math.atan2(bx - ax, bz - az));
+    this._p.set((ax + bx) / 2, 0.004 + groundAt((ax + bx) / 2, (az + bz) / 2), (az + bz) / 2);
+    lieOnGround(this._q, this._p.x, this._p.z, Math.atan2(bx - ax, bz - az));   // (along the slope, on a hill)
     this._s.set(w, 1, len + w * 0.6);
     this._m.compose(this._p, this._q, this._s);
     this.trailMesh.setMatrixAt(i, this._m);
@@ -251,8 +252,8 @@ export class OilSlicks {
     this.shade(p.wash, p.colour);
     for (let k = 0; k < LOBES_PER_PUDDLE; k++) this.puddleMesh.setColorAt(base + k, this._c);
     this.puddleMesh.instanceColor.needsUpdate = true;
-    this._p.set(p.x, 0.005, p.z);
-    this._q.setFromAxisAngle(this._up, p.angle);
+    this._p.set(p.x, 0.005 + groundAt(p.x, p.z), p.z);
+    lieOnGround(this._q, p.x, p.z, p.angle);
     this._s.set(r, 1, r * p.squash);
     this._m.compose(this._p, this._q, this._s);
     this.puddleMesh.setMatrixAt(base, this._m);
@@ -265,8 +266,9 @@ export class OilSlicks {
         const grow = Math.min(1, lobe.speed * (p.r / p.maxR) + 0.15);
         const lr = r * lobe.size * grow;
         const d = r * lobe.reach * grow;
-        this._p.set(p.x + Math.sin(lobe.angle) * d, 0.0052, p.z + Math.cos(lobe.angle) * d);
-        this._q.setFromAxisAngle(this._up, lobe.turn);
+        this._p.set(p.x + Math.sin(lobe.angle) * d, 0, p.z + Math.cos(lobe.angle) * d);
+        this._p.y = 0.0052 + groundAt(this._p.x, this._p.z);
+        lieOnGround(this._q, this._p.x, this._p.z, lobe.turn);
         this._s.set(lr, 1, lr * lobe.squash);
         this._m.compose(this._p, this._q, this._s);
       }
