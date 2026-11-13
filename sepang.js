@@ -43,7 +43,7 @@ import {
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 6;
+export const BUILD = 7;
 
 // [x, z] in metres, in driving order (clockwise from the start/finish line)
 const OUTLINE = [[0.0,0.0],[-1.1,-301.1],[1.1,-314.8],[8.2,-326.7],[17.8,-334.5],[30.3,-338.2],[44.0,-337.7],[57.9,-331.6],[67.8,-319.1],[71.6,-303.0],[66.5,-284.9],[51.7,-251.7],[52.7,-240.1],[61.4,-229.8],[72.7,-225.7],[88.2,-227.7],[104.4,-236.7],[134.6,-257.7],[152.7,-266.2],[173.7,-271.1],[194.5,-272.6],[217.9,-270.7],[275.0,-260.6],[301.3,-249.4],[327.7,-232.9],[344.4,-217.1],[362.6,-193.4],[376.0,-169.0],[383.0,-143.9],[416.7,-3.4],[448.9,102.3],[473.0,173.2],[489.5,219.0],[494.5,234.8],[493.2,246.2],[486.2,255.5],[473.6,258.1],[366.4,268.9],[311.1,276.3],[243.7,287.6],[217.3,297.6],[198.1,309.6],[178.0,331.2],[164.1,353.1],[156.7,375.4],[154.0,397.6],[155.8,423.3],[163.8,450.0],[175.5,469.4],[211.0,508.3],[220.2,526.8],[227.5,555.2],[226.4,578.9],[221.5,601.9],[212.3,620.2],[197.7,636.0],[-46.0,819.4],[-57.2,819.6],[-69.5,814.0],[-143.2,773.8],[-149.6,762.9],[-151.5,750.5],[-147.8,566.0],[-154.4,391.9],[-162.4,296.1],[-169.0,286.6],[-180.8,282.8],[-194.9,289.7],[-237.2,354.2],[-253.1,367.8],[-275.7,376.4],[-298.8,379.9],[-331.2,376.5],[-358.1,370.0],[-384.2,361.8],[-416.9,343.1],[-449.7,316.3],[-456.9,302.5],[-458.0,289.7],[-454.3,275.6],[-446.0,264.8],[-257.0,67.5],[-250.5,53.2],[-247.9,34.3],[-251.5,13.2],[-284.6,-66.7],[-289.4,-87.7],[-290.8,-112.4],[-288.9,-133.7],[-278.6,-173.1],[-265.4,-199.4],[-250.1,-215.9],[-217.4,-237.1],[-193.6,-243.6],[-179.4,-243.8],[-164.3,-232.6],[-157.2,-210.8],[-69.8,636.8],[-60.2,649.6],[-40.9,660.0],[-23.8,656.8],[-6.9,642.9],[-1.1,618.2]];
@@ -248,11 +248,47 @@ function runoffTexture() {
 // ---------------------------------------------------------------------
 // BUILD
 // ---------------------------------------------------------------------
+// ---------------------------------------------------------------------
+// ELEVATION: Sepang isn't flat. There's 22 m between its lowest point
+// (round turn 3) and its highest (turn 11). Heights along the lap, in
+// metres, by distance from the line's start (just after the finish line):
+// down through the turn 1-2 hairpin and on to turn 3, rising through the
+// apex of turn 4, up and down before turn 5, climbing gently through 7
+// and 8, down the straight to turn 9 (uphill, with a crest at the apex),
+// on up past turn 10 to the top at turn 11, dropping through the 12-13
+// chicane, then gently down the back straight and the start straight.
+// (Shaped from circuit guides; the exact survey heights aren't public.)
+// ---------------------------------------------------------------------
+const ELEVATION = [
+  [0, 6], [250, 6.3], [386, 6.2], [482, 3.2], [600, 1], [720, 0], [865, 1.8], [1100, 3.2],
+  [1304, 5.2], [1450, 8.6], [1601, 7], [1780, 7.4], [1956, 8.2], [2286, 9.6], [2395, 10.6],
+  [2650, 8.2], [2840, 9.5], [2889, 10.2], [2950, 9.8], [3005, 12.4], [3130, 17.2], [3262, 22],
+  [3400, 21.2], [3561, 18.8], [3700, 15], [3941, 12], [4200, 10.4], [4500, 8.8], [4872, 7.2],
+  [5200, 6.4],
+];
+function elevationAt(s, L) {
+  s = ((s % L) + L) % L;
+  const E = ELEVATION, n = E.length;
+  let i = n - 1;
+  while (i > 0 && E[i][0] > s) i--;
+  const P = (k) => { const kk = ((k % n) + n) % n; return [E[kk][0] + Math.floor(k / n) * L, E[kk][1]]; };
+  const [s0, y0] = P(i - 1), [s1, y1] = P(i), [s2, y2] = P(i + 1), [s3, y3] = P(i + 2);
+  const t = (s - s1) / Math.max(1e-6, s2 - s1);
+  // a smooth curve through the points (Catmull-Rom, scaled for uneven gaps)
+  const m1 = ((y2 - y0) / (s2 - s0)) * (s2 - s1), m2 = ((y3 - y1) / (s3 - s1)) * (s2 - s1);
+  const t2 = t * t, t3 = t2 * t;
+  return (2 * t3 - 3 * t2 + 1) * y1 + (t3 - 2 * t2 + t) * m1 + (-2 * t3 + 3 * t2) * y2 + (t3 - t2) * m2;
+}
+
 export function buildSepang(scene, { isMobile = false, gravelMaps = null } = {}) {
   startScenery();
   const line = centreLine();
   const m = line.length;
   const corners = findCorners(line);
+  // Their official numbers: the long turn 3 shows up as two bends, and the
+  // gentle turn 13 is too open to count as one here
+  const OFFICIAL = [1, 2, 3, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15];
+  if (corners.length === OFFICIAL.length) corners.forEach((c, i) => { c.number = OFFICIAL[i]; });
   const echoes = [];
 
   // --- Surfaces, as a grid of 1 m squares (for the physics and the effects) ---
@@ -260,6 +296,7 @@ export function buildSepang(scene, { isMobile = false, gravelMaps = null } = {})
   for (const p of line) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z); }
   minX -= 80; maxX += 80; minZ -= 80; maxZ += 80;
   const GW = Math.ceil(maxX - minX), GH = Math.ceil(maxZ - minZ);
+  const terrain = buildTerrain(line, minX, maxX, minZ, maxZ, isMobile ? 6 : 4);
   const grid = new Uint8Array(GW * GH);        // 0 grass, 1 tarmac, 2 kerb, 3 gravel
   const trackOnly = new Uint8Array(GW * GH);   // just the track itself (to keep run-offs and barriers off other parts of it)
   const cell = (x, z) => {
@@ -564,6 +601,8 @@ export function buildSepang(scene, { isMobile = false, gravelMaps = null } = {})
     grassTexture: grassTexture(),
     view: { fogNear: 120, fogFar: 900, far: 1400 },
     groundY: -0.04,          // the grass sits just below the track, so they never flicker against each other
+    heightAt: terrain.heightAt,   // how high the ground is at a point (the hills and dips)
+    terrain,
     lengthM: Math.round(line[m - 1].s),
     corners: corners.length,
     line,                    // the centre line (for testing and, later, AI drivers)
@@ -615,4 +654,134 @@ function buildGrandstand(scene, x, z0, z1) {
   addCollider(back - 1, x + DEPTH / 2, z0, z1, 'building');
   addRoof(back - 4, x + 6, z0 - 5, z1 + 5, top);
   return [echoBox(back - 1, 0, z0, x + DEPTH / 2, top, z1, 0.9)];
+}
+
+// ---------------------------------------------------------------------
+// THE GROUND'S SHAPE: a grid of heights (every 4 m; 6 m on phones). On and
+// near the track the ground is at the track's height (level across it);
+// further out it eases into smooth rolling ground, and it flattens out
+// towards the edges into the open plain beyond. Everything (the track,
+// the car, the trees, skid marks) uses the same heights, read off the grid
+// as flat triangles, so nothing floats or sinks into the ground.
+// ---------------------------------------------------------------------
+function buildTerrain(line, minX, maxX, minZ, maxZ, cell) {
+  const m = line.length, L = line[m - 1].s + Math.hypot(line[0].x - line[m - 1].x, line[0].z - line[m - 1].z);
+  // the height along the line, eased over ~60 m so the slopes are gentle
+  const rawY = line.map((p) => elevationAt(p.s, L));
+  const ease = 15;
+  line.forEach((p, i) => {
+    let sum = 0, w = 0;
+    for (let k = -ease; k <= ease; k++) { const wk = 1 - Math.abs(k) / (ease + 1); sum += rawY[(i + k + m) % m] * wk; w += wk; }
+    p.y = sum / w;
+  });
+  const mean = line.reduce((a, p) => a + p.y, 0) / m;
+  // the line's points sorted into 20 m squares, to find the nearby ones quickly
+  const B = 20, buckets = new Map();
+  line.forEach((p, i) => {
+    const key = Math.floor(p.x / B) * 100003 + Math.floor(p.z / B);
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(i);
+  });
+  const margin = 160;
+  const x0 = minX - margin, z0 = minZ - margin;
+  const NX = Math.ceil((maxX - minX + 2 * margin) / cell) + 1, NZ = Math.ceil((maxZ - minZ + 2 * margin) / cell) + 1;
+  const h = new Float32Array(NX * NZ);
+  const free = new Float32Array(NX * NZ);   // how free each point is to be smoothed (0 = pinned to the track's height)
+  const R = 150, sig2 = 2 * 48 * 48, reachB = Math.ceil(R / B);
+  for (let j = 0; j < NZ; j++) {
+    for (let i = 0; i < NX; i++) {
+      const x = x0 + i * cell, z = z0 + j * cell;
+      // (bestY: the height of the nearest bit of track, blended softly with
+      // any other bit of track nearly as close, so there's no step in the
+      // ground halfway between two parts of the circuit)
+      let best = Infinity, nearSum = 0, nearW = 0, sum = 0, wsum = 0;
+      const TAU = 8;
+      const bx = Math.floor(x / B), bz = Math.floor(z / B);
+      for (let dx = -reachB; dx <= reachB; dx++) {
+        for (let dz = -reachB; dz <= reachB; dz++) {
+          const list = buckets.get((bx + dx) * 100003 + (bz + dz));
+          if (!list) continue;
+          for (let k = 0; k < list.length; k += 2) {        // (every other point is plenty)
+            const p = line[list[k]];
+            const d2 = (p.x - x) * (p.x - x) + (p.z - z) * (p.z - z);
+            if (d2 < R * R) {
+              const dd = Math.sqrt(d2);
+              const wk = Math.exp(-d2 / sig2) * smooth((R - dd) / 45); sum += p.y * wk; wsum += wk;   // (fading to nothing at the edge of the search, so there's no step there)
+              if (dd < best) { const shrink = Math.exp(-(best - dd) / TAU); nearSum *= shrink; nearW *= shrink; best = dd; }
+              const wn = Math.exp(-(dd - best) / TAU); nearSum += p.y * wn; nearW += wn;
+            }
+          }
+        }
+      }
+      const d = best;
+      const bestY = nearW > 0 ? nearSum / nearW : mean;
+      const away = (sum + mean * 0.004) / (wsum + 0.004);     // rolling ground (drifting to the average far out)
+      const t = smooth((d - 40) / 50);                         // level with the track out to ~40 m (past the run-offs)
+      let y = bestY * (1 - t) + away * t;
+      // flatten out towards the edges of the grid
+      const edge = Math.min(i, j, NX - 1 - i, NZ - 1 - j) * cell;
+      y = mean + (y - mean) * smooth(edge / 110);
+      h[j * NX + i] = y;
+      free[j * NX + i] = t;
+    }
+  }
+  // Smooth out the open ground (not near the track, not the edges), so the
+  // hills roll gently with no steep banks between them
+  const tmp = new Float32Array(NX * NZ);
+  for (let it = 0; it < 160; it++) {
+    tmp.set(h);
+    for (let j = 1; j < NZ - 1; j++) {
+      for (let i = 1; i < NX - 1; i++) {
+        const k = j * NX + i, f = free[k];
+        if (f <= 0) continue;
+        const avg = (tmp[k - 1] + tmp[k + 1] + tmp[k - NX] + tmp[k + NX]) * 0.25;
+        h[k] = tmp[k] + (avg - tmp[k]) * f;
+      }
+    }
+  }
+  // Height at any point: the grid's two triangles per square (the same
+  // triangles the ground is drawn with)
+  function heightAt(x, z) {
+    const gx = (x - x0) / cell, gz = (z - z0) / cell;
+    if (!(gx >= 0 && gz >= 0 && gx < NX - 1 && gz < NZ - 1)) return mean;
+    const i = Math.floor(gx), j = Math.floor(gz), fx = gx - i, fz = gz - j;
+    const k = j * NX + i;
+    const h00 = h[k], h10 = h[k + 1], h01 = h[k + NX], h11 = h[k + NX + 1];
+    return fx + fz < 1
+      ? h00 + (h10 - h00) * fx + (h01 - h00) * fz
+      : h11 + (h01 - h11) * (1 - fx) + (h10 - h11) * (1 - fz);
+  }
+  // The ground's 3D shape (rendering.js draws it with the grass)
+  function geometry(groundY, uvSize) {
+    const pos = new Float32Array(NX * NZ * 3), uv = new Float32Array(NX * NZ * 2);
+    for (let j = 0; j < NZ; j++) {
+      for (let i = 0; i < NX; i++) {
+        const k = j * NX + i, x = x0 + i * cell, z = z0 + j * cell;
+        pos[k * 3] = x; pos[k * 3 + 1] = h[k] + groundY; pos[k * 3 + 2] = z;
+        uv[k * 2] = (x + uvSize / 2) / uvSize; uv[k * 2 + 1] = 1 - (z + uvSize / 2) / uvSize;
+      }
+    }
+    const index = new (NX * NZ > 65535 ? Uint32Array : Uint16Array)((NX - 1) * (NZ - 1) * 6);
+    let n = 0;
+    for (let j = 0; j < NZ - 1; j++) {
+      for (let i = 0; i < NX - 1; i++) {
+        const a = j * NX + i, b = a + 1, c = a + NX, d = c + 1;
+        // (wound so the faces point up)
+        index[n++] = a; index[n++] = c; index[n++] = b;
+        index[n++] = d; index[n++] = b; index[n++] = c;
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    g.setIndex(new THREE.BufferAttribute(index, 1));
+    g.computeVertexNormals();
+    return g;
+  }
+  return { heightAt, geometry, mean, cell, nodes: NX * NZ };
+}
+
+function smooth(t) {
+  t = Math.max(0, Math.min(1, t));
+  return t * t * (3 - 2 * t);
 }
