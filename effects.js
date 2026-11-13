@@ -10,10 +10,11 @@
 // =====================================================================
 
 import * as THREE from 'three';
+import { groundAt } from './ground.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 2;
+export const BUILD = 3;
 
 const rand = (a, b) => a + Math.random() * (b - a);
 
@@ -64,7 +65,7 @@ export class FlyingBits {
     this.next = (this.next + 1) % this.max;
     const speed = Math.hypot(carVel.x, carVel.z);
     this.items[i] = {
-      x: pos.x + rand(-0.1, 0.1), y: 0.05, z: pos.z + rand(-0.1, 0.1),
+      x: pos.x + rand(-0.1, 0.1), y: groundAt(pos.x, pos.z) + 0.05, z: pos.z + rand(-0.1, 0.1),
       // flung up and back off the tyre, keeping some of the car's speed
       vx: carVel.x * rand(0.2, 0.6) + rand(-1.2, 1.2),
       vy: rand(1, 3) * (0.5 + 0.5 * Math.min(1, speed / 15)) * (0.6 + 0.6 * amount),
@@ -88,7 +89,8 @@ export class FlyingBits {
         b.vx *= 1 - 1.5 * dt; b.vz *= 1 - 1.5 * dt;   // light bits get slowed by the air
         b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt;
         b.rx += b.spin * dt; b.rz += b.spin * 0.6 * dt;
-        if (b.y <= 0.012) { b.y = 0.012; b.landed = true; b.rx = Math.PI / 2; b.rz = 0; }
+        const floor = groundAt(b.x, b.z) + 0.012;
+        if (b.y <= floor) { b.y = floor; b.landed = true; b.rx = Math.PI / 2; b.rz = 0; }
       }
       // shrink away at the end of its life
       const fade = Math.min(1, (b.maxLife - b.life) / 0.6);
@@ -153,7 +155,8 @@ export class MetalFlakes {
       this._e.set(rand(-0.5, 0.5), rand(0, Math.PI * 2), rand(-0.5, 0.5));   // each tilted to catch the light differently
       this._q.setFromEuler(this._e);
       const s = rand(0.006, 0.018);
-      this._p.set(pos.x + rand(-0.12, 0.12), 0.008, pos.z + rand(-0.12, 0.12));
+      this._p.set(pos.x + rand(-0.12, 0.12), 0, pos.z + rand(-0.12, 0.12));
+      this._p.y = groundAt(this._p.x, this._p.z) + 0.008;
       this.mesh.setMatrixAt(i, this._m.compose(this._p, this._q, this._s.set(s, 1, s * rand(0.4, 1))));
       this.mesh.count = Math.max(this.mesh.count, i + 1);
       this.mesh.instanceMatrix.needsUpdate = true;
@@ -203,7 +206,7 @@ export class LooseWheel {
     this.x = pos.x; this.z = pos.z;
     this.vx = carVel.x * rand(0.9, 1.05) + lx * side * out;
     this.vz = carVel.z * rand(0.9, 1.05) + lz * side * out;
-    this.y = this.radius * scale;
+    this.y = groundAt(pos.x, pos.z) + this.radius * scale;
     this.vy = rand(0.5, 1.5);                  // it hops as it breaks away
     this.roll = 0;                             // how far it has turned
     this.lean = 0;                             // 0 = upright, PI/2 = flat on the ground
@@ -228,7 +231,7 @@ export class LooseWheel {
     // Hops and bounces
     this.vy -= 9.81 * dt;
     this.y += this.vy * dt;
-    const restY = r * Math.cos(this.lean) + 0.1 * this.scale * Math.sin(this.lean);   // lying flat: half its width up
+    const restY = groundAt(this.x, this.z) + r * Math.cos(this.lean) + 0.1 * this.scale * Math.sin(this.lean);   // lying flat: half its width up
     if (this.y < restY) { this.y = restY; this.vy = Math.abs(this.vy) > 1 ? -this.vy * 0.35 : 0; }
     // A rolling wheel stays up while it's fast; slow, it starts to wobble and topples
     if (speed < 6 || this.lean > 0.05) {
