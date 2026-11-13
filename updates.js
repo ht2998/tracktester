@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 37;
+export const BUILD = 38;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 40, date: '13 Nov 2026', title: 'Something is hiding in the game',
+    items: [
+      ['A secret', 'Something heavy and green is now hidden in Track Tester. It needs a code, typed on a keyboard. Ask whoever sent you the link', 'update'],
+    ],
+  },
   {
     id: 39, date: '13 Nov 2026', title: 'Jumps, rollovers, and things running downhill',
     items: [
