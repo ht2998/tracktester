@@ -30,6 +30,8 @@ import * as racingLineFile from './racingline.js';
 import * as floraFile from './flora.js';
 import { Cockpit, EYE } from './cockpit.js';
 import { TyreLooks } from './tyres.js';
+import { setGround, groundAt } from './ground.js';
+import * as groundFile from './ground.js';
 import * as tyresFile from './tyres.js';
 import * as cockpitFile from './cockpit.js';
 import { FlyingBits, MetalFlakes, LooseWheel } from './effects.js';
@@ -51,7 +53,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 21;
+const BUILD = 23;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -60,7 +62,7 @@ const updateScreen = startUpdates({
   'smoke.js': smokeFile.BUILD, 'hud.js': hudFile.BUILD, 'oil.js': oilFile.BUILD,
   'skids.js': skidsFile.BUILD, 'scenery.js': sceneryFile.BUILD, 'grass.js': grassFile.BUILD,
   'sky.js': skyFile.BUILD, 'debris.js': debrisFile.BUILD, 'touch.js': touchFile.BUILD,
-  'rain.js': rainFile.BUILD, 'effects.js': effectsFile.BUILD, 'cockpit.js': cockpitFile.BUILD, 'tyres.js': tyresFile.BUILD, 'sepang.js': sepangFile.BUILD, 'flora.js': floraFile.BUILD, 'racingline.js': racingLineFile.BUILD,
+  'rain.js': rainFile.BUILD, 'effects.js': effectsFile.BUILD, 'cockpit.js': cockpitFile.BUILD, 'tyres.js': tyresFile.BUILD, 'sepang.js': sepangFile.BUILD, 'flora.js': floraFile.BUILD, 'racingline.js': racingLineFile.BUILD, 'ground.js': groundFile.BUILD,
 });
 
 // ---------------------------------------------------------------------
@@ -192,6 +194,67 @@ function placeShadows() {
 }
 
 // ---------------------------------------------------------------------
+// HILLS: things built flat (the track, kerbs, barriers, buildings, trees,
+// the racing line) are moved up onto the ground's real height. Big shapes
+// (the track surface, long barriers) bend to follow it point by point;
+// small things (a post, a tree, a sign) just move up as a whole, so they
+// stay upright.
+// ---------------------------------------------------------------------
+function liftOntoGround(objects) {
+  const v = new THREE.Vector3(), m4 = new THREE.Matrix4(), inv = new THREE.Matrix4();
+  const shared = new Map();
+  const count = (o) => o.traverse((c) => { if (c.isMesh && c.geometry) shared.set(c.geometry, (shared.get(c.geometry) || 0) + 1); });
+  objects.forEach(count);
+  const pos = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+  const refresh = (o) => { if (o.updateWorldMatrix) o.updateWorldMatrix(true, false); else o.updateMatrixWorld(true); };
+  const liftWhole = (o) => {
+    o.getWorldPosition(v);
+    o.position.y += groundAt(v.x, v.z);
+    o.updateMatrixWorld(true);
+  };
+  const visit = (o) => {
+    if (o.isInstancedMesh) {
+      refresh(o);
+      for (let i = 0; i < o.count; i++) {
+        o.getMatrixAt(i, m4);
+        m4.decompose(pos, q, sc);
+        v.copy(pos).applyMatrix4(o.matrixWorld);
+        pos.y += groundAt(v.x, v.z);
+        m4.compose(pos, q, sc);
+        o.setMatrixAt(i, m4);
+      }
+      o.instanceMatrix.needsUpdate = true;
+      o.computeBoundingSphere?.();
+      return;
+    }
+    if (o.isMesh && o.geometry?.attributes?.position) {
+      const g = o.geometry;
+      if (!g.boundingSphere) g.computeBoundingSphere();
+      const big = g.boundingSphere && g.boundingSphere.radius * Math.max(o.scale.x, o.scale.z) > 4;
+      if (!big || shared.get(g) > 1) { liftWhole(o); return; }
+      // bend it: each corner moved up by the ground's height under it
+      refresh(o);
+      inv.copy(o.matrixWorld).invert();
+      const p = g.attributes.position;
+      for (let i = 0; i < p.count; i++) {
+        v.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld);
+        v.y += groundAt(v.x, v.z);
+        v.applyMatrix4(inv);
+        p.setXYZ(i, v.x, v.y, v.z);
+      }
+      p.needsUpdate = true;
+      g.computeBoundingSphere();
+      g.computeBoundingBox?.();
+      o.children.forEach(visit);   // (anything fixed to it still needs lifting)
+      return;
+    }
+    if (o.children && o.children.length && !o.isLight) { o.children.forEach(visit); return; }
+    if (!o.isLight) liftWhole(o);
+  };
+  objects.forEach(visit);
+}
+
+// ---------------------------------------------------------------------
 // GROUND: a big tarmac area
 // ---------------------------------------------------------------------
 // (at Sepang the ground is grass, and the track is laid on top of it)
@@ -214,7 +277,10 @@ if (!SEPANG) scene.add(grid);
 // SEPANG (sepang.js): the whole circuit, its buildings and barriers
 // (gravel stone colours, for the textures and the loose stones)
 const GRAVEL_SHADES = ['#9c8158', '#c9b086', '#a88d61', '#d8c39c', '#8a7350', '#bfa476', '#b39769'];
+const beforeTrack = new Set(scene.children);
 const sepang = SEPANG ? buildSepang(scene, { isMobile, gravelMaps: makeGravelMaps() }) : null;
+// The ground's hills and dips, for everything that sits on it (ground.js)
+if (sepang) setGround(sepang.heightAt);
 // The racing line, braking zones, corner panel, distance boards and old
 // rubber on the track (racingline.js). On by default; L (or the phone
 // menu) switches the line and the corner panel off and on.
@@ -225,10 +291,16 @@ racing?.setVisible(racingLineOn);
 // Lap and sector timing, and the track map in the corner
 const lapTimer = racing ? new LapTimer(racing, { onTrack: (x, z) => { const s = sepang.surfaceAt(x, z); return s === 'tarmac' || s === 'kerb'; } }) : null;
 const trackMap = racing ? new TrackMap(racing, lapTimer.cuts) : null;
+// Lay the circuit, its barriers, buildings and the racing line onto the hills
+if (sepang) liftOntoGround([...scene.children].filter((o) => !beforeTrack.has(o)));
 if (sepang) {
   sepang.grassTexture.repeat.set(3000 / 6, 3000 / 6);
   ground.material.map = sepang.grassTexture;
-  ground.position.y = sepang.groundY;
+  ground.position.y = sepang.groundY + sepang.terrain.mean - 0.06;   // the open plain beyond, just under the hills' edges
+  // the rolling grass round the circuit (the same texture, lined up)
+  const hills = new THREE.Mesh(sepang.terrain.geometry(sepang.groundY, 3000), ground.material);
+  hills.receiveShadow = true;
+  scene.add(hills);
   ground.material.needsUpdate = true;
   // see much further: it's a big place
   scene.fog.near = sepang.view.fogNear;
@@ -438,6 +510,7 @@ const onIsland = (x, z, margin = 0) => ISLANDS.some((o) => Math.hypot(x - o.x, z
 // round the circuit, kept well back from the track, run-offs and buildings;
 // at the test area, woods round the edges of the driving ground. The tree
 // trunks are solid.
+const beforeFlora = new Set(scene.children);
 const flora = (() => {
   const colliders = echoSurfaces.colliders || (echoSurfaces.colliders = []);
   const roofs = echoSurfaces.roofs || [];
@@ -513,6 +586,8 @@ const flora = (() => {
     setWind(x, z, t) { onIslands.setWind(x, z, t); woods.setWind(x, z, t); },
   };
 })();
+// (the trees and bushes onto the hills)
+if (sepang) liftOntoGround([...scene.children].filter((o) => !beforeFlora.has(o)));
 
 // ---------------------------------------------------------------------
 // RAIN (rain.js): falling rain, a wet track that dries out afterwards,
@@ -568,8 +643,11 @@ const MAT = {
   interior: new THREE.MeshStandardMaterial({ color: 0x1c1c1c, roughness: 0.9 }),
   chrome: new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 1.0, roughness: 0.1 }),
   tyre: new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.85 }),
-  rim: new THREE.MeshStandardMaterial({ color: 0xb8bcc2, metalness: 0.9, roughness: 0.25 }),
+  rim: new THREE.MeshStandardMaterial({ color: 0xb8bcc2, metalness: 0.9, roughness: 0.25, side: THREE.DoubleSide }),
   spoke: new THREE.MeshStandardMaterial({ color: 0x3a3d42, metalness: 0.7, roughness: 0.35 }),
+  // brake disc: bare iron, glowing red-orange when very hot (see updateWheels)
+  disc: new THREE.MeshStandardMaterial({ color: 0x6d6e70, metalness: 0.75, roughness: 0.45, emissive: 0xff3a00, emissiveIntensity: 0 }),
+  caliper: new THREE.MeshStandardMaterial({ color: 0xb3221c, metalness: 0.3, roughness: 0.45 }),
   arm: new THREE.MeshStandardMaterial({ color: 0x2b2b2e, metalness: 0.6, roughness: 0.4 }),
   damper: new THREE.MeshStandardMaterial({ color: 0xd8262e, metalness: 0.3, roughness: 0.4 }),
   lens: new THREE.MeshStandardMaterial({ color: 0xfff8e0, emissive: 0x332a10, roughness: 0.1 }),
@@ -601,6 +679,69 @@ function part(geometry, material, x, y, z) {
 
 // Draws many rods between pairs of points as ONE instanced object.
 // Each rod is [startPoint, endPoint, thickness].
+// Joins several shapes into one (keeping each as its own group, so a tyre
+// can have different materials for its tread and sidewalls)
+function mergeGeos(geos, groups = false) {
+  const out = new THREE.BufferGeometry();
+  const pos = [], nor = [], uv = [], idx = [];
+  let base = 0, start = 0;
+  geos.forEach((g, gi) => {
+    const gg = g.index ? g : g;
+    const p = gg.attributes.position, n = gg.attributes.normal, u = gg.attributes.uv;
+    for (let i = 0; i < p.count; i++) {
+      pos.push(p.getX(i), p.getY(i), p.getZ(i));
+      nor.push(n.getX(i), n.getY(i), n.getZ(i));
+      uv.push(u ? u.getX(i) : 0, u ? u.getY(i) : 0);
+    }
+    const ix = gg.index ? Array.from(gg.index.array) : [...Array(p.count).keys()];
+    for (const v of ix) idx.push(v + base);
+    if (groups) out.addGroup(start, ix.length, gi);
+    start += ix.length;
+    base += p.count;
+  });
+  out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  out.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  out.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  out.setIndex(idx);
+  return out;
+}
+
+// An open-spoked alloy rim (axle along x, the outer face towards +x):
+// the barrel the tyre sits on, a lip round the outside, six pairs of thin
+// split spokes dished out to the hub, and four wheel nuts round a centre cap
+function buildRimGeometry(r, width) {
+  const parts = [];
+  // barrel and lips
+  parts.push(new THREE.CylinderGeometry(r * 1.005, r * 1.005, width * 0.92, 32, 1, true).rotateZ(Math.PI / 2));
+  parts.push(new THREE.TorusGeometry(r * 1.005, 0.008, 6, 32).rotateY(Math.PI / 2).translate(width * 0.5 + 0.002, 0, 0));
+  parts.push(new THREE.TorusGeometry(r * 1.005, 0.006, 6, 32).rotateY(Math.PI / 2).translate(-width * 0.5 - 0.002, 0, 0));
+  // spokes: from the hub (dished out towards the face) to the barrel
+  const hubR = 0.045, faceX = width * 0.36, innerX = width * 0.26;
+  for (let k = 0; k < 6; k++) {
+    for (const split of [-0.13, 0.13]) {
+      const a = (k / 6) * Math.PI * 2;
+      const a0 = a + split * 0.35, a1 = a + split;            // the pair splits apart towards the rim
+      const p0 = new THREE.Vector3(faceX + 0.01, Math.cos(a0) * hubR, Math.sin(a0) * hubR);
+      const p1 = new THREE.Vector3(innerX + 0.02, Math.cos(a1) * r * 0.93, Math.sin(a1) * r * 0.93);
+      const len = p0.distanceTo(p1);
+      const spoke = new THREE.BoxGeometry(0.016, len, 0.014);
+      const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), p1.clone().sub(p0).normalize());
+      spoke.applyQuaternion(q);
+      const mid = p0.clone().add(p1).multiplyScalar(0.5);
+      spoke.translate(mid.x, mid.y, mid.z);
+      parts.push(spoke);
+    }
+  }
+  // hub, centre cap and wheel nuts
+  parts.push(new THREE.CylinderGeometry(hubR + 0.008, hubR + 0.012, 0.03, 20).rotateZ(Math.PI / 2).translate(faceX, 0, 0));
+  parts.push(new THREE.CylinderGeometry(0.02, 0.022, 0.016, 16).rotateZ(Math.PI / 2).translate(faceX + 0.022, 0, 0));
+  for (let k = 0; k < 4; k++) {
+    const a = (k / 4) * Math.PI * 2 + Math.PI / 4;
+    parts.push(new THREE.CylinderGeometry(0.0065, 0.0065, 0.018, 6).rotateZ(Math.PI / 2).translate(faceX + 0.018, Math.cos(a) * 0.032, Math.sin(a) * 0.032));
+  }
+  return mergeGeos(parts);
+}
+
 function rodSet(rods, material) {
   const geo = new THREE.CylinderGeometry(1, 1, 1, 8);   // scaled per rod
   const mesh = new THREE.InstancedMesh(geo, material, rods.length);
@@ -851,25 +992,54 @@ function buildCar() {
   const linkage = { arms, dampers, armMesh, damperMesh };
 
   // --- Wheels: drawn with INSTANCING ---
-  // One tyre, rim and spoke model, each drawn several times in a single step.
-  const tyreGeo = new THREE.CylinderGeometry(WHEEL_RADIUS, WHEEL_RADIUS, WHEEL_WIDTH, 28);
+  // One tyre, rim, disc and caliper model, each drawn four times in a
+  // single step. The tyre is a ring (tread and two sidewalls) round an
+  // open-spoked alloy rim, so you can see the brake disc and caliper
+  // behind the spokes.
+  const RIM_R = WHEEL_RADIUS * 0.66;          // 15-inch rim (the tyre's bead)
+  const tyreGeo = mergeGeos([
+    new THREE.CylinderGeometry(WHEEL_RADIUS, WHEEL_RADIUS, WHEEL_WIDTH, 32, 1, true),   // tread
+    new THREE.RingGeometry(RIM_R * 0.99, WHEEL_RADIUS, 32, 1).rotateX(-Math.PI / 2).translate(0, WHEEL_WIDTH / 2, 0),   // sidewalls
+    new THREE.RingGeometry(RIM_R * 0.99, WHEEL_RADIUS, 32, 1).rotateX(Math.PI / 2).translate(0, -WHEEL_WIDTH / 2, 0),
+  ], true);
   tyreGeo.rotateZ(Math.PI / 2);
-  const rimGeo = new THREE.CylinderGeometry(WHEEL_RADIUS * 0.62, WHEEL_RADIUS * 0.62, WHEEL_WIDTH + 0.01, 20);
-  rimGeo.rotateZ(Math.PI / 2);
-  // Spokes across the rim, so you can see the wheels turning
-  const spokeGeo = new THREE.BoxGeometry(WHEEL_WIDTH + 0.02, 0.035, WHEEL_RADIUS * 1.2);
+  const rimGeo = buildRimGeometry(RIM_R, WHEEL_WIDTH);
+  // (old spokes: kept but hidden, the rim has its own now)
+  const spokeGeo = new THREE.BoxGeometry(0.001, 0.001, 0.001);
 
   const tyres = new THREE.InstancedMesh(tyreGeo, MAT.tyre, 4);
   const rims = new THREE.InstancedMesh(rimGeo, MAT.rim, 4);
   const spokes = new THREE.InstancedMesh(spokeGeo, MAT.spoke, 8);
-  for (const mesh of [tyres, rims, spokes]) {
+  spokes.visible = false;
+  for (const mesh of [tyres, rims]) {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); // updated every frame
     car.add(mesh);
   }
+  // Brake discs: one each (each glows on its own when it gets hot), with
+  // the caliper gripping it at the back, fixed to the upright (it steers
+  // with the wheel but doesn't spin)
+  const discGeo = mergeGeos([
+    new THREE.CylinderGeometry(RIM_R * 0.68, RIM_R * 0.68, 0.024, 36).rotateZ(Math.PI / 2),     // the disc
+    new THREE.CylinderGeometry(RIM_R * 0.36, RIM_R * 0.36, 0.05, 24).rotateZ(Math.PI / 2).translate(0.02, 0, 0),   // its hat, out to the hub
+  ]);
+  const discs = [0, 1, 2, 3].map(() => {
+    const m = new THREE.Mesh(discGeo, MAT.disc.clone());
+    m.matrixAutoUpdate = false;
+    m.castShadow = true;
+    car.add(m);
+    return m;
+  });
+  const caliperGeo = new THREE.BoxGeometry(0.05, 0.085, 0.045);
+  caliperGeo.translate(0, RIM_R * 0.62, 0);
+  caliperGeo.rotateX(-0.9);                    // at the back of the disc, a little above the middle
+  const calipers = new THREE.InstancedMesh(caliperGeo, MAT.caliper, 4);
+  calipers.castShadow = true;
+  calipers.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  car.add(calipers);
 
-  return { car, tyres, rims, spokes, headLens, beam, tailLens, crush, linkage };
+  return { car, tyres, rims, spokes, discs, calipers, headLens, beam, tailLens, crush, linkage };
 }
 
 const carModel = buildCar();
@@ -918,6 +1088,7 @@ const wheelRot = new THREE.Quaternion();
 const wheelEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 const wheelScale = new THREE.Vector3(1, 1, 1);
 const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
+const ONE = new THREE.Vector3(1, 1, 1);
 
 // Which physics tyre (FL, FR, RL, RR) each drawn wheel is (+x is the car's left)
 const physicsWheel = (x, isFront) => (isFront ? 0 : 2) + (x > 0 ? 0 : 1);
@@ -978,6 +1149,8 @@ function updateWheels(steer, spin) {
       ? (1 - 0.25 * tyre.shred) * (1 + (Math.random() - 0.5) * 0.06) : 1;
     // Gone: the wheel has come off (it's rolling away on its own; see looseWheels)
     if (tyre.detached) {
+      carModel.discs[i].visible = false;
+      carModel.calipers.setMatrixAt(i, HIDDEN);
       carModel.tyres.setMatrixAt(i, HIDDEN);
       tyreLooks.setMatrixAt(i, HIDDEN);
       carModel.rims.setMatrixAt(i, HIDDEN);
@@ -989,9 +1162,18 @@ function updateWheels(steer, spin) {
     const pi = physicsWheel(x, isFront);
     const rimScale = tyre.rim ? Math.min(1, (WHEEL_RADIUS - physics.tyreSink[pi]) / (WHEEL_RADIUS * 0.62)) : 1;
     wheelScale.set(1, rimScale, rimScale);
+    // The rim's face (with its spokes and wheel nuts) points out on both
+    // sides: the right-hand wheels are the same rim turned round
+    const turnRound = x < 0;
+    // the caliper: steers with the wheel, but doesn't spin
+    wheelEuler.set(0, isFront ? steer : 0, 0);
+    wheelRot.setFromEuler(wheelEuler);
+    wheelMatrix.compose(wheelPos, wheelRot, ONE);
+    carModel.calipers.setMatrixAt(i, wheelMatrix);
     for (let k = 0; k < 2; k++) {
       // (each wheel turns at its own speed: a locked wheel stops, a spinning one blurs)
-      wheelEuler.set((physics.w4 ? physics.w4.angle[pi] : spin) + k * Math.PI / 2, isFront ? steer : 0, 0);
+      const turned = (physics.w4 ? physics.w4.angle[pi] : spin) + k * Math.PI / 2;
+      wheelEuler.set(turnRound ? -turned : turned, (isFront ? steer : 0) + (turnRound ? Math.PI : 0), 0);
       wheelRot.setFromEuler(wheelEuler);
       wheelMatrix.compose(wheelPos, wheelRot, wheelScale);
       if (k === 0) {
@@ -1008,6 +1190,13 @@ function updateWheels(steer, spin) {
         carModel.tyres.setMatrixAt(i, squashMatrix);
         tyreLooks.setMatrixAt(i, squashMatrix);
         carModel.rims.setMatrixAt(i, wheelMatrix);
+        // the brake disc turns with the wheel, and glows when it's very hot
+        const disc = carModel.discs[i];
+        disc.visible = true;
+        disc.matrix.compose(wheelPos, wheelRot, ONE);
+        const hot = Math.min(1, Math.max(0, ((physics.brakeTemp?.[pi] ?? 0) - 420) / 450));
+        disc.material.emissiveIntensity = Math.pow(hot, 1.5) * 2.4;
+        disc.material.emissive.setRGB(1, 0.12 + 0.35 * hot, 0.02 * hot);   // dull red, then orange
       }
       carModel.spokes.setMatrixAt(i * 2 + k, wheelMatrix);
     }
@@ -1016,6 +1205,7 @@ function updateWheels(steer, spin) {
   tyreLooks.update();
   carModel.rims.instanceMatrix.needsUpdate = true;
   carModel.spokes.instanceMatrix.needsUpdate = true;
+  carModel.calipers.instanceMatrix.needsUpdate = true;
 }
 
 // ---------------------------------------------------------------------
@@ -1025,6 +1215,7 @@ function updateWheels(steer, spin) {
 // best-fitting plane: the low corner drops, and the opposite wheel lifts.
 // ---------------------------------------------------------------------
 const bodyLean = { heave: 0, roll: 0, pitch: 0 };
+const slopeView = { pitch: 0, roll: 0 };   // the slope the car is sitting on, as drawn
 const HUB_X = [TRACK_HALF, -TRACK_HALF, TRACK_HALF, -TRACK_HALF];   // FL FR RL RR (+x = left)
 const HUB_Z = [FRONT_AXLE, FRONT_AXLE, REAR_AXLE, REAR_AXLE];
 
@@ -1345,6 +1536,7 @@ function sausageHeight(x, z) {
   }
   return best;
 }
+physics.groundHeight = groundAt;
 physics.roadHeight = (x, z) => {
   const surface = surfaceAt(x, z);
   const bump = ROAD_BUMP(x, z);
@@ -1611,7 +1803,7 @@ const gouges = new SkidMarks(scene, {
 const looseWheels = [0, 1, 2, 3].map(() => new LooseWheel(scene, {
   rimGeo: carModel.rims.geometry, spokeGeo: carModel.spokes.geometry,
   rimMat: carModel.rims.material, spokeMat: carModel.spokes.material,
-  radius: WHEEL_RADIUS * 0.62,
+  radius: WHEEL_RADIUS * 0.66,
 }));
 const ENGINE_BAY = new THREE.Vector3(0, 0.62, 0.95);
 
@@ -2059,17 +2251,19 @@ window.addEventListener('pointerup', endLook);
 window.addEventListener('pointercancel', endLook);
 
 function updateCamera(dt) {
-  carPos.set(physics.x, 0, physics.z);
+  const gy = physics.ground.y;
+  carPos.set(physics.x, gy, physics.z);
   forward.set(Math.sin(physics.heading), 0, Math.cos(physics.heading));
 
   if (cameraMode === 'chase' || cameraMode === 'close') {
     // Sit behind and above the car, catching up smoothly
     const close = cameraMode === 'close';
     desiredCam.copy(carPos).addScaledVector(forward, close ? -4.1 : -6.5);
-    desiredCam.y = close ? 1.45 : 2.4;
+    // (above the ground under the camera, too, so it never dips into a hill behind)
+    desiredCam.y = Math.max(gy, groundAt(desiredCam.x, desiredCam.z)) + (close ? 1.45 : 2.4);
     camera.position.lerp(desiredCam, 1 - Math.exp((close ? -9 : -6) * dt));
     lookTarget.copy(carPos).addScaledVector(forward, close ? 3 : 2.5);
-    lookTarget.y = close ? 0.6 : 0.7;
+    lookTarget.y = gy + (close ? 0.6 : 0.7);
     camera.lookAt(lookTarget);
   } else if (ON_CAR[cameraMode]) {
     // Fixed to the car (so it pitches and rolls with it), looking ahead
@@ -2092,10 +2286,11 @@ function updateCamera(dt) {
   } else {
     // Showroom: orbit around the car and move along with it, never below the ground
     camera.position.add(carPos).sub(lastCarPos);
-    controls.target.set(carPos.x, 0.45, carPos.z);
+    controls.target.set(carPos.x, gy + 0.45, carPos.z);
     controls.update();
-    if (camera.position.y < 0.15) {
-      camera.position.y = 0.15;
+    const under = groundAt(camera.position.x, camera.position.z) + 0.15;
+    if (camera.position.y < under) {
+      camera.position.y = under;
       camera.lookAt(controls.target);
     }
   }
@@ -2124,8 +2319,8 @@ function switchCamera() {
   fitViewport();
   controls.enabled = cameraMode === 'showroom';
   if (controls.enabled) {
-    camera.position.set(physics.x, 0, physics.z).addScaledVector(forward, -6).setY(2.2);
-    controls.target.set(physics.x, 0.45, physics.z);
+    camera.position.set(physics.x, 0, physics.z).addScaledVector(forward, -6).setY(physics.ground.y + 2.2);
+    controls.target.set(physics.x, physics.ground.y + 0.45, physics.z);
     controls.update();
   }
 }
@@ -2246,8 +2441,15 @@ renderer.setAnimationLoop(() => {
   // Lean the body onto any corner whose tyre is going down. The body is
   // rigid, so dropping one corner lifts the diagonally opposite wheel a little.
   fitBodyToTyres(dt);
-  carModel.car.position.set(physics.x, bodyLean.heave, physics.z);
-  carModel.car.rotation.set(bodyLean.pitch, physics.heading, bodyLean.roll, 'YXZ');
+  // ...and tilt it with the slope it's on (uphill: nose up; across a
+  // slope: leaning with it). Eased a touch, as the ground is made of small
+  // flat triangles.
+  const GRD = physics.ground;
+  const ease = 1 - Math.exp(-dt / 0.06);
+  slopeView.pitch += (-Math.atan(GRD.slopeF) - slopeView.pitch) * ease;
+  slopeView.roll += (Math.atan(GRD.slopeL) - slopeView.roll) * ease;
+  carModel.car.position.set(physics.x, GRD.y + bodyLean.heave, physics.z);
+  carModel.car.rotation.set(bodyLean.pitch + slopeView.pitch, physics.heading, bodyLean.roll + slopeView.roll, 'YXZ');
   updateWheels(physics.steer, physics.wheelSpin);
   cockpit.update(dt, {
     steer: physics.steer, kick: physics.steerKick || 0, gear: physics.gear, transmission: physics.transmission,
@@ -2288,7 +2490,7 @@ renderer.setAnimationLoop(() => {
   if (rain.thunderNow) engineSound.playThunder?.(rain.thunderNow.strength);
 
   // The sky follows the car; the sun's shadow area sits ahead of it
-  carSpot.set(physics.x, 0, physics.z);
+  carSpot.set(physics.x, physics.ground.y, physics.z);
   sky.update(dt, carSpot, camera);
   placeShadows();
   // Eyes adjust to the dark: a little brighter overall at night
