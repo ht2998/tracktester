@@ -43,7 +43,7 @@ import {
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 5;
+export const BUILD = 6;
 
 // [x, z] in metres, in driving order (clockwise from the start/finish line)
 const OUTLINE = [[0.0,0.0],[-1.1,-301.1],[1.1,-314.8],[8.2,-326.7],[17.8,-334.5],[30.3,-338.2],[44.0,-337.7],[57.9,-331.6],[67.8,-319.1],[71.6,-303.0],[66.5,-284.9],[51.7,-251.7],[52.7,-240.1],[61.4,-229.8],[72.7,-225.7],[88.2,-227.7],[104.4,-236.7],[134.6,-257.7],[152.7,-266.2],[173.7,-271.1],[194.5,-272.6],[217.9,-270.7],[275.0,-260.6],[301.3,-249.4],[327.7,-232.9],[344.4,-217.1],[362.6,-193.4],[376.0,-169.0],[383.0,-143.9],[416.7,-3.4],[448.9,102.3],[473.0,173.2],[489.5,219.0],[494.5,234.8],[493.2,246.2],[486.2,255.5],[473.6,258.1],[366.4,268.9],[311.1,276.3],[243.7,287.6],[217.3,297.6],[198.1,309.6],[178.0,331.2],[164.1,353.1],[156.7,375.4],[154.0,397.6],[155.8,423.3],[163.8,450.0],[175.5,469.4],[211.0,508.3],[220.2,526.8],[227.5,555.2],[226.4,578.9],[221.5,601.9],[212.3,620.2],[197.7,636.0],[-46.0,819.4],[-57.2,819.6],[-69.5,814.0],[-143.2,773.8],[-149.6,762.9],[-151.5,750.5],[-147.8,566.0],[-154.4,391.9],[-162.4,296.1],[-169.0,286.6],[-180.8,282.8],[-194.9,289.7],[-237.2,354.2],[-253.1,367.8],[-275.7,376.4],[-298.8,379.9],[-331.2,376.5],[-358.1,370.0],[-384.2,361.8],[-416.9,343.1],[-449.7,316.3],[-456.9,302.5],[-458.0,289.7],[-454.3,275.6],[-446.0,264.8],[-257.0,67.5],[-250.5,53.2],[-247.9,34.3],[-251.5,13.2],[-284.6,-66.7],[-289.4,-87.7],[-290.8,-112.4],[-288.9,-133.7],[-278.6,-173.1],[-265.4,-199.4],[-250.1,-215.9],[-217.4,-237.1],[-193.6,-243.6],[-179.4,-243.8],[-164.3,-232.6],[-157.2,-210.8],[-69.8,636.8],[-60.2,649.6],[-40.9,660.0],[-23.8,656.8],[-6.9,642.9],[-1.1,618.2]];
@@ -272,12 +272,36 @@ export function buildSepang(scene, { isMobile = false, gravelMaps = null } = {})
     const k = gz * GW + gx;
     if (type === 1 || grid[k] === 0 || (type === 2 && grid[k] === 3)) grid[k] = type;   // tarmac wins
   };
+  // Paints a band beside the track, from offset o0 to o1 (numbers, or
+  // worked out at each point). Far out on the outside of a corner the
+  // points of the line fan out, so it fills in between them every half
+  // metre; it used to step a whole point at a time, which left gaps of
+  // "grass" in wide gravel traps (and grass grew there).
   const paintBand = (i0, i1, o0, o1, type) => {
+    const offs = (p) => [typeof o0 === 'function' ? o0(p) : o0, typeof o1 === 'function' ? o1(p) : o1];
     for (let i = i0; i <= i1; i++) {
       const p = line[((i % m) + m) % m];
-      const a = typeof o0 === 'function' ? o0(p) : o0, b = typeof o1 === 'function' ? o1(p) : o1;
-      const lo = Math.min(a, b), hi = Math.max(a, b);
-      for (let o = lo; o <= hi; o += 0.5) for (const ds of [-0.75, 0, 0.75]) paint(p.x + p.lx * o + p.ux * ds, p.z + p.lz * o + p.uz * ds, type);
+      const q = i < i1 ? line[(((i + 1) % m) + m) % m] : p;
+      const [a, b] = offs(p);
+      const [qa, qb] = q === p ? [a, b] : offs(q);
+      // how far apart this point and the next are at the far edge of the band
+      const far = Math.max(Math.abs(a), Math.abs(b), Math.abs(qa), Math.abs(qb));
+      const gap = Math.max(Math.hypot(q.x + q.lx * far - p.x - p.lx * far, q.z + q.lz * far - p.z - p.lz * far),
+        Math.hypot(q.x - q.lx * far - p.x + p.lx * far, q.z - q.lz * far - p.z + p.lz * far));
+      const steps = q === p ? 1 : Math.max(1, Math.ceil(gap / 0.5));
+      for (let k = 0; k < steps; k++) {
+        const t = k / steps, u = 1 - t;
+        const x = p.x * u + q.x * t, z = p.z * u + q.z * t;
+        let lx = p.lx * u + q.lx * t, lz = p.lz * u + q.lz * t;
+        const len = Math.hypot(lx, lz) || 1; lx /= len; lz /= len;
+        const ea = a * u + qa * t, eb = b * u + qb * t;
+        const lo = Math.min(ea, eb), hi = Math.max(ea, eb);
+        for (let o = lo; o <= hi + 0.01; o += 0.5) paint(x + lx * Math.min(o, hi), z + lz * Math.min(o, hi), type);
+      }
+      if (q === p) for (const ds of [-0.75, 0.75]) {
+        const lo = Math.min(a, b), hi = Math.max(a, b);
+        for (let o = lo; o <= hi; o += 0.5) paint(p.x + p.lx * o + p.ux * ds, p.z + p.lz * o + p.uz * ds, type);
+      }
     }
   };
 
