@@ -14,10 +14,11 @@
 // =====================================================================
 
 import * as THREE from 'three';
+import { groundAt } from './ground.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 1;
+export const BUILD = 2;
 
 // Where the driver's eye would be if you look out of the commander's hatch
 export const TANK_EYE = new THREE.Vector3(0.42, 2.32, -0.62);
@@ -461,4 +462,86 @@ export function buildScorpion() {
     // the headlights glow when the car's lights are on
     setLights(on) { MAT.lamp.emissive.setHex(on ? 0xfff1d6 : 0x000000); MAT.lamp.emissiveIntensity = on ? 1.5 : 0; },
   };
+}
+
+// =====================================================================
+// HOW THE TANK DRIVES: about 8 tonnes, a 190 hp engine (about 142 kW),
+// governed to about 80 km/h. It's slow to get going and takes a long way
+// to stop. It steers by slowing one track: it can spin on the spot when
+// stopped, turns less sharply the faster it goes, and steering scrubs off
+// speed. The tracks barely slide sideways and grip well on grass and
+// gravel. Hills slow it going up and speed it up going down.
+// =====================================================================
+export class TankPhysics {
+  constructor() {
+    this.mass = 8000;
+    this.power = 142000;         // W
+    this.maxPull = 42000;        // N: the most the tracks can push before they slip
+    this.topSpeed = 80 / 3.6;    // m/s (governed)
+    this.reverseSpeed = 15 / 3.6;
+    this.x = 0; this.z = 0; this.heading = 0;
+    this.vx = 0; this.vy = 0; this.yawRate = 0;
+    this.y = 0; this.pitch = 0; this.roll = 0;
+  }
+
+  place(x, z, heading) {
+    this.x = x; this.z = z; this.heading = heading;
+    this.vx = this.vy = this.yawRate = 0;
+  }
+
+  // controls: { throttle, brake, steer (-1 right .. 1 left), handbrake }
+  // ground: surface grip at a point (1 = dry tarmac), from the game
+  update(dt, c, surfaceGrip = () => 1) {
+    const G = 9.81, m = this.mass;
+    const throttle = c.throttle || 0, brake = c.brake || 0, steer = c.steer || 0;
+    const fx = Math.sin(this.heading), fz = Math.cos(this.heading);
+    // the slope along and across the tank (front/back 2 m apart, sides 1.8 m)
+    const hF = groundAt(this.x + fx * 1.6, this.z + fz * 1.6), hB = groundAt(this.x - fx * 1.6, this.z - fz * 1.6);
+    const hL = groundAt(this.x + fz * 0.9, this.z - fx * 0.9), hR = groundAt(this.x - fz * 0.9, this.z + fx * 0.9);
+    const slopeF = (hF - hB) / 3.2, slopeL = (hL - hR) / 1.8;
+    // soft ground: a little more drag, slightly less pull (tracks hardly mind)
+    const grip = Math.min(1, 0.75 + 0.25 * surfaceGrip(this.x, this.z));
+    const roll = 0.035 + 0.03 * (1 - grip);              // rolling resistance (tracks are draggy)
+    const v = this.vx;
+    let force = 0;
+    // forwards: power-limited pull, governed at the top speed
+    if (throttle > 0 && v < this.topSpeed) force += throttle * Math.min(this.maxPull * grip, this.power / Math.max(1, Math.abs(v)));
+    // the brake pedal: brakes while moving forwards; held when stopped, it reverses slowly
+    if (brake > 0) {
+      if (v > 0.3) force -= brake * 0.45 * m * G * grip;
+      else if (v > -this.reverseSpeed) force -= brake * 0.45 * this.maxPull;
+    }
+    if (c.handbrake) force -= Math.sign(v) * Math.min(Math.abs(v) * m / dt, 0.7 * m * G);
+    // resistance: the tracks, the air, gravity on a slope, and scrubbing round a turn
+    const scrub = Math.abs(this.yawRate) * 0.25 * m * G * grip * Math.min(1, Math.abs(v) / 2);
+    const resist = (roll * m * G + scrub) * Math.sign(v) + 1.2 * v * Math.abs(v);
+    let a = (force - resist) / m - G * slopeF / Math.sqrt(1 + slopeF * slopeF);
+    // (don't let resistance alone push it backwards through zero)
+    if (throttle === 0 && brake === 0 && Math.abs(v) < 0.2 && Math.abs(slopeF) < 0.1) { this.vx = 0; a = 0; }
+    this.vx += a * dt;
+    if (this.vx > this.topSpeed) this.vx = this.topSpeed;
+    // Steering: one track slows. On the spot it pivots at about 50 degrees
+    // a second; at speed the turn is limited by how hard the tracks can
+    // grip sideways (about half a g)
+    const pivot = 0.9 * (Math.abs(this.vx) < 0.5 ? 1 : 1 - Math.min(0.5, Math.abs(this.vx) / 30));
+    const yawMax = Math.min(pivot, (0.5 * G * grip) / Math.max(0.5, Math.abs(this.vx)));
+    const target = steer * yawMax * (this.vx < -0.2 ? -1 : 1) * (Math.abs(this.vx) < 0.5 && throttle === 0 && brake === 0 && Math.abs(steer) > 0 ? 1 : 1);
+    this.yawRate += (target - this.yawRate) * Math.min(1, dt / 0.35);
+    // Sideways: the tracks hardly slide; any sideways speed dies away fast
+    // (a slope across the tank still nudges it a little)
+    this.vy -= this.vx * this.yawRate * dt;
+    this.vy += -G * slopeL * 0.15 * dt;
+    this.vy *= Math.exp(-dt * 9 * grip);
+    // move
+    this.heading += this.yawRate * dt;
+    const sn = Math.sin(this.heading), cs = Math.cos(this.heading);
+    this.x += (sn * this.vx + cs * this.vy) * dt;
+    this.z += (cs * this.vx - sn * this.vy) * dt;
+    // sit on the ground, tilted with it (heavy: no bounce)
+    this.y = groundAt(this.x, this.z);
+    this.pitch += (-Math.atan(slopeF) - this.pitch) * Math.min(1, dt / 0.15);
+    this.roll += (Math.atan(slopeL) - this.roll) * Math.min(1, dt / 0.15);
+    // a rough engine speed, for the sound and the dials
+    this.rpm = 900 + 3600 * Math.min(1, Math.abs(this.vx) / this.topSpeed) * 0.7 + 1500 * throttle * 0.6;
+  }
 }
