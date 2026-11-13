@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 10;
+export const BUILD = 12;
 
 const G = 9.81;   // gravity, m/s²
 const RPM_PER_RADS = 60 / (2 * Math.PI);
@@ -62,6 +62,14 @@ export const CATERHAM = {
   frameGrip: 0.22,           // the frame scraping along: barely any grip...
   frameDrag: 0.9,            // ...and a lot of drag (share of that corner's load)
   rollShareFront: 0.55,      // how much of the cornering weight shift the front takes
+  // Brake discs heat up as they turn the car's speed into heat, and cool
+  // in the air flowing past (faster when you're going faster). Too hot and
+  // the pads start to fade: the same pedal stops you less.
+  brakeDiscs: {
+    heatFront: 1400, heatRear: 1100,   // J per °C to warm each disc (about 3 kg and 2.4 kg of iron)
+    coolFront: 1.25, coolRear: 1,      // the fronts are vented: they shed heat quicker
+    fadeStart: 600, fadeEnd: 950, fadeMin: 0.55,   // °C where fade starts, and where it's at its worst (55% of the grip)
+  },
   handbrakeTorque: 1400,     // Nm on each rear wheel: plenty to lock them
   wheelInertiaFront: 0.9,    // kg·m²: how hard each wheel is to spin up or slow down
   wheelInertiaRear: 1.3,     // (the rears turn the driveshafts and diff too)
@@ -232,10 +240,18 @@ export class CarPhysics {
     this.trackWetness = 0;     // how wet the track is (0-1), set by the game: cools the tyres
     // The height of the road at a point (bumps, kerbs), set by the game
     this.roadHeight = () => 0;
+    // The ground's hills and dips (metres at a point), set by the game
+    this.groundHeight = () => 0;
     this.reset();
   }
 
   reset() {
+    // The ground under the car: its height (at the car's middle), how much it
+    // slopes forwards and to the left (rise per metre), and how fast the
+    // ground under the car is rising and speeding up its rise (crests, dips)
+    this.ground = { y: 0, slopeF: 0, slopeL: 0, rate: 0, accel: 0, synced: false };
+    this.brakeTemp = [AMBIENT_TEMP, AMBIENT_TEMP, AMBIENT_TEMP, AMBIENT_TEMP];   // brake disc temperatures, °C
+    this.brakeHeat = [0, 0, 0, 0];   // heat put into each disc since the last update (J)
     this.x = 0;           // world position
     this.z = 0;
     this.heading = 0;     // direction the car faces, radians (0 = +z)
@@ -376,6 +392,33 @@ export class CarPhysics {
   }
 
   // Damage the engine directly (crash, overheating). Blows at zero.
+  // How well each brake grips for its temperature (1 = full)
+  brakeFade(i) {
+    const d = this.spec.brakeDiscs;
+    const t = this.brakeTemp[i];
+    if (t <= d.fadeStart) return 1;
+    return 1 - (1 - d.fadeMin) * clamp((t - d.fadeStart) / (d.fadeEnd - d.fadeStart), 0, 1);
+  }
+
+  // Brake discs: warmed by braking, cooled by the air (and glowing when
+  // they're really hot, which also sheds heat by itself)
+  updateBrakes(dt) {
+    const d = this.spec.brakeDiscs;
+    const v = Math.hypot(this.vx, this.vy);
+    for (let i = 0; i < 4; i++) {
+      const front = i < 2;
+      const cap = front ? d.heatFront : d.heatRear;
+      let t = this.brakeTemp[i] + this.brakeHeat[i] * 0.9 / cap;   // (most of the heat goes into the disc; the rest into the pads)
+      this.brakeHeat[i] = 0;
+      const air = (6 + 1.1 * v) * (front ? d.coolFront : d.coolRear) * (1 + 0.4 * this.trackWetness);   // W per °C (spray off a wet track cools them too)
+      const K = t + 273, A = AMBIENT_TEMP + 273;
+      const glow = 0.6 * 5.67e-8 * 0.1 * (K * K * K * K - A * A * A * A);
+      t -= (air * (t - AMBIENT_TEMP) + glow) * dt / cap;
+      this.brakeTemp[i] = Math.max(AMBIENT_TEMP, Math.min(1100, t));
+      if (this.tyres[i]) this.tyres[i].brakeTemp = this.brakeTemp[i];
+    }
+  }
+
   damageEngine(amount) {
     if (this.engineBlown || !(amount > 0)) return;
     this.engineHealth = Math.max(0, this.engineHealth - amount);
@@ -684,6 +727,7 @@ export class CarPhysics {
     for (let i = 0; i < steps; i++) this.step(controls, h);
     this.updateOil(dt);
     this.updateDamage(dt);
+    this.updateBrakes(dt);
     // Safety net: if anything ever produces an invalid number, put the
     // car back at the start rather than letting it vanish
     if (!Number.isFinite(this.x + this.z + this.heading + this.vx + this.vy + this.yawRate + this.rpm)) {
@@ -748,6 +792,37 @@ export class CarPhysics {
       W4.synced = true;
     }
 
+    // --- Hills: the ground's height under each wheel. The car sits on the
+    // slope those four points make (it tilts with it); any twist left over
+    // goes into the suspension like a bump. Gravity pulls the car down the
+    // slope, and going over a crest or through a dip makes it lighter or
+    // heavier on its springs. ---
+    const GR = this.ground, gh = [0, 0, 0, 0];
+    WHEEL_ORDER.forEach((w, i) => {
+      const a = w.front ? s.cgToFront : -s.cgToRear, b = w.side * s.trackHalf;
+      gh[i] = this.groundHeight(this.x + fx * a + lx * b, this.z + fz * a + lz * b);
+    });
+    {
+      const hf = (gh[0] + gh[1]) / 2, hr = (gh[2] + gh[3]) / 2;
+      const wb = s.cgToFront + s.cgToRear;
+      GR.slopeF = (hf - hr) / wb;
+      GR.slopeL = ((gh[0] + gh[2]) - (gh[1] + gh[3])) / 2 / (2 * s.trackHalf);
+      const y = hr + (hf - hr) * s.cgToRear / wb;
+      if (!GR.synced || Math.abs(y - GR.y) > 1) { GR.y = y; GR.rate = 0; GR.accel = 0; GR.synced = true; }
+      // (smoothed: the ground is made of small flat triangles)
+      const rate = (y - GR.y) / h;
+      const newRate = GR.rate + (rate - GR.rate) * Math.min(1, h / 0.12);
+      GR.accel += (clamp((newRate - GR.rate) / h, -12, 12) - GR.accel) * Math.min(1, h / 0.12);
+      GR.rate = newRate;
+      GR.y = y;
+    }
+    const groundTwist = WHEEL_ORDER.map((w, i) => {
+      const a = w.front ? s.cgToFront : -s.cgToRear, b = w.side * s.trackHalf;
+      return gh[i] - (GR.y + GR.slopeF * a + GR.slopeL * b);
+    });
+    const slopePullF = -G * GR.slopeF / Math.sqrt(1 + GR.slopeF * GR.slopeF);   // gravity along the slope (m/s²)
+    const slopePullL = -G * GR.slopeL / Math.sqrt(1 + GR.slopeL * GR.slopeL);
+
     // The ground and the tyre under each wheel
     const kind = TYRES[this.tyreCompound].kind;
     const shape = TYRE_SHAPE[kind] || TYRE_SHAPE.road;
@@ -765,7 +840,7 @@ export class CarPhysics {
       // feels is the road smoothed over the last ~40 cm rolled (without
       // this, tiny ripples at speed felt like hammer blows and kept
       // unloading the tyres)
-      const raw = this.roadHeight(wx, wz) - this.tyreSink[i];
+      const raw = this.roadHeight(wx, wz) - this.tyreSink[i] + groundTwist[i];
       const rolled = Math.hypot(this.vx, this.vy) * h;
       const road = W4.roadSet ? W4.road[i] + (raw - W4.road[i]) * (1 - Math.exp(-rolled / 0.4 - h / 0.08)) : raw;
       W4.roadRate[i] = W4.roadSet ? clamp((road - W4.road[i]) / h, -1.5, 1.5) : 0;
@@ -976,6 +1051,8 @@ export class CarPhysics {
     brakeTorque[0] = brakeTorque[1] = perFront;
     brakeTorque[2] = brakeTorque[3] = perRear;
     if (c.handbrake) { brakeTorque[2] += s.handbrakeTorque; brakeTorque[3] += s.handbrakeTorque; }
+    // hot discs fade: the pads grip them less
+    for (let i = 0; i < 4; i++) brakeTorque[i] *= this.brakeFade(i);
     // A bad downshift briefly locks the rear wheels with engine braking
     if (this.overRevLock > 0) {
       this.overRevLock -= h;
@@ -1046,6 +1123,7 @@ export class CarPhysics {
       }
       // the body's own weight shifting as the car speeds up, slows and turns
       heaveF -= 2 * (aeroF + aeroR);
+      heaveF -= m * GR.accel;                         // the ground rising faster (a dip) presses the car down on its springs; a crest lightens it
       pitchM += -m * W4.ax * s.cgHeight + 2 * (Lf * aeroF - Lr * aeroR);
       rollM += m * W4.ay * s.cgHeight;
       W4.heaveV += (heaveF / m) * h2;
@@ -1112,7 +1190,7 @@ export class CarPhysics {
         }
         const stop = (bt / inertia) * h2;
         if (Math.abs(newOm) <= stop) newOm = 0;                    // held still: locked
-        else newOm -= Math.sign(newOm) * stop;
+        else { newOm -= Math.sign(newOm) * stop; this.brakeHeat[i] += bt * Math.abs(newOm) * h2; }   // (the disc heats as it slows the wheel; a locked wheel's disc doesn't)
         if (gone) newOm = vLong / R;
         W4.omega[i] = newOm;
         W4.kappa[i] = kappa;
@@ -1135,8 +1213,8 @@ export class CarPhysics {
       // -- the body moves --
       const ax = (Fx - resist) / m;
       const ay = Fy / m;
-      this.vx += (ax + this.vy * this.yawRate) * h2;
-      this.vy += (ay - this.vx * this.yawRate) * h2;
+      this.vx += (ax + slopePullF + this.vy * this.yawRate) * h2;   // (gravity on a slope moves the car, but isn't felt as weight shifting)
+      this.vy += (ay + slopePullL - this.vx * this.yawRate) * h2;
       this.yawRate += ((Mz + flatPull) / s.inertia - s.yawDamping * 0.15 * this.yawRate) * h2;
       axSum += ax; aySum += ay;
       W4.ax += (ax - W4.ax) * Math.min(1, 30 * h2);
@@ -1151,7 +1229,9 @@ export class CarPhysics {
     this.distance += Math.hypot(this.vx, this.vy) * h;
 
     // Come to a full stop instead of creeping forever
-    if (!c.throttle && Math.abs(this.vx) < 0.15 && Math.abs(this.vy) < 0.15 && (c.brake || c.handbrake || Math.abs(this.vx) < 0.05)) {
+    // (with no brake on, a real slope still rolls the car away)
+    const onSlope = Math.abs(this.ground.slopeF) > 0.02 || Math.abs(this.ground.slopeL) > 0.03;
+    if (!c.throttle && Math.abs(this.vx) < 0.15 && Math.abs(this.vy) < 0.15 && (c.brake || c.handbrake || (Math.abs(this.vx) < 0.05 && !onSlope))) {
       this.vx = 0;
       this.vy = 0;
       this.yawRate = 0;
