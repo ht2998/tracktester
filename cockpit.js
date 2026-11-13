@@ -20,7 +20,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 11;
+export const BUILD = 13;
 
 const DRIVER_X = -0.18;
 // The steering wheel's centre and tilt
@@ -389,7 +389,7 @@ export class Cockpit {
       const cuff = mesh(new THREE.CylinderGeometry(0.036, 0.04, 0.03, 14), glove, 0, -0.035, 0);
       hand.add(cuff);
       this.driver.add(upper, fore, elbow, hand);
-      return { upper, fore, elbow, hand, blend: 0, target: new THREE.Vector3(), horn: 0 };
+      return { upper, fore, elbow, hand, thumb, thumbPos: thumb.position.clone(), thumbRot: thumb.quaternion.clone(), thumbAim: 0, blend: 0, target: new THREE.Vector3(), horn: 0 };
     });
     // Legs: thigh and shin to a racing boot on each pedal
     const thighGeo = limbGeometry(0.064, THIGH), shinGeo = limbGeometry(0.048, SHIN);
@@ -600,6 +600,25 @@ export class Cockpit {
     arm.hand.quaternion.copy(arm.fore.quaternion);
   }
 
+  // Thumb on the horn: whichever way the wheel is turned, the thumb points
+  // at the middle of the wheel and stretches across to press it
+  aimThumb(arm) {
+    const { thumb, hand } = arm;
+    if (arm.thumbAim < 0.01) { thumb.position.copy(arm.thumbPos); thumb.quaternion.copy(arm.thumbRot); thumb.scale.set(1, 1, 1); return; }
+    // the horn pad, in the hand's own space
+    const hub = this.hubPoint(new THREE.Vector3()).sub(hand.position).applyQuaternion(hand.quaternion.clone().invert());
+    const base = new THREE.Vector3(Math.sign(arm.thumbPos.x) * 0.022, 0.01, 0.01);   // where the thumb joins the hand
+    const dir = hub.sub(base);
+    const reachLen = dir.length();
+    dir.divideScalar(reachLen || 1);
+    const len = Math.min(0.085, Math.max(0.054, reachLen));       // (0.054 m: the thumb's own length)
+    const q = new THREE.Quaternion().setFromUnitVectors(UP, dir);
+    thumb.quaternion.copy(arm.thumbRot).slerp(q, arm.thumbAim);
+    thumb.scale.set(1, 1 + (len / 0.054 - 1) * arm.thumbAim, 1);
+    const centre = base.clone().addScaledVector(dir, len / 2);
+    thumb.position.copy(arm.thumbPos).lerp(centre, arm.thumbAim);
+  }
+
   // Point a limb segment from a to b (stretched or squashed a touch along
   // its length if they're not quite its own length apart)
   setLimb(m, a, b) {
@@ -658,17 +677,12 @@ export class Cockpit {
       p.t = Math.max(0, p.t - dt);
       p.pivot.rotation.x = p.t > 0 ? -0.35 * Math.sin((p.t / 0.2) * Math.PI) : 0;
     }
-    // Gear lever: towards the current gear's slot
+    // Gear lever and handbrake: where they SHOULD be. They only actually
+    // move once the driver's left hand has hold of them (see the hands below)
     let target;
     if (st.transmission === 'manual') target = H_PATTERN[st.gear] || [0, 0];
     else target = st.gear === -1 ? [0, 1] : st.gear === 0 ? [0, 0.3] : [0, -1];   // R forward, D back
-    const k = 1 - Math.exp(-dt / 0.06);
-    this.stickAt.across += (target[0] - this.stickAt.across) * k;
-    this.stickAt.fore += (target[1] - this.stickAt.fore) * k;
-    this.stick.rotation.set(this.stickAt.fore * 0.32, 0, -this.stickAt.across * 0.28);
-    // Handbrake lever
-    this.brakeUp += ((st.handbrake ? 1 : 0) - this.brakeUp) * (1 - Math.exp(-dt / 0.05));
-    this.brake.rotation.x = -0.15 - 0.5 * this.brakeUp;
+    const brakeWant = st.handbrake ? 1 : 0;
     // Dials
     // (the face is turned to the driver, so a clockwise sweep as he sees it
     // is a growing angle here)
@@ -687,29 +701,62 @@ export class Cockpit {
     const [left, right] = this.arms;
     const onWheelL = this.rimPoint(1.15, turn, new THREE.Vector3());
     const onWheelR = this.rimPoint(-1.15, turn, new THREE.Vector3());
-    let away = null;
-    if (st.handbrake || this.brakeUp > 0.3) {
-      away = new THREE.Vector3(0, 0, BRAKE_LEN - 0.03).applyEuler(this.brake.rotation).add(BRAKE_BASE);
-    } else if (this.shiftHold > 0) {
-      away = new THREE.Vector3(0, STICK_LEN, 0).applyEuler(this.stick.rotation).add(STICK_BASE);
+    // What the left hand has to do: pull or release the handbrake (and hold
+    // it while it's on), or move the gear lever to its new slot
+    const stickOff = Math.hypot(target[0] - this.stickAt.across, target[1] - this.stickAt.fore);
+    const needBrake = brakeWant > 0 || this.brakeUp > 0.01;
+    const needShift = this.shiftHold > 0 || stickOff > 0.02;
+    if (left.task === 'brake' && !needBrake) left.task = null;
+    if (left.task === 'shift' && !needShift) left.task = null;
+    // (one job at a time: a new job waits until the hand lets go of the other lever)
+    if (!left.task) left.task = needBrake ? 'brake' : needShift ? 'shift' : null;
+    if (left.task !== left.held) left.gripped = false;
+    left.held = left.task;
+    const leverGrip = (task) => task === 'brake'
+      ? new THREE.Vector3(0, 0, BRAKE_LEN - 0.03).applyEuler(this.brake.rotation).add(BRAKE_BASE)
+      : new THREE.Vector3(0, STICK_LEN, 0).applyEuler(this.stick.rotation).add(STICK_BASE);
+    let away = left.task ? leverGrip(left.task) : null;
+    // The hand travels to wherever it's going (it doesn't jump)
+    if (!left.pos) left.pos = onWheelL.clone();
+    const goal = away || onWheelL;
+    if (left.gripped) left.pos.copy(away);
+    else left.pos.lerp(goal, 1 - Math.exp(-dt / 0.055));
+    // Got hold of the lever? Only now does it move, and the hand moves with it
+    if (away && !left.gripped && left.pos.distanceTo(away) < 0.03) left.gripped = true;
+    if (left.gripped) {
+      if (left.task === 'brake') this.brakeUp += (brakeWant - this.brakeUp) * (1 - Math.exp(-dt / 0.06));
+      if (left.task === 'brake' && Math.abs(brakeWant - this.brakeUp) < 0.012) this.brakeUp = brakeWant;
+      else {
+        const k = 1 - Math.exp(-dt / 0.05);
+        this.stickAt.across += (target[0] - this.stickAt.across) * k;
+        this.stickAt.fore += (target[1] - this.stickAt.fore) * k;
+      }
     }
-    left.blend += ((away ? 1 : 0) - left.blend) * (1 - Math.exp(-dt / 0.07));
+    this.brake.rotation.x = -0.15 - 0.5 * this.brakeUp;
+    this.stick.rotation.set(this.stickAt.fore * 0.32, 0, -this.stickAt.across * 0.28);
+    if (left.gripped) { away = leverGrip(left.task); left.pos.copy(away); }
+    // Back on the wheel: hold the rim as it turns
+    const offWheel = left.pos.distanceTo(onWheelL);
+    if (!away && offWheel < 0.015) left.pos.copy(onWheelL);
+    left.blend = away || offWheel > 0.015 ? 1 : 0;
     // Horn: the right hand leaves the rim and presses the middle of the
     // wheel. But one hand always stays on the wheel: if the left one is busy
     // with the gear stick or handbrake, the right keeps hold of the rim and
     // just reaches in with its thumb
-    const hornReach = !st.horn ? 0 : left.blend > 0.05 || away ? 0.3 : 1;
+    const thumbOnly = left.blend > 0.05 || !!away;
+    const hornReach = !st.horn ? 0 : thumbOnly ? 0.5 : 1;
+    right.thumbAim += ((st.horn && thumbOnly ? 1 : 0) - right.thumbAim) * (1 - Math.exp(-dt / 0.05));
     right.horn += (hornReach - right.horn) * (1 - Math.exp(-dt / 0.06));
     this.hornPress = right.horn;
     this.hub.position.z = 0.01 - 0.006 * right.horn;     // the pad sinks in a little
-    const handL = away ? onWheelL.lerp(away, left.blend) : onWheelL.lerp(left.target, left.blend);
-    if (away) left.target.copy(away);
+    const handL = left.pos.clone();
     // (an automatic's paddle pull: the fingers reach back a touch)
     const pull = Math.max(this.paddles.up.t, this.paddles.down.t) * 0.12;
     onWheelR.z -= pull;
     if (right.horn > 0.01) onWheelR.lerp(this.hubPoint(new THREE.Vector3()), right.horn);
     this.placeArm(left, SHOULDER_L, handL, 1);
     this.placeArm(right, SHOULDER_R, onWheelR, -1);
+    this.aimThumb(right);
 
     // Pedals follow the controls (quickly, like a foot does)
     const pk = 1 - Math.exp(-dt / 0.05);
