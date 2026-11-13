@@ -21,11 +21,24 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 31;
+export const BUILD = 32;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 34, date: '13 Nov 2026', title: 'Real coolant and oil, moving suspension, fixes',
+    items: [
+      ['Coolant bursts', 'The Caterham\'s coolant is pink-red and under pressure, so a hard hit to the nose now bursts the radiator in a pink spray and a cloud of steam. After that it keeps leaking: pink drips and a trail under the nose while it steams, until it runs dry. Coolant on the road is slippery too', 'puddles'],
+      ['Running without coolant', 'With the coolant gone the engine overheats and starts cooking its oil: black smoke pours out after about half a minute of driving (sooner if you thrash it), then pre-ignition makes it knock and tap and lose power, and then the engine dies', 'fire'],
+      ['Oil that ages', 'Fresh engine oil is honey-yellow. The further you drive, the browner and then blacker it gets, and any oil leak shows its current colour. If coolant gets into the oil (overheating or a big front hit) it turns milky tan', 'gauges'],
+      ['Suspension that moves', 'The wishbones, uprights, dampers, tie rods and driveshafts now move with each wheel: they pivot up over bumps and kerbs, the dampers squeeze, and the front tie rods and uprights swing with the steering', 'car'],
+      ['Wheels hang, not fall', 'A wheel can now only drop about 7 cm below its normal height, like the real car when its damper is fully stretched. Over a crest, a jump or a ledge it hangs at that limit in the air instead of stretching down to the ground', 'tyres'],
+      ['No grass in the gravel', 'At Sepang, little patches inside the wide gravel traps were being counted as grass (so grass tufts grew there, and the car drove on them as grass). The gravel traps are now gravel all the way through', 'gravel'],
+      ['No more zooming on phones', 'Double-tapping or pinching the screen could zoom the page in, sometimes with no way back out. Zooming is now blocked everywhere, and if the page ever does end up zoomed in it snaps straight back', 'phone'],
+      ['Clutch pedal, no clutch text', 'The "Clutch engaged" line at the top of the screen is gone. Instead the clutch pedal in the cockpit goes down when you hold X, dips for every gear change in the manual gearbox, and eases up as you pull away', 'cockpit'],
+    ],
+  },
   {
     id: 33, date: '13 Nov 2026', title: 'Flat tyres, GT-style braking zones, fainter rubber',
     items: [
