@@ -20,10 +20,11 @@
 // =====================================================================
 
 import * as THREE from 'three';
+import { groundAt, lieOnGround } from './ground.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 3;
+export const BUILD = 4;
 
 // How hard it rains at each level (0-1)
 export const RAIN_LEVELS = { drizzle: 0.12, light: 0.3, moderate: 0.52, heavy: 0.78, storm: 1 };
@@ -246,14 +247,15 @@ export class RainSystem {
       p.cur = smooth(p.start ?? 0, 1, fill);
       const r = p.r * p.cur;
       const base = i * 5;
-      this._p.set(p.x, height, p.z);
-      this._q.setFromAxisAngle(this._up, p.turn);
+      this._p.set(p.x, height + groundAt(p.x, p.z), p.z);
+      lieOnGround(this._q, p.x, p.z, p.turn);
       this._s.set(Math.max(1e-4, r), 1, Math.max(1e-4, r * p.squash));
       mesh.setMatrixAt(base, this._m.compose(this._p, this._q, this._s));
       p.lobes.forEach((l, k) => {
         const lr = Math.max(1e-4, r * l.s);
-        this._p.set(p.x + Math.sin(l.a) * r * l.d, height + 0.0003 * (k + 1), p.z + Math.cos(l.a) * r * l.d);
-        this._q.setFromAxisAngle(this._up, l.turn);
+        this._p.set(p.x + Math.sin(l.a) * r * l.d, 0, p.z + Math.cos(l.a) * r * l.d);
+        this._p.y = height + 0.0003 * (k + 1) + groundAt(this._p.x, this._p.z);
+        lieOnGround(this._q, this._p.x, this._p.z, l.turn);
         mesh.setMatrixAt(base + 1 + k, this._m.compose(this._p, this._q, this._s.set(lr, 1, lr * l.sq)));
       });
     });
@@ -293,14 +295,15 @@ export class RainSystem {
       const v = this.dropSpeed[i];
       y -= v * dt;
       x += wind.x * dt; z += wind.z * dt;
-      const floor = this.roofAt(x, z);
+      const roofUp = this.roofAt(x, z), ground = groundAt(x, z);
+      const floor = ground + roofUp;
       if (y <= floor) {
         // Landed: a crown splash, or a ripple if it fell in a puddle
         // (none on a roof: you wouldn't see them up there)
-        if (!floor && splashes > 0 && Math.abs(x - cx) < 9 && Math.abs(z - cz) < 9) {
+        if (!roofUp && splashes > 0 && Math.abs(x - cx) < 9 && Math.abs(z - cz) < 9) {
           splashes--;
-          if (this.puddleAt(x, z) > 0.15) this.spawnFx(this.ripples, x, 0.012, z, rand(0.12, 0.28), rand(0.5, 0.8));
-          else if (this.wetness > 0.15) this.spawnFx(this.crowns, x, 0.004, z, rand(0.025, 0.05), rand(0.14, 0.22));
+          if (this.puddleAt(x, z) > 0.15) this.spawnFx(this.ripples, x, ground + 0.012, z, rand(0.12, 0.28), rand(0.5, 0.8));
+          else if (this.wetness > 0.15) this.spawnFx(this.crowns, x, ground + 0.004, z, rand(0.025, 0.05), rand(0.14, 0.22));
         }
         x = cx + rand(-BOX, BOX); z = cz + rand(-BOX, BOX); y = cy + rand(4, TOP);
       }
@@ -309,7 +312,7 @@ export class RainSystem {
       if (z - cz > BOX) z -= 2 * BOX; else if (z - cz < -BOX) z += 2 * BOX;
       // never inside a building: a drop that ends up under a roof starts again above it
       const roof = this.roofAt(x, z);
-      if (roof && y < roof) y = roof + rand(0.5, TOP);
+      if (roof && y < roof + groundAt(x, z)) y = roof + groundAt(x, z) + rand(0.5, TOP);
       d[i * 3] = x; d[i * 3 + 1] = y; d[i * 3 + 2] = z;
       // The streak points along the drop's motion as you see it from the
       // moving car: it slants towards you when you drive fast
