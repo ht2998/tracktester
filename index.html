@@ -17,6 +17,14 @@
       background: #9ec9ef;
       font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
     }
+    /* No zooming on phones: double-tapping or pinching anywhere (the HUD,
+       buttons, panels) used to zoom the page in, sometimes for good.
+       Panels can still scroll; the game's own controls set their own rules. */
+    html, body, body * {
+      touch-action: pan-x pan-y;
+      -webkit-text-size-adjust: 100%;
+      -webkit-tap-highlight-color: transparent;
+    }
     /* The 3D scene fills the whole screen */
     #game {
       position: fixed;
@@ -55,6 +63,50 @@
       z-index: 10;
     }
   </style>
+
+  <!-- Phones: block double-tap and pinch zoom (iPhones ignore the
+       "no zooming" setting above), and if the page ever does end up zoomed
+       in, snap it straight back out -->
+  <script>
+    (function () {
+      var stop = function (e) { e.preventDefault(); };
+      // iPhone pinch gestures
+      document.addEventListener('gesturestart', stop, { passive: false });
+      document.addEventListener('gesturechange', stop, { passive: false });
+      document.addEventListener('gestureend', stop, { passive: false });
+      // two fingers moving = a pinch (the game's own two-finger controls
+      // still get the touches; only the browser's zoom is cancelled)
+      document.addEventListener('touchmove', function (e) {
+        if (e.touches.length > 1 || (e.scale !== undefined && e.scale !== 1)) e.preventDefault();
+      }, { passive: false });
+      // double-tap zoom
+      document.addEventListener('dblclick', stop, { passive: false });
+      var lastEnd = 0;
+      document.addEventListener('touchend', function (e) {
+        var now = Date.now();
+        // a second quick tap on something that isn't a button or text box:
+        // cancel it, so the browser doesn't treat it as "zoom in here"
+        var t = e.target, tag = t && t.tagName;
+        var control = t && t.closest && t.closest('button, a, input, select, textarea, label, [data-tap]');
+        if (now - lastEnd < 350 && !control && e.cancelable) e.preventDefault();
+        lastEnd = now;
+      }, { passive: false });
+      // Zoomed in anyway? Re-apply the viewport setting, which makes the
+      // browser zoom back out to normal
+      var meta = document.querySelector('meta[name=viewport]');
+      var base = meta.getAttribute('content');
+      function unzoom() {
+        if (!window.visualViewport || window.visualViewport.scale <= 1.01) return;
+        meta.setAttribute('content', base.replace('maximum-scale=1.0', 'maximum-scale=1.01'));
+        setTimeout(function () { meta.setAttribute('content', base); }, 30);
+      }
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', unzoom);
+        window.visualViewport.addEventListener('scroll', unzoom);
+      }
+      window.addEventListener('orientationchange', function () { setTimeout(unzoom, 300); });
+    })();
+  </script>
 
   <!-- Shows problems on screen, so you don't need the browser's developer tools -->
   <script>
