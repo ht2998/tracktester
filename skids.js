@@ -10,10 +10,11 @@
 // =====================================================================
 
 import * as THREE from 'three';
+import { groundAt } from './ground.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 2;
+export const BUILD = 3;
 
 const CELL = 2;   // metres: size of each square in the lookup grid
 const cellKey = (x, z) => `${Math.floor(x / CELL)},${Math.floor(z / CELL)}`;
@@ -64,6 +65,7 @@ export class SkidMarks {
     this._s = new THREE.Vector3();
     this._c = new THREE.Color();
     this._up = new THREE.Vector3(0, 1, 0);
+    this._eu = new THREE.Euler();
   }
 
   // Call every frame for each tyre. id: which tyre, x/z: its contact patch,
@@ -103,8 +105,11 @@ export class SkidMarks {
     const len = Math.hypot(bx - ax, bz - az);
     // Each mark varies a touch in width and shade, like real rubber
     const w = this.tyreWidth * (0.9 + Math.random() * 0.15);
-    this._p.set((ax + bx) / 2, this.height, (az + bz) / 2);
-    this._q.setFromAxisAngle(this._up, Math.atan2(bx - ax, bz - az));
+    // (lying on the ground: on a hill it tilts with the slope)
+    const ya = groundAt(ax, az), yb = groundAt(bx, bz);
+    this._p.set((ax + bx) / 2, this.height + (ya + yb) / 2, (az + bz) / 2);
+    this._eu.set(-Math.atan2(yb - ya, Math.max(len, 1e-3)), Math.atan2(bx - ax, bz - az), 0, 'YXZ');
+    this._q.setFromEuler(this._eu);
     this._s.set(w, 1, len + 0.04);
     this._m.compose(this._p, this._q, this._s);
     this.mesh.setMatrixAt(i, this._m);
@@ -221,7 +226,7 @@ export class TyreShreds {
     if (this.items.length >= this.max) this.items.shift();
     const r = (a, b) => a + Math.random() * (b - a);
     this.items.push({
-      x: pos.x, y: 0.25, z: pos.z,
+      x: pos.x, y: groundAt(pos.x, pos.z) + 0.25, z: pos.z,
       vx: vel.x * r(0.4, 0.9) + r(-2.5, 2.5), vy: r(1, 3.5) * (0.6 + size), vz: vel.z * r(0.4, 0.9) + r(-2.5, 2.5),
       rx: r(0, 6), ry: r(0, 6), rz: r(0, 6), spin: r(-14, 14),
       len: r(0.08, 0.22) * (0.6 + size), wid: r(0.03, 0.07) * (0.7 + size * 0.6), life: 0,
@@ -237,14 +242,15 @@ export class TyreShreds {
       p.vx *= 1 - 0.6 * dt; p.vz *= 1 - 0.6 * dt;
       p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
       p.rx += p.spin * dt; p.rz += p.spin * 0.7 * dt;
-      if (p.y < 0.01) {
+      const floor = groundAt(p.x, p.z) + 0.01;
+      if (p.y < floor) {
         if (Math.abs(p.vy) < 1.2 || p.life > 4) {
           // Settled: it becomes a crumb on the road (and adds a little grip)
           this.skids.addCrumb(p.x, p.z, p.len, 0.5 + Math.random() * 0.5);
           this.items.splice(k, 1);
           continue;
         }
-        p.y = 0.01; p.vy = -p.vy * 0.3; p.vx *= 0.6; p.vz *= 0.6; p.spin *= 0.5;
+        p.y = floor; p.vy = -p.vy * 0.3; p.vx *= 0.6; p.vz *= 0.6; p.spin *= 0.5;
       }
     }
     for (const p of this.items) {
