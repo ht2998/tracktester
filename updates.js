@@ -21,11 +21,31 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 33;
+export const BUILD = 35;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 37, date: '13 Nov 2026', title: 'Sepang has hills now',
+    items: [
+      ['Real elevation', 'Sepang isn\'t flat any more: there\'s about 22 m between the lowest point, round turn 3, and the highest, at turn 11. The track drops through the turn 1-2 hairpin, rises through turn 4, climbs gently through 7 and 8, goes uphill through turn 9 with a crest at the apex, on up past 10 to the top at 11, then drops through the 12-13 chicane and runs gently down the straights', 'car'],
+      ['Rolling ground', 'The grass, gravel traps, kerbs, barriers, buildings, trees, the racing line and the boards all sit on the hills, and the ground rolls gently away from the track', 'grass'],
+      ['Driving on slopes', 'Gravity pulls the car along the slope: it\'s slower up the hills, faster down them, and it takes longer to stop braking downhill. Let go of the brakes on a hill and it rolls back. Over a crest the car goes light on its springs; through a dip it squashes down. The car tilts with the slope, and the camera keeps above the ground', 'tyres'],
+      ['Everything lands on the hills', 'Skid marks, oil and coolant, puddles, rain splashes, engine debris, sparks, shredded rubber and loose wheels all follow the ground\'s real height', 'debris'],
+      ['Proper corner numbers', 'The corner panel now uses Sepang\'s real turn numbers (the long turn 3 has two apexes, so it shows up twice). The sectors split after turns 4 and 11. Best laps start fresh, because the hills change the lap times', 'clock'],
+    ],
+  },
+  {
+    id: 36, date: '13 Nov 2026', title: 'Proper rims, brake discs that get hot',
+    items: [
+      ['Proper alloy rims', 'The wheels are now open-spoked alloys: six pairs of thin split spokes dished out to the hub, four wheel nuts round a centre cap, and a lip round the edge. The tyre is a proper ring round the rim, and the spokes face outwards on both sides of the car', 'car'],
+      ['Brake discs and calipers', 'Through the spokes you can see the brake disc spinning with the wheel, and the red caliper gripping it at the back, turning with the steering', 'car'],
+      ['Brakes heat up', 'Every time you brake, the discs turn your speed into heat: a hard stop from 180 km/h warms the fronts by about 100 degrees. Air flowing past cools them, faster at speed. Brake hard again and again with no time to cool and they climb past 600 degrees, where the pads start to fade: the same pedal stops you less and less (down to about half at 950 degrees)', 'gauges'],
+      ['Glowing discs', 'Past about 420 degrees the discs start to glow dull red, turning orange as they get hotter. Easiest to see at night', 'lights'],
+      ['Brake temperatures on the HUD', 'A thin bar beside each tyre shows its brake: grey when cold, green when working, orange when hot, and flashing red when they\'re fading', 'gauges'],
+    ],
+  },
   {
     id: 35, date: '13 Nov 2026', title: 'Hands on the levers, thumb on the horn',
     items: [
