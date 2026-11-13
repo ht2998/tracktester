@@ -20,7 +20,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 10;
+export const BUILD = 11;
 
 const DRIVER_X = -0.18;
 // The steering wheel's centre and tilt
@@ -713,7 +713,7 @@ export class Cockpit {
 
     // Pedals follow the controls (quickly, like a foot does)
     const pk = 1 - Math.exp(-dt / 0.05);
-    const press = { clutch: st.clutch ? 1 : 0, brake: Math.min(1, st.brake || 0), throttle: Math.min(1, st.throttle || 0) };
+    const press = { clutch: Math.min(1, Math.max(0, +st.clutch || 0)), brake: Math.min(1, st.brake || 0), throttle: Math.min(1, st.throttle || 0) };
     for (const [name, p] of Object.entries(this.pedals)) {
       p.at += (press[name] - p.at) * pk;
       p.pivot.rotation.x = -p.at * p.travel;
@@ -729,7 +729,7 @@ export class Cockpit {
     footR.z -= 0.04 * Math.sin(this.rightFoot * Math.PI);   // lifted off in between
     footR.y += 0.03 * Math.sin(this.rightFoot * Math.PI);
     this.leftFoot = this.leftFoot ?? 0;
-    this.leftFoot += ((press.clutch > 0 || this.pedals.clutch.at > 0.05 ? 1 : 0) - this.leftFoot) * (1 - Math.exp(-dt / 0.06));
+    this.leftFoot += ((press.clutch > 0.02 || this.pedals.clutch.at > 0.05 ? 1 : 0) - this.leftFoot) * (1 - Math.exp(-dt / 0.06));
     const footL = new THREE.Vector3().copy(FOOTREST).lerp(this.pedalPad('clutch', new THREE.Vector3()), this.leftFoot);
     this.placeLeg(legL, HIP_L, footL, 1);
     this.placeLeg(legR, HIP_R, footR, -1);
