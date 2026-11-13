@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 12;
+export const BUILD = 13;
 
 const G = 9.81;   // gravity, m/s²
 const RPM_PER_RADS = 60 / (2 * Math.PI);
@@ -20,6 +20,7 @@ const RPM_PER_RADS = 60 / (2 * Math.PI);
 export const CATERHAM = {
   mass: 560,              // kg
   inertia: 680,           // how hard it is to spin the car (kg·m²)
+  airInertia: { pitch: 620, yaw: 680, roll: 210 },   // the whole car tumbling end over end, spinning flat, and rolling over (kg·m²)
   cgToFront: 1.15,        // metres from the centre of mass to the front axle
   cgToRear: 1.05,         // metres from the centre of mass to the rear axle
   frontGrip: 1.40,        // tyre grip (1.0 = ordinary road tyre on dry tarmac): high so it feels planted (four-wheel model)
@@ -219,6 +220,36 @@ function torqueAt(curve, rpm) {
   return 0;
 }
 
+// --- Small 3D maths for the free body (vectors [x, y, z], quaternions [w, x, y, z]) ---
+const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const add3 = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const qmul = (a, b) => [
+  a[0] * b[0] - a[1] * b[1] - a[2] * b[2] - a[3] * b[3],
+  a[0] * b[1] + a[1] * b[0] + a[2] * b[3] - a[3] * b[2],
+  a[0] * b[2] - a[1] * b[3] + a[2] * b[0] + a[3] * b[1],
+  a[0] * b[3] + a[1] * b[2] - a[2] * b[1] + a[3] * b[0],
+];
+const qnorm = (q) => { const l = Math.hypot(q[0], q[1], q[2], q[3]) || 1; return [q[0] / l, q[1] / l, q[2] / l, q[3] / l]; };
+const qaxis = (ax, ang) => { const sn = Math.sin(ang / 2); return [Math.cos(ang / 2), ax[0] * sn, ax[1] * sn, ax[2] * sn]; };
+const qrot = (q, v) => {
+  const [w, x, y, z] = q;
+  const tx = 2 * (y * v[2] - z * v[1]), ty = 2 * (z * v[0] - x * v[2]), tz = 2 * (x * v[1] - y * v[0]);
+  return [v[0] + w * tx + (y * tz - z * ty), v[1] + w * ty + (z * tx - x * tz), v[2] + w * tz + (x * ty - y * tx)];
+};
+// The parts of the body that can touch the ground when it's tipped over or
+// lands badly (x = left, y = up from the ground, z = forwards, metres):
+// the nose, the front and rear wings, the scuttle, the roll bar, the
+// cockpit sides, the tail and the corners of the floor
+const BODY_POINTS = [
+  [0, 0.3, 1.72], [0.25, 0.32, 1.6], [-0.25, 0.32, 1.6],
+  [0.74, 0.62, 1.1], [-0.74, 0.62, 1.1], [0, 0.82, 0.55],
+  [0.32, 1.08, -0.38], [-0.32, 1.08, -0.38], [0, 1.1, -0.38],
+  [0.56, 0.74, 0.1], [-0.56, 0.74, 0.1], [0.72, 0.62, -1.15], [-0.72, 0.62, -1.15],
+  [0.55, 0.45, -1.55], [-0.55, 0.45, -1.55],
+  [0.48, 0.1, 1.3], [-0.48, 0.1, 1.3], [0.48, 0.1, -1.3], [-0.48, 0.1, -1.3],
+];
+
 export class CarPhysics {
   constructor(spec = CATERHAM) {
     this.spec = spec;
@@ -246,6 +277,15 @@ export class CarPhysics {
   }
 
   reset() {
+    // The free 3D body (jumps, rolls, upside down): see airWheels/airStep
+    this.air = false;
+    this.fb = {
+      p: [0, 0, 0], v: [0, 0, 0], q: [1, 0, 0, 0], w: [0, 0, 0],   // centre of mass position, speed, turn (w x y z), spin (all in the world)
+      vf: [0, 0, 0, 0], vl: [0, 0, 0, 0], fx: [0, 0, 0, 0], fy: [0, 0, 0, 0], travel: [0, 0, 0, 0],
+      N: [0, 0, 0, 0], acc: [0, 0], settle: 0, lift: 0, side: 0, end: 0, hitAt: -9, time: 0, sync: null, scrape: 0,
+    };
+    this.pose = { x: 0, y: 0, z: 0, q: [0, 0, 0, 1] };   // where to draw the car while it's flying (model origin, quaternion x y z w)
+    this.airHeight = 0;    // how high the car's middle is above the ground (0 on its wheels)
     // The ground under the car: its height (at the car's middle), how much it
     // slopes forwards and to the left (rise per metre), and how fast the
     // ground under the car is rising and speeding up its rise (crests, dips)
@@ -417,6 +457,243 @@ export class CarPhysics {
       this.brakeTemp[i] = Math.max(AMBIENT_TEMP, Math.min(1100, t));
       if (this.tyres[i]) this.tyres[i].brakeTemp = this.brakeTemp[i];
     }
+  }
+
+  // =====================================================================
+  // JUMPS AND ROLLOVERS: a free 3D body
+  // Most of the time the car drives on the ground model above (fast, and
+  // tuned to feel right). When all four wheels leave the ground, or it
+  // tips up onto two wheels, it becomes a free body: it flies, spins and
+  // tumbles under gravity, lands on its wheels (their springs and tyres
+  // still work) or on its bodywork (the nose, the roll bar, the wings,
+  // the tail), which scrapes, sparks and gets damaged. Once it's back on
+  // four wheels and settled, it hands back to the ground model.
+  // Axes: x = the car's left, y = up, z = forwards.
+  // =====================================================================
+  airAxes() {
+    const q = this.fb.q;
+    return { X: qrot(q, [1, 0, 0]), Y: qrot(q, [0, 1, 0]), Z: qrot(q, [0, 0, 1]) };
+  }
+
+  // Hand over from the ground model: same place, speed, tilt and spin
+  enterAir(launch = null) {
+    const s = this.spec, W4 = this.w4, GR = this.ground, F = this.fb;
+    const L = launch || { y: GR.y, rate: GR.rate, slopeF: GR.slopeF, slopeL: GR.slopeL };
+    const pitch = W4.pitch - Math.atan(L.slopeF), roll = W4.roll + Math.atan(L.slopeL);
+    F.q = qmul(qmul(qaxis([0, 1, 0], this.heading), qaxis([1, 0, 0], pitch)), qaxis([0, 0, 1], roll));
+    const { X, Y, Z } = this.airAxes();
+    const oy = L.y + W4.heave;
+    F.p = [this.x + Y[0] * s.cgHeight, oy + Y[1] * s.cgHeight, this.z + Y[2] * s.cgHeight];
+    const fx = Math.sin(this.heading), fz = Math.cos(this.heading);
+    F.v = [fx * this.vx + fz * this.vy, L.rate + W4.heaveV, fz * this.vx - fx * this.vy];
+    F.w = [X[0] * W4.pitchV + Z[0] * W4.rollV, this.yawRate + X[1] * W4.pitchV + Z[1] * W4.rollV, X[2] * W4.pitchV + Z[2] * W4.rollV];
+    F.settle = 0; F.time = 0;
+    this.air = true;
+    this.airSyncOut();
+    this.events.push({ type: 'airborne' });
+  }
+
+  // Hand back to the ground model once it's settled on its wheels
+  leaveAir() {
+    const s = this.spec, W4 = this.w4, F = this.fb;
+    const { Y, Z } = this.airAxes();
+    this.air = false;
+    this.x = F.p[0] - Y[0] * s.cgHeight; this.z = F.p[2] - Y[2] * s.cgHeight;
+    this.heading = Math.atan2(Z[0], Z[2]);
+    const fx = Math.sin(this.heading), fz = Math.cos(this.heading);
+    this.vx = F.v[0] * fx + F.v[2] * fz;
+    this.vy = F.v[0] * fz - F.v[2] * fx;
+    this.yawRate = F.w[1];
+    // the body's own tilt and bounce on top of the slope (kept small: it's settled)
+    const GR = this.ground;
+    const oy = F.p[1] - Y[1] * s.cgHeight;
+    W4.heave = clamp(oy - GR.y, -0.06, 0.06);
+    W4.pitch = clamp(-Math.asin(clamp(Z[1], -1, 1)) + Math.atan(GR.slopeF), -0.05, 0.05);
+    const Xv = qrot(F.q, [1, 0, 0]);
+    W4.roll = clamp(Math.asin(clamp(Xv[1], -1, 1)) - Math.atan(GR.slopeL), -0.05, 0.05);
+    W4.heaveV = clamp(F.v[1] - GR.rate, -1, 1); W4.pitchV = 0; W4.rollV = 0;
+    GR.synced = false;
+    this.airHeight = 0;
+    this.events.push({ type: 'landed' });
+  }
+
+  // While on the ground: should it take off, or tip over?
+  checkTakeOff(h, Fz) {
+    const F = this.fb, W4 = this.w4;
+    const all = W4.hanging[0] && W4.hanging[1] && W4.hanging[2] && W4.hanging[3];
+    F.lift = all ? F.lift + h : 0;
+    // two wheels on one side off the ground (or both fronts / both rears)
+    const sideUp = (Fz[0] + Fz[2] < 1) || (Fz[1] + Fz[3] < 1);
+    const endUp = (Fz[0] + Fz[1] < 1) || (Fz[2] + Fz[3] < 1);
+    F.side = sideUp ? F.side + h : 0;
+    F.end = endUp ? F.end + h : 0;
+    if (F.lift > 0.025 || F.side > 0.12 || F.end > 0.15) { F.lift = F.side = F.end = 0; this.enterAir(); }
+  }
+
+  // While free: back on all four wheels, upright and calm?
+  checkLanding(h, Fz) {
+    const F = this.fb;
+    const { X, Y, Z } = this.airAxes();
+    const allDown = Fz[0] > 60 && Fz[1] > 60 && Fz[2] > 60 && Fz[3] > 60;
+    const pitchRate = Math.abs(F.w[0] * X[0] + F.w[1] * X[1] + F.w[2] * X[2]);
+    const rollRate = Math.abs(F.w[0] * Z[0] + F.w[1] * Z[1] + F.w[2] * Z[2]);
+    const calm = Y[1] > 0.93 && pitchRate < 0.7 && rollRate < 0.7 && Math.abs(F.v[1]) < 1.2;
+    F.settle = allDown && calm ? F.settle + h : 0;
+    if (F.settle > 0.12) { F.settle = 0; this.leaveAir(); }
+  }
+
+  // Someone else moved the car (a wall pushed it, the game reset it): pass
+  // that on to the free body
+  airSyncIn() {
+    const F = this.fb, S = F.sync;
+    if (!S) return;
+    if (this.x !== S.x || this.z !== S.z) { F.p[0] += this.x - S.x; F.p[2] += this.z - S.z; }
+    if (this.vx !== S.vx || this.vy !== S.vy || this.yawRate !== S.yaw) {
+      const fx = Math.sin(S.h), fz = Math.cos(S.h);
+      const dvx = this.vx - S.vx, dvy = this.vy - S.vy;
+      F.v[0] += fx * dvx + fz * dvy; F.v[2] += fz * dvx - fx * dvy;
+      F.w[1] += this.yawRate - S.yaw;
+    }
+  }
+
+  // Share the free body's state with the rest of the game (and the 2D view
+  // of it: where it is, which way it points, how fast)
+  airSyncOut() {
+    const s = this.spec, F = this.fb;
+    const { Y, Z } = this.airAxes();
+    this.x = F.p[0]; this.z = F.p[2];
+    if (Math.hypot(Z[0], Z[2]) > 0.15) this.heading = Math.atan2(Z[0], Z[2]);
+    const fx = Math.sin(this.heading), fz = Math.cos(this.heading);
+    this.vx = F.v[0] * fx + F.v[2] * fz;
+    this.vy = F.v[0] * fz - F.v[2] * fx;
+    this.yawRate = F.w[1];
+    F.sync = { x: this.x, z: this.z, vx: this.vx, vy: this.vy, yaw: this.yawRate, h: this.heading };
+    // the model's origin (on the ground under the middle when it's upright)
+    this.pose.x = F.p[0] - Y[0] * s.cgHeight; this.pose.y = F.p[1] - Y[1] * s.cgHeight; this.pose.z = F.p[2] - Y[2] * s.cgHeight;
+    this.pose.q[0] = F.q[1]; this.pose.q[1] = F.q[2]; this.pose.q[2] = F.q[3]; this.pose.q[3] = F.q[0];
+    this.airHeight = this.pose.y - this.groundHeight(this.pose.x, this.pose.z);
+  }
+
+  // Each small step while free: how hard each wheel's spring presses on
+  // the ground, and how fast each tyre is moving over it (for the tyres)
+  airWheels(Fz, staticF, staticR) {
+    const s = this.spec, F = this.fb, susp = s.suspension;
+    const { X, Y, Z } = this.airAxes();
+    const cg = s.cgHeight;
+    for (let i = 0; i < 4; i++) {
+      const w = WHEEL_ORDER[i];
+      const a = w.front ? s.cgToFront : -s.cgToRear, b = w.side * s.trackHalf;
+      // where the tyre touches (at rest) in the world, from the centre of mass
+      const r = [X[0] * b - Y[0] * cg + Z[0] * a, X[1] * b - Y[1] * cg + Z[1] * a, X[2] * b - Y[2] * cg + Z[2] * a];
+      const c = [F.p[0] + r[0], F.p[1] + r[1], F.p[2] + r[2]];
+      const vc = add3(F.v, cross3(F.w, r));
+      const ground = this.groundHeight(c[0], c[2]) + this.roadHeight(c[0], c[2]) - this.tyreSink[i];
+      // how far the spring is squashed (along the strut, which points up the car)
+      const up = Math.max(0, Y[1]);
+      const comp = (ground - c[1]) * up;
+      const rate = -vc[1] * up;
+      const hanging = comp < -susp.droop || up < 0.35;
+      F.travel[i] = clamp(comp, -susp.droop, susp.bumpStop + 0.03);
+      if (hanging) { Fz[i] = 0; F.N[i] = 0; }
+      else {
+        const knee = 0.3, dv = rate;
+        const damp = Math.abs(dv) < knee ? dv : Math.sign(dv) * (knee + 0.5 * (Math.abs(dv) - knee));
+        let f = (i < 2 ? staticF : staticR) + (i < 2 ? susp.springFront : susp.springRear) * comp + (i < 2 ? susp.damperFront : susp.damperRear) * damp;
+        if (comp > susp.bumpStop) f += susp.bumpStopRate * (comp - susp.bumpStop);
+        // (a tyre and its bump rubber can only push so hard: it squashes)
+        Fz[i] = clamp(f, 0, 16000);
+        F.N[i] = Fz[i];
+      }
+      F.r = F.r || [[], [], [], []];
+      F.r[i] = r;
+      // the tyre's speed over the ground, in the car's own directions
+      F.vf[i] = vc[0] * Z[0] + vc[1] * Z[1] + vc[2] * Z[2];
+      F.vl[i] = vc[0] * X[0] + vc[1] * X[1] + vc[2] * X[2];
+    }
+  }
+
+  // Move the free body one small step: gravity, air, the wheels, and any
+  // part of the bodywork touching the ground
+  airStep(h) {
+    const s = this.spec, F = this.fb;
+    const m = s.mass + (this.fuel - s.fuelCapacity / 2) * s.fuelDensity;
+    const { X, Y, Z } = this.airAxes();
+    const force = [0, -m * G, 0], torque = [0, 0, 0];
+    const push = (f, r) => { force[0] += f[0]; force[1] += f[1]; force[2] += f[2]; const t = cross3(r, f); torque[0] += t[0]; torque[1] += t[1]; torque[2] += t[2]; };
+    // air resistance
+    const sp = Math.hypot(F.v[0], F.v[1], F.v[2]);
+    force[0] -= s.drag * sp * F.v[0]; force[1] -= s.drag * sp * F.v[1]; force[2] -= s.drag * sp * F.v[2];
+    // the wheels: the spring pushes up the car, the tyre pushes along the ground
+    for (let i = 0; i < 4; i++) {
+      if (!F.N[i] && !F.fx[i] && !F.fy[i]) continue;
+      const r = F.r[i];
+      push([Y[0] * F.N[i] + Z[0] * F.fx[i] + X[0] * F.fy[i], Y[1] * F.N[i] + Z[1] * F.fx[i] + X[1] * F.fy[i], Y[2] * F.N[i] + Z[2] * F.fx[i] + X[2] * F.fy[i]], r);
+    }
+    // the bodywork touching the ground: pushed back out, sliding with friction
+    let scrape = 0, hardest = 0, hitPt = null;
+    for (const pt of BODY_POINTS) {
+      const r = [X[0] * pt[0] + Y[0] * (pt[1] - s.cgHeight) + Z[0] * pt[2], X[1] * pt[0] + Y[1] * (pt[1] - s.cgHeight) + Z[1] * pt[2], X[2] * pt[0] + Y[2] * (pt[1] - s.cgHeight) + Z[2] * pt[2]];
+      const wp = [F.p[0] + r[0], F.p[1] + r[1], F.p[2] + r[2]];
+      const gy = this.groundHeight(wp[0], wp[2]);
+      const pen = gy - wp[1];
+      if (pen <= 0) continue;
+      const n = this.groundNormal(wp[0], wp[2]);
+      const vp = add3(F.v, cross3(F.w, r));
+      const vn = vp[0] * n[0] + vp[1] * n[1] + vp[2] * n[2];
+      const fn = Math.max(0, 90000 * Math.min(pen, 0.25) - 5000 * vn);
+      if (-vn > hardest) { hardest = -vn; hitPt = pt; }
+      const vt = [vp[0] - n[0] * vn, vp[1] - n[1] * vn, vp[2] - n[2] * vn];
+      const vts = Math.hypot(vt[0], vt[1], vt[2]);
+      const mu = 0.55 * this.surfaceGrip(wp[0], wp[2]);
+      const ft = vts > 1e-4 ? Math.min(mu * fn, vts * 4000) / vts : 0;
+      push([n[0] * fn - vt[0] * ft, n[1] * fn - vt[1] * ft, n[2] * fn - vt[2] * ft], r);
+      scrape = Math.max(scrape, vts * Math.min(1, fn / 3000));
+      if (pen > 0.02 && fn > 0) F.scrapeAt = wp;
+    }
+    F.scrape = scrape;
+    // a hard landing on the bodywork: damage (front, back or sides)
+    F.time += h;
+    if (hardest > 4 && F.time - F.hitAt > 0.4 && hitPt) {
+      F.hitAt = F.time;
+      const zone = hitPt[2] > 1.0 ? 'front' : hitPt[2] < -1.0 ? 'rear' : hitPt[0] > 0 ? 'left' : 'right';
+      // (bottoming out on the floor after a jump only hurts if it's really hard)
+      const floor = hitPt[1] < 0.2;
+      if (!floor || hardest > 7) this.crashHit({ zone, speed: hardest * (floor ? 0.45 : 0.8), along: hitPt[2], across: hitPt[0] });
+      if (!floor) this.events.push({ type: 'bodyHit', zone, speed: hardest, local: hitPt });
+    }
+    // move
+    const a = [force[0] / m, force[1] / m, force[2] / m];
+    F.v[0] += a[0] * h; F.v[1] += a[1] * h; F.v[2] += a[2] * h;
+    // spin: worked out in the car's own axes, where the inertia is simple
+    const I = [s.airInertia.pitch, s.airInertia.yaw, s.airInertia.roll];
+    const tb = [dot3(torque, X), dot3(torque, Y), dot3(torque, Z)];
+    const wb = [dot3(F.w, X), dot3(F.w, Y), dot3(F.w, Z)];
+    const Iw = [I[0] * wb[0], I[1] * wb[1], I[2] * wb[2]];
+    const gyro = cross3(wb, Iw);
+    for (let k = 0; k < 3; k++) wb[k] += ((tb[k] - gyro[k]) / I[k]) * h;
+    // (a little damping from the air and the suspension soaking up the spin)
+    wb[0] *= 1 - 0.4 * h; wb[2] *= 1 - 0.4 * h; wb[1] *= 1 - 0.2 * h;
+    F.w = [X[0] * wb[0] + Y[0] * wb[1] + Z[0] * wb[2], X[1] * wb[0] + Y[1] * wb[1] + Z[1] * wb[2], X[2] * wb[0] + Y[2] * wb[1] + Z[2] * wb[2]];
+    F.p[0] += F.v[0] * h; F.p[1] += F.v[1] * h; F.p[2] += F.v[2] * h;
+    // turn the body by its spin
+    const dq = qmul([0, F.w[0], F.w[1], F.w[2]], F.q);
+    F.q = qnorm([F.q[0] + 0.5 * dq[0] * h, F.q[1] + 0.5 * dq[1] * h, F.q[2] + 0.5 * dq[2] * h, F.q[3] + 0.5 * dq[3] * h]);
+    // never through the ground (a safety net for very hard landings)
+    const lowest = this.groundHeight(F.p[0], F.p[2]) + 0.12;
+    if (F.p[1] < lowest) { F.p[1] = lowest; if (F.v[1] < 0) F.v[1] = 0; }
+    // what the car "feels" (for the g-meter and the sounds)
+    const fx = Math.sin(this.heading), fz = Math.cos(this.heading);
+    F.acc[0] = (a[0] * fx + a[2] * fz) / 8; F.acc[1] = (a[0] * fz - a[2] * fx) / 8;
+    this.airSyncOut();
+  }
+
+  // Which way the ground faces at a point (for bodywork landing on a slope)
+  groundNormal(x, z) {
+    const e = 0.5;
+    const dx = (this.groundHeight(x + e, z) - this.groundHeight(x - e, z)) / (2 * e);
+    const dz = (this.groundHeight(x, z + e) - this.groundHeight(x, z - e)) / (2 * e);
+    const l = Math.hypot(dx, 1, dz);
+    return [-dx / l, 1 / l, -dz / l];
   }
 
   damageEngine(amount) {
@@ -802,20 +1079,35 @@ export class CarPhysics {
       const a = w.front ? s.cgToFront : -s.cgToRear, b = w.side * s.trackHalf;
       gh[i] = this.groundHeight(this.x + fx * a + lx * b, this.z + fz * a + lz * b);
     });
+    let launch = null;
     {
       const hf = (gh[0] + gh[1]) / 2, hr = (gh[2] + gh[3]) / 2;
       const wb = s.cgToFront + s.cgToRear;
-      GR.slopeF = (hf - hr) / wb;
-      GR.slopeL = ((gh[0] + gh[2]) - (gh[1] + gh[3])) / 2 / (2 * s.trackHalf);
+      const slopeF = (hf - hr) / wb;
+      const slopeL = ((gh[0] + gh[2]) - (gh[1] + gh[3])) / 2 / (2 * s.trackHalf);
       const y = hr + (hf - hr) * s.cgToRear / wb;
-      if (!GR.synced || Math.abs(y - GR.y) > 1) { GR.y = y; GR.rate = 0; GR.accel = 0; GR.synced = true; }
+      // (moved somewhere new, like a reset: just settle onto the ground there)
+      const jumped = Math.hypot(this.x - (GR.px ?? this.x), this.z - (GR.pz ?? this.z)) > 5;
+      if (!GR.synced || jumped) { GR.y = y; GR.rate = 0; GR.accel = 0; GR.rawRate = 0; GR.synced = true; GR.slopeF = slopeF; GR.slopeL = slopeL; }
+      GR.px = this.x; GR.pz = this.z;
+      // Leaving the ground: off the lip of a ramp or a ledge (the ground
+      // drops away faster than the car could fall), or the ground under it
+      // twisting suddenly (one side hits a ramp, a ridge or a high kerb)
+      if (!this.air && Math.hypot(this.vx, this.vy) > 3) {
+        const fall = GR.y + (GR.rawRate || 0) * h - 0.5 * G * h * h;
+        const twist = Math.abs(slopeL - GR.slopeL) / h > 0.9 || Math.abs(slopeF - GR.slopeF) / h > 1.1;
+        if (y < fall - 0.03 || twist) launch = { y: GR.y, rate: GR.rawRate || 0, slopeF: GR.slopeF, slopeL: GR.slopeL };
+      }
+      GR.slopeF = slopeF; GR.slopeL = slopeL;
       // (smoothed: the ground is made of small flat triangles)
       const rate = (y - GR.y) / h;
+      GR.rawRate = rate;
       const newRate = GR.rate + (rate - GR.rate) * Math.min(1, h / 0.12);
       GR.accel += (clamp((newRate - GR.rate) / h, -12, 12) - GR.accel) * Math.min(1, h / 0.12);
       GR.rate = newRate;
       GR.y = y;
     }
+    if (launch) this.enterAir(launch);
     const groundTwist = WHEEL_ORDER.map((w, i) => {
       const a = w.front ? s.cgToFront : -s.cgToRear, b = w.side * s.trackHalf;
       return gh[i] - (GR.y + GR.slopeF * a + GR.slopeL * b);
@@ -1084,7 +1376,14 @@ export class CarPhysics {
     let axSum = 0, aySum = 0;
     const Fz = W4.Fz;
 
+    const air = this.air, AIR = this.fb;
     for (let k = 0; k < N; k++) {
+      if (air) {
+        // In the air, tipping or upside down: the car moves as a free 3D
+        // body (see airWheels / airStep). Each wheel's load comes from its
+        // spring pressing on the ground, if it's touching it at all.
+        this.airWheels(Fz, staticF, staticR);
+      } else {
       // -- Suspension: each corner's spring and damper, from the body's
       // height, pitch and roll, and the road under that wheel --
       const susp = s.suspension;
@@ -1132,12 +1431,13 @@ export class CarPhysics {
       W4.heave += W4.heaveV * h2;
       W4.pitch += W4.pitchV * h2;
       W4.roll += W4.rollV * h2;
+      }
 
       // -- Tyres --
       let Fx = 0, Fy = 0, Mz = 0;
       for (let i = 0; i < 4; i++) {
-        const vxi = this.vx - this.yawRate * B[i];
-        const vyi = this.vy + this.yawRate * A[i];
+        const vxi = air ? AIR.vf[i] : this.vx - this.yawRate * B[i];
+        const vyi = air ? AIR.vl[i] : this.vy + this.yawRate * A[i];
         const vLong = vxi * cosD[i] + vyi * sinD[i];
         const vLat = -vxi * sinD[i] + vyi * cosD[i];
         const t = this.tyres[i];
@@ -1199,6 +1499,7 @@ export class CarPhysics {
         const fyC = fLong * sinD[i] + fLat * cosD[i];
         Fx += fxC; Fy += fyC;
         Mz += A[i] * fyC - B[i] * fxC;
+        AIR.fx[i] = fxC; AIR.fy[i] = fyC;
         // bookkeeping for the smoke, marks, wear and temperatures
         if (k === N - 1) {
           const use = Fmax > 1 ? Math.abs(fLat) / Fmax : 0;
@@ -1210,6 +1511,7 @@ export class CarPhysics {
           W4.slipAngle[i] = Math.atan(tanA);
         }
       }
+      if (air) { this.airStep(h2); axSum += AIR.acc[0]; aySum += AIR.acc[1]; continue; }
       // -- the body moves --
       const ax = (Fx - resist) / m;
       const ay = Fy / m;
@@ -1231,7 +1533,7 @@ export class CarPhysics {
     // Come to a full stop instead of creeping forever
     // (with no brake on, a real slope still rolls the car away)
     const onSlope = Math.abs(this.ground.slopeF) > 0.02 || Math.abs(this.ground.slopeL) > 0.03;
-    if (!c.throttle && Math.abs(this.vx) < 0.15 && Math.abs(this.vy) < 0.15 && (c.brake || c.handbrake || (Math.abs(this.vx) < 0.05 && !onSlope))) {
+    if (!air && !c.throttle && Math.abs(this.vx) < 0.15 && Math.abs(this.vy) < 0.15 && (c.brake || c.handbrake || (Math.abs(this.vx) < 0.05 && !onSlope))) {
       this.vx = 0;
       this.vy = 0;
       this.yawRate = 0;
@@ -1260,7 +1562,11 @@ export class CarPhysics {
     W4.kickV += (kickPush * 400 - W4.kick * 900 - W4.kickV * 40) * h;
     W4.kick = clamp(W4.kick + W4.kickV * h, -0.15, 0.15);
     this.steerKick = W4.kick;                       // radians at the steering wheel
-    for (let i = 0; i < 4; i++) this.body.travel[i] = W4.comp[i];
+    for (let i = 0; i < 4; i++) this.body.travel[i] = air ? AIR.travel[i] : W4.comp[i];
+    if (air) for (let i = 0; i < 4; i++) W4.comp[i] = AIR.travel[i];
+    // Leaving the ground, or tipping up onto two wheels: hand over to the
+    // free 3D body. Back on four wheels and settled: hand back.
+    if (!air) this.checkTakeOff(h, Fz); else this.checkLanding(h, Fz);
 
     // --- Tyre smoke: how hard each axle is losing traction ---
     const wheelspin = wheelspinAmount * 0.35;   // a straight-line launch only smokes lightly
