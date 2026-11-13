@@ -31,7 +31,7 @@ import * as floraFile from './flora.js';
 import { Cockpit, EYE } from './cockpit.js';
 import { TyreLooks } from './tyres.js';
 import { setGround, groundAt } from './ground.js';
-import { buildScorpion, TANK_EYE } from './tank.js';
+import { buildScorpion, TANK_EYE, TankPhysics } from './tank.js';
 import * as tankFile from './tank.js';
 import * as groundFile from './ground.js';
 import * as tyresFile from './tyres.js';
@@ -55,7 +55,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 26;
+const BUILD = 27;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -1053,6 +1053,7 @@ const cockpit = new Cockpit(carModel.car, MAT, { isMobile, redline: CATERHAM.red
 // Scorpion-inspired light tank (tank.js), and again to swap back.
 // (For now it drives with the car's physics.)
 const tank = buildScorpion();
+const tankPhys = new TankPhysics();
 scene.add(tank.group);
 let tankMode = false;
 let secretKeys = '';
@@ -1072,6 +1073,15 @@ window.addEventListener('keydown', (e) => {
   if (secretKeys === 'FV101') {
     secretKeys = '';
     tankMode = !tankMode;
+    // hand over where you are, facing the same way, from a standstill
+    if (tankMode) tankPhys.place(physics.x, physics.z, physics.heading);
+    else {
+      physics.x = tankPhys.x; physics.z = tankPhys.z; physics.heading = tankPhys.heading;
+      physics.vx = physics.vy = physics.yawRate = 0;
+      physics.air = false;
+      physics.ground.synced = false;
+    }
+    setCrashBox(tankMode);
     carModel.car.visible = !tankMode;
     tank.group.visible = tankMode;
     showToast(tankMode ? 'FV101 SCORPION' : 'BACK IN THE CAR');
@@ -2017,9 +2027,14 @@ function updateSmoke(dt) {
 // concrete cracks (and throws chips). Buildings don't move.
 // ---------------------------------------------------------------------
 const COLLIDERS = echoSurfaces.colliders || [];
-const CAR_FRONT = 1.53, CAR_REAR = 1.52, CAR_HALF_W = 0.8;
-const CAR_MASS = CATERHAM.mass || 560;
-const CAR_INERTIA = CAR_MASS * ((CAR_FRONT + CAR_REAR) ** 2 + (2 * CAR_HALF_W) ** 2) / 12;
+let CAR_FRONT = 1.53, CAR_REAR = 1.52, CAR_HALF_W = 0.8;
+let CAR_MASS = CATERHAM.mass || 560;
+let CAR_INERTIA = CAR_MASS * ((CAR_FRONT + CAR_REAR) ** 2 + (2 * CAR_HALF_W) ** 2) / 12;
+// The tank (secret) is much bigger and heavier: walls push it about far less
+function setCrashBox(isTank) {
+  [CAR_FRONT, CAR_REAR, CAR_HALF_W, CAR_MASS] = isTank ? [2.25, 2.2, 1.1, 8000] : [1.53, 1.52, 0.8, CATERHAM.mass || 560];
+  CAR_INERTIA = CAR_MASS * ((CAR_FRONT + CAR_REAR) ** 2 + (2 * CAR_HALF_W) ** 2) / 12;
+}
 // bounce: how much speed into the wall comes back out; grip: friction along it
 const HIT = {
   building: { bounce: 0.15, grip: 0.5 },
@@ -2127,7 +2142,7 @@ function collide(now) {
     const zone = nf < -0.6 ? 'front' : nf > 0.6 ? 'rear' : nl > 0 ? 'right' : 'left';
     const along = rx * fx + rz * fz, across = rx * lx + rz * lz;
     const hitSpeed = -vn * (CRASH_SOFT[k.c.kind] ?? 1);
-    if (hitSpeed > 2.5 && now - lastCrashAt > 0.3) {
+    if (hitSpeed > 2.5 && now - lastCrashAt > 0.3 && !tankMode) {   // (the tank barely notices)
       lastCrashAt = now;
       physics.crashHit({ zone, speed: hitSpeed, along, across });
       // Dent the body where it struck (on the bodywork, not the wheel
@@ -2444,8 +2459,17 @@ renderer.setAnimationLoop(() => {
   const stepSpeed = Math.hypot(physics.vx, physics.vy);
   const steps = Math.min(6, Math.max(1, Math.ceil(stepSpeed * dt / 0.3)));
   for (let k = 0; k < steps; k++) {
-    physics.update(input, dt / steps);
-    collide(clock.elapsedTime);
+    if (tankMode) {
+      // the tank drives itself (tank.js); the rest of the game reads it
+      // through the car's physics, and walls push it through that too
+      tankPhys.update(dt / steps, input, (x, z) => physics.surfaceGrip(x, z));
+      Object.assign(physics, { x: tankPhys.x, z: tankPhys.z, heading: tankPhys.heading, vx: tankPhys.vx, vy: tankPhys.vy, yawRate: tankPhys.yawRate, rpm: tankPhys.rpm, engineLoad: input.throttle });
+      collide(clock.elapsedTime);
+      Object.assign(tankPhys, { x: physics.x, z: physics.z, vx: physics.vx, vy: physics.vy, yawRate: physics.yawRate });
+    } else {
+      physics.update(input, dt / steps);
+      collide(clock.elapsedTime);
+    }
   }
   engineSound.setHorn(input.horn);
   // Brake lights: bright while braking, dim red with the lights on
@@ -2490,7 +2514,11 @@ renderer.setAnimationLoop(() => {
   const ease = 1 - Math.exp(-dt / 0.06);
   slopeView.pitch += (-Math.atan(GRD.slopeF) - slopeView.pitch) * ease;
   slopeView.roll += (Math.atan(GRD.slopeL) - slopeView.roll) * ease;
-  if (physics.air) {
+  if (tankMode) {
+    // the tank sits on the ground, tilted with it (the hidden car follows, for the effects)
+    carModel.car.position.set(tankPhys.x, tankPhys.y, tankPhys.z);
+    carModel.car.rotation.set(tankPhys.pitch, tankPhys.heading, tankPhys.roll, 'YXZ');
+  } else if (physics.air) {
     // flying, tipping or upside down: drawn exactly as the free 3D body is
     const P = physics.pose;
     carModel.car.position.set(P.x, P.y, P.z);
