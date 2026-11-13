@@ -14,14 +14,18 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 3;
+export const BUILD = 4;
 
 const CELL = 2;   // metres: size of each square in the lookup grid
 const LOBES_PER_PUDDLE = 5;   // main pool + up to 4 lobes
 const cellKey = (x, z) => `${Math.floor(x / CELL)},${Math.floor(z / CELL)}`;
 
 export class OilSlicks {
-  constructor(scene, { maxSegments = 1600, maxPuddles = 120, slickGrip = 0.35 } = {}) {
+  // colour: what it looks like fresh (engine oil changes colour as it ages:
+  // set .oilColour); ahead: how far forward of the car's middle it drips
+  // from (the engine for oil, the radiator for coolant); shine: how glossy
+  constructor(scene, { maxSegments = 1600, maxPuddles = 120, slickGrip = 0.35, colour = 0x0d0c0b, ahead = 0.6, roughness = 0.12, metalness = 0.4 } = {}) {
+    this.ahead = ahead;
     this.slickGrip = slickGrip;   // grip left on oil (1 = clean tarmac)
     this.maxSegments = maxSegments;
     this.maxPuddles = maxPuddles;
@@ -38,8 +42,8 @@ export class OilSlicks {
 
     const mat = new THREE.MeshStandardMaterial({
       color: 0xffffff,       // each piece's own shade comes from its instance colour (so rain can fade it)
-      roughness: 0.12,       // wet and shiny
-      metalness: 0.4,
+      roughness,             // wet and shiny
+      metalness,
       // Solid, not see-through: overlapping pieces would otherwise show as darker beads
       polygonOffset: true,   // sits on the tarmac without flickering
       polygonOffsetFactor: -2,
@@ -69,7 +73,7 @@ export class OilSlicks {
     this._s = new THREE.Vector3();
     this._up = new THREE.Vector3(0, 1, 0);
     this._c = new THREE.Color();
-    this.oilColour = new THREE.Color(0x0d0c0b);
+    this.oilColour = new THREE.Color(colour);
     this.roadColour = new THREE.Color(0x3f4245);   // what it fades into
     this.washClock = 0;
   }
@@ -110,8 +114,10 @@ export class OilSlicks {
   }
 
   // Oil's colour as it washes away (wash 0 = fresh, 1 = gone)
-  shade(wash) {
-    return this._c.copy(this.oilColour).lerp(this.roadColour, Math.pow(wash || 0, 0.7));
+  // (each piece keeps the colour it had when it fell: old oil on the road
+  // doesn't change colour with the oil still in the engine)
+  shade(wash, colour = this.oilColour) {
+    return this._c.copy(colour).lerp(this.roadColour, Math.pow(wash || 0, 0.7));
   }
 
   // Call every frame.
@@ -131,8 +137,8 @@ export class OilSlicks {
     this.wobble += dt * (0.8 + Math.random() * 0.4);
     this.drift = Math.max(-0.05, Math.min(0.05, (this.drift || 0) + (Math.random() - 0.5) * 0.02));
     const side = Math.sin(this.wobble * 1.7) * 0.035 + Math.sin(this.wobble * 4.3 + 1.1) * 0.015 + this.drift;
-    const x = carX + fx * 0.6 + fz * side;
-    const z = carZ + fz * 0.6 - fx * side;
+    const x = carX + fx * this.ahead + fz * side;
+    const z = carZ + fz * this.ahead - fx * side;
 
     const thin = Math.max(0, Math.min(1, remaining / 0.25));    // 1 = plenty left, 0 = all but empty
     if (Math.abs(speed) < 0.4) {
@@ -184,7 +190,7 @@ export class OilSlicks {
     this.nextSeg = (this.nextSeg + 1) % this.maxSegments;
     if (this.segments[i]) this.unregister('seg', i, this.segments[i].cells);
     const cells = this.cellsAlong(ax, az, bx, bz);
-    this.segments[i] = { ax, az, bx, bz, w, cells, wash: 0 };
+    this.segments[i] = { ax, az, bx, bz, w, cells, wash: 0, colour: this.oilColour.clone() };
     this.register('seg', i, cells);
     this.drawSegment(i, this.segments[i]);
     this.trailMesh.count = Math.max(this.trailMesh.count, i + 1);
@@ -202,7 +208,7 @@ export class OilSlicks {
     this._s.set(w, 1, len + w * 0.6);
     this._m.compose(this._p, this._q, this._s);
     this.trailMesh.setMatrixAt(i, this._m);
-    this.trailMesh.setColorAt(i, this.shade(sg.wash));
+    this.trailMesh.setColorAt(i, this.shade(sg.wash, sg.colour));
     this.trailMesh.instanceMatrix.needsUpdate = true;
     this.trailMesh.instanceColor.needsUpdate = true;
   }
@@ -234,7 +240,7 @@ export class OilSlicks {
         turn: Math.random() * Math.PI,
       });
     }
-    return { x, z, r, maxR, cells: [], angle: Math.random() * Math.PI, squash: 0.7 + Math.random() * 0.25, lobes, wash: 0 };
+    return { x, z, r, maxR, cells: [], angle: Math.random() * Math.PI, squash: 0.7 + Math.random() * 0.25, lobes, wash: 0, colour: this.oilColour.clone() };
   }
 
   // Each puddle uses LOBES_PER_PUDDLE instances: the pool, then its lobes
@@ -242,7 +248,7 @@ export class OilSlicks {
     const base = i * LOBES_PER_PUDDLE;
     const spread = 1 + 1.2 * (p.wash || 0);           // the rain spreads it out
     const r = p.r * spread;
-    this.shade(p.wash);
+    this.shade(p.wash, p.colour);
     for (let k = 0; k < LOBES_PER_PUDDLE; k++) this.puddleMesh.setColorAt(base + k, this._c);
     this.puddleMesh.instanceColor.needsUpdate = true;
     this._p.set(p.x, 0.005, p.z);
