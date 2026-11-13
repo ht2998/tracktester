@@ -9,10 +9,11 @@
 // =====================================================================
 
 import * as THREE from 'three';
+import { groundAt } from './ground.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 2;
+export const BUILD = 3;
 
 const GRAVITY = 9.81;
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -443,8 +444,9 @@ export class EngineDebris {
       this.sparkPos[k] += this.sparkVel[k] * dt;
       this.sparkPos[k + 1] += this.sparkVel[k + 1] * dt;
       this.sparkPos[k + 2] += this.sparkVel[k + 2] * dt;
-      if (this.sparkPos[k + 1] < 0.01) {        // skip off the tarmac
-        this.sparkPos[k + 1] = 0.01;
+      const sparkFloor = groundAt(this.sparkPos[k], this.sparkPos[k + 2]) + 0.01;
+      if (this.sparkPos[k + 1] < sparkFloor) {        // skip off the tarmac
+        this.sparkPos[k + 1] = sparkFloor;
         this.sparkVel[k + 1] = Math.abs(this.sparkVel[k + 1]) * 0.35;
         this.sparkVel[k] *= 0.7;
         this.sparkVel[k + 2] *= 0.7;
@@ -473,7 +475,8 @@ export class EngineDebris {
   stepPiece(p, dt) {
     // Lowest the piece can sit: its bounce radius, or its lying-flat height
     // once an engine part has started settling onto its side
-    const floor = p.settling ? p.restHeight : p.radius;
+    const ground = groundAt(p.pos.x, p.pos.z);   // (the hills)
+    const floor = ground + (p.settling ? p.restHeight : p.radius);
     const onGround = p.pos.y <= floor + 0.002;
     p.vel.y -= GRAVITY * dt;
     p.pos.addScaledVector(p.vel, dt);
@@ -513,10 +516,10 @@ export class EngineDebris {
       p.vel.z *= Math.max(0, 1 - 5 * dt);
       p.ang.set(0, 0, 0);
       p.rot.slerp(p.flat, Math.min(1, 9 * dt));
-      p.pos.y += (p.restHeight - p.pos.y) * Math.min(1, 9 * dt);
+      p.pos.y += (ground + p.restHeight - p.pos.y) * Math.min(1, 9 * dt);
       if (Math.hypot(p.vel.x, p.vel.z) < 0.03) {
         p.rot.copy(p.flat);
-        p.pos.y = p.restHeight;
+        p.pos.y = ground + p.restHeight;
         p.resting = true;
       }
       return;
