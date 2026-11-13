@@ -43,7 +43,7 @@ import {
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 7;
+export const BUILD = 9;
 
 // [x, z] in metres, in driving order (clockwise from the start/finish line)
 const OUTLINE = [[0.0,0.0],[-1.1,-301.1],[1.1,-314.8],[8.2,-326.7],[17.8,-334.5],[30.3,-338.2],[44.0,-337.7],[57.9,-331.6],[67.8,-319.1],[71.6,-303.0],[66.5,-284.9],[51.7,-251.7],[52.7,-240.1],[61.4,-229.8],[72.7,-225.7],[88.2,-227.7],[104.4,-236.7],[134.6,-257.7],[152.7,-266.2],[173.7,-271.1],[194.5,-272.6],[217.9,-270.7],[275.0,-260.6],[301.3,-249.4],[327.7,-232.9],[344.4,-217.1],[362.6,-193.4],[376.0,-169.0],[383.0,-143.9],[416.7,-3.4],[448.9,102.3],[473.0,173.2],[489.5,219.0],[494.5,234.8],[493.2,246.2],[486.2,255.5],[473.6,258.1],[366.4,268.9],[311.1,276.3],[243.7,287.6],[217.3,297.6],[198.1,309.6],[178.0,331.2],[164.1,353.1],[156.7,375.4],[154.0,397.6],[155.8,423.3],[163.8,450.0],[175.5,469.4],[211.0,508.3],[220.2,526.8],[227.5,555.2],[226.4,578.9],[221.5,601.9],[212.3,620.2],[197.7,636.0],[-46.0,819.4],[-57.2,819.6],[-69.5,814.0],[-143.2,773.8],[-149.6,762.9],[-151.5,750.5],[-147.8,566.0],[-154.4,391.9],[-162.4,296.1],[-169.0,286.6],[-180.8,282.8],[-194.9,289.7],[-237.2,354.2],[-253.1,367.8],[-275.7,376.4],[-298.8,379.9],[-331.2,376.5],[-358.1,370.0],[-384.2,361.8],[-416.9,343.1],[-449.7,316.3],[-456.9,302.5],[-458.0,289.7],[-454.3,275.6],[-446.0,264.8],[-257.0,67.5],[-250.5,53.2],[-247.9,34.3],[-251.5,13.2],[-284.6,-66.7],[-289.4,-87.7],[-290.8,-112.4],[-288.9,-133.7],[-278.6,-173.1],[-265.4,-199.4],[-250.1,-215.9],[-217.4,-237.1],[-193.6,-243.6],[-179.4,-243.8],[-164.3,-232.6],[-157.2,-210.8],[-69.8,636.8],[-60.2,649.6],[-40.9,660.0],[-23.8,656.8],[-6.9,642.9],[-1.1,618.2]];
@@ -153,19 +153,32 @@ function findCorners(line) {
 // lateral offset o0 to o1 (+ = left), at height y. uvScale: metres per texture repeat along.
 function strip(line, i0, i1, o0, o1, y, uvAlong = 1, uvAcross = 1) {
   const m = line.length;
+  const at = (i) => line[((i % m) + m) % m];
+  const offs = (p) => [typeof o0 === 'function' ? o0(p) : o0, typeof o1 === 'function' ? o1(p) : o1];
+  // Wide strips (run-offs, gravel traps) get a row of points every ~2.5 m
+  // across, so they can follow the ground's shape over the hills instead of
+  // cutting straight across it (and letting the grass show through)
+  let widest = 0;
+  for (let i = i0; i <= i1; i++) { const [a, b] = offs(at(i)); widest = Math.max(widest, Math.abs(b - a)); }
+  const n = Math.max(1, Math.ceil(widest / 2.5));
   const pos = [], uv = [], index = [];
   let k = 0;
   for (let i = i0; i <= i1; i++, k++) {
-    const p = line[((i % m) + m) % m];
-    const a = typeof o0 === 'function' ? o0(p) : o0, b = typeof o1 === 'function' ? o1(p) : o1;
-    pos.push(p.x + p.lx * a, y, p.z + p.lz * a, p.x + p.lx * b, y, p.z + p.lz * b);
+    const p = at(i);
+    const [a, b] = offs(p);
     const along = (i - i0) * STEP / uvAlong;
-    uv.push(along, 0, along, Math.abs(b - a) / uvAcross);
+    for (let j = 0; j <= n; j++) {
+      const o = a + (b - a) * (j / n);
+      pos.push(p.x + p.lx * o, y, p.z + p.lz * o);
+      uv.push(along, (Math.abs(b - a) * (j / n)) / uvAcross);
+    }
     if (i < i1) {
-      const v = k * 2;
-      // (facing up whichever side is which)
-      if (b > a) index.push(v, v + 2, v + 1, v + 1, v + 2, v + 3);
-      else index.push(v, v + 1, v + 2, v + 1, v + 3, v + 2);
+      for (let j = 0; j < n; j++) {
+        const v = k * (n + 1) + j, w = v + n + 1;
+        // (facing up whichever side is which)
+        if (b > a) index.push(v, w, v + 1, v + 1, w, w + 1);
+        else index.push(v, v + 1, w, v + 1, w + 1, w);
+      }
     }
   }
   const geo = new THREE.BufferGeometry();
@@ -314,10 +327,19 @@ export function buildSepang(scene, { isMobile = false, gravelMaps = null } = {})
   // points of the line fan out, so it fills in between them every half
   // metre; it used to step a whole point at a time, which left gaps of
   // "grass" in wide gravel traps (and grass grew there).
+  // Exactly what's laid beside each point of the line (how far out to each
+  // side the track, kerbs and run-offs reach, and where the gravel is), so
+  // grass tufts and gravel stones can be kept strictly on their own ground
+  const cover = line.map(() => ({ lo: 0, hi: 0, gLo: 0, gHi: 0, gravel: false }));
   const paintBand = (i0, i1, o0, o1, type) => {
     const offs = (p) => [typeof o0 === 'function' ? o0(p) : o0, typeof o1 === 'function' ? o1(p) : o1];
     for (let i = i0; i <= i1; i++) {
       const p = line[((i % m) + m) % m];
+      {
+        const [a, b] = offs(p), cv = cover[((i % m) + m) % m];
+        cv.lo = Math.min(cv.lo, a, b); cv.hi = Math.max(cv.hi, a, b);
+        if (type === 3) { cv.gravel = true; cv.gLo = Math.min(a, b); cv.gHi = Math.max(a, b); }
+      }
       const q = i < i1 ? line[(((i + 1) % m) + m) % m] : p;
       const [a, b] = offs(p);
       const [qa, qb] = q === p ? [a, b] : offs(q);
@@ -524,7 +546,7 @@ export function buildSepang(scene, { isMobile = false, gravelMaps = null } = {})
   // --- The pit lane: alongside the start straight on the right (+x),
   // behind the pit wall, with the garages behind it ---
   const PIT = { x0: 13, x1: 24, z0: -215, z1: 175 };
-  const pitGeo = new THREE.PlaneGeometry(PIT.x1 - PIT.x0, PIT.z1 - PIT.z0);
+  const pitGeo = new THREE.PlaneGeometry(PIT.x1 - PIT.x0, PIT.z1 - PIT.z0, 4, 130);   // (in strips, so it follows the ground)
   pitGeo.rotateX(-Math.PI / 2);
   const pit = add(pitGeo, trackMat);
   pit.position.set((PIT.x0 + PIT.x1) / 2, 0, (PIT.z0 + PIT.z1) / 2);
@@ -566,19 +588,84 @@ export function buildSepang(scene, { isMobile = false, gravelMaps = null } = {})
   echoes.push(...buildFences(scene, [[-14, -200, -14, 200, 1]]));
 
   // --- Puddles (on the track, in the low spots) and mud (on the grass) ---
+  // Rain runs downhill: puddles collect where the track dips (lower than
+  // the track either side of it), deeper dips first and biggest. On the
+  // level bits a few small ones form in the odd uneven patch; none on the
+  // slopes (the water just runs off).
   const puddles = [];
-  for (let k = 0; k < (isMobile ? 16 : 26); k++) {
-    const p = line[Math.floor(Math.random() * m)];
-    const o = (Math.random() * 2 - 1) * (half(p) - 2.5);
-    puddles.push({ x: p.x + p.lx * o, z: p.z + p.lz * o, r: 1.3 + Math.random() * 2, start: Math.random() * 0.5 });
+  const yAt = (i) => line[((i % m) + m) % m].y;
+  const span = Math.round(25 / STEP);
+  const dips = [];
+  for (let i = 0; i < m; i++) {
+    const around = (yAt(i - span) + yAt(i + span)) / 2;
+    const dip = around - yAt(i);
+    const lowest = yAt(i) <= yAt(i - 1) && yAt(i) <= yAt(i + 1);   // the very bottom of the dip
+    if (dip > 0.02 && lowest) dips.push({ i, dip });
   }
+  dips.sort((a, b) => b.dip - a.dip);
+  const wanted = isMobile ? 16 : 26;
+  const farEnough = (x, z, r) => puddles.every((q) => Math.hypot(q.x - x, q.z - z) > q.r + r + 6);
+  for (const d of dips) {
+    if (puddles.length >= Math.round(wanted * 0.75)) break;
+    const p = line[d.i];
+    const r = Math.min(3.8, 1.4 + d.dip * 6);
+    // a dip often holds a couple of pools across the track
+    for (let k = 0; k < (d.dip > 0.15 ? 2 : 1); k++) {
+      const o = (Math.random() * 2 - 1) * (half(p) - 2.5);
+      const x = p.x + p.lx * o, z = p.z + p.lz * o;
+      if (farEnough(x, z, r)) puddles.push({ x, z, r: r * (0.8 + Math.random() * 0.3), start: Math.max(0, 0.3 - d.dip) * Math.random() });
+    }
+  }
+  for (let tries = 0; puddles.length < wanted && tries < 400; tries++) {
+    const i = Math.floor(Math.random() * m), p = line[i];
+    const grade = Math.abs(yAt(i + 3) - yAt(i - 3)) / (6 * STEP);
+    if (grade > 0.01) continue;                                  // on a slope: it drains away
+    const o = (Math.random() * 2 - 1) * (half(p) - 2.5);
+    const x = p.x + p.lx * o, z = p.z + p.lz * o, r = 1 + Math.random() * 1.2;
+    if (farEnough(x, z, r)) puddles.push({ x, z, r, start: 0.25 + Math.random() * 0.35 });   // (small, and they fill later)
+  }
+  // Mud: in the low, flat-bottomed bits of the grass beside the track
   const mud = [];
-  for (let k = 0; k < 12; k++) {
+  for (let k = 0; k < 200 && mud.length < 12; k++) {
     const p = line[Math.floor(Math.random() * m)];
     const side = Math.random() < 0.5 ? 1 : -1;
-    const o = side * (half(p) + 10 + Math.random() * 12);
+    const o = side * (half(p) + 10 + Math.random() * 22);
     const x = p.x + p.lx * o, z = p.z + p.lz * o;
-    if (surface(x, z) === 'grass') mud.push({ x, z, r: 1.4 + Math.random() * 1.6, start: Math.random() * 0.5 });
+    if (surface(x, z) !== 'grass') continue;
+    const here = terrain.heightAt(x, z);
+    let around = 0;
+    for (let a = 0; a < 6; a++) around += terrain.heightAt(x + Math.cos(a) * 8, z + Math.sin(a) * 8);
+    if (around / 6 - here < 0.03) continue;                     // not a hollow
+    mud.push({ x, z, r: 1.4 + Math.random() * 1.6, start: Math.random() * 0.4 });
+  }
+
+  // Is this spot cleanly gravel, or cleanly grass? (well inside it, going by
+  // the real edges of the gravel traps and run-offs, not just the 1 m map)
+  const nearB = 16, nearBuckets = new Map();
+  line.forEach((p, i) => {
+    const key = Math.floor(p.x / nearB) * 100003 + Math.floor(p.z / nearB);
+    if (!nearBuckets.has(key)) nearBuckets.set(key, []);
+    nearBuckets.get(key).push(i);
+  });
+  const nearest = (x, z, reach) => {
+    let best = -1, bd = reach * reach;
+    const bx = Math.floor(x / nearB), bz = Math.floor(z / nearB), r = Math.ceil(reach / nearB);
+    for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) {
+      for (const i of nearBuckets.get((bx + dx) * 100003 + (bz + dz)) || []) {
+        const p = line[i], d = (p.x - x) * (p.x - x) + (p.z - z) * (p.z - z);
+        if (d < bd) { bd = d; best = i; }
+      }
+    }
+    return best;
+  };
+  function cleanly(want, x, z) {
+    if (surface(x, z) !== want) return false;
+    const i = nearest(x, z, 45);
+    if (i < 0) return want === 'grass';                       // far from the track: all grass
+    const p = line[i], cv = cover[i];
+    const o = (x - p.x) * p.lx + (z - p.z) * p.lz;            // how far out from the middle of the track
+    if (want === 'gravel') return cv.gravel && o > cv.gLo + 0.35 && o < cv.gHi - 0.35;
+    return o < cv.lo - 0.4 || o > cv.hi + 0.4;               // grass: clear of everything laid beside the track
   }
 
   function surface(x, z) {
@@ -595,6 +682,7 @@ export function buildSepang(scene, { isMobile = false, gravelMaps = null } = {})
   return {
     echoes: finishScenery(echoes),
     surfaceAt: surface,
+    cleanly,                 // cleanly('grass' | 'gravel', x, z): well inside that surface, nowhere near the other
     start,
     puddles,
     mud,
@@ -675,6 +763,9 @@ function buildTerrain(line, minX, maxX, minZ, maxZ, cell) {
     p.y = sum / w;
   });
   const mean = line.reduce((a, p) => a + p.y, 0) / m;
+  // the open plain beyond the hills sits at the lowest point of the circuit,
+  // so it's always underneath everything (never above the ground anywhere)
+  const base = line.reduce((a, p) => Math.min(a, p.y), Infinity) - 0.3;
   // the line's points sorted into 20 m squares, to find the nearby ones quickly
   const B = 20, buckets = new Map();
   line.forEach((p, i) => {
@@ -720,7 +811,7 @@ function buildTerrain(line, minX, maxX, minZ, maxZ, cell) {
       let y = bestY * (1 - t) + away * t;
       // flatten out towards the edges of the grid
       const edge = Math.min(i, j, NX - 1 - i, NZ - 1 - j) * cell;
-      y = mean + (y - mean) * smooth(edge / 110);
+      y = base + (y - base) * smooth(edge / 140);   // (sloping gently down to the plain)
       h[j * NX + i] = y;
       free[j * NX + i] = t;
     }
@@ -743,7 +834,7 @@ function buildTerrain(line, minX, maxX, minZ, maxZ, cell) {
   // triangles the ground is drawn with)
   function heightAt(x, z) {
     const gx = (x - x0) / cell, gz = (z - z0) / cell;
-    if (!(gx >= 0 && gz >= 0 && gx < NX - 1 && gz < NZ - 1)) return mean;
+    if (!(gx >= 0 && gz >= 0 && gx < NX - 1 && gz < NZ - 1)) return base;
     const i = Math.floor(gx), j = Math.floor(gz), fx = gx - i, fz = gz - j;
     const k = j * NX + i;
     const h00 = h[k], h10 = h[k + 1], h01 = h[k + NX], h11 = h[k + NX + 1];
@@ -778,7 +869,7 @@ function buildTerrain(line, minX, maxX, minZ, maxZ, cell) {
     g.computeVertexNormals();
     return g;
   }
-  return { heightAt, geometry, mean, cell, nodes: NX * NZ };
+  return { heightAt, geometry, mean, base, cell, nodes: NX * NZ };
 }
 
 function smooth(t) {
