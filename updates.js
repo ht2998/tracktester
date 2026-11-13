@@ -21,11 +21,32 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 35;
+export const BUILD = 37;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 39, date: '13 Nov 2026', title: 'Jumps, rollovers, and things running downhill',
+    items: [
+      ['Jumps', 'Fly off the lip of a ramp or a ledge, or over a crest fast enough, and the car really leaves the ground: it flies, keeps its spin, and lands on its springs. Land badly and the nose, floor or tail hits the ground and gets damaged', 'car'],
+      ['Rollovers', 'Clip a ramp or a ridge with one side of the car, or trip sideways into something, and it can tip onto two wheels, roll over, land on its roll bar and slide upside down, or barrel-roll back onto its wheels. The bodywork scrapes and throws sparks off the tarmac, and dents where it lands. Stuck on its roof or side? Backspace puts you back on track', 'barriers'],
+      ['Flying over barriers', 'High enough in the air, the car clears the walls and barriers instead of hitting them', 'barriers'],
+      ['Rolling back on hills', 'Without the brakes on, the car rolls back down a slope. Uphill is slower and downhill is faster, and braking downhill takes longer. This only happens on real slopes, never on the flat', 'tyres'],
+      ['Puddles in the dips', 'Rain now collects where the track dips, deeper dips first and with the biggest pools. On level ground only a few small puddles form, and none on the slopes because the water runs off. Mud forms in the hollows of the grass', 'puddles'],
+      ['Oil and coolant run downhill', 'A pool on a slope creeps downhill, leaving a thin streak. Oil goes slowly, like honey; coolant runs like water. On flat ground they stay put', 'puddles'],
+      ['Less coolant than oil', 'The engine holds about 4.5 litres of coolant against 7 litres of oil, so coolant trails and pools are smaller now. They also dry up slowly in the heat', 'puddles'],
+      ['Round debris rolls', 'Pistons and other round engine parts roll down slopes. Lumpy ones, flat parts and chunks stay where they land', 'debris'],
+    ],
+  },
+  {
+    id: 38, date: '13 Nov 2026', title: 'Fixes: grass blocking the view, grass and gravel mixing',
+    items: [
+      ['No more grass ceiling', 'Looking down from high up in the free camera at Sepang, a sheet of grass could cover the whole view. The open plain beyond the hills was sitting at the circuit\'s average height, which is above the lower parts of the track. It now sits below the lowest point, and the hills slope gently down to it', 'grass'],
+      ['Grass and gravel never mix', 'Gravel stones no longer appear on grass, and grass tufts no longer grow in the gravel traps. They now go by the real edges of each gravel trap and run-off', 'gravel'],
+      ['Run-offs follow the hills', 'The wide run-offs, gravel traps and the pit lane now bend with the ground across their whole width, so the grass can\'t poke through them on the slopes', 'gravel'],
+    ],
+  },
   {
     id: 37, date: '13 Nov 2026', title: 'Sepang has hills now',
     items: [
