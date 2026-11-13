@@ -15,7 +15,7 @@ import { groundAt, lieOnGround } from './ground.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 5;
+export const BUILD = 6;
 
 const CELL = 2;   // metres: size of each square in the lookup grid
 const LOBES_PER_PUDDLE = 5;   // main pool + up to 4 lobes
@@ -25,7 +25,16 @@ export class OilSlicks {
   // colour: what it looks like fresh (engine oil changes colour as it ages:
   // set .oilColour); ahead: how far forward of the car's middle it drips
   // from (the engine for oil, the radiator for coolant); shine: how glossy
-  constructor(scene, { maxSegments = 1600, maxPuddles = 120, slickGrip = 0.35, colour = 0x0d0c0b, ahead = 0.6, roughness = 0.12, metalness = 0.4 } = {}) {
+  constructor(scene, { maxSegments = 1600, maxPuddles = 120, slickGrip = 0.35, colour = 0x0d0c0b, ahead = 0.6, roughness = 0.12, metalness = 0.4, flowSpeed = 0.9, flowTime = 45, amount = 1, evaporate = 0 } = {}) {
+    // How much fluid there is to leak, compared with the engine oil (the
+    // pools and trails are that much smaller), and how fast a pool dries up
+    // on hot tarmac (share of its size per second)
+    this.amount = amount;
+    this.evaporate = evaporate;
+    // How it runs downhill: speed (m/s per unit of slope), and for how long
+    // a pool keeps creeping before it's spread too thin to move
+    this.flowSpeed = flowSpeed;
+    this.flowTime = flowTime;
     this.ahead = ahead;
     this.slickGrip = slickGrip;   // grip left on oil (1 = clean tarmac)
     this.maxSegments = maxSegments;
@@ -82,6 +91,7 @@ export class OilSlicks {
   // The rain washing oil away. rain: 0-1. Spreads each piece while fading
   // it towards the road's colour; heavy rain clears it in about 1.5 minutes.
   weather(dt, rain) {
+    this.flowDownhill(dt);
     if (rain < 0.02) return;
     this.washClock += dt;
     if (this.washClock < 0.25) return;            // a few times a second is plenty
@@ -161,7 +171,7 @@ export class OilSlicks {
     if (len >= 0.35 && remaining < 0.07) {
       // Nearly empty: no more line, just the odd drop, fewer and smaller
       // until the last one falls
-      if (Math.random() < 0.6 * remaining / 0.07) this.addDrop(x, z, 0.02 + Math.random() * 0.035);
+      if (Math.random() < 0.6 * remaining / 0.07) this.addDrop(x, z, this.amount * (0.02 + Math.random() * 0.035));
       this.lastPoint = { x, z };
     } else if (len >= 0.35) {
       // The leak puts out the same oil every second, so the slower the car,
@@ -171,7 +181,7 @@ export class OilSlicks {
       const slowness = Math.min(3, Math.pow(20 / Math.max(v, 1.5), 0.6));
       // Width swells and thins unevenly as the leak spurts and eases
       this.flow = Math.max(0.55, Math.min(1.5, (this.flow || 1) + (Math.random() - 0.5) * 0.35));
-      const width = (rate >= 2 ? 0.11 : 0.07) * this.flow * slowness * (0.85 + Math.random() * 0.3) * (0.25 + 0.75 * thin);
+      const width = this.amount * (rate >= 2 ? 0.11 : 0.07) * this.flow * slowness * (0.85 + Math.random() * 0.3) * (0.25 + 0.75 * thin);
       // Now and then a drip misses, leaving a short gap (only while dripping
       // fast), and more and more often as the oil runs out
       const gap = (rate < 2 && v > 8 && Math.random() < 0.06) || Math.random() < 0.55 * (1 - thin);
@@ -186,12 +196,12 @@ export class OilSlicks {
     }
   }
 
-  addSegment(ax, az, bx, bz, w) {
+  addSegment(ax, az, bx, bz, w, colour = this.oilColour) {
     const i = this.nextSeg;
     this.nextSeg = (this.nextSeg + 1) % this.maxSegments;
     if (this.segments[i]) this.unregister('seg', i, this.segments[i].cells);
     const cells = this.cellsAlong(ax, az, bx, bz);
-    this.segments[i] = { ax, az, bx, bz, w, cells, wash: 0, colour: this.oilColour.clone() };
+    this.segments[i] = { ax, az, bx, bz, w, cells, wash: 0, colour: colour.clone() };
     this.register('seg', i, cells);
     this.drawSegment(i, this.segments[i]);
     this.trailMesh.count = Math.max(this.trailMesh.count, i + 1);
@@ -241,7 +251,7 @@ export class OilSlicks {
         turn: Math.random() * Math.PI,
       });
     }
-    return { x, z, r, maxR, cells: [], angle: Math.random() * Math.PI, squash: 0.7 + Math.random() * 0.25, lobes, wash: 0, colour: this.oilColour.clone() };
+    return { x, z, r, maxR, cells: [], angle: Math.random() * Math.PI, squash: 0.7 + Math.random() * 0.25, lobes, wash: 0, colour: this.oilColour.clone(), flowLeft: 1, trail: 0, tx: x, tz: z };
   }
 
   // Each puddle uses LOBES_PER_PUDDLE instances: the pool, then its lobes
@@ -285,7 +295,7 @@ export class OilSlicks {
       const i = this.nextPuddle;
       this.nextPuddle = (this.nextPuddle + 1) % this.maxPuddles;
       if (this.puddles[i]) this.unregister('pud', i, this.puddles[i].cells);
-      p = this.makePuddle(x, z, 0.06, (rate >= 2 ? 1.3 : 0.75) * (0.85 + Math.random() * 0.3));
+      p = this.makePuddle(x, z, 0.06, this.amount * (rate >= 2 ? 1.3 : 0.75) * (0.85 + Math.random() * 0.3));
       this.puddles[i] = p;
       this.activePuddle = i;
     }
@@ -297,6 +307,56 @@ export class OilSlicks {
     p.cells = this.cellsAround(p.x, p.z, p.r * 1.6);   // lobes can reach beyond the main pool
     this.register('pud', this.activePuddle, p.cells);
     this.drawPuddle(this.activePuddle, p);
+  }
+
+  // Pools on a slope creep downhill (oil slowly, like honey; coolant much
+  // faster, like water), leaving a thin streak behind, and slow down as
+  // they spread thin. On level ground (under about 1.2%) they stay put.
+  flowDownhill(dt) {
+    let moved = false;
+    for (let i = 0; i < this.puddles.length; i++) {
+      const p = this.puddles[i];
+      if (!p) continue;
+      // drying up in the heat (water-based coolant does; oil doesn't)
+      if (this.evaporate > 0 && i !== this.activePuddle) {
+        p.r *= 1 - this.evaporate * dt;
+        if (p.r < 0.03) {
+          this.unregister('pud', i, p.cells);
+          this.puddles[i] = null;
+          for (let k = 0; k < LOBES_PER_PUDDLE; k++) this.puddleMesh.setMatrixAt(i * LOBES_PER_PUDDLE + k, this._m.makeScale(0, 0, 0));
+          moved = true;
+          continue;
+        }
+        if (!(p.flowLeft > 0)) { this.drawPuddle(i, p); moved = true; }
+      }
+      if (!(p.flowLeft > 0)) continue;
+      p.flowLeft -= dt / this.flowTime;
+      const e = 0.6;
+      const gx = (groundAt(p.x + e, p.z) - groundAt(p.x - e, p.z)) / (2 * e);
+      const gz = (groundAt(p.x, p.z + e) - groundAt(p.x, p.z - e)) / (2 * e);
+      const grade = Math.hypot(gx, gz);
+      if (grade < 0.012) continue;
+      const step = this.flowSpeed * (grade - 0.012) * Math.max(0, p.flowLeft) * Math.min(1, p.r / 0.3) * dt;
+      if (step <= 0) continue;
+      p.x -= (gx / grade) * step;
+      p.z -= (gz / grade) * step;
+      p.r = Math.max(0.05, p.r * (1 - 0.04 * step));      // (some of it stays behind as the streak)
+      p.trail += step;
+      if (p.trail > 0.2) {
+        p.trail = 0;
+        this.addSegment(p.tx, p.tz, p.x, p.z, Math.max(0.03, p.r * 0.3), p.colour);
+        p.tx = p.x; p.tz = p.z;
+      }
+      this.unregister('pud', i, p.cells);
+      p.cells = this.cellsAround(p.x, p.z, p.r * 1.6);
+      this.register('pud', i, p.cells);
+      this.drawPuddle(i, p);
+      moved = true;
+    }
+    if (moved) {
+      this.puddleMesh.instanceMatrix.needsUpdate = true;
+      this.trailMesh.instanceMatrix.needsUpdate = true;
+    }
   }
 
   // --- Lookup grid, so checking a tyre only looks at nearby oil ---
