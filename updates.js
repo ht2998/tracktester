@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 44;
+export const BUILD = 45;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
@@ -46,6 +46,7 @@ export const UPDATES = [
       ['...and sounds like one', 'A big six-cylinder diesel with a turbo, straining under the weight, with a burble and a deep rumble you can feel. It smokes, too', 'echo'],
       ['...and looks where you look', 'Once you have found it, move the mouse', 'update'],
       ['...and leaves its mark', 'Not tyre marks', 'update'],
+      ['...and has its own views', 'Try the on-board cameras', 'camera'],
     ],
   },
   {
