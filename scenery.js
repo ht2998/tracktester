@@ -17,10 +17,12 @@
 // =====================================================================
 
 import * as THREE from 'three';
+// (a hit redraws a barrier where it is, so it has to sit on the hills too)
+import { groundAt } from './ground.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 5;
+export const BUILD = 6;
 
 const m4 = new THREE.Matrix4();
 const q = new THREE.Quaternion();
@@ -431,7 +433,7 @@ function buildConcreteWalls(scene, runs) {
     if (speed < 2) return null;
     const size = Math.min(1.5, 0.35 + speed * 0.05);
     const m = new THREE.Mesh(crackGeo, crackMats[(Math.random() * 3) | 0]);
-    m.position.set(point.x + normal.x * 0.012, Math.min(H - size / 2, Math.max(size / 2, 0.45 + Math.random() * 0.2)), point.z + normal.z * 0.012);
+    m.position.set(point.x + normal.x * 0.012, groundAt(point.x, point.z) + Math.min(H - size / 2, Math.max(size / 2, 0.45 + Math.random() * 0.2)), point.z + normal.z * 0.012);
     m.rotation.set(0, Math.atan2(normal.x, normal.z), Math.random() * Math.PI * 2);
     m.scale.setScalar(size);
     scene.add(m);
@@ -514,10 +516,11 @@ function buildArmco(scene, runs) {
         const d = r.dent[k][i];
         const cx = r.ax + r.u.x * r.s[i] + r.a.x * d, cz = r.az + r.u.z * r.s[i] + r.a.z * d;
         const sag = Math.abs(d) * 0.12;                 // a crushed rail sags a little
+        const gy = groundAt(cx, cz);
         PROFILE.forEach(([px, py], j) => {
           const o = (base + i * PROFILE.length + j) * 3;
           position[o] = cx + r.a.x * px;
-          position[o + 1] = rail.y + py - sag;
+          position[o + 1] = gy + rail.y + py - sag;
           position[o + 2] = cz + r.a.z * px;
         });
       }
@@ -530,9 +533,8 @@ function buildArmco(scene, runs) {
       const lean = Math.min(0.9, Math.abs(d) * 1.1) * Math.sign(d);
       tilt.setFromAxisAngle(axis, -lean);
       turn.setFromAxisAngle(UP, r.angle).premultiply(tilt);
-      postMesh.setMatrixAt(p.k, m4.compose(pos.set(
-        r.ax + r.u.x * r.s[p.i] + r.a.x * d * 0.5, 0.425 - Math.abs(d) * 0.05,
-        r.az + r.u.z * r.s[p.i] + r.a.z * d * 0.5), turn, scl.set(1, 1, 1)));
+      const px = r.ax + r.u.x * r.s[p.i] + r.a.x * d * 0.5, pz = r.az + r.u.z * r.s[p.i] + r.a.z * d * 0.5;
+      postMesh.setMatrixAt(p.k, m4.compose(pos.set(px, groundAt(px, pz) + 0.425 - Math.abs(d) * 0.05, pz), turn, scl.set(1, 1, 1)));
     }
     // Hit boxes: a 1 m piece every 4 stations, where the bottom rail now is
     for (const c of r.boxes) {
@@ -657,7 +659,8 @@ function buildTyreWalls(scene, runs) {
       const row = Math.hypot(t.x - t.col.x, t.z - t.col.z) > 0.1 ? 0.6 : 1;   // the back row moves less
       const shift = t.col.push * row;
       q.setFromAxisAngle(UP, t.spin).premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(Math.sin(t.col.angle), 0, Math.cos(t.col.angle)), t.tilt * Math.sign(t.col.push || 1)));
-      tyres.setMatrixAt(i, m4.compose(pos.set(t.x + a.x * shift + t.jx, t.y, t.z + a.z * shift + t.jz), q, scl.set(1, 1.15 * (1 - Math.abs(shift) * 0.25 * row), 1)));
+      const tx = t.x + a.x * shift + t.jx, tz = t.z + a.z * shift + t.jz;
+      tyres.setMatrixAt(i, m4.compose(pos.set(tx, groundAt(t.x, t.z) + t.y, tz), q, scl.set(1, 1.15 * (1 - Math.abs(shift) * 0.25 * row), 1)));
     });
     tyres.instanceMatrix.needsUpdate = true;
     return { absorb: 0.7 };
@@ -755,11 +758,12 @@ function buildFences(scene, runs) {
     const P = meshGeo.attributes.position.array;
     for (let i = 0; i < r.n; i++) {
       const bx = r.ax + r.u.x * r.s[i], bz = r.az + r.u.z * r.s[i];
+      const gy = groundAt(bx, bz);
       for (let j = 0; j < ROWS; j++) {
         const y = j * ROW;
         const d = shape(r, i, y, r.raw[i * ROWS + j]);
         const o = (r.v0 + i * ROWS + j) * 3;
-        P[o] = bx + r.a.x * d; P[o + 1] = y; P[o + 2] = bz + r.a.z * d;
+        P[o] = bx + r.a.x * d; P[o + 1] = gy + y; P[o + 2] = bz + r.a.z * d;
       }
       // The leaning top carries on from the top of the mesh, tilted in over the track
       const topD = shape(r, i, H, r.raw[i * ROWS + ROWS - 1]);
@@ -768,7 +772,7 @@ function buildFences(scene, runs) {
         const t = (j / (TOP_ROWS - 1)) * TOP;
         const out = Math.sin(TILT) * t * r.lean, up = Math.cos(TILT) * t;
         const o = (r.t0 + i * TOP_ROWS + j) * 3;
-        T[o] = bx + r.a.x * (topD + out); T[o + 1] = H + up; T[o + 2] = bz + r.a.z * (topD + out);
+        T[o] = bx + r.a.x * (topD + out); T[o + 1] = gy + H + up; T[o + 2] = bz + r.a.z * (topD + out);
       }
     }
     for (const p of r.posts) {
@@ -776,12 +780,13 @@ function buildFences(scene, runs) {
       // the post: from its foot towards (lean across, 1 up)
       dir.set(r.a.x * p.lean, 1, r.a.z * p.lean).normalize();
       quat.setFromUnitVectors(UP, dir);
-      postMesh.setMatrixAt(p.k, m4.compose(pos.set(bx, 0, bz), quat, scl.set(1, 1, 1)));
+      const gy = groundAt(bx, bz);
+      postMesh.setMatrixAt(p.k, m4.compose(pos.set(bx, gy, bz), quat, scl.set(1, 1, 1)));
       // the arm: from the post's top, the same tilt as the top mesh
       const topX = bx + r.a.x * p.lean * H, topZ = bz + r.a.z * p.lean * H;
       dir.set(r.a.x * Math.sin(TILT) * r.lean, Math.cos(TILT), r.a.z * Math.sin(TILT) * r.lean).normalize();
       quat.setFromUnitVectors(UP, dir);
-      arms.setMatrixAt(p.k, m4.compose(pos.set(topX, H, topZ), quat, scl.set(1, 1, 1)));
+      arms.setMatrixAt(p.k, m4.compose(pos.set(topX, gy + H, topZ), quat, scl.set(1, 1, 1)));
     }
     // Hit boxes: half-metre pieces where the mesh now is at car height
     const row = Math.round(0.6 / ROW);
