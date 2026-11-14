@@ -11,7 +11,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 9;
+export const BUILD = 10;
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -1118,10 +1118,13 @@ export class EngineSound {
     if (!this.ctx) return;
     const s = this.spec;
     const t = this.ctx.currentTime;
-    const rpm = car.rpm;
+    // (anything not a proper number is treated as idle / nothing, so one bad
+    // value can never stop the sound)
+    const num = (v, d) => (Number.isFinite(v) ? v : d);
+    const rpm = num(car.rpm, 800);
     const rev = clamp(rpm / s.redline, 0, 1);
     // Throttle matters even before the engine is fully loaded, so blend both
-    const load = clamp(Math.max(car.engineLoad, car.throttleAmount * 0.6), 0, 1);
+    const load = clamp(Math.max(num(car.engineLoad, 0), num(car.throttleAmount, 0) * 0.6), 0, 1);
 
     // Ease into and out of throttle rather than switching instantly: getting
     // on the power swells in over ~0.15 s, lifting off fades over ~0.25 s
@@ -1131,8 +1134,8 @@ export class EngineSound {
 
     if (this.heavy && this.heavyOn) {
       this.heavy.parameters.get('rpm').setTargetAtTime(rpm, t, 0.08);
-      this.heavy.parameters.get('load').setTargetAtTime(clamp(car.engineLoad ?? 0, 0, 1), t, loadEase);
-      this.heavy.parameters.get('speed').setTargetAtTime(Math.abs(car.vx || 0), t, 0.1);
+      this.heavy.parameters.get('load').setTargetAtTime(clamp(num(car.engineLoad, 0), 0, 1), t, loadEase);
+      this.heavy.parameters.get('speed').setTargetAtTime(Math.min(40, Math.abs(num(car.vx, 0))), t, 0.1);
     }
     if (this.voice) {
       this.voice.parameters.get('rpm').setTargetAtTime(rpm, t, 0.03);
