@@ -55,7 +55,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 35;
+const BUILD = 37;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -2656,6 +2656,23 @@ const nvGrain = driverSeat.querySelector('.nv-grain');
 const grainCanvas = document.createElement('canvas');
 grainCanvas.width = grainCanvas.height = 96;
 let nightVision = false;
+// The driver's periscope: what its head on the roof sees, drawn into the
+// window in front of his face (like the car's mirrors)
+const periscopeRT = new THREE.WebGLRenderTarget(isMobile ? 512 : 1024, isMobile ? 164 : 328, { type: THREE.HalfFloatType, depthBuffer: true });
+const periscopeCam = new THREE.PerspectiveCamera(32, 0.5 / 0.16, 0.2, 500);
+tank.setPeriscopePicture(periscopeRT.texture);
+function renderPeriscope() {
+  tank.periscopeView(periscopeCam.position, periscopeCam.quaternion);
+  periscopeCam.far = camera.far;
+  periscopeCam.updateProjectionMatrix();
+  periscopeCam.updateMatrixWorld();
+  const keepTarget = renderer.getRenderTarget(), keepShadows = renderer.shadowMap.autoUpdate;
+  renderer.shadowMap.autoUpdate = false;          // (shadows were already worked out this frame)
+  renderer.setRenderTarget(periscopeRT);
+  renderer.render(scene, periscopeCam);
+  renderer.setRenderTarget(keepTarget);
+  renderer.shadowMap.autoUpdate = keepShadows;
+}
 function updateDriverSeat(input) {
   const inSeat = tankMode && cameraMode === 'cockpit';
   driverSeat.style.display = 'none';      // (the old flat picture: the real compartment is drawn in 3D now)
@@ -3083,7 +3100,8 @@ renderer.setAnimationLoop(() => {
   });
   touchUI?.update({ transmission: physics.transmission, gearLabel: physics.gearLabel, muted: engineSound.muted, lights: lightsSetting, racingLine: racing ? racingLineOn : null });
 
-  if (cameraMode === 'cockpit') cockpit.renderMirrors(renderer, scene);
+  if (cameraMode === 'cockpit' && !tankMode) cockpit.renderMirrors(renderer, scene);
+  if (cameraMode === 'cockpit' && tankMode) renderPeriscope();
   updateGun(dt);
   updateDriverSeat(input);
   placeGunRing();
