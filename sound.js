@@ -11,7 +11,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 16;
+export const BUILD = 17;
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -1243,7 +1243,10 @@ export class EngineSound {
     const t = this.ctx.currentTime;
     this.heavyGain.gain.setTargetAtTime(on ? 0.85 * (this.driverEar ? 1.35 : 1) : 0, t, 0.1);
     const v10 = !on && this.spec.voice === 'v10';
-    this.carVoiceGain.gain.setTargetAtTime(on || v10 ? 0 : 1, t, 0.1);
+    // (the engine's character: how hard it drives the warmth)
+    const ch = this.spec.sound || {};
+    this.carVoiceGain.gain.setTargetAtTime(on || v10 ? 0 : (ch.drive ?? 1), t, 0.1);
+    this.body.gain.setTargetAtTime(5 + (ch.bass ?? 0), t, 0.1);
     if (!v10) this.v10Gain?.gain.setTargetAtTime(0, t, 0.1);
   }
 
@@ -1448,9 +1451,12 @@ export class EngineSound {
     }
 
     // Brighter under load, darker and softer on the overrun
-    this.tone.frequency.setTargetAtTime(500 + rpm * 0.32 + load * 1600, t, loadEase);
+    // (it opens across the engine's own rev range, as the Caterham's does
+    // across its 7,600: a high-revving engine isn't muffled)
+    const ch = s.sound || {};
+    this.tone.frequency.setTargetAtTime((500 + (rpm / s.redline) * 2432 + load * 1600) * (ch.tone ?? 1), t, loadEase);
 
-    let volume = 0.5 + 0.25 * rev + 0.35 * load;
+    let volume = (0.5 + 0.25 * rev + 0.35 * load) * (ch.vol ?? 1);
     const shifting = car.shiftTimer > 0;
     if (shifting) volume *= 0.55;             // ignition cut during a shift
     if (car.engineDead) volume = 0;           // blown or out of fuel: silence
