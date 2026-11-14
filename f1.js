@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 1;
+export const BUILD = 2;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -42,6 +42,9 @@ export const ENGINES = {
     turbo: { onRpm: 5000, fullRpm: 8800, lag: 0.85, base: 0.45 }, wear: 4 },
   v10: { name: '3.5 V10', cylinders: 10, idleRpm: 3500, redline: 14000, launchRpm: 9500, engineBraking: 75, peakTorque: 385, massDelta: 15,
     torqueCurve: [[2500, 170], [5000, 260], [8000, 330], [10000, 365], [11500, 385], [13000, 370], [14000, 350], [14500, 140], [14800, 0]], turbo: null },
+  // a mid-2000s F1 V10: 3.0 litres, revving to 19,000, about 950 hp
+  v10x: { name: '3.0 V10 (2005 F1-style, 19,000 rpm)', cylinders: 10, idleRpm: 4500, redline: 19000, launchRpm: 12000, engineBraking: 90, peakTorque: 370, massDelta: -5,
+    torqueCurve: [[3000, 150], [6000, 220], [9000, 280], [12000, 320], [15000, 355], [17000, 370], [18500, 362], [19000, 350], [19400, 150], [19700, 0]], turbo: null },
   v12: { name: '3.5 V12', cylinders: 12, idleRpm: 3800, redline: 13500, launchRpm: 9000, engineBraking: 80, peakTorque: 360, massDelta: 30,
     torqueCurve: [[2500, 160], [5000, 240], [8000, 310], [10000, 345], [11500, 360], [12800, 350], [13500, 335], [14000, 130], [14300, 0]], turbo: null },
   v8: { name: '5.0 V8 (muscle)', cylinders: 8, idleRpm: 750, redline: 7000, launchRpm: 3800, engineBraking: 70, peakTorque: 560, massDelta: 90,
