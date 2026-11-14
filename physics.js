@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 13;
+export const BUILD = 14;
 
 const G = 9.81;   // gravity, m/s²
 const RPM_PER_RADS = 60 / (2 * Math.PI);
@@ -1269,6 +1269,20 @@ export class CarPhysics {
     const resist = s.drag * this.vx * Math.abs(this.vx) + s.rolling * this.vx
       + Math.sign(this.vx) * Math.min(1, Math.abs(this.vx)) * (s.rollingBase + this.flatDrag);
 
+    // A turbo: the boost builds up (after a lag) once the revs are high
+    // enough and the throttle is open, and dies away when you lift. Without
+    // it the engine only makes part of its power.
+    let boostFactor = 1;
+    if (s.turbo) {
+      const T = s.turbo;
+      const want = throttle * clamp((this.rpm - T.onRpm) / (T.fullRpm - T.onRpm), 0, 1);
+      const rate = want > (this.boost || 0) ? h / T.lag : h / 0.25;
+      this.boost = (this.boost || 0) + (want - (this.boost || 0)) * Math.min(1, rate);
+      // lifting off with boost up: a pop and a flame from the exhaust
+      if (throttle < 0.1 && this.boost > 0.45 && !this.popped) { this.popped = true; this.events.push({ type: 'pop', size: this.boost }); }
+      if (throttle > 0.5) this.popped = false;
+      boostFactor = T.base + (1 - T.base) * this.boost;
+    } else this.boost = 0;
     let engineTorque = 0;
     if (this.shiftTimer > 0) {
       this.shiftTimer -= h;
@@ -1276,7 +1290,7 @@ export class CarPhysics {
       engineTorque = this.transmission === 'auto' ? 0.4 * throttle * torqueAt(s.torqueCurve, this.rpm) : 0;
     } else if (throttle && !overRevving) {
       // A damaged engine loses power: down to a quarter just before it dies
-      engineTorque = throttle * torqueAt(s.torqueCurve, this.rpm) * (0.25 + 0.75 * this.engineHealth) * this.oilFactor;
+      engineTorque = throttle * torqueAt(s.torqueCurve, this.rpm) * boostFactor * (0.25 + 0.75 * this.engineHealth) * this.oilFactor;
     } else if (coupledRpm > s.idleRpm + 200) {
       engineTorque = -s.engineBraking * (this.rpm / s.redline);   // engine braking
     }
