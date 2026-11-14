@@ -21,11 +21,21 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 50;
+export const BUILD = 51;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 46, date: '14 Nov 2026', title: 'AI cars at Sepang',
+    items: [
+      ['Other cars on track', 'Open the side panel (the arrow on the right): under "AI cars", pick Practice or Race and how many cars (1 to 9). They are Caterhams like yours, driven with the same physics', 'update'],
+      ['Practice', 'They lap on their own, spread round the track: follow them, learn their lines, overtake them', 'update'],
+      ['Race', 'Pick the laps and press Start race. You start at the back of the grid: wait for the five red lights to go out. Your position, the order and the gaps are on the left of the screen, with the results at the end', 'update'],
+      ['They are human', 'Every driver has his own pace and habits. Some brake late, some wander off the line, and they all get a corner wrong now and then: locking up, running wide, or overcooking the exit', 'update'],
+      ['Contact', 'Switch contact on to bump, spin and damage each other, or off to drive through them like ghosts', 'update'],
+    ],
+  },
   {
     id: 45, date: '14 Nov 2026', title: 'The secret has a crew',
     items: [
