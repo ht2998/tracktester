@@ -11,7 +11,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 17;
+export const BUILD = 18;
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -466,6 +466,130 @@ class V10Engine extends AudioWorkletProcessor {
   }
 }
 registerProcessor('v10-engine', V10Engine);
+
+// ---------------------------------------------------------------------
+// The 3.0 V10 (engine swap): the Caterham's own engine voice with ten
+// cylinders, reshaped exactly as in the approved previews (v12 for the
+// revs, idle v5 for the idle): warmed, more bass, a filter that opens over
+// its own 19,200 rpm; the engine's note and the notes under it brought
+// forward (the crank's note and its octaves, a touch of the fifth, and
+// the main firing note on top: a major chord, the third ringing out at
+// high revs); a lumpy idle with a small spike of rumble every 5 engine
+// cycles; louder at idle; echoes; squashed loud. (The lingering tail is
+// added after this, by a reverb.)
+// ---------------------------------------------------------------------
+class V10Shaper extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [
+      { name: 'rpm', defaultValue: 4000, minValue: 0, maxValue: 22000, automationRate: 'k-rate' },
+      { name: 'load', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+    ];
+  }
+  constructor() {
+    super();
+    const sr = this.sr = sampleRate;
+    this.RED = 19200;
+    this.ph = 0;                       // crank turns
+    this.lvl = 0;                      // running level (for the chord)
+    this.ls = this.shelf(160, 9);
+    this.lp1 = this.bq(); this.lp2 = this.bq();
+    this.peaks = [[0.2, 6, 3], [0.4, 5, 3], [0.8, 3, 3.5], [1, 9, 3.5], [2, 5, 4]].map(([m, db, q]) => ({ m, db, q, f: this.bq() }));
+    this.drift = [0, 0, 0, 0, 0];
+    this.lumps = 1; this.lastCycle = -1;
+    this.spike = 0; this.spikeA = 1; this.lastTen = -1;
+    this.rb = this.bq(); this.rb2 = this.bq();   // the rumble band (45-220 Hz)
+    // echoes: a ring buffer and nine taps, the sum dulled
+    this.echoBuf = new Float32Array(Math.ceil(sr * 0.75));
+    this.ew = 0;
+    this.taps = [[0.045, 0.32], [0.07, 0.3], [0.11, 0.26], [0.16, 0.22], [0.23, 0.18], [0.31, 0.14], [0.42, 0.1], [0.55, 0.07], [0.7, 0.045]].map(([d, g]) => [Math.round(d * sr), g]);
+    this.eLP1 = 0; this.eLP2 = 0;
+    this.hpY = 0; this.hpX = 0;
+  }
+  bq() { return { b0: 1, b1: 0, b2: 0, a1: 0, a2: 0, x1: 0, x2: 0, y1: 0, y2: 0 }; }
+  shelf(f, db) {
+    const A = Math.pow(10, db / 40), w = 2 * Math.PI * f / this.sr, al = Math.sin(w) / 2 * Math.SQRT2, c = Math.cos(w), s = 2 * Math.sqrt(A) * al;
+    const a0 = (A + 1) + (A - 1) * c + s;
+    return { b0: A * ((A + 1) - (A - 1) * c + s) / a0, b1: 2 * A * ((A - 1) - (A + 1) * c) / a0, b2: A * ((A + 1) - (A - 1) * c - s) / a0,
+      a1: -2 * ((A - 1) + (A + 1) * c) / a0, a2: ((A + 1) + (A - 1) * c - s) / a0, x1: 0, x2: 0, y1: 0, y2: 0 };
+  }
+  setLP(f, fc) { const w = 2 * Math.PI * Math.min(fc, this.sr * 0.45) / this.sr, al = Math.sin(w) / (2 * Math.SQRT1_2), c = Math.cos(w), a0 = 1 + al;
+    f.b0 = (1 - c) / 2 / a0; f.b1 = (1 - c) / a0; f.b2 = (1 - c) / 2 / a0; f.a1 = -2 * c / a0; f.a2 = (1 - al) / a0; }
+  setBP(f, fc, q) { const w = 2 * Math.PI * Math.min(fc, this.sr * 0.45) / this.sr, al = Math.sin(w) / (2 * q), c = Math.cos(w), a0 = 1 + al;
+    f.b0 = al / a0; f.b1 = 0; f.b2 = -al / a0; f.a1 = -2 * c / a0; f.a2 = (1 - al) / a0; }
+  setPeak(f, fc, db, q) { const A = Math.pow(10, db / 40), w = 2 * Math.PI * Math.min(fc, this.sr * 0.45) / this.sr, al = Math.sin(w) / (2 * q), c = Math.cos(w), a0 = 1 + al / A;
+    f.b0 = (1 + al * A) / a0; f.b1 = -2 * c / a0; f.b2 = (1 - al * A) / a0; f.a1 = -2 * c / a0; f.a2 = (1 - al / A) / a0; }
+  run(f, x) { const y = f.b0 * x + f.b1 * f.x1 + f.b2 * f.x2 - f.a1 * f.y1 - f.a2 * f.y2; f.x2 = f.x1; f.x1 = x; f.y2 = f.y1; f.y1 = y; return y; }
+  process(inputs, outputs, parameters) {
+    const out = outputs[0][0];
+    if (!out) return true;
+    const inp = inputs[0] && inputs[0][0];
+    const sr = this.sr, RED = this.RED;
+    const rpm = Math.max(0, parameters.rpm[0]), load = Math.min(1, Math.max(0, parameters.load[0]));
+    const firing = rpm / 60 * 5;
+    // the block's filter settings, following the revs
+    this.setLP(this.lp1, (500 + (rpm / RED) * 2432 + load * 1600) * 1.18); this.setLP(this.lp2, (500 + (rpm / RED) * 2432 + load * 1600) * 1.18);
+    for (const p of this.peaks) this.setPeak(p.f, firing * p.m, p.db, p.q);
+    this.setBP(this.rb, 100, 0.7); this.setBP(this.rb2, 100, 0.7);
+    const hi = Math.min(1, Math.max(0, (rpm - 9000) / 9000));
+    const idleness = Math.min(1, Math.max(0, 1 - (rpm - 4000) / 5000));
+    const rv = Math.min(1, rpm / RED);
+    const vol = (0.5 + 0.25 * rv + 0.35 * load) * (1 + 1.6 * Math.min(1, Math.max(0, 1 - (rpm - 4000) / 6000)));   // (idle as loud as in the approved idle preview)
+    const tps = rpm / 60 / sr;
+    const W = Math.tanh(1.4);
+    for (let n = 0; n < out.length; n++) {
+      const x0 = inp ? inp[n] : 0;
+      this.ph += tps;
+      // warmth, more bass, the opening filter
+      let y = Math.tanh(1.4 * x0 * 1.6) / W;
+      y = this.run(this.ls, y);
+      y = this.run(this.lp2, this.run(this.lp1, y));
+      // the chord under it (1x, 2x, 4x the crank, a touch of 3x) and the
+      // high note on top (5x and its octave), scaled by how loud it is
+      this.lvl += (y * y - this.lvl) * 0.001;
+      const lvl = Math.sqrt(this.lvl) + 1e-6;
+      const P = this.ph * 2 * Math.PI;
+      for (let k = 0; k < 5; k++) this.drift[k] += (Math.random() - 0.5) * 0.0035;
+      let chord = 0.55 * Math.sin(P + this.drift[0]) + 0.6 * Math.sin(2 * P + this.drift[1]) + 0.45 * Math.sin(4 * P + this.drift[2]) + 0.12 * Math.sin(3 * P + this.drift[3]);
+      chord = Math.tanh(chord * 1.3);
+      y += chord * lvl * 0.9 * (1 - 0.45 * hi);
+      const top = Math.sin(5 * P + this.drift[4]) + 0.3 * Math.sin(10 * P);
+      y += Math.tanh(top * 1.5) * lvl * (0.35 + 1.4 * hi);
+      for (const p of this.peaks) y = this.run(p.f, y);
+      // the idle: a lumpy beat every turn and every cycle (each cycle a
+      // little different), and a spike of rumble every 5 cycles
+      if (idleness > 0) {
+        const cyc = Math.floor(this.ph * 0.5);
+        if (cyc !== this.lastCycle) { this.lastCycle = cyc; let g = 0; for (let k = 0; k < 4; k++) g += Math.random(); this.lumps = 1 + 0.35 * ((g - 2) / 0.58); }
+        const s1 = Math.sin(P), s2 = Math.sin(P * 0.5);
+        const beat = (0.55 + 0.45 * s1 * s1) * (0.75 + 0.25 * s2 * s2) * this.lumps;
+        y *= 1 - idleness + idleness * beat * 1.25;
+        const ten = Math.floor(this.ph / 10);
+        if (ten !== this.lastTen) { this.lastTen = ten; this.spike = 0; this.spikeA = 0.8 + 0.4 * Math.random(); this.spikeT = 0; }
+        this.spikeT = (this.spikeT || 0) + 1 / sr;
+        const env = this.spikeT < 0.09 ? this.spikeA * Math.min(1, this.spikeT / 0.008) * Math.exp(-this.spikeT / 0.035) : 0;
+        const low = this.run(this.rb2, this.run(this.rb, y));
+        const rum = Math.tanh((low * 3 + Math.sin(P * 0.5) * 0.7) * 1.4);
+        y += idleness * rum * env * 0.45 * 1.6;
+      }
+      y *= vol;
+      // echoes off what's around
+      this.echoBuf[this.ew] = y;
+      let e = 0;
+      const L = this.echoBuf.length;
+      for (const [d, g] of this.taps) e += this.echoBuf[(this.ew - d + L) % L] * g;
+      this.ew = (this.ew + 1) % L;
+      const ke = 1 - Math.exp(-2 * Math.PI * 4500 / sr);
+      this.eLP1 += (e - this.eLP1) * ke; this.eLP2 += (this.eLP1 - this.eLP2) * ke;
+      y += this.eLP2;
+      // no rumble below 30 Hz, then squashed loud
+      this.hpY = 0.996 * (this.hpY + y - this.hpX); this.hpX = y;
+      out[n] = Math.tanh(this.hpY * 0.2023) / Math.tanh(3.2);   // (squashed exactly as loud as the approved preview: measured offline)
+    }
+    for (let ch = 1; ch < outputs[0].length; ch++) outputs[0][ch].set(out);
+    return true;
+  }
+}
+registerProcessor('v10-shaper', V10Shaper);
 `;
 
 // Short white-noise recording, made once and reused (for gear-shift clacks)
@@ -1224,16 +1348,34 @@ export class EngineSound {
         this.heavyPan = ctx.createStereoPanner ? ctx.createStereoPanner() : ctx.createGain();
         this.heavy.connect(this.heavyPan).connect(this.heavyGain).connect(this.carBus);
         // the swappable F1 V10's own voice (silent unless it's fitted)
-        this.v10 = new AudioWorkletNode(ctx, 'v10-engine', { outputChannelCount: [1] });
-        this.v10Gain = ctx.createGain();
-        this.v10Gain.gain.value = 0;
-        // (straight out, not through the car engine's warm, closing filter, so
-        // it isn't muffled; the game's own compressor and peak limiter keep it
-        // from clipping)
-        this.v10.connect(this.v10Gain).connect(this.carBus);
+        this.workletReady = true;
         this.setHeavy(this.heavyOn);
       }).catch((err) => console.warn('Engine sound could not start:', err));
     }
+  }
+
+  // The V10's voice, built the first time it's needed (it costs a little,
+  // so nobody who never fits it pays for it)
+  ensureV10() {
+    if (this.v10 || !this.workletReady) return;
+    const ctx = this.ctx;
+    // (the Caterham's own pulses with ten cylinders, through the V10's
+    // shaping; straight out, not through the car engine's filter; then a
+    // lingering tail from a soft reverb about 1.3 s long)
+    this.v10 = new AudioWorkletNode(ctx, 'engine-pulses', { outputChannelCount: [1] });
+    this.v10.parameters.get('cylinders').value = 10;
+    this.v10Shape = new AudioWorkletNode(ctx, 'v10-shaper', { outputChannelCount: [1] });
+    this.v10Gain = ctx.createGain();
+    this.v10Gain.gain.value = 0;
+    this.v10.connect(this.v10Shape).connect(this.v10Gain).connect(this.carBus);
+    const n = Math.round(ctx.sampleRate * 1.6), ir = ctx.createBuffer(1, n, ctx.sampleRate), d = ir.getChannelData(0);
+    let lp = 0;
+    for (let i = 0; i < n; i++) { const t = i / ctx.sampleRate; lp += ((Math.random() * 2 - 1) - lp) * 0.3; d[i] = t < 0.02 ? 0 : lp * Math.exp(-t * 6.9 / 1.3); }
+    this.v10Linger = ctx.createConvolver();
+    this.v10Linger.buffer = ir;
+    const lingerGain = ctx.createGain();
+    lingerGain.gain.value = 0.3;
+    this.v10Gain.connect(this.v10Linger).connect(lingerGain).connect(this.carBus);
   }
 
   // Swap between the car's engine and the heavy vehicle's
@@ -1243,6 +1385,7 @@ export class EngineSound {
     const t = this.ctx.currentTime;
     this.heavyGain.gain.setTargetAtTime(on ? 0.85 * (this.driverEar ? 1.35 : 1) : 0, t, 0.1);
     const v10 = !on && this.spec.voice === 'v10';
+    if (v10) this.ensureV10();
     // (the engine's character: how hard it drives the warmth)
     const ch = this.spec.sound || {};
     this.carVoiceGain.gain.setTargetAtTime(on || v10 ? 0 : (ch.drive ?? 1), t, 0.1);
@@ -1440,6 +1583,9 @@ export class EngineSound {
     if (this.v10 && this.spec.voice === 'v10') {
       this.v10.parameters.get('rpm').setTargetAtTime(rpm, t, 0.03);
       this.v10.parameters.get('load').setTargetAtTime(load, t, loadEase);
+      this.v10.parameters.get('limiter').setValueAtTime(car.onLimiter ? 1 : 0, t);
+      this.v10Shape.parameters.get('rpm').setTargetAtTime(rpm, t, 0.03);
+      this.v10Shape.parameters.get('load').setTargetAtTime(load, t, loadEase);
     }
     if (this.voice) {
       this.voice.parameters.get('rpm').setTargetAtTime(rpm, t, 0.03);
@@ -1465,7 +1611,7 @@ export class EngineSound {
     this.engineGain.gain.setTargetAtTime(volume, t, shifting || car.engineBlown ? 0.03 : car.engineDead ? 0.4 : loadEase);
     // the V10 (its own path): the loudest engine in the game, cut in a shift
     if (this.v10Gain && this.spec.voice === 'v10' && !this.heavyOn) {
-      const v = (car.engineDead ? 0 : 3.2) * (shifting ? 0.5 : 1) * (0.8 + 0.2 * load);
+      const v = (car.engineDead ? 0 : 1.6) * (shifting ? 0.5 : 1);   // (about twice the other engines)
       this.v10Gain.gain.setTargetAtTime(v, t, shifting ? 0.02 : car.engineDead ? 0.4 : 0.06);
     }
 
