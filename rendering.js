@@ -55,7 +55,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 33;
+const BUILD = 35;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -1069,6 +1069,8 @@ gunRing.style.cssText = 'position:fixed;width:34px;height:34px;margin:-17px 0 0 
 document.body.appendChild(gunRing);
 const gunPos = new THREE.Vector3(), gunDir = new THREE.Vector3(), gunScreen = new THREE.Vector3();
 function placeGunRing() {
+  sightCross.style.display = inSight() ? 'block' : 'none';
+  if (!inSight() && pointerLocked()) document.exitPointerLock?.();
   if (!tankMode || isMobile) { gunRing.style.display = 'none'; return; }
   tank.muzzle(gunPos, gunDir);
   // where the gun's line meets the ground (or 400 m out)
@@ -1079,7 +1081,29 @@ function placeGunRing() {
   gunRing.style.left = ((gunScreen.x + 1) / 2 * window.innerWidth).toFixed(1) + 'px';
   gunRing.style.top = ((1 - gunScreen.y) / 2 * window.innerHeight).toFixed(1) + 'px';
 }
+// In the gunner's sight (camera 3) the view is the gunner's: the mouse
+// moves where he's looking (the crosshair stays in the middle of the
+// screen) and the gun swings round to follow; the circle shows where the
+// gun is actually pointing until it catches up. Click to grab the mouse
+// (Esc lets it go); clicking again fires.
+const sightAim = { yaw: 0, pitch: 0, set: false };
+const sightCross = document.createElement('div');
+sightCross.style.cssText = 'position:fixed;left:50%;top:50%;width:26px;height:26px;margin:-13px 0 0 -13px;pointer-events:none;display:none;z-index:15;'
+  + 'background:linear-gradient(rgba(235,240,215,0.9),rgba(235,240,215,0.9)) center/2px 100% no-repeat,linear-gradient(rgba(235,240,215,0.9),rgba(235,240,215,0.9)) center/100% 2px no-repeat';
+document.body.appendChild(sightCross);
+const inSight = () => tankMode && cameraMode === 'bonnet' && !isMobile;
+const pointerLocked = () => document.pointerLockElement === renderer.domElement;
+window.addEventListener('mousemove', (e) => {
+  if (!inSight() || !pointerLocked()) return;
+  sightAim.yaw -= (e.movementX || 0) * 0.0022;
+  sightAim.pitch = Math.max(-0.6, Math.min(0.8, sightAim.pitch - (e.movementY || 0) * 0.0022));
+});
+function sightAimPoint(from) {
+  const cp = Math.cos(sightAim.pitch);
+  return from.clone().add(aimRayEnd.set(Math.sin(sightAim.yaw) * cp, Math.sin(sightAim.pitch), Math.cos(sightAim.yaw) * cp).multiplyScalar(400));
+}
 function aimPoint() {
+  if (inSight()) return sightAimPoint(camera.position);
   const from = camera.position;
   const dir = aimRayEnd.set(mouseAim.x, mouseAim.y, 0.5).unproject(camera).sub(from).normalize();
   const groundY = tankPhys.y;
@@ -2472,6 +2496,24 @@ function explode(at) {
     scorches.count = Math.max(scorches.count, nextScorch === 0 ? 30 : nextScorch);
     scorches.instanceMatrix.needsUpdate = true;
   }
+  // the blast wrecks whatever's close: barriers bend, fences cave in,
+  // tyre walls burst, walls crack, chips fly (harder the closer it is)
+  const R = 7;
+  for (const c of COLLIDERS) {
+    if (!c.hit) continue;
+    const cx = Math.max(c.minX, Math.min(c.maxX, at.x)), cz = Math.max(c.minZ, Math.min(c.maxZ, at.z));
+    const dx = cx - at.x, dz = cz - at.z, dd = Math.hypot(dx, dz);
+    if (dd > R) continue;
+    const power = 1 - dd / R;
+    // the face towards the blast (pointing back at it)
+    let nx = -dx / (dd || 1), nz = -dz / (dd || 1);
+    if (dd < 0.05) { nx = 0; nz = 1; }
+    for (let k = 0; k < (power > 0.6 ? 3 : 1); k++) {
+      const off = (k - 1) * 1.2;
+      const res = c.hit({ x: cx + nz * off, z: cz - nx * off }, { x: nx, z: nz }, 12 + 30 * power);
+      if (res?.chips) for (let i = 0; i < res.chips + 4; i++) chips.spawn({ x: cx, z: cz }, chipVel.set(-nx * 8, 0, -nz * 8), 1);
+    }
+  }
   const d = camera.position.distanceTo(at);
   engineSound.playExplosion(d);
   shake = Math.max(shake, 0.6 / (1 + d / 25));
@@ -2526,7 +2568,9 @@ window.addEventListener('mouseup', (e) => {
   if (e.button !== 0 || !clickFrom) return;
   const still = Math.hypot(e.clientX - clickFrom.x, e.clientY - clickFrom.y) < 6 && performance.now() - clickFrom.t < 450;
   clickFrom = null;
-  if (still && tankMode && e.target === renderer.domElement) fireGun();
+  if (!still || !tankMode || e.target !== renderer.domElement) return;
+  if (inSight() && !pointerLocked()) { renderer.domElement.requestPointerLock?.(); return; }
+  fireGun();
 });
 
 // =====================================================================
@@ -2568,7 +2612,8 @@ grainCanvas.width = grainCanvas.height = 96;
 let nightVision = false;
 function updateDriverSeat(input) {
   const inSeat = tankMode && cameraMode === 'cockpit';
-  driverSeat.style.display = inSeat ? 'block' : 'none';
+  driverSeat.style.display = 'none';      // (the old flat picture: the real compartment is drawn in 3D now)
+  tank.setInterior(inSeat, 1 / 60, { steer: input.steer, brake: input.brake, kmh: Math.abs(physics.vx) * 3.6, rpm: tankPhys.rpm, gear: tankPhys.gearLabel });
   engineSound.setDriverEar?.(inSeat);
   // night vision at night (the image intensifier), off by day
   const nv = inSeat && sky.daylight < 0.35;
@@ -2664,11 +2709,14 @@ function updateCamera(dt) {
     carModel.car.updateMatrixWorld();
     const mount = ON_CAR[cameraMode];
     if (tankMode && cameraMode === 'bonnet') {
-      // the tank's gunner's sight: beside the gun, turning and lifting with it
+      // the tank's gunner's sight: by the gun, looking where the gunner is
+      // looking (the gun follows)
       tank.sight(camera.position, camera.quaternion);
+      if (!isMobile) camera.quaternion.setFromEuler(lookEuler.set(sightAim.pitch, sightAim.yaw + Math.PI, 0));
     } else if (tankMode && cameraMode === 'cockpit') {
-      // the tank's driver, looking out through his periscope (see DRIVER'S SEAT)
+      // the tank's driver, in his compartment (see DRIVER'S SEAT), able to look round
       tank.driverView(camera.position, camera.quaternion);
+      camera.quaternion.multiply(lookTurn.setFromEuler(lookEuler.set(look.pitch, look.yaw, 0)));
     } else {
       camera.position.copy(tankMode ? TANK_VIEWS[cameraMode] : mount.spot);
       carModel.car.localToWorld(camera.position);
@@ -2882,7 +2930,14 @@ renderer.setAnimationLoop(() => {
     tank.update(dt, physics.vx - physics.yawRate * 0.88, physics.vx + physics.yawRate * 0.88);
     tank.setLights(lightsMode > 0);
     // the turret turns to face the mouse pointer
-    if (mouseAim.moved) tank.aimAt(aimPoint(), dt);
+    // (entering the gunner's sight: start looking where the gun points)
+    if (inSight() && !sightAim.set) {
+      tank.muzzle(gunPos, gunDir);
+      sightAim.yaw = Math.atan2(gunDir.x, gunDir.z); sightAim.pitch = Math.asin(Math.max(-1, Math.min(1, gunDir.y)));
+      sightAim.set = true;
+    }
+    if (!inSight()) sightAim.set = false;
+    if (mouseAim.moved || inSight()) tank.aimAt(aimPoint(), dt);
     // black smoke when the throttle runs ahead of the turbo
     const thr = input.throttle || 0;
     dieselBoost += (thr * Math.min(1, tankPhys.rpm / 2700) - dieselBoost) * Math.min(1, dt / (thr > dieselBoost ? 0.7 : 0.35));
@@ -2896,7 +2951,7 @@ renderer.setAnimationLoop(() => {
     throttle: input.throttle, brake: input.brake, clutch: physics.clutchPedal, horn: !!input.horn,
   });
   cockpit.drawScreen(dt, {
-    speedKmh: physics.speedKmh, rpm: physics.rpm, redline: CATERHAM.redline, gearLabel: physics.gearLabel,
+    speedKmh: physics.speedKmh, rpm: physics.rpm, redline: tankMode ? 2700 : CATERHAM.redline, gearLabel: tankMode ? tankPhys.gearLabel : physics.gearLabel,
     limiter: physics.limiter, fuel: physics.fuelLevel, oil: physics.oilLevel, tyres: physics.tyres,
     health: physics.engineHealth, tyreWindow: physics.tempWindow,
     coolant: physics.coolantTemp, fire: physics.onFire,
@@ -2960,6 +3015,7 @@ renderer.setAnimationLoop(() => {
   engineSound.setRain?.(rain.intensity, rain.wetness, carSpeed, puddleUnder);
   engineSound.setMud?.(mudUnder, carSpeed);
 
+  hud.setRevScale?.(tankMode ? 2700 : CATERHAM.redline);   // (the tank's diesel is governed at 2,700)
   hud.update({
     sky: { clock: sky.clock, hours: sky.hours, speed: sky.speed, locked: sky.locked,
            weather: sky.weather, changing: sky.changing, now: sky.weatherNow },
@@ -2977,7 +3033,7 @@ renderer.setAnimationLoop(() => {
     },
     speedKmh: physics.speedKmh,
     rpm: physics.rpm,
-    gearLabel: physics.gearLabel,
+    gearLabel: tankMode ? tankPhys.gearLabel : physics.gearLabel,
     limiter: physics.limiter,
     transmission: physics.transmission,
     engineHealth: physics.engineHealth,
