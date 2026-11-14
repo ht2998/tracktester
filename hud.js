@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 10;
+export const BUILD = 11;
 
 const COLORS = {
   face: '#15181c',
@@ -1027,6 +1027,20 @@ export class Hud {
   // the on-screen ones are hidden
   setInCar(on) {
     this.dash.style.display = on ? 'none' : '';
+  }
+
+  // Re-scale the rev counter for a different engine (e.g. a slow-revving
+  // diesel): its top end, and where the red starts
+  setRevScale(redline) {
+    if (this.redline === redline) return;
+    this.redline = redline;
+    const t = this.tach;
+    t.max = Math.ceil((redline + (redline < 4000 ? 300 : 800)) / (redline < 4000 ? 500 : 1000)) * (redline < 4000 ? 500 : 1000);
+    t.redFrom = redline;
+    t.minor = redline < 4000 ? 100 : 250;
+    t.major = redline < 4000 ? 500 : 1000;
+    t.labelEvery = redline < 4000 ? 500 : 1000;
+    t.drawBackground();
   }
 
   update({ speedKmh, rpm, gearLabel, limiter, transmission, engineHealth = 1, oilLevel = 1,
