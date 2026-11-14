@@ -34,6 +34,7 @@ import { setGround, groundAt, lieOnGround } from './ground.js';
 import { buildScorpion, TANK_EYE, TankPhysics } from './tank.js';
 import * as tankFile from './tank.js';
 import { AIField, BUILD as AI_BUILD } from './ai.js';
+import { Garage, BUILD as GARAGE_BUILD } from './garage.js';
 import { buildF1Body, buildF1Cockpit, buildF1RimGeometry, F1_CAR, CATERHAM_CAR, ENGINES, withEngine, STOCK_ENGINE, BUILD as F1_BUILD } from './f1.js';
 import * as groundFile from './ground.js';
 import * as tyresFile from './tyres.js';
@@ -57,7 +58,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 46;
+const BUILD = 47;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -66,7 +67,7 @@ const updateScreen = startUpdates({
   'smoke.js': smokeFile.BUILD, 'hud.js': hudFile.BUILD, 'oil.js': oilFile.BUILD,
   'skids.js': skidsFile.BUILD, 'scenery.js': sceneryFile.BUILD, 'grass.js': grassFile.BUILD,
   'sky.js': skyFile.BUILD, 'debris.js': debrisFile.BUILD, 'touch.js': touchFile.BUILD,
-  'rain.js': rainFile.BUILD, 'effects.js': effectsFile.BUILD, 'cockpit.js': cockpitFile.BUILD, 'tyres.js': tyresFile.BUILD, 'sepang.js': sepangFile.BUILD, 'flora.js': floraFile.BUILD, 'racingline.js': racingLineFile.BUILD, 'ground.js': groundFile.BUILD, 'tank.js': tankFile.BUILD, 'ai.js': AI_BUILD, 'f1.js': F1_BUILD,
+  'rain.js': rainFile.BUILD, 'effects.js': effectsFile.BUILD, 'cockpit.js': cockpitFile.BUILD, 'tyres.js': tyresFile.BUILD, 'sepang.js': sepangFile.BUILD, 'flora.js': floraFile.BUILD, 'racingline.js': racingLineFile.BUILD, 'ground.js': groundFile.BUILD, 'tank.js': tankFile.BUILD, 'ai.js': AI_BUILD, 'f1.js': F1_BUILD, 'garage.js': GARAGE_BUILD,
 });
 
 // ---------------------------------------------------------------------
@@ -1206,6 +1207,7 @@ function enterCode(code) {
   code = String(code || '').toUpperCase().replace(/\s+/g, '');
   if (code === 'CATERHAM') {
     if (tankMode) enterCode('FV101');
+    try { localStorage.setItem('tracktester-caterham', '1'); } catch (e) { /* storage blocked */ }   // (it shows in the garage from now on)
     setCar('caterham', STOCK_ENGINE.caterham);
     showToast('CATERHAM SEVEN');
     return true;
@@ -3126,7 +3128,8 @@ function setCar(kind, engine) {
   try { localStorage.setItem('tracktester-car', JSON.stringify({ kind: carKind, engine: engineKey })); } catch (e) { /* storage blocked */ }
   if (carPicker) carPicker.value = carKind;
 }
-// the car picker in the side panel
+// THE GARAGE button in the side panel (the garage itself is set up
+// further down, once everything it needs is built)
 let carPicker = null;
 {
   const panel = document.querySelector('#sidepanel .sp-panel');
@@ -3136,12 +3139,15 @@ let carPicker = null;
     heading.textContent = 'Car';
     const box = document.createElement('div');
     box.className = 'tyre-box';
-    box.innerHTML = '<select id="car-pick"><option value="caterham">Caterham Seven (2.0, 210 bhp)</option><option value="f1">TT-88 (1988-style turbo F1)</option></select>';
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.id = 'garage-open';
+    b.style.cssText = 'display:flex;align-items:center;gap:8px;width:100%;padding:9px 12px;border-radius:9px;border:1px solid rgba(255,255,255,0.16);background:#1d2127;color:inherit;font:inherit;font-weight:600;letter-spacing:0.05em;cursor:pointer';
+    b.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="7.5" cy="12" r="4"/><path d="M11.5 12H21M17.5 12v3M20.5 12v2.4"/></svg>Garage';
+    b.addEventListener('click', () => { b.blur(); document.getElementById('sidepanel')?.classList.remove('open'); openGarage(); });
+    box.appendChild(b);
     panel.insertBefore(box, panel.firstChild);
     panel.insertBefore(heading, box);
-    carPicker = box.querySelector('select');
-    carPicker.value = CAR_KIND;
-    carPicker.addEventListener('change', () => { setCar(carPicker.value, STOCK_ENGINE[carPicker.value]); carPicker.blur(); showToast(carKind === 'f1' ? 'TT-88' : 'CATERHAM SEVEN'); });
   }
 }
 try {
@@ -3361,9 +3367,52 @@ const aiField = racing ? new AIField(scene, {
   },
 }) : null;
 
+// THE GARAGE (garage.js): a studio away from the track with your car on a
+// turntable, its figures, and the collection to pick another from
+const garage = new Garage({
+  renderer, sound: engineSound, env: scene.environment, isMobile,
+  getModel: () => carModel.car, kind: CAR_KIND,
+  unlocked: (kind) => { try { return kind === 'caterham' && (CAR_KIND === 'caterham' || localStorage.getItem('tracktester-caterham') === '1'); } catch (e) { return false; } },
+  onDrive: () => closeGarage(),
+  onPick: (kind) => {
+    // (another car: the game starts again with it, back in here, and it fires up)
+    try { localStorage.setItem('tracktester-garage', '1'); } catch (e) { /* storage blocked */ }
+    setCar(kind, STOCK_ENGINE[kind]);
+  },
+});
+let garageOnStart = 0;
+try { if (localStorage.getItem('tracktester-garage') === '1') { localStorage.removeItem('tracktester-garage'); garageOnStart = 1; } } catch (e) { /* storage blocked */ }
+function openGarage(opts) {
+  if (garage.isOpen) return;
+  if (tankMode) enterCode('FV101');            // (out of the tank first)
+  // the track's sounds stop: no tyres, wind, rain or other cars in here
+  engineSound.setHiss?.(0);
+  engineSound.setTyreFlap?.(0, 0);
+  engineSound.setRimScrape?.(0, 0, 0);
+  engineSound.setFrameScrape?.(0, 0);
+  engineSound.setSqueal?.(0, 0);
+  engineSound.setGravel?.(0, 0, 0);
+  engineSound.setGrass?.(0, 0, 0);
+  engineSound.setRain?.(0, 0, 0, 0);
+  engineSound.setMud?.(0, 0);
+  engineSound.setHorn?.(false);
+  engineSound.setDriverEar?.(false);
+  for (const c of aiField?.cars || []) if (c.voice) { c.voice.stop(); c.voice = null; }
+  controls.enabled = false;
+  garage.open(physics.spec, opts);
+}
+function closeGarage() {
+  garage.close();
+  applyCamera();
+  clock.getDelta();
+}
+
 renderer.setAnimationLoop(() => {
   if (!effectsLayered) layerEffects();
   const dt = Math.min(clock.getDelta(), 0.05);   // avoid huge jumps after a pause
+  // in the garage: the track waits, the studio is drawn instead
+  if (garage.isOpen) { garage.frame(dt); return; }
+  if (garageOnStart && ++garageOnStart > 3) { garageOnStart = 0; openGarage({ rev: true }); }
 
   if (wasTapped('camera')) switchCamera();
   if (wasTapped('reset')) {
