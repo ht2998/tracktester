@@ -24,7 +24,7 @@
 //    Rubbered-in track grips a little better. Rain washes it away.
 import * as THREE from 'three';
 
-export const BUILD = 5;
+export const BUILD = 6;
 
 const G = 9.81;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -222,20 +222,39 @@ export class RacingLine {
   plan(grip) {
     if (Math.abs(grip - this.grip) < 0.02) return;
     this.grip = grip;
-    const m = this.m, pts = this.pts, car = this.car;
+    this.speedsFor(this.car, grip, this.vPlan, this.vMax, this.brakeHard);
+    if (this.zoneGeo) this.paintStatic();
+  }
+  // A different car (a faster one is planned faster, braking later)
+  setCar(car) { this.car = car; this.grip = -1; }
+
+  // The speeds a car could do round the line: as fast as its grip allows
+  // in each corner (more with its downforce, the faster it goes), as fast
+  // as its engine accelerates between them, braking just in time.
+  // Writes v (the plan), vMax (each corner's limit) and brakeHard.
+  speedsFor(car, grip, v = new Float32Array(this.m), vMax = new Float32Array(this.m), brakeHard = new Float32Array(this.m)) {
+    const m = this.m, pts = this.pts;
     const mass = car.mass + 70;                            // (and a driver)
-    const power = 150000;                                  // W at the wheels, roughly (210 bhp less losses)
-    for (let i = 0; i < m; i++) this.vMax[i] = Math.min(61, Math.sqrt(grip * G / Math.max(1e-4, Math.abs(pts[i].curve))));
-    const v = this.vPlan;
-    for (let i = 0; i < m; i++) v[i] = this.vMax[i];
+    // its power at the wheels (roughly: its peak, less losses)
+    let peakW = 150000;
+    if (car.torqueCurve) { peakW = 0; for (const [rpm, nm] of car.torqueCurve) peakW = Math.max(peakW, nm * rpm * Math.PI / 30); peakW *= 0.88; }
+    const df = (car.downforce || 0) / mass;                // extra grip per (m/s)², per kg
+    const vCap = Math.min(100, Math.cbrt(peakW / Math.max(0.2, car.drag)));
+    const gripAt = (vv) => grip * (G + df * vv * vv);     // how hard it can corner or brake (m/s²) at a speed
+    for (let i = 0; i < m; i++) {
+      const c = Math.max(1e-4, Math.abs(pts[i].curve));
+      const den = c - grip * df;
+      vMax[i] = den > 1e-6 ? Math.min(vCap, Math.sqrt(grip * G / den)) : vCap;
+    }
+    for (let i = 0; i < m; i++) v[i] = vMax[i];
     for (let pass = 0; pass < 3; pass++) {
       // accelerating: as fast as the engine (and grip) allows
       for (let k = 1; k <= m; k++) {
         const i = k % m, j = k - 1;
         const vj = v[j];
         const lat = vj * vj * Math.abs(pts[j].curve);
-        const gripLeft = Math.sqrt(Math.max(0, (grip * G) ** 2 - lat * lat));
-        const engine = power / (mass * Math.max(vj, 4)) - (car.drag * vj * vj) / mass;
+        const gripLeft = Math.sqrt(Math.max(0, gripAt(vj) ** 2 - lat * lat));
+        const engine = peakW / (mass * Math.max(vj, 4)) - (car.drag * vj * vj) / mass;
         const a = Math.max(0, Math.min(gripLeft, engine));
         v[i] = Math.min(v[i], Math.sqrt(vj * vj + 2 * a * pts[j].ds));
       }
@@ -244,7 +263,7 @@ export class RacingLine {
         const i = k, j = (k + 1) % m;
         const vj = v[j];
         const lat = vj * vj * Math.abs(pts[j].curve);
-        const brake = Math.sqrt(Math.max(0, (1.15 * grip * G) ** 2 - lat * lat)) + (car.drag * vj * vj) / mass;
+        const brake = Math.sqrt(Math.max(0, (1.15 * gripAt(vj)) ** 2 - lat * lat)) + (car.drag * vj * vj) / mass;
         v[i] = Math.min(v[i], Math.sqrt(vj * vj + 2 * brake * pts[i].ds));
       }
     }
@@ -252,17 +271,17 @@ export class RacingLine {
     for (let i = 0; i < m; i++) {
       const j = (i + 1) % m;
       const decel = (v[i] * v[i] - v[j] * v[j]) / (2 * pts[i].ds);
-      this.brakeHard[i] = decel > 2 ? clamp(decel / (1.1 * grip * G), 0, 1) : 0;
+      brakeHard[i] = decel > 2 ? clamp(decel / (1.1 * gripAt(v[i])), 0, 1) : 0;
     }
     // (ignore little lifts shorter than 10 m: they're not real braking zones)
     for (let i = 0; i < m; i++) {
-      if (this.brakeHard[i] > 0 && this.brakeHard[(i - 1 + m) % m] === 0) {
+      if (brakeHard[i] > 0 && brakeHard[(i - 1 + m) % m] === 0) {
         let n = 0;
-        while (n < m && this.brakeHard[(i + n) % m] > 0) n++;
-        if (n < 5) for (let k = 0; k < n; k++) this.brakeHard[(i + k) % m] = 0;
+        while (n < m && brakeHard[(i + n) % m] > 0) n++;
+        if (n < 5) for (let k = 0; k < n; k++) brakeHard[(i + k) % m] = 0;
       }
     }
-    if (this.zoneGeo) this.paintStatic();
+    return { v, vMax, brakeHard };
   }
 
   // Colour the whole line from the plan (the stretch ahead of the car is
