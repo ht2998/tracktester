@@ -11,7 +11,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 12;
+export const BUILD = 13;
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -1163,6 +1163,40 @@ export class EngineSound {
     burst(t0 + 0.47, 0.12, 'bandpass', 900, 3, 0.7 * L);
     burst(t0 + 0.95, 0.06, 'bandpass', 3400, 6, 0.5 * L);     // the empty case hitting the floor
     burst(t0 + 1.05, 0.05, 'bandpass', 3000, 6, 0.3 * L);
+  }
+
+  // One round from the coaxial machine gun: a sharp crack, a short punchy
+  // thump and a ring of the action (a little different every time)
+  playMG() {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t0 = ctx.currentTime, out = this.carBus;
+    const v = 0.85 + Math.random() * 0.3;
+    const burst = (at, length, type, freq, q, peak) => {
+      const src = ctx.createBufferSource();
+      src.buffer = this.noise;
+      const f = ctx.createBiquadFilter();
+      f.type = type; f.frequency.value = freq; f.Q.value = q;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(peak, at + 0.001);
+      g.gain.exponentialRampToValueAtTime(0.0004, at + length);
+      src.connect(f).connect(g).connect(out);
+      src.start(at, Math.random() * 1.5);
+      src.stop(at + length + 0.03);
+    };
+    burst(t0, 0.05, 'bandpass', 1900 * v, 0.8, 1.6);     // the crack
+    burst(t0, 0.16, 'lowpass', 420 * v, 0.7, 2.2);       // the punch
+    burst(t0, 0.35, 'lowpass', 160, 0.8, 0.8);           // a short roll after it
+    const o = ctx.createOscillator();
+    o.frequency.setValueAtTime(150 * v, t0);
+    o.frequency.exponentialRampToValueAtTime(70, t0 + 0.06);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(1.2, t0 + 0.002);
+    g.gain.exponentialRampToValueAtTime(0.0004, t0 + 0.12);
+    o.connect(g).connect(out);
+    o.start(t0); o.stop(t0 + 0.15);
+    burst(t0 + 0.03, 0.03, 'bandpass', 3800, 5, 0.35);    // the bolt cycling
   }
 
   // A shell landing: a deep boom with a long roll after it (later, quieter
