@@ -34,6 +34,7 @@ import { setGround, groundAt, lieOnGround } from './ground.js';
 import { buildScorpion, TANK_EYE, TankPhysics } from './tank.js';
 import * as tankFile from './tank.js';
 import { AIField, BUILD as AI_BUILD } from './ai.js';
+import { buildF1, F1_CAR, CATERHAM_CAR, ENGINES, withEngine, STOCK_ENGINE, BUILD as F1_BUILD } from './f1.js';
 import * as groundFile from './ground.js';
 import * as tyresFile from './tyres.js';
 import * as cockpitFile from './cockpit.js';
@@ -56,7 +57,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 43;
+const BUILD = 44;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -65,7 +66,7 @@ const updateScreen = startUpdates({
   'smoke.js': smokeFile.BUILD, 'hud.js': hudFile.BUILD, 'oil.js': oilFile.BUILD,
   'skids.js': skidsFile.BUILD, 'scenery.js': sceneryFile.BUILD, 'grass.js': grassFile.BUILD,
   'sky.js': skyFile.BUILD, 'debris.js': debrisFile.BUILD, 'touch.js': touchFile.BUILD,
-  'rain.js': rainFile.BUILD, 'effects.js': effectsFile.BUILD, 'cockpit.js': cockpitFile.BUILD, 'tyres.js': tyresFile.BUILD, 'sepang.js': sepangFile.BUILD, 'flora.js': floraFile.BUILD, 'racingline.js': racingLineFile.BUILD, 'ground.js': groundFile.BUILD, 'tank.js': tankFile.BUILD, 'ai.js': AI_BUILD,
+  'rain.js': rainFile.BUILD, 'effects.js': effectsFile.BUILD, 'cockpit.js': cockpitFile.BUILD, 'tyres.js': tyresFile.BUILD, 'sepang.js': sepangFile.BUILD, 'flora.js': floraFile.BUILD, 'racingline.js': racingLineFile.BUILD, 'ground.js': groundFile.BUILD, 'tank.js': tankFile.BUILD, 'ai.js': AI_BUILD, 'f1.js': F1_BUILD,
 });
 
 // ---------------------------------------------------------------------
@@ -1152,12 +1153,19 @@ function showToast(text) {
 window.addEventListener('keydown', (e) => {
   if (!e.key || e.key.length !== 1) return;
   if (e.target && e.target.tagName === 'INPUT') return;     // (typing in the phone's code box)
-  secretKeys = (secretKeys + e.key.toUpperCase()).slice(-5);
-  if (secretKeys === 'FV101') { secretKeys = ''; enterCode('FV101'); }
+  secretKeys = (secretKeys + e.key.toUpperCase()).slice(-8);
+  if (secretKeys.endsWith('FV101')) { secretKeys = ''; enterCode('FV101'); }
+  if (secretKeys.endsWith('CATERHAM')) { secretKeys = ''; enterCode('CATERHAM'); }
 });
 // A secret code, typed on a keyboard or entered in the phone's code box
 function enterCode(code) {
   code = String(code || '').toUpperCase().replace(/\s+/g, '');
+  if (code === 'CATERHAM') {
+    if (tankMode) enterCode('FV101');
+    setCar('caterham', STOCK_ENGINE.caterham);
+    showToast('CATERHAM SEVEN');
+    return true;
+  }
   if (code === 'FV101') {
     tankMode = !tankMode;
     // (a fresh start: the car's damage, leaks and dents don't carry over)
@@ -1173,7 +1181,8 @@ function enterCode(code) {
     setCrashBox(tankMode);
     if (!tankMode && cameraMode === 'turret') { cameraMode = 'bonnet'; applyCamera(); }
     engineSound.setHeavy?.(tankMode);   // its own engine and tracks
-    carModel.car.visible = !tankMode;
+    carModel.car.visible = !tankMode && carKind === 'caterham';
+    f1.group.visible = !tankMode && carKind === 'f1';
     renderer.domElement.style.cursor = tankMode ? 'crosshair' : '';
     tank.group.visible = tankMode;
     showToast(tankMode ? 'FV101 SCORPION' : 'BACK IN THE CAR');
@@ -1217,7 +1226,24 @@ function openVehicleMenu() {
   if (HIDDEN_VEHICLES.some((v) => v.active())) {
     vehicleMenu.appendChild(menuButton('Back to the car', () => { const v = HIDDEN_VEHICLES.find((h) => h.active()); if (v) enterCode(v.code); vehicleMenu.style.display = 'none'; }, true));
   }
+  // ENGINE SWAP: any engine in the car you're in
+  if (!tankMode) {
+    const h = document.createElement('div');
+    h.style.cssText = 'font-size:12px;letter-spacing:0.12em;color:#9ea48c;margin:8px 0 2px';
+    h.textContent = 'ENGINE SWAP';
+    vehicleMenu.appendChild(h);
+    for (const [key, e] of Object.entries(ENGINES)) {
+      const stock = key === STOCK_ENGINE[carKind];
+      vehicleMenu.appendChild(menuButton(`${e.name}${stock ? ' (stock)' : ''}${key === engineKey ? '  ✓' : ''}`, () => {
+        setCar(carKind, key);
+        showToast(e.name.toUpperCase());
+        vehicleMenu.style.display = 'none';
+      }, key !== engineKey));
+    }
+  }
   vehicleMenu.appendChild(menuButton('Close', () => { vehicleMenu.style.display = 'none'; }, true));
+  vehicleMenu.style.maxHeight = '86vh';
+  vehicleMenu.style.overflowY = 'auto';
   vehicleMenu.style.display = 'flex';
 }
 // Each kind of tyre has its own look: F1-style coloured bands, tread
@@ -2905,10 +2931,11 @@ function updateCamera(dt) {
       tank.driverView(camera.position, camera.quaternion);
       camera.quaternion.multiply(lookTurn.setFromEuler(lookEuler.set(look.pitch, look.yaw, 0)));
     } else {
-      camera.position.copy(tankMode ? TANK_VIEWS[cameraMode] : mount.spot);
+      const f1View = !tankMode && carKind === 'f1' ? f1.views[cameraMode] : null;
+      camera.position.copy(tankMode ? TANK_VIEWS[cameraMode] : f1View ? f1View.spot : mount.spot);
       carModel.car.localToWorld(camera.position);
       carModel.car.getWorldQuaternion(carTurn);
-      lookEuler.set((tankMode && cameraMode === 'bonnet' ? -0.05 : mount.pitch) + look.pitch, Math.PI + look.yaw, 0);   // the camera looks along -z; the car faces +z
+      lookEuler.set((tankMode && cameraMode === 'bonnet' ? -0.05 : f1View ? f1View.pitch : mount.pitch) + look.pitch, Math.PI + look.yaw, 0);   // the camera looks along -z; the car faces +z
       camera.quaternion.copy(carTurn).multiply(lookTurn.setFromEuler(lookEuler));
     }
   } else {
@@ -2947,7 +2974,7 @@ function applyCamera() {
   camera.fov = CAMERA_FOV[cameraMode];
   camera.near = ON_CAR[cameraMode]?.near ?? (cameraMode === 'turret' ? 0.02 : 0.1);
   cockpit.setFirstPerson(cameraMode === 'cockpit');
-  hud.setInCar?.(cameraMode === 'cockpit');
+  hud.setInCar?.(cameraMode === 'cockpit' && carKind === 'caterham');
   camera.updateProjectionMatrix();
   fitViewport();
   controls.enabled = cameraMode === 'showroom';
@@ -3001,6 +3028,48 @@ function repairAll() {
   mudClumps.clear();
   clearDents();
 }
+// THE CARS: the Caterham and the TT-88 (f1.js), and the engine in it (the
+// engine swap is in the secret menu). Switching repairs the car and keeps
+// it where it is.
+const f1 = buildF1();
+scene.add(f1.group);
+let carKind = 'caterham', engineKey = STOCK_ENGINE.caterham;
+function setCar(kind, engine) {
+  carKind = kind === 'f1' ? 'f1' : 'caterham';
+  engineKey = ENGINES[engine] ? engine : STOCK_ENGINE[carKind];
+  physics.spec = withEngine(carKind === 'f1' ? F1_CAR : CATERHAM_CAR, engineKey);
+  const x = physics.x, z = physics.z, h = physics.heading;
+  repairAll();
+  physics.x = x; physics.z = z; physics.heading = h;
+  engineSound.setSpec?.(physics.spec);
+  carModel.car.visible = !tankMode && carKind === 'caterham';
+  f1.group.visible = !tankMode && carKind === 'f1';
+  try { localStorage.setItem('tracktester-car', JSON.stringify({ kind: carKind, engine: engineKey })); } catch (e) { /* storage blocked */ }
+  if (carPicker) carPicker.value = carKind;
+  hud.setInCar?.(cameraMode === 'cockpit' && carKind === 'caterham');
+}
+// the car picker in the side panel
+let carPicker = null;
+{
+  const panel = document.querySelector('#sidepanel .sp-panel');
+  if (panel) {
+    const heading = document.createElement('div');
+    heading.className = 'sp-heading';
+    heading.textContent = 'Car';
+    const box = document.createElement('div');
+    box.className = 'tyre-box';
+    box.innerHTML = '<select id="car-pick"><option value="caterham">Caterham Seven (2.0, 210 bhp)</option><option value="f1">TT-88 (1988-style turbo F1)</option></select>';
+    panel.insertBefore(box, panel.firstChild);
+    panel.insertBefore(heading, box);
+    carPicker = box.querySelector('select');
+    carPicker.addEventListener('change', () => { setCar(carPicker.value, STOCK_ENGINE[carPicker.value]); carPicker.blur(); showToast(carKind === 'f1' ? 'TT-88' : 'CATERHAM SEVEN'); });
+  }
+}
+try {
+  const saved = JSON.parse(localStorage.getItem('tracktester-car') || 'null');
+  if (saved && (saved.kind !== 'caterham' || saved.engine !== STOCK_ENGINE.caterham)) { setCar(saved.kind, saved.engine); placeAtStart(); }
+} catch (e) { /* storage blocked */ }
+
 // RETURN TO TRACK (B, or the phone menu): back onto the track where you
 // are, facing the right way, stopped (no repairs)
 let backToTrack = false;
@@ -3149,6 +3218,7 @@ renderer.setAnimationLoop(() => {
   // Gear change sounds
   while (physics.events.length) {
     const e = physics.events.shift();
+    if (e.type === 'pop') engineSound.playPop?.(e.size);
     if (e.type === 'shift') {
       engineSound.playShift(physics.transmission === 'cvt' ? 'cvt' : e.style);
       cockpit.onShift(physics.transmission, e.direction);
@@ -3200,6 +3270,12 @@ renderer.setAnimationLoop(() => {
     carModel.car.rotation.set(bodyLean.pitch + slopeView.pitch, physics.heading, bodyLean.roll + slopeView.roll, 'YXZ');
   }
   updateWheels(physics.steer, physics.wheelSpin);
+  if (f1.group.visible) {
+    f1.group.position.copy(carModel.car.position);
+    f1.group.quaternion.copy(carModel.car.quaternion);
+    f1.setFirstPerson(cameraMode === 'cockpit');
+    f1.update(dt, { steer: physics.steer, speed: physics.vx, rpm: physics.rpm, boost: physics.boost || 0, braking: input.brake > 0.05, rain: rain.intensity, lights: lightsMode > 0 });
+  }
   // The tank (secret): sits where the car is, each track running at the
   // speed of its own side
   if (tankMode) {
@@ -3296,7 +3372,7 @@ renderer.setAnimationLoop(() => {
   engineSound.setRain?.(rain.intensity, rain.wetness, carSpeed, puddleUnder);
   engineSound.setMud?.(mudUnder, carSpeed);
 
-  hud.setRevScale?.(tankMode ? 2700 : CATERHAM.redline);   // (the tank's diesel is governed at 2,700)
+  hud.setRevScale?.(tankMode ? 2700 : physics.spec.redline);   // (the tank's diesel is governed at 2,700)
   hud.setTyreWear?.(!tankMode);                            // (no tyres on a tank)
   hud.update({
     sky: { clock: sky.clock, hours: sky.hours, speed: sky.speed, locked: sky.locked,
