@@ -55,7 +55,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 31;
+const BUILD = 32;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -1062,6 +1062,23 @@ window.addEventListener('mousemove', (e) => {
   mouseAim.moved = true;
 });
 const aimRayEnd = new THREE.Vector3();
+// The pointer becomes a crosshair in the tank, and a ring shows where the
+// gun is actually pointing (it catches up with the crosshair as the turret turns)
+const gunRing = document.createElement('div');
+gunRing.style.cssText = 'position:fixed;width:34px;height:34px;margin:-17px 0 0 -17px;border:2px solid rgba(235,240,215,0.85);border-radius:50%;box-shadow:0 0 0 1px rgba(0,0,0,0.35);pointer-events:none;display:none;z-index:15';
+document.body.appendChild(gunRing);
+const gunPos = new THREE.Vector3(), gunDir = new THREE.Vector3(), gunScreen = new THREE.Vector3();
+function placeGunRing() {
+  if (!tankMode || isMobile) { gunRing.style.display = 'none'; return; }
+  tank.muzzle(gunPos, gunDir);
+  // where the gun's line meets the ground (or 400 m out)
+  let dist = gunDir.y < -0.005 ? Math.min(400, (tankPhys.y - gunPos.y) / gunDir.y) : 400;
+  gunScreen.copy(gunPos).addScaledVector(gunDir, dist).project(camera);
+  if (gunScreen.z > 1 || Math.abs(gunScreen.x) > 1.2 || Math.abs(gunScreen.y) > 1.2) { gunRing.style.display = 'none'; return; }
+  gunRing.style.display = 'block';
+  gunRing.style.left = ((gunScreen.x + 1) / 2 * window.innerWidth).toFixed(1) + 'px';
+  gunRing.style.top = ((1 - gunScreen.y) / 2 * window.innerHeight).toFixed(1) + 'px';
+}
 function aimPoint() {
   const from = camera.position;
   const dir = aimRayEnd.set(mouseAim.x, mouseAim.y, 0.5).unproject(camera).sub(from).normalize();
@@ -1102,6 +1119,7 @@ window.addEventListener('keydown', (e) => {
     setCrashBox(tankMode);
     engineSound.setHeavy?.(tankMode);   // its own engine and tracks
     carModel.car.visible = !tankMode;
+    renderer.domElement.style.cursor = tankMode ? 'crosshair' : '';
     tank.group.visible = tankMode;
     showToast(tankMode ? 'FV101 SCORPION' : 'BACK IN THE CAR');
   }
@@ -2360,6 +2378,13 @@ const ON_CAR = {
   tcam: { spot: new THREE.Vector3(0, 1.2, -0.75), pitch: -0.08, near: 0.05 },
 };
 let cameraMode = 'chase';
+// The tank's own on-board views (the roof machine gun is in the way of the
+// commander's hatch): the driver's hatch at the front left, and high up
+// behind the turret (the gunner's sight is worked out from the gun itself)
+const TANK_VIEWS = {
+  bonnet: new THREE.Vector3(0.48, 1.52, 0.86),
+  tcam: new THREE.Vector3(0, 2.75, -1.55),
+};
 const carPos = new THREE.Vector3();
 const lastCarPos = new THREE.Vector3();
 const forward = new THREE.Vector3();
@@ -2415,11 +2440,16 @@ function updateCamera(dt) {
     }
     carModel.car.updateMatrixWorld();
     const mount = ON_CAR[cameraMode];
-    camera.position.copy(tankMode ? TANK_EYE : mount.spot);   // (in the tank: looking out of the commander's hatch)
-    carModel.car.localToWorld(camera.position);
-    carModel.car.getWorldQuaternion(carTurn);
-    lookEuler.set(mount.pitch + look.pitch, Math.PI + look.yaw, 0);   // the camera looks along -z; the car faces +z
-    camera.quaternion.copy(carTurn).multiply(lookTurn.setFromEuler(lookEuler));
+    if (tankMode && cameraMode === 'cockpit') {
+      // the tank's gunner's sight: beside the gun, turning and lifting with it
+      tank.sight(camera.position, camera.quaternion);
+    } else {
+      camera.position.copy(tankMode ? TANK_VIEWS[cameraMode] : mount.spot);
+      carModel.car.localToWorld(camera.position);
+      carModel.car.getWorldQuaternion(carTurn);
+      lookEuler.set(mount.pitch + look.pitch, Math.PI + look.yaw, 0);   // the camera looks along -z; the car faces +z
+      camera.quaternion.copy(carTurn).multiply(lookTurn.setFromEuler(lookEuler));
+    }
   } else {
     // Showroom: orbit around the car and move along with it, never below the ground
     camera.position.add(carPos).sub(lastCarPos);
@@ -2606,7 +2636,7 @@ renderer.setAnimationLoop(() => {
   if (tankMode) {
     // the tank sits on the ground, tilted with it (the hidden car follows, for the effects)
     carModel.car.position.set(tankPhys.x, tankPhys.y, tankPhys.z);
-    carModel.car.rotation.set(tankPhys.pitch, tankPhys.heading, tankPhys.roll, 'YXZ');
+    carModel.car.rotation.set(tankPhys.pitch + tankPhys.rock.pitch, tankPhys.heading, tankPhys.roll + tankPhys.rock.roll, 'YXZ');
   } else if (physics.air) {
     // flying, tipping or upside down: drawn exactly as the free 3D body is
     const P = physics.pose;
@@ -2737,6 +2767,7 @@ renderer.setAnimationLoop(() => {
   touchUI?.update({ transmission: physics.transmission, gearLabel: physics.gearLabel, muted: engineSound.muted, lights: lightsSetting, racingLine: racing ? racingLineOn : null });
 
   if (cameraMode === 'cockpit') cockpit.renderMirrors(renderer, scene);
+  placeGunRing();
   renderer.render(scene, camera);
   godRays.render(sky.rays);
 });
