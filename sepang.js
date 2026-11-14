@@ -1,888 +1,879 @@
 // =====================================================================
-// SCENERY: buildings, walls, barriers and fences around the test area.
-// For now they're for looks and for sound: buildings and walls reflect
-// the car's sound back as echoes. You can drive through them; crashes
-// (with crush physics for both the car and the barriers) come later.
-// Everything repeated (tyres, posts, wall blocks, rails) is drawn with
-// instancing, so each kind of piece is a single draw call.
+// SEPANG: a flat mock-up of Sepang International Circuit (Malaysia),
+// 5.5 km, 15 turns, driven clockwise. No hills: everything is at ground
+// level. Built around the real track outline:
+//   - the track: tarmac, white edge lines, start/finish line and grid boxes
+//   - kerbs on every corner (red and white), yellow sausage kerbs and
+//     orange bollards at the tightest apexes, green grass-protection mesh
+//   - run-off outside the corners: gravel traps at some, painted tarmac at
+//     others, then tyre walls and Armco behind them
+//   - the pit lane, pit wall and catch fence, the pit garages, and the big
+//     main grandstand across the start straight
+// Everything you can hit is in the same hit-box list as the test area
+// (scenery.js), and surfaceAt(x, z) says what's underfoot.
 //
-// buildScenery(scene) returns the echo surfaces: [{ min, max, reflect }]
-//   reflect: how much sound bounces back (1 = solid building, 0.1 = mesh fence)
-// and, on that same list:
-//   .colliders: what the car can hit, as boxes seen from above
-//     { minX, maxX, minZ, maxZ, kind, hit(point, normal, speed) }
-//     kind: 'building' (solid), 'concrete' (cracks), 'armco' (dents),
-//           'tyres' (squash back), 'fence' (bulges back)
-//   .roofs: where rain can't fall: { minX, maxX, minZ, maxZ, height }
+// The track outline (the OUTLINE points below) comes from the f1-circuits
+// project by Tomislav Bacinger, used under its MIT licence:
+//   Copyright (c) 2019-2025 Tomislav Bacinger
+//   Permission is hereby granted, free of charge, to any person obtaining a
+//   copy of this software and associated documentation files (the
+//   "Software"), to deal in the Software without restriction, including
+//   without limitation the rights to use, copy, modify, merge, publish,
+//   distribute, sublicense, and/or sell copies of the Software, and to
+//   permit persons to whom the Software is furnished to do so, subject to
+//   the following conditions: The above copyright notice and this
+//   permission notice shall be included in all copies or substantial
+//   portions of the Software.
+//   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+//   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+//   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+//   IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+//   CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+//   TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+//   SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+// (Converted from map coordinates to metres, turned so the start straight
+// runs along -z, with the start/finish line at (0, 0).)
 // =====================================================================
 
 import * as THREE from 'three';
-// (a hit redraws a barrier where it is, so it has to sit on the hills too)
+import {
+  startScenery, finishScenery, buildGarages, buildConcreteWalls, buildArmco, buildTyreWalls, buildFences,
+  addCollider, addRoof, canvasTexture, echoBox,
+} from './scenery.js';
 import { groundAt } from './ground.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 6;
+export const BUILD = 10;
 
-const m4 = new THREE.Matrix4();
-const q = new THREE.Quaternion();
-const pos = new THREE.Vector3();
-const scl = new THREE.Vector3();
-const UP = new THREE.Vector3(0, 1, 0);
+// [x, z] in metres, in driving order (clockwise from the start/finish line)
+const OUTLINE = [[0.0,0.0],[-1.1,-301.1],[1.1,-314.8],[8.2,-326.7],[17.8,-334.5],[30.3,-338.2],[44.0,-337.7],[57.9,-331.6],[67.8,-319.1],[71.6,-303.0],[66.5,-284.9],[51.7,-251.7],[52.7,-240.1],[61.4,-229.8],[72.7,-225.7],[88.2,-227.7],[104.4,-236.7],[134.6,-257.7],[152.7,-266.2],[173.7,-271.1],[194.5,-272.6],[217.9,-270.7],[275.0,-260.6],[301.3,-249.4],[327.7,-232.9],[344.4,-217.1],[362.6,-193.4],[376.0,-169.0],[383.0,-143.9],[416.7,-3.4],[448.9,102.3],[473.0,173.2],[489.5,219.0],[494.5,234.8],[493.2,246.2],[486.2,255.5],[473.6,258.1],[366.4,268.9],[311.1,276.3],[243.7,287.6],[217.3,297.6],[198.1,309.6],[178.0,331.2],[164.1,353.1],[156.7,375.4],[154.0,397.6],[155.8,423.3],[163.8,450.0],[175.5,469.4],[211.0,508.3],[220.2,526.8],[227.5,555.2],[226.4,578.9],[221.5,601.9],[212.3,620.2],[197.7,636.0],[-46.0,819.4],[-57.2,819.6],[-69.5,814.0],[-143.2,773.8],[-149.6,762.9],[-151.5,750.5],[-147.8,566.0],[-154.4,391.9],[-162.4,296.1],[-169.0,286.6],[-180.8,282.8],[-194.9,289.7],[-237.2,354.2],[-253.1,367.8],[-275.7,376.4],[-298.8,379.9],[-331.2,376.5],[-358.1,370.0],[-384.2,361.8],[-416.9,343.1],[-449.7,316.3],[-456.9,302.5],[-458.0,289.7],[-454.3,275.6],[-446.0,264.8],[-257.0,67.5],[-250.5,53.2],[-247.9,34.3],[-251.5,13.2],[-284.6,-66.7],[-289.4,-87.7],[-290.8,-112.4],[-288.9,-133.7],[-278.6,-173.1],[-265.4,-199.4],[-250.1,-215.9],[-217.4,-237.1],[-193.6,-243.6],[-179.4,-243.8],[-164.3,-232.6],[-157.2,-210.8],[-69.8,636.8],[-60.2,649.6],[-40.9,660.0],[-23.8,656.8],[-6.9,642.9],[-1.1,618.2]];
 
-// A repeating pattern painted on a canvas, used as a texture
-function canvasTexture(w, h, paint, repeatX = 1, repeatY = 1) {
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  paint(canvas.getContext('2d'), w, h);
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(repeatX, repeatY);
-  tex.anisotropy = 4;
-  return tex;
-}
+const WIDTH = 16;            // track width (m); the start straight is wider
+const STRAIGHT_WIDTH = 22;
+const KERB = 1.3;            // kerb width
+const STEP = 2;              // metres between points along the smoothed centre line
 
-// Lay pieces along a straight line from (ax, az) to (bx, bz), every `step` metres
-function along(ax, az, bx, bz, step) {
-  const len = Math.hypot(bx - ax, bz - az);
-  const n = Math.max(1, Math.round(len / step));
-  const angle = Math.atan2(bx - ax, bz - az);
-  const out = [];
-  for (let i = 0; i <= n; i++) {
-    const t = i / n;
-    out.push({ x: ax + (bx - ax) * t, z: az + (bz - az) * t, angle, len: len / n });
+// ---------------------------------------------------------------------
+// The centre line: the outline smoothed into a point every 2 m, each with
+// its direction, its left side, and how sharply the track turns there
+// ---------------------------------------------------------------------
+function centreLine() {
+  const n = OUTLINE.length;
+  const P = (i) => OUTLINE[((i % n) + n) % n];
+  const raw = [];
+  for (let i = 0; i < n; i++) {
+    // A smooth curve through each pair of outline points ("centripetal"
+    // Catmull-Rom: it doesn't overshoot or loop where long straights meet
+    // tight corners)
+    const [p0, p1, p2, p3] = [P(i - 1), P(i), P(i + 1), P(i + 2)];
+    const len = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+    const steps = Math.max(1, Math.round(len / STEP));
+    const knot = (a, b) => Math.sqrt(Math.max(1e-6, Math.hypot(b[0] - a[0], b[1] - a[1])));
+    const t0 = 0, t1 = t0 + knot(p0, p1), t2 = t1 + knot(p1, p2), t3 = t2 + knot(p2, p3);
+    for (let k = 0; k < steps; k++) {
+      const t = t1 + (t2 - t1) * (k / steps);
+      const pt = [0, 1].map((c) => {
+        const A1 = ((t1 - t) * p0[c] + (t - t0) * p1[c]) / (t1 - t0);
+        const A2 = ((t2 - t) * p1[c] + (t - t1) * p2[c]) / (t2 - t1);
+        const A3 = ((t3 - t) * p2[c] + (t - t2) * p3[c]) / (t3 - t2);
+        const B1 = ((t2 - t) * A1 + (t - t0) * A2) / (t2 - t0);
+        const B2 = ((t3 - t) * A2 + (t - t1) * A3) / (t3 - t1);
+        return ((t2 - t) * B1 + (t - t1) * B2) / (t2 - t1);
+      });
+      raw.push({ x: pt[0], z: pt[1] });
+    }
   }
-  return out;
+  const m = raw.length;
+  let s = 0;
+  raw.forEach((p, i) => {
+    const a = raw[(i - 1 + m) % m], b = raw[(i + 1) % m];
+    const dx = b.x - a.x, dz = b.z - a.z, l = Math.hypot(dx, dz) || 1;
+    p.ux = dx / l; p.uz = dz / l;          // along
+    p.lx = p.uz; p.lz = -p.ux;             // to the left
+    p.heading = Math.atan2(p.ux, p.uz);
+    if (i > 0) s += Math.hypot(p.x - raw[i - 1].x, p.z - raw[i - 1].z);
+    p.s = s;
+  });
+  // How sharply it turns (1 / radius; + = to the left), smoothed over ~20 m
+  const bend = raw.map((p, i) => {
+    const a = raw[(i - 3 + m) % m], b = raw[(i + 3) % m];
+    let d = b.heading - a.heading;
+    while (d > Math.PI) d -= 2 * Math.PI;
+    while (d < -Math.PI) d += 2 * Math.PI;
+    return d / Math.max(1, Math.hypot(b.x - a.x, b.z - a.z));
+  });
+  raw.forEach((p, i) => {
+    let sum = 0;
+    for (let k = -5; k <= 5; k++) sum += bend[(i + k + m) % m];
+    p.curve = sum / 11;
+    // the start straight (from the last turn to turn 1) is wider
+    p.width = Math.abs(p.x) < 30 && p.z > -270 && p.z < 300 ? STRAIGHT_WIDTH : WIDTH;
+  });
+  // Ease the width change in and out
+  const w = raw.map((p) => p.width);
+  raw.forEach((p, i) => {
+    let sum = 0;
+    for (let k = -10; k <= 10; k++) sum += w[(i + k + m) % m];
+    p.width = sum / 21;
+  });
+  return raw;
 }
 
-// Everything the car can hit, and everything with a roof (filled in as the
-// scenery is built)
-let COLLIDERS = [];
-let ROOFS = [];
-function addCollider(minX, maxX, minZ, maxZ, kind, extra = {}) {
-  const c = { minX, maxX, minZ, maxZ, kind, ...extra };
-  COLLIDERS.push(c);
-  return c;
+// Corners: stretches where the track turns tighter than a 400 m radius
+// (widened a little either side), with which way they turn
+function findCorners(line) {
+  const m = line.length;
+  const inCorner = line.map((p) => Math.abs(p.curve) > 1 / 400);
+  const corners = [];
+  let i = 0;
+  // start from a point on a straight so no corner wraps round the start
+  const start = inCorner.findIndex((c) => !c);
+  for (let k = 0; k < m; k++) {
+    const idx = (start + k) % m;
+    if (inCorner[idx] && (!corners.length || corners[corners.length - 1].open === false || corners[corners.length - 1].end !== (idx - 1 + m) % m)) {
+      corners.push({ startI: idx, end: idx, open: true });
+    } else if (inCorner[idx]) {
+      corners[corners.length - 1].end = idx;
+    } else if (corners.length) corners[corners.length - 1].open = false;
+  }
+  return corners.map((c) => {
+    const pad = 6;
+    const a = c.startI - pad, b = (c.end < c.startI ? c.end + m : c.end) + pad;
+    let sum = 0, peak = 0, apex = c.startI;
+    for (let k = c.startI; k <= (c.end < c.startI ? c.end + m : c.end); k++) {
+      const v = line[k % m].curve;
+      sum += v;
+      if (Math.abs(v) > Math.abs(peak)) { peak = v; apex = k % m; }
+    }
+    return { a, b, side: Math.sign(sum), radius: 1 / Math.abs(peak), apex };
+  }).filter((c) => c.b - c.a > 14);
 }
-// The box (seen from above) around a straight piece centred at (x, z),
-// running along `angle`, `len` long and `thick` across
-function pieceBox(c, x, z, angle, len, thick) {
-  const ax = Math.sin(angle) * len / 2, az = Math.cos(angle) * len / 2;      // along
-  const bx = Math.cos(angle) * thick / 2, bz = -Math.sin(angle) * thick / 2; // across
-  const ex = Math.abs(ax) + Math.abs(bx), ez = Math.abs(az) + Math.abs(bz);
-  c.minX = x - ex; c.maxX = x + ex; c.minZ = z - ez; c.maxZ = z + ez;
-  return c;
-}
-const across = (angle) => ({ x: Math.cos(angle), z: -Math.sin(angle) });   // sideways to a run
-// How far along a run a point is, and from the piece at (x, z)
-const alongDist = (p, x, z, angle) => Math.abs((p.x - x) * Math.sin(angle) + (p.z - z) * Math.cos(angle));
 
-const box = (minX, minY, minZ, maxX, maxY, maxZ, reflect) => ({
-  min: new THREE.Vector3(minX, minY, minZ),
-  max: new THREE.Vector3(maxX, maxY, maxZ),
-  reflect,
-});
+// A strip alongside the centre line from point i0 to i1 (may wrap), from
+// lateral offset o0 to o1 (+ = left), at height y. uvScale: metres per texture repeat along.
+function strip(line, i0, i1, o0, o1, y, uvAlong = 1, uvAcross = 1) {
+  const m = line.length;
+  const at = (i) => line[((i % m) + m) % m];
+  const offs = (p) => [typeof o0 === 'function' ? o0(p) : o0, typeof o1 === 'function' ? o1(p) : o1];
+  // Wide strips (run-offs, gravel traps) get a row of points every ~2.5 m
+  // across, so they can follow the ground's shape over the hills instead of
+  // cutting straight across it (and letting the grass show through)
+  let widest = 0;
+  for (let i = i0; i <= i1; i++) { const [a, b] = offs(at(i)); widest = Math.max(widest, Math.abs(b - a)); }
+  const n = Math.max(1, Math.ceil(widest / 2.5));
+  const pos = [], uv = [], index = [];
+  let k = 0;
+  for (let i = i0; i <= i1; i++, k++) {
+    const p = at(i);
+    const [a, b] = offs(p);
+    const along = (i - i0) * STEP / uvAlong;
+    for (let j = 0; j <= n; j++) {
+      const o = a + (b - a) * (j / n);
+      pos.push(p.x + p.lx * o, y, p.z + p.lz * o);
+      uv.push(along, (Math.abs(b - a) * (j / n)) / uvAcross);
+    }
+    if (i < i1) {
+      for (let j = 0; j < n; j++) {
+        const v = k * (n + 1) + j, w = v + n + 1;
+        // (facing up whichever side is which)
+        if (b > a) index.push(v, w, v + 1, v + 1, w, w + 1);
+        else index.push(v, v + 1, w, v + 1, w + 1, w);
+      }
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.setIndex(index);
+  geo.computeVertexNormals();
+  return geo;
+}
 
 // ---------------------------------------------------------------------
-// BUILDINGS
+// TEXTURES
 // ---------------------------------------------------------------------
-
-// A row of pit garages, built along the z axis with the open fronts facing
-// -x (towards the start straight). Each bay has its roller door rolled up
-// and is fitted out like a working garage: racking along the back wall
-// with parts boxes and spare tyres, a red tool chest and a tool board on
-// the wall, stacks of wheels, a trolley jack and axle stands, a parts
-// trolley, an oil drum, and strip lights in the ceiling.
-// Everything repeated is instanced, so the whole row is a few dozen draws.
-
-// Draw one shape many times: list of [x, y, z, turnY, sx, sy, sz] (and an
-// optional colour per copy)
-function many(scene, geo, mat, list, colours) {
-  const mesh = new THREE.InstancedMesh(geo, mat, Math.max(1, list.length));
-  list.forEach(([x, y, z, ry = 0, sx = 1, sy = 1, sz = 1], i) => {
-    q.setFromAxisAngle(UP, ry);
-    mesh.setMatrixAt(i, m4.compose(pos.set(x, y, z), q, scl.set(sx, sy, sz)));
-    if (colours) mesh.setColorAt(i, new THREE.Color(colours[i % colours.length]));
+function asphaltTexture() {
+  return canvasTexture(256, 256, (g, w, h) => {
+    g.fillStyle = '#45484b';
+    g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 9000; i++) {              // the stones in the asphalt
+      const v = 40 + Math.random() * 60;
+      g.fillStyle = `rgba(${v},${v + 2},${v + 4},${0.25 + Math.random() * 0.35})`;
+      g.fillRect(Math.random() * w, Math.random() * h, 1.5, 1.5);
+    }
   });
-  mesh.count = list.length;
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  scene.add(mesh);
-  return mesh;
+}
+function kerbTexture() {
+  // red and white blocks, 2 m each, with a shaded raised edge
+  return canvasTexture(128, 32, (g, w, h) => {
+    g.fillStyle = '#d42a24'; g.fillRect(0, 0, w / 2, h);
+    g.fillStyle = '#f2f0ea'; g.fillRect(w / 2, 0, w / 2, h);
+    g.fillStyle = 'rgba(0,0,0,0.18)'; g.fillRect(0, h - 4, w, 4);
+  });
+}
+function gravelTexture() {
+  return canvasTexture(256, 256, (g, w, h) => {
+    g.fillStyle = '#b39a70';
+    g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 7000; i++) {
+      const r = 0.6 + Math.random() * 1.6;
+      const v = Math.random();
+      g.fillStyle = v < 0.3 ? 'rgba(120,98,68,0.7)' : v < 0.6 ? 'rgba(212,194,158,0.7)' : 'rgba(150,130,96,0.6)';
+      g.beginPath(); g.arc(Math.random() * w, Math.random() * h, r, 0, Math.PI * 2); g.fill();
+    }
+  });
+}
+function grassTexture() {
+  return canvasTexture(256, 256, (g, w, h) => {
+    g.fillStyle = '#4c7a2f';
+    g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 9000; i++) {
+      const v = Math.random();
+      g.fillStyle = v < 0.5 ? 'rgba(70,112,42,0.6)' : 'rgba(96,140,58,0.5)';
+      g.fillRect(Math.random() * w, Math.random() * h, 1, 3);
+    }
+    // mowing stripes
+    g.fillStyle = 'rgba(255,255,255,0.035)';
+    g.fillRect(0, 0, w / 2, h);
+  });
+}
+function netTexture() {
+  // green plastic grass-protection mesh: a grid of thin green strands
+  return canvasTexture(64, 64, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    g.strokeStyle = 'rgba(40,150,70,0.9)';
+    g.lineWidth = 3;
+    for (let k = 0; k <= w; k += 16) {
+      g.beginPath(); g.moveTo(k, 0); g.lineTo(k, h); g.stroke();
+      g.beginPath(); g.moveTo(0, k); g.lineTo(w, k); g.stroke();
+    }
+  });
+}
+function runoffTexture() {
+  // painted run-off: grey tarmac with a broad green band and a blue one
+  return canvasTexture(64, 256, (g, w, h) => {
+    g.fillStyle = '#505457'; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#2f7d45'; g.fillRect(0, 0, w, h * 0.45);
+    g.fillStyle = '#2b5fa8'; g.fillRect(0, h * 0.45, w, h * 0.12);
+  });
 }
 
-function buildGarages(scene, x, z0, z1, depth = 10, height = 5) {
-  const len = z1 - z0;
-  const bays = Math.floor(len / 6);
-  const bayLen = len / bays;
-  const OPEN_W = 4.4, OPEN_H = 3.6;            // each doorway
-  const back = x + depth;                      // the back wall
-  const wallMat = new THREE.MeshStandardMaterial({
-    map: canvasTexture(256, 256, (g, w, h) => {
-      g.fillStyle = '#d9d6cf';
-      g.fillRect(0, 0, w, h);
-      g.fillStyle = 'rgba(0,0,0,0.06)';          // panel joints
-      for (let y = 0; y < h; y += 64) g.fillRect(0, y, w, 2);
-    }, 2, 1),
-    roughness: 0.85,
-  });
-  const innerMat = new THREE.MeshStandardMaterial({ color: 0xe9e8e4, roughness: 0.9 });   // white painted inside
-  const solid = (w, h, d, cx, cy, cz, mat = wallMat) => {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-    m.position.set(cx, cy, cz);
-    m.castShadow = m.receiveShadow = true;
-    scene.add(m);
-    // anything standing on the ground is solid to the car
-    if (cy - h / 2 < 0.5) addCollider(cx - w / 2, cx + w / 2, cz - d / 2, cz + d / 2, 'building');
-    return m;
+// ---------------------------------------------------------------------
+// BUILD
+// ---------------------------------------------------------------------
+// ---------------------------------------------------------------------
+// ELEVATION: Sepang isn't flat. There's 22 m between its lowest point
+// (round turn 3) and its highest (turn 11). Heights along the lap, in
+// metres, by distance from the line's start (just after the finish line):
+// down through the turn 1-2 hairpin and on to turn 3, rising through the
+// apex of turn 4, up and down before turn 5, climbing gently through 7
+// and 8, down the straight to turn 9 (uphill, with a crest at the apex),
+// on up past turn 10 to the top at turn 11, dropping through the 12-13
+// chicane, then gently down the back straight and the start straight.
+// (Shaped from circuit guides; the exact survey heights aren't public.)
+// ---------------------------------------------------------------------
+const ELEVATION = [
+  [0, 6], [250, 6.3], [386, 6.2], [482, 3.2], [600, 1], [720, 0], [865, 1.8], [1100, 3.2],
+  [1304, 5.2], [1450, 8.6], [1601, 7], [1780, 7.4], [1956, 8.2], [2286, 9.6], [2395, 10.6],
+  [2650, 8.2], [2840, 9.5], [2889, 10.2], [2950, 9.8], [3005, 12.4], [3130, 17.2], [3262, 22],
+  [3400, 21.2], [3561, 18.8], [3700, 15], [3941, 12], [4200, 10.4], [4500, 8.8], [4872, 7.2],
+  [5200, 6.4],
+];
+function elevationAt(s, L) {
+  s = ((s % L) + L) % L;
+  const E = ELEVATION, n = E.length;
+  let i = n - 1;
+  while (i > 0 && E[i][0] > s) i--;
+  const P = (k) => { const kk = ((k % n) + n) % n; return [E[kk][0] + Math.floor(k / n) * L, E[kk][1]]; };
+  const [s0, y0] = P(i - 1), [s1, y1] = P(i), [s2, y2] = P(i + 1), [s3, y3] = P(i + 2);
+  const t = (s - s1) / Math.max(1e-6, s2 - s1);
+  // a smooth curve through the points (Catmull-Rom, scaled for uneven gaps)
+  const m1 = ((y2 - y0) / (s2 - s0)) * (s2 - s1), m2 = ((y3 - y1) / (s3 - s1)) * (s2 - s1);
+  const t2 = t * t, t3 = t2 * t;
+  return (2 * t3 - 3 * t2 + 1) * y1 + (t3 - 2 * t2 + t) * m1 + (-2 * t3 + 3 * t2) * y2 + (t3 - t2) * m2;
+}
+
+export function buildSepang(scene, { isMobile = false, gravelMaps = null } = {}) {
+  startScenery();
+  const line = centreLine();
+  const m = line.length;
+  const corners = findCorners(line);
+  // Their official numbers: the long turn 3 shows up as two bends, and the
+  // gentle turn 13 is too open to count as one here
+  const OFFICIAL = [1, 2, 3, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15];
+  if (corners.length === OFFICIAL.length) corners.forEach((c, i) => { c.number = OFFICIAL[i]; });
+  const echoes = [];
+
+  // --- Surfaces, as a grid of 1 m squares (for the physics and the effects) ---
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (const p of line) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z); }
+  minX -= 80; maxX += 80; minZ -= 80; maxZ += 80;
+  const GW = Math.ceil(maxX - minX), GH = Math.ceil(maxZ - minZ);
+  const terrain = buildTerrain(line, minX, maxX, minZ, maxZ, isMobile ? 6 : 4);
+  const grid = new Uint8Array(GW * GH);        // 0 grass, 1 tarmac, 2 kerb, 3 gravel
+  const trackOnly = new Uint8Array(GW * GH);   // just the track itself (to keep run-offs and barriers off other parts of it)
+  const cell = (x, z) => {
+    const gx = Math.floor(x - minX), gz = Math.floor(z - minZ);
+    return gx < 0 || gz < 0 || gx >= GW || gz >= GH ? -1 : gz * GW + gx;
+  };
+  const paint = (x, z, type) => {
+    const gx = Math.floor(x - minX), gz = Math.floor(z - minZ);
+    if (gx < 0 || gz < 0 || gx >= GW || gz >= GH) return;
+    const k = gz * GW + gx;
+    if (type === 1 || grid[k] === 0 || (type === 2 && grid[k] === 3)) grid[k] = type;   // tarmac wins
+  };
+  // Paints a band beside the track, from offset o0 to o1 (numbers, or
+  // worked out at each point). Far out on the outside of a corner the
+  // points of the line fan out, so it fills in between them every half
+  // metre; it used to step a whole point at a time, which left gaps of
+  // "grass" in wide gravel traps (and grass grew there).
+  // Exactly what's laid beside each point of the line (how far out to each
+  // side the track, kerbs and run-offs reach, and where the gravel is), so
+  // grass tufts and gravel stones can be kept strictly on their own ground
+  const cover = line.map(() => ({ lo: 0, hi: 0, gLo: 0, gHi: 0, gravel: false }));
+  const paintBand = (i0, i1, o0, o1, type) => {
+    const offs = (p) => [typeof o0 === 'function' ? o0(p) : o0, typeof o1 === 'function' ? o1(p) : o1];
+    for (let i = i0; i <= i1; i++) {
+      const p = line[((i % m) + m) % m];
+      {
+        const [a, b] = offs(p), cv = cover[((i % m) + m) % m];
+        cv.lo = Math.min(cv.lo, a, b); cv.hi = Math.max(cv.hi, a, b);
+        if (type === 3) { cv.gravel = true; cv.gLo = Math.min(a, b); cv.gHi = Math.max(a, b); }
+      }
+      const q = i < i1 ? line[(((i + 1) % m) + m) % m] : p;
+      const [a, b] = offs(p);
+      const [qa, qb] = q === p ? [a, b] : offs(q);
+      // how far apart this point and the next are at the far edge of the band
+      const far = Math.max(Math.abs(a), Math.abs(b), Math.abs(qa), Math.abs(qb));
+      const gap = Math.max(Math.hypot(q.x + q.lx * far - p.x - p.lx * far, q.z + q.lz * far - p.z - p.lz * far),
+        Math.hypot(q.x - q.lx * far - p.x + p.lx * far, q.z - q.lz * far - p.z + p.lz * far));
+      const steps = q === p ? 1 : Math.max(1, Math.ceil(gap / 0.5));
+      for (let k = 0; k < steps; k++) {
+        const t = k / steps, u = 1 - t;
+        const x = p.x * u + q.x * t, z = p.z * u + q.z * t;
+        let lx = p.lx * u + q.lx * t, lz = p.lz * u + q.lz * t;
+        const len = Math.hypot(lx, lz) || 1; lx /= len; lz /= len;
+        const ea = a * u + qa * t, eb = b * u + qb * t;
+        const lo = Math.min(ea, eb), hi = Math.max(ea, eb);
+        for (let o = lo; o <= hi + 0.01; o += 0.5) paint(x + lx * Math.min(o, hi), z + lz * Math.min(o, hi), type);
+      }
+      if (q === p) for (const ds of [-0.75, 0.75]) {
+        const lo = Math.min(a, b), hi = Math.max(a, b);
+        for (let o = lo; o <= hi; o += 0.5) paint(p.x + p.lx * o + p.ux * ds, p.z + p.lz * o + p.uz * ds, type);
+      }
+    }
   };
 
-  // --- The shell: back wall, end walls, walls between the bays, the
-  // fascia above the doorways and the pillars between them ---
-  solid(0.3, height, len, back - 0.15, height / 2, (z0 + z1) / 2);
-  solid(depth, height, 0.3, x + depth / 2, height / 2, z0 + 0.15);
-  solid(depth, height, 0.3, x + depth / 2, height / 2, z1 - 0.15);
-  for (let i = 1; i < bays; i++) solid(depth - 0.3, height, 0.2, x + depth / 2, height / 2, z0 + i * bayLen, innerMat);
-  solid(0.35, height - OPEN_H, len, x + 0.175, OPEN_H + (height - OPEN_H) / 2, (z0 + z1) / 2);
-  const pillar = (bayLen - OPEN_W) / 2;
-  for (let i = 0; i <= bays; i++) {
-    const zc = z0 + i * bayLen;
-    const w = i === 0 || i === bays ? pillar : pillar * 2;
-    solid(0.35, OPEN_H, w, x + 0.175, OPEN_H / 2, i === 0 ? zc + w / 2 : i === bays ? zc - w / 2 : zc);
+  // --- Materials ---
+  const asphalt = asphaltTexture();
+  const trackMat = new THREE.MeshStandardMaterial({ map: asphalt, roughness: 0.92 });
+  asphalt.repeat.set(1, 1);
+  // (painted lines sit on the tarmac: pulled slightly towards the camera
+  // so they never flicker against it, even far away)
+  const lineMat = new THREE.MeshStandardMaterial({ color: 0xf2f2ee, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  // (the pit entry and exit sit 3 mm below the track, so the track wins
+  // where they overlap, but still well above the grass: they used to be
+  // pushed back by the graphics card instead, which at a distance pushed
+  // them right under the grass so they only showed up close by)
+  const wedgeMat = trackMat;
+  const kerbMat = new THREE.MeshStandardMaterial({ map: kerbTexture(), roughness: 0.6 });
+  // (the game hands over the test area's gravel look: stones with a bumpy
+  // normal map, a tile every 3.5 m)
+  const gravelMat = gravelMaps
+    ? new THREE.MeshStandardMaterial({ map: gravelMaps.colourMap, normalMap: gravelMaps.normalMap, normalScale: new THREE.Vector2(0.8, 0.8), roughness: 1 })
+    : new THREE.MeshStandardMaterial({ map: gravelTexture(), roughness: 1 });
+  const runoffMat = new THREE.MeshStandardMaterial({ map: runoffTexture(), roughness: 0.85 });
+  const netMat = new THREE.MeshStandardMaterial({ map: netTexture(), transparent: true, alphaTest: 0.3, roughness: 0.8 });
+  const add = (geo, mat, receive = true) => {
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.receiveShadow = receive;
+    scene.add(mesh);
+    return mesh;
+  };
+  const half = (p) => p.width / 2;
+
+  // The track itself, and its white edge lines
+  add(strip(line, 0, m, (p) => -half(p), (p) => half(p), 0, 8, 8), trackMat);
+  for (let i = 0; i < m; i++) {
+    const p = line[i];
+    for (let o = -half(p) - KERB; o <= half(p) + KERB; o += 0.5) {
+      for (const ds of [-1, 0, 1]) { const k = cell(p.x + p.lx * o + p.ux * ds, p.z + p.lz * o + p.uz * ds); if (k >= 0) trackOnly[k] = 1; }
+    }
   }
-  // Ceiling and roof slab (with an overhang over the doors)
-  solid(depth, 0.1, len, x + depth / 2, height - 0.05, (z0 + z1) / 2, innerMat);
-  const roof = new THREE.Mesh(
-    new THREE.BoxGeometry(depth + 2, 0.3, len + 0.6),
-    new THREE.MeshStandardMaterial({ color: 0x3b4046, roughness: 0.7 })
-  );
-  roof.position.set(x + depth / 2 - 1, height + 0.15, (z0 + z1) / 2);
+  // How much room there is outside point i on one side before another part
+  // of the track (so run-offs and barriers never spill onto it)
+  const roomOut = (i, side, max) => {
+    const p = line[((i % m) + m) % m];
+    for (let o = half(p) + KERB + 1.5; o <= half(p) + KERB + max + 4; o += 1) {
+      for (const ds of [-1.5, 0, 1.5]) {
+        const k = cell(p.x + p.lx * side * o + p.ux * ds, p.z + p.lz * side * o + p.uz * ds);
+        if (k >= 0 && trackOnly[k]) return Math.max(0, o - (half(p) + KERB) - 9);   // keep barriers well clear of it
+      }
+    }
+    return max;
+  };
+  add(strip(line, 0, m, (p) => half(p) - 0.45, (p) => half(p) - 0.2, 0.001), lineMat);
+  add(strip(line, 0, m, (p) => -half(p) + 0.2, (p) => -half(p) + 0.45, 0.001), lineMat);
+  paintBand(0, m, (p) => -half(p), (p) => half(p), 1);
+
+  // Start/finish line, and the grid boxes behind it (two columns, staggered)
+  const startI = line.reduce((best, p, i) => (Math.abs(p.z) < Math.abs(line[best].z) && Math.abs(p.x) < 30 ? i : best), 0);
+  const sp = line[startI];
+  const sfl = new THREE.Mesh(new THREE.PlaneGeometry(STRAIGHT_WIDTH - 1, 1.2), lineMat);
+  sfl.rotation.set(-Math.PI / 2, 0, sp.heading);
+  sfl.position.set(sp.x, 0.001, sp.z);
+  scene.add(sfl);
+  const gridBox = new THREE.InstancedMesh(new THREE.PlaneGeometry(3.2, 0.25), lineMat, 24);
+  for (let k = 0; k < 24; k++) {
+    const p = line[(startI - 3 - k * 4 + m) % m];                  // every 8 m behind the line
+    const side = k % 2 ? -1 : 1;
+    const o = side * STRAIGHT_WIDTH / 4;
+    const mm = new THREE.Matrix4().compose(
+      new THREE.Vector3(p.x + p.lx * o - p.ux * (side > 0 ? 0 : 4), 0.001, p.z + p.lz * o - p.uz * (side > 0 ? 0 : 4)),
+      new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, p.heading)),
+      new THREE.Vector3(1, 1, 1));
+    gridBox.setMatrixAt(k, mm);
+  }
+  scene.add(gridBox);
+
+  // --- Corners: kerbs both sides, sausage kerbs and bollards at the
+  // tightest apexes, grass mesh inside, run-off outside, then barriers ---
+  const sausages = [], bollards = [];
+  corners.forEach((c, ci) => {
+    const armcoRuns = [], tyreRuns = [];
+    const inside = c.side;                                     // + = left
+    // kerbs: from the track edge out, on both sides
+    for (const side of [1, -1]) {
+      add(strip(line, c.a, c.b, (p) => side * half(p), (p) => side * (half(p) + KERB), 0.001, 4, 4), kerbMat);
+      paintBand(c.a, c.b, (p) => side * half(p), (p) => side * (half(p) + KERB), 2);
+    }
+    // grass-protection mesh on the inside, beyond the kerb
+    add(strip(line, c.a + 2, c.b - 2, (p) => inside * (half(p) + KERB), (p) => inside * (half(p) + KERB + 3), 0.002, 1.5, 1.5), netMat, false);
+    // run-off outside: gravel at the tight corners (every other one), painted tarmac at the rest
+    const wide = Math.min(26, Math.max(12, 3000 / c.radius));
+    const gravel = c.radius < 140 && ci % 2 === 0;
+    // the room at each point, smoothed so the edge doesn't zig-zag
+    const room = new Map();
+    for (let i = c.a - 6; i <= c.b + 6; i++) room.set(((i % m) + m) % m, roomOut(i, -inside, wide));
+    const roomAt = (p) => {
+      const i = line.indexOf(p);
+      let r = wide;
+      for (let k = -4; k <= 4; k++) r = Math.min(r, room.get(((i + k) % m + m) % m) ?? wide);
+      return r;
+    };
+    const o0 = (p) => -inside * (half(p) + KERB), o1 = (p) => -inside * (half(p) + KERB + Math.max(0.5, roomAt(p)));
+    add(strip(line, c.a, c.b, o0, o1, 0.0005, gravel ? 3.5 : 4, gravel ? 3.5 : wide), gravel ? gravelMat : runoffMat);
+    paintBand(c.a, c.b, o0, o1, gravel ? 3 : 1);
+    // barriers at the back of the run-off: Armco, with a tyre wall in front at the big stops
+    // (only where there's proper room: none where another part of the track is close)
+    const back = (p) => -inside * (half(p) + KERB + roomAt(p) + 3);
+    const run = [];
+    for (let i = c.a - 4; i <= c.b + 4; i += 4) {
+      const p = line[((i % m) + m) % m];
+      run.push(roomAt(p) >= 6 ? [p.x + p.lx * back(p), p.z + p.lz * back(p)] : null);
+    }
+    for (let k = 0; k < run.length - 1; k++) if (run[k] && run[k + 1]) armcoRuns.push([run[k][0], run[k][1], run[k + 1][0], run[k + 1][1]]);
+    if (c.radius < 70) {
+      const front = (p) => -inside * (half(p) + KERB + roomAt(p) + 1.6);
+      const tr = [];
+      for (let i = c.apex - 10; i <= c.apex + 22; i += 4) {
+        const p = line[((i % m) + m) % m];
+        tr.push(roomAt(p) >= 6 ? [p.x + p.lx * front(p), p.z + p.lz * front(p)] : null);
+      }
+      // (tyre walls are laid with their back row on the barrier side)
+      for (let k = 0; k < tr.length - 1; k++) if (tr[k] && tr[k + 1]) tyreRuns.push(inside > 0 ? [tr[k + 1][0], tr[k + 1][1], tr[k][0], tr[k][1]] : [tr[k][0], tr[k][1], tr[k + 1][0], tr[k + 1][1]]);
+    }
+    // sausage kerbs and bollards at the tightest apexes
+    if (c.radius < 90) {
+      for (let i = c.apex - 5; i <= c.apex + 5; i++) {
+        const p = line[((i % m) + m) % m];
+        const o = inside * (half(p) + KERB + 0.7);
+        sausages.push({ x: p.x + p.lx * o, z: p.z + p.lz * o, heading: p.heading });
+        paintBand(i, i, inside * (half(p) + KERB), inside * (half(p) + KERB + 1.4), 2);
+      }
+      for (let i = c.apex - 6; i <= c.apex + 6; i += 2) {
+        const p = line[((i % m) + m) % m];
+        const o = inside * (half(p) + KERB + 4.5);
+        bollards.push({ x: p.x + p.lx * o, z: p.z + p.lz * o });
+      }
+    }
+    // (each corner's barriers are their own model, so denting one is quick)
+    if (armcoRuns.length) echoes.push(...buildArmco(scene, armcoRuns));
+    if (tyreRuns.length) echoes.push(...buildTyreWalls(scene, tyreRuns));
+  });
+
+  // Sausage kerbs: low yellow humps with black stripes
+  const sausageGeo = new THREE.CylinderGeometry(0.22, 0.22, 1.8, 14, 1, false, 0, Math.PI);
+  sausageGeo.rotateZ(Math.PI / 2);
+  sausageGeo.rotateY(Math.PI / 2);
+  const sausageTex = canvasTexture(64, 16, (g, w, h) => {
+    g.fillStyle = '#f1c40f'; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#1b1b1b'; g.fillRect(w * 0.42, 0, w * 0.16, h);
+  });
+  const sausageMesh = new THREE.InstancedMesh(sausageGeo, new THREE.MeshStandardMaterial({ map: sausageTex, roughness: 0.55 }), Math.max(1, sausages.length));
+  sausages.forEach((s, i) => sausageMesh.setMatrixAt(i, new THREE.Matrix4().compose(
+    new THREE.Vector3(s.x, 0, s.z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), s.heading), new THREE.Vector3(1, 1, 1))));
+  sausageMesh.count = sausages.length;
+  sausageMesh.castShadow = sausageMesh.receiveShadow = true;
+  scene.add(sausageMesh);
+
+  // Bollards: orange posts with a white band. Knock one and it falls over.
+  const bollardGeo = new THREE.CylinderGeometry(0.09, 0.11, 0.9, 10);
+  bollardGeo.translate(0, 0.45, 0);
+  const bollardTex = canvasTexture(16, 64, (g, w, h) => {
+    g.fillStyle = '#ff6a13'; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#f4f4f2'; g.fillRect(0, h * 0.15, w, h * 0.15);
+  });
+  const bollardMesh = new THREE.InstancedMesh(bollardGeo, new THREE.MeshStandardMaterial({ map: bollardTex, roughness: 0.5 }), Math.max(1, bollards.length));
+  const bq = new THREE.Quaternion(), bp = new THREE.Vector3(), bs = new THREE.Vector3(1, 1, 1), bm = new THREE.Matrix4();
+  bollards.forEach((b, i) => {
+    bollardMesh.setMatrixAt(i, bm.compose(bp.set(b.x, 0, b.z), bq.identity(), bs));
+    b.collider = addCollider(b.x - 0.1, b.x + 0.1, b.z - 0.1, b.z + 0.1, 'bollard', {
+      hit: (point, normal) => {
+        // tips over, away from the car, and no longer blocks anything
+        const axis = new THREE.Vector3(normal.z, 0, -normal.x).normalize();
+        bollardMesh.setMatrixAt(i, bm.compose(bp.set(b.x - normal.x * 0.3, groundAt(b.x, b.z) + 0.1, b.z - normal.z * 0.3), bq.setFromAxisAngle(axis, -Math.PI / 2 * 0.95), bs));
+        bollardMesh.instanceMatrix.needsUpdate = true;
+        b.collider.minX = b.collider.maxX = b.collider.minZ = b.collider.maxZ = 1e6;
+        return { absorb: 0.9 };
+      },
+    });
+  });
+  bollardMesh.count = bollards.length;
+  bollardMesh.castShadow = true;
+  scene.add(bollardMesh);
+
+  // --- The pit lane: alongside the start straight on the right (+x),
+  // behind the pit wall, with the garages behind it ---
+  const PIT = { x0: 13, x1: 24, z0: -215, z1: 175 };
+  const pitGeo = new THREE.PlaneGeometry(PIT.x1 - PIT.x0, PIT.z1 - PIT.z0, 4, 130);   // (in strips, so it follows the ground)
+  pitGeo.rotateX(-Math.PI / 2);
+  const pit = add(pitGeo, trackMat);
+  pit.position.set((PIT.x0 + PIT.x1) / 2, 0, (PIT.z0 + PIT.z1) / 2);
+  for (let x = PIT.x0; x <= PIT.x1; x += 0.5) for (let z = PIT.z0; z <= PIT.z1; z += 0.5) paint(x, z, 1);
+  // pit entry (from the last corner) and exit (towards turn 1): wedges of tarmac
+  const wedge = (pts) => {
+    const shape = new THREE.Shape(pts.map(([x, z]) => new THREE.Vector2(x, -z)));
+    const g = new THREE.ShapeGeometry(shape);
+    g.rotateX(-Math.PI / 2);
+    g.translate(0, -0.003, 0);
+    add(g, wedgeMat);
+    const xs = pts.map((p) => p[0]), zs = pts.map((p) => p[1]);
+    for (let x = Math.min(...xs); x <= Math.max(...xs); x += 0.5) {
+      for (let z = Math.min(...zs); z <= Math.max(...zs); z += 0.5) {
+        // inside the polygon?
+        let inPoly = false;
+        for (let a = 0, b = pts.length - 1; a < pts.length; b = a++) {
+          if ((pts[a][1] > z) !== (pts[b][1] > z) && x < ((pts[b][0] - pts[a][0]) * (z - pts[a][1])) / (pts[b][1] - pts[a][1]) + pts[a][0]) inPoly = !inPoly;
+        }
+        if (inPoly) paint(x, z, 1);
+      }
+    }
+  };
+  wedge([[PIT.x0, PIT.z1], [PIT.x1, PIT.z1], [10, PIT.z1 + 70], [8, PIT.z1 + 70]]);
+  wedge([[PIT.x0, PIT.z0], [PIT.x1, PIT.z0], [10, PIT.z0 - 50], [8, PIT.z0 - 50]]);
+  // pit lane lines
+  const pitLine = new THREE.Mesh(new THREE.PlaneGeometry(0.2, PIT.z1 - PIT.z0), lineMat);
+  pitLine.rotation.x = -Math.PI / 2;
+  pitLine.position.set(PIT.x0 + 4.5, 0.001, (PIT.z0 + PIT.z1) / 2);
+  scene.add(pitLine);
+  // Pit wall (concrete) with a catch fence behind it, then the garages
+  echoes.push(...buildConcreteWalls(scene, [[12.2, PIT.z0 + 10, 12.2, PIT.z1 - 10]]));
+  echoes.push(...buildFences(scene, [[12.7, PIT.z0 + 10, 12.7, PIT.z1 - 10, -1]]));
+  echoes.push(...buildGarages(scene, PIT.x1, -186, 150));
+
+  // --- The main grandstand, across the start straight (on the left) ---
+  echoes.push(...buildGrandstand(scene, -34, -150, 150));
+  // a catch fence in front of it
+  echoes.push(...buildFences(scene, [[-14, -200, -14, 200, 1]]));
+
+  // --- Puddles (on the track, in the low spots) and mud (on the grass) ---
+  // Rain runs downhill: puddles collect where the track dips (lower than
+  // the track either side of it), deeper dips first and biggest. On the
+  // level bits a few small ones form in the odd uneven patch; none on the
+  // slopes (the water just runs off).
+  const puddles = [];
+  const yAt = (i) => line[((i % m) + m) % m].y;
+  const span = Math.round(25 / STEP);
+  const dips = [];
+  for (let i = 0; i < m; i++) {
+    const around = (yAt(i - span) + yAt(i + span)) / 2;
+    const dip = around - yAt(i);
+    const lowest = yAt(i) <= yAt(i - 1) && yAt(i) <= yAt(i + 1);   // the very bottom of the dip
+    if (dip > 0.02 && lowest) dips.push({ i, dip });
+  }
+  dips.sort((a, b) => b.dip - a.dip);
+  const wanted = isMobile ? 16 : 26;
+  const farEnough = (x, z, r) => puddles.every((q) => Math.hypot(q.x - x, q.z - z) > q.r + r + 6);
+  for (const d of dips) {
+    if (puddles.length >= Math.round(wanted * 0.75)) break;
+    const p = line[d.i];
+    const r = Math.min(3.8, 1.4 + d.dip * 6);
+    // a dip often holds a couple of pools across the track
+    for (let k = 0; k < (d.dip > 0.15 ? 2 : 1); k++) {
+      const o = (Math.random() * 2 - 1) * (half(p) - 2.5);
+      const x = p.x + p.lx * o, z = p.z + p.lz * o;
+      if (farEnough(x, z, r)) puddles.push({ x, z, r: r * (0.8 + Math.random() * 0.3), start: Math.max(0, 0.3 - d.dip) * Math.random() });
+    }
+  }
+  for (let tries = 0; puddles.length < wanted && tries < 400; tries++) {
+    const i = Math.floor(Math.random() * m), p = line[i];
+    const grade = Math.abs(yAt(i + 3) - yAt(i - 3)) / (6 * STEP);
+    if (grade > 0.01) continue;                                  // on a slope: it drains away
+    const o = (Math.random() * 2 - 1) * (half(p) - 2.5);
+    const x = p.x + p.lx * o, z = p.z + p.lz * o, r = 1 + Math.random() * 1.2;
+    if (farEnough(x, z, r)) puddles.push({ x, z, r, start: 0.25 + Math.random() * 0.35 });   // (small, and they fill later)
+  }
+  // Mud: in the low, flat-bottomed bits of the grass beside the track
+  const mud = [];
+  for (let k = 0; k < 200 && mud.length < 12; k++) {
+    const p = line[Math.floor(Math.random() * m)];
+    const side = Math.random() < 0.5 ? 1 : -1;
+    const o = side * (half(p) + 10 + Math.random() * 22);
+    const x = p.x + p.lx * o, z = p.z + p.lz * o;
+    if (surface(x, z) !== 'grass') continue;
+    const here = terrain.heightAt(x, z);
+    let around = 0;
+    for (let a = 0; a < 6; a++) around += terrain.heightAt(x + Math.cos(a) * 8, z + Math.sin(a) * 8);
+    if (around / 6 - here < 0.03) continue;                     // not a hollow
+    mud.push({ x, z, r: 1.4 + Math.random() * 1.6, start: Math.random() * 0.4 });
+  }
+
+  // Is this spot cleanly gravel, or cleanly grass? (well inside it, going by
+  // the real edges of the gravel traps and run-offs, not just the 1 m map)
+  const nearB = 16, nearBuckets = new Map();
+  line.forEach((p, i) => {
+    const key = Math.floor(p.x / nearB) * 100003 + Math.floor(p.z / nearB);
+    if (!nearBuckets.has(key)) nearBuckets.set(key, []);
+    nearBuckets.get(key).push(i);
+  });
+  const nearest = (x, z, reach) => {
+    let best = -1, bd = reach * reach;
+    const bx = Math.floor(x / nearB), bz = Math.floor(z / nearB), r = Math.ceil(reach / nearB);
+    for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) {
+      for (const i of nearBuckets.get((bx + dx) * 100003 + (bz + dz)) || []) {
+        const p = line[i], d = (p.x - x) * (p.x - x) + (p.z - z) * (p.z - z);
+        if (d < bd) { bd = d; best = i; }
+      }
+    }
+    return best;
+  };
+  function cleanly(want, x, z) {
+    if (surface(x, z) !== want) return false;
+    const i = nearest(x, z, 45);
+    if (i < 0) return want === 'grass';                       // far from the track: all grass
+    const p = line[i], cv = cover[i];
+    const o = (x - p.x) * p.lx + (z - p.z) * p.lz;            // how far out from the middle of the track
+    if (want === 'gravel') return cv.gravel && o > cv.gLo + 0.35 && o < cv.gHi - 0.35;
+    return o < cv.lo - 0.4 || o > cv.hi + 0.4;               // grass: clear of everything laid beside the track
+  }
+
+  function surface(x, z) {
+    const gx = Math.floor(x - minX), gz = Math.floor(z - minZ);
+    if (gx < 0 || gz < 0 || gx >= GW || gz >= GH) return 'grass';
+    const t = grid[gz * GW + gx];
+    return t === 1 ? 'tarmac' : t === 2 ? 'kerb' : t === 3 ? 'gravel' : 'grass';
+  }
+
+  // Where the car starts: on the start straight, 30 m behind the line, facing down it
+  const startP = line[(startI + Math.round(30 / STEP) * -1 + m) % m];
+  const start = { x: startP.x + startP.lx * 2.5, z: startP.z + startP.lz * 2.5, heading: startP.heading };
+
+  return {
+    echoes: finishScenery(echoes),
+    surfaceAt: surface,
+    cleanly,                 // cleanly('grass' | 'gravel', x, z): well inside that surface, nowhere near the other
+    start,
+    puddles,
+    mud,
+    grassTexture: grassTexture(),
+    view: { fogNear: 120, fogFar: 900, far: 1400 },
+    groundY: -0.04,          // the grass sits just below the track, so they never flicker against each other
+    heightAt: terrain.heightAt,   // how high the ground is at a point (the hills and dips)
+    terrain,
+    lengthM: Math.round(line[m - 1].s),
+    corners: corners.length,
+    line,                    // the centre line (for testing and, later, AI drivers)
+    sausages,                // the sausage kerbs' positions (the car's wheels ride up over them)
+    cornerList: corners,     // each corner: { a, b (line indices), apex, side (+1 = left), radius }
+  };
+}
+
+// The main grandstand: tiers of seats rising away from the track (facing
+// +x, towards the start straight), under a big curved roof. Solid to the
+// car, and dry underneath when it rains.
+function buildGrandstand(scene, x, z0, z1) {
+  const TIERS = 14, DEPTH = 1.2, RISE = 0.6, len = z1 - z0;
+  const concrete = new THREE.MeshStandardMaterial({ color: 0xc9c6bf, roughness: 0.9 });
+  const seatTex = canvasTexture(64, 16, (g, w, h) => {
+    // rows of seats in Sepang yellow, blue and red blocks
+    g.fillStyle = '#e4b51c'; g.fillRect(0, 0, w, h);
+    g.fillStyle = 'rgba(0,0,0,0.25)';
+    for (let k = 0; k < w; k += 4) g.fillRect(k, 0, 1, h);
+  }, Math.round(len / 2), 1);
+  const seats = new THREE.MeshStandardMaterial({ map: seatTex, roughness: 0.6 });
+  const group = new THREE.Group();
+  for (let t = 0; t < TIERS; t++) {
+    const step = new THREE.Mesh(new THREE.BoxGeometry(DEPTH, RISE * (t + 1), len), concrete);
+    step.position.set(x - t * DEPTH, RISE * (t + 1) / 2, (z0 + z1) / 2);
+    step.castShadow = step.receiveShadow = true;
+    group.add(step);
+    const row = new THREE.Mesh(new THREE.BoxGeometry(DEPTH * 0.5, 0.35, len - 0.4), seats);
+    row.position.set(x - t * DEPTH - DEPTH * 0.15, RISE * (t + 1) + 0.17, (z0 + z1) / 2);
+    row.castShadow = true;
+    group.add(row);
+  }
+  // the roof: a big curved canopy on columns, like Sepang's leaf-shaped roof
+  const top = RISE * TIERS + 7;
+  const back = x - TIERS * DEPTH;
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(x - back + 12, 0.4, len + 10),
+    new THREE.MeshStandardMaterial({ color: 0xe8e9ea, roughness: 0.5, metalness: 0.3 }));
+  roof.position.set((x + back) / 2 + 3, top, (z0 + z1) / 2);
+  roof.rotation.z = 0.08;                                   // rising towards the track
   roof.castShadow = true;
-  scene.add(roof);
-  ROOFS.push({ minX: x - 2, maxX: x + depth, minZ: z0 - 0.3, maxZ: z1 + 0.3, height });
-  // Floor: smooth grey epoxy with a yellow line across each doorway
-  const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(depth - 0.3, len - 0.3),
-    new THREE.MeshStandardMaterial({ color: 0x8d9196, roughness: 0.35, metalness: 0.05 })
-  );
-  floor.rotation.x = -Math.PI / 2;
-  floor.position.set(x + depth / 2, 0.012, (z0 + z1) / 2);
-  floor.receiveShadow = true;
-  scene.add(floor);
+  group.add(roof);
+  for (let z = z0; z <= z1; z += 15) {
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.45, top, 10), concrete);
+    col.position.set(back - 0.5, top / 2, z);
+    col.castShadow = true;
+    group.add(col);
+  }
+  scene.add(group);
+  addCollider(back - 1, x + DEPTH / 2, z0, z1, 'building');
+  addRoof(back - 4, x + 6, z0 - 5, z1 + 5, top);
+  return [echoBox(back - 1, 0, z0, x + DEPTH / 2, top, z1, 0.9)];
+}
 
-  // Per-bay pieces, gathered into lists and drawn instanced
-  const L = {
-    drum: [], upright: [], shelf: [], bin: [], binColour: [], shelfTyre: [], chest: [], chestTop: [],
-    board: [], stackTyre: [], jackBody: [], jackHandle: [], stand: [], standTop: [], trolley: [],
-    trolleyWheel: [], drum2: [], strip: [], line: [], lamp: [], lampPole: [],
-  };
-  const binColours = [0x2c64c8, 0xd23a2a, 0xe8b72c, 0x3f8f4a, 0x555a60];
-  for (let i = 0; i < bays; i++) {
-    const zc = z0 + (i + 0.5) * bayLen;
-    // the inside faces of the bay's side walls (the end walls are thicker than the ones between bays)
-    const zl = zc - bayLen / 2 + (i === 0 ? 0.3 : 0.1) + 0.03;
-    const zr = zc + bayLen / 2 - (i === bays - 1 ? 0.3 : 0.1) - 0.03;
-    // the rolled-up door at the top of the doorway
-    L.drum.push([x + 0.45, OPEN_H - 0.2, zc, 0, 1, OPEN_W, 1]);
-    // a yellow line across the doorway
-    L.line.push([x + 0.6, 0.015, zc, 0, 0.08, 1, OPEN_W]);
-    // Racking: two shelving units against the back wall
-    for (const zs of [zc - 1.3, zc + 1.3]) {
-      const rx = back - 0.6;
-      addCollider(rx - 0.32, rx + 0.32, zs - 1.0, zs + 1.0, 'building');   // the racking
-      for (const dz of [-0.95, 0.95]) for (const dx of [-0.28, 0.28]) L.upright.push([rx + dx, 1.25, zs + dz]);
-      for (const h of [0.15, 0.85, 1.55, 2.25]) {
-        L.shelf.push([rx, h, zs]);
-        if (h < 0.5) {
-          // spare tyres on the bottom shelf
-          for (const t of [-0.6, 0, 0.6]) L.shelfTyre.push([rx, h + 0.32, zs + t]);
-        } else {
-          // parts boxes on the rest, in assorted colours and sizes
-          for (let b = 0; b < 4; b++) {
-            if (Math.random() < 0.2) continue;
-            const s = 0.7 + Math.random() * 0.5;
-            L.bin.push([rx + (Math.random() - 0.5) * 0.1, h + 0.13 * s, zs - 0.7 + b * 0.47, (Math.random() - 0.5) * 0.2, s, s, s]);
-            L.binColour.push(binColours[(Math.random() * binColours.length) | 0]);
+// ---------------------------------------------------------------------
+// THE GROUND'S SHAPE: a grid of heights (every 4 m; 6 m on phones). On and
+// near the track the ground is at the track's height (level across it);
+// further out it eases into smooth rolling ground, and it flattens out
+// towards the edges into the open plain beyond. Everything (the track,
+// the car, the trees, skid marks) uses the same heights, read off the grid
+// as flat triangles, so nothing floats or sinks into the ground.
+// ---------------------------------------------------------------------
+function buildTerrain(line, minX, maxX, minZ, maxZ, cell) {
+  const m = line.length, L = line[m - 1].s + Math.hypot(line[0].x - line[m - 1].x, line[0].z - line[m - 1].z);
+  // the height along the line, eased over ~60 m so the slopes are gentle
+  const rawY = line.map((p) => elevationAt(p.s, L));
+  const ease = 15;
+  line.forEach((p, i) => {
+    let sum = 0, w = 0;
+    for (let k = -ease; k <= ease; k++) { const wk = 1 - Math.abs(k) / (ease + 1); sum += rawY[(i + k + m) % m] * wk; w += wk; }
+    p.y = sum / w;
+  });
+  const mean = line.reduce((a, p) => a + p.y, 0) / m;
+  // the open plain beyond the hills sits at the lowest point of the circuit,
+  // so it's always underneath everything (never above the ground anywhere)
+  const base = line.reduce((a, p) => Math.min(a, p.y), Infinity) - 0.3;
+  // the line's points sorted into 20 m squares, to find the nearby ones quickly
+  const B = 20, buckets = new Map();
+  line.forEach((p, i) => {
+    const key = Math.floor(p.x / B) * 100003 + Math.floor(p.z / B);
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(i);
+  });
+  const margin = 160;
+  const x0 = minX - margin, z0 = minZ - margin;
+  const NX = Math.ceil((maxX - minX + 2 * margin) / cell) + 1, NZ = Math.ceil((maxZ - minZ + 2 * margin) / cell) + 1;
+  const h = new Float32Array(NX * NZ);
+  const free = new Float32Array(NX * NZ);   // how free each point is to be smoothed (0 = pinned to the track's height)
+  const R = 150, sig2 = 2 * 48 * 48, reachB = Math.ceil(R / B);
+  for (let j = 0; j < NZ; j++) {
+    for (let i = 0; i < NX; i++) {
+      const x = x0 + i * cell, z = z0 + j * cell;
+      // (bestY: the height of the nearest bit of track, blended softly with
+      // any other bit of track nearly as close, so there's no step in the
+      // ground halfway between two parts of the circuit)
+      let best = Infinity, nearSum = 0, nearW = 0, sum = 0, wsum = 0;
+      const TAU = 8;
+      const bx = Math.floor(x / B), bz = Math.floor(z / B);
+      for (let dx = -reachB; dx <= reachB; dx++) {
+        for (let dz = -reachB; dz <= reachB; dz++) {
+          const list = buckets.get((bx + dx) * 100003 + (bz + dz));
+          if (!list) continue;
+          for (let k = 0; k < list.length; k += 2) {        // (every other point is plenty)
+            const p = line[list[k]];
+            const d2 = (p.x - x) * (p.x - x) + (p.z - z) * (p.z - z);
+            if (d2 < R * R) {
+              const dd = Math.sqrt(d2);
+              const wk = Math.exp(-d2 / sig2) * smooth((R - dd) / 45); sum += p.y * wk; wsum += wk;   // (fading to nothing at the edge of the search, so there's no step there)
+              if (dd < best) { const shrink = Math.exp(-(best - dd) / TAU); nearSum *= shrink; nearW *= shrink; best = dd; }
+              const wn = Math.exp(-(dd - best) / TAU); nearSum += p.y * wn; nearW += wn;
+            }
           }
         }
       }
+      const d = best;
+      const bestY = nearW > 0 ? nearSum / nearW : mean;
+      const away = (sum + mean * 0.004) / (wsum + 0.004);     // rolling ground (drifting to the average far out)
+      const t = smooth((d - 40) / 50);                         // level with the track out to ~40 m (past the run-offs)
+      let y = bestY * (1 - t) + away * t;
+      // flatten out towards the edges of the grid
+      const edge = Math.min(i, j, NX - 1 - i, NZ - 1 - j) * cell;
+      y = base + (y - base) * smooth(edge / 140);   // (sloping gently down to the plain)
+      h[j * NX + i] = y;
+      free[j * NX + i] = t;
     }
-    // A red tool chest against one side wall, with a tool board above it
-    const side = i % 2 ? 1 : -1;
-    const wallZ = side > 0 ? zr : zl;
-    // (turned so its back is against the wall: 0.55 m deep, 1 m wide)
-    L.chest.push([x + 5.5, 0.55, wallZ - side * 0.3, side > 0 ? Math.PI / 2 : -Math.PI / 2]);
-    L.chestTop.push([x + 5.5, 1.22, wallZ - side * 0.3, side > 0 ? Math.PI / 2 : -Math.PI / 2]);
-    L.board.push([x + 5.5, 1.95, wallZ - side * 0.02, side > 0 ? Math.PI : 0]);
-    addCollider(x + 5.0, x + 6.0, Math.min(wallZ, wallZ - side * 0.58), Math.max(wallZ, wallZ - side * 0.58), 'building');   // the tool chest
-    // Stacks of wheels by the doorway on the other side
-    const tyreZ = side > 0 ? zl + 0.45 : zr - 0.45;
-    for (const sx of [x + 1.3, x + 2.1]) {
-      const n = 2 + ((Math.random() * 3) | 0);
-      for (let k = 0; k < n; k++) L.stackTyre.push([sx, 0.11 + k * 0.205, tyreZ, 0, 1, 1, 1]);
-    }
-    // A trolley jack and four axle stands in the middle, ready for a car
-    L.jackBody.push([x + 3.4, 0.08, zc + 0.3, Math.PI / 2]);
-    L.jackHandle.push([x + 4.15, 0.45, zc + 0.3, 0]);
-    for (const [dx, dz] of [[-1.1, -0.75], [-1.1, 0.75], [1.1, -0.75], [1.1, 0.75]]) {
-      L.stand.push([x + 5 + dx, 0.18, zc + dz]);
-      L.standTop.push([x + 5 + dx, 0.4, zc + dz]);
-    }
-    // A parts trolley and an oil drum
-    L.trolley.push([x + 7.4, 0.45, wallZ - side * 0.5, 0]);
-    L.trolley.push([x + 7.4, 0.12, wallZ - side * 0.5, 0, 1, 0.4, 1]);
-    for (const [dx, dz] of [[-0.3, -0.2], [-0.3, 0.2], [0.3, -0.2], [0.3, 0.2]]) L.trolleyWheel.push([x + 7.4 + dx, 0.04, wallZ - side * 0.5 + dz]);
-    L.drum2.push([back - 1.6, 0.44, side > 0 ? zl + 0.5 : zr - 0.5]);
-    { const dz = side > 0 ? zl + 0.5 : zr - 0.5; addCollider(back - 1.9, back - 1.3, dz - 0.3, dz + 0.3, 'building'); }   // the oil drum
-    // Strip lights in the ceiling, and a work lamp on a stand
-    for (const dx of [2.5, 6.5]) L.strip.push([x + dx, height - 0.14, zc]);
-    L.lamp.push([x + 2.6, 1.55, zc - 1.6, -0.5]);
-    L.lampPole.push([x + 2.6, 0.75, zc - 1.6]);
   }
-
-  // Shapes and materials
-  const steelBlue = new THREE.MeshStandardMaterial({ color: 0x2e5aa8, metalness: 0.5, roughness: 0.5 });
-  const steel = new THREE.MeshStandardMaterial({ color: 0x9aa0a6, metalness: 0.8, roughness: 0.4 });
-  const black = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.85 });
-  const chestRed = new THREE.MeshStandardMaterial({
-    map: canvasTexture(64, 128, (g, w, h) => {                      // drawers with handles
-      g.fillStyle = '#c3221c';
-      g.fillRect(0, 0, w, h);
-      for (let y = 6; y < h; y += 15) {
-        g.fillStyle = 'rgba(0,0,0,0.35)';
-        g.fillRect(0, y + 12, w, 2);
-        g.fillStyle = '#d8dadc';
-        g.fillRect(8, y + 4, w - 16, 3);
+  // Smooth out the open ground (not near the track, not the edges), so the
+  // hills roll gently with no steep banks between them
+  const tmp = new Float32Array(NX * NZ);
+  for (let it = 0; it < 160; it++) {
+    tmp.set(h);
+    for (let j = 1; j < NZ - 1; j++) {
+      for (let i = 1; i < NX - 1; i++) {
+        const k = j * NX + i, f = free[k];
+        if (f <= 0) continue;
+        const avg = (tmp[k - 1] + tmp[k + 1] + tmp[k - NX] + tmp[k + NX]) * 0.25;
+        h[k] = tmp[k] + (avg - tmp[k]) * f;
       }
-    }),
-    metalness: 0.4, roughness: 0.4,
-  });
-  const boardMat = new THREE.MeshStandardMaterial({
-    map: canvasTexture(256, 128, (g, w, h) => {                     // pegboard with tool outlines
-      g.fillStyle = '#5b6168';
-      g.fillRect(0, 0, w, h);
-      g.fillStyle = 'rgba(0,0,0,0.35)';
-      for (let y = 4; y < h; y += 8) for (let xx = 4; xx < w; xx += 8) g.fillRect(xx, y, 2, 2);
-      g.fillStyle = '#c9ccd0';
-      for (let k = 0; k < 9; k++) {                                // spanners, longest to shortest
-        const sx = 12 + k * 12, len = 70 - k * 5;
-        g.fillRect(sx, 20, 4, len);
-        g.beginPath(); g.arc(sx + 2, 18, 5, 0, Math.PI * 2); g.fill();
-      }
-      g.fillStyle = '#d23a2a';                                      // screwdrivers
-      for (let k = 0; k < 6; k++) g.fillRect(130 + k * 10, 24, 6, 22);
-      g.fillStyle = '#c9ccd0';
-      for (let k = 0; k < 6; k++) g.fillRect(132 + k * 10, 46, 2, 26);
-      g.fillStyle = '#2b2b2b';                                      // a hammer and pliers
-      g.fillRect(210, 20, 6, 60);
-      g.fillStyle = '#9aa0a6';
-      g.fillRect(200, 16, 26, 10);
-      g.fillRect(232, 30, 4, 50);
-      g.fillRect(240, 30, 4, 50);
-    }),
-    roughness: 0.8,
-  });
-  const lightMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xf4f8ff, emissiveIntensity: 2.2 });
-  const tyreGeo = new THREE.TorusGeometry(0.24, 0.1, 10, 24);
-  tyreGeo.rotateX(Math.PI / 2);                                     // lying flat
-  const sideTyreGeo = new THREE.TorusGeometry(0.24, 0.09, 10, 24);  // standing on the shelf
-  const yellow = new THREE.MeshStandardMaterial({ color: 0xe8c22a, roughness: 0.6 });
-  const doorTex = canvasTexture(64, 64, (g, w, h) => {
-    g.fillStyle = '#8f979f';
-    g.fillRect(0, 0, w, h);
-    for (let y = 0; y < h; y += 4) { g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(0, y, w, 1); }
-  }, 1, 6);
-  const drumGeo = new THREE.CylinderGeometry(0.28, 0.28, 1, 16);
-  drumGeo.rotateX(Math.PI / 2);                                     // along z, across the doorway
-
-  many(scene, drumGeo, new THREE.MeshStandardMaterial({ map: doorTex, metalness: 0.4, roughness: 0.5 }), L.drum);
-  many(scene, new THREE.BoxGeometry(1, 0.01, 1), yellow, L.line).castShadow = false;
-  many(scene, new THREE.BoxGeometry(0.05, 2.5, 0.05), steelBlue, L.upright);
-  many(scene, new THREE.BoxGeometry(0.6, 0.04, 1.95), steel, L.shelf);
-  const bins = many(scene, new THREE.BoxGeometry(0.4, 0.26, 0.38), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7 }), L.bin, L.binColour);
-  bins.instanceColor.needsUpdate = true;
-  many(scene, sideTyreGeo, black, L.shelfTyre);
-  many(scene, new THREE.BoxGeometry(0.55, 1.0, 1.0), chestRed, L.chest);
-  many(scene, new THREE.BoxGeometry(0.5, 0.34, 0.95), chestRed, L.chestTop);
-  many(scene, new THREE.PlaneGeometry(2.2, 1.1), boardMat, L.board).castShadow = false;
-  many(scene, tyreGeo, black, L.stackTyre);
-  many(scene, new THREE.BoxGeometry(0.3, 0.12, 0.7), new THREE.MeshStandardMaterial({ color: 0xc3221c, metalness: 0.4, roughness: 0.45 }), L.jackBody);
-  const handle = new THREE.CylinderGeometry(0.018, 0.018, 1.0, 8);
-  handle.rotateZ(1.0);
-  many(scene, handle, steel, L.jackHandle);
-  many(scene, new THREE.ConeGeometry(0.16, 0.36, 4), new THREE.MeshStandardMaterial({ color: 0xd23a2a, metalness: 0.4, roughness: 0.5 }), L.stand);
-  many(scene, new THREE.CylinderGeometry(0.03, 0.03, 0.12, 8), steel, L.standTop);
-  many(scene, new THREE.BoxGeometry(0.9, 0.05, 0.55), steel, L.trolley);
-  many(scene, new THREE.SphereGeometry(0.04, 8, 6), black, L.trolleyWheel);
-  many(scene, new THREE.CylinderGeometry(0.29, 0.29, 0.88, 18), new THREE.MeshStandardMaterial({ color: 0x1d5fa8, metalness: 0.5, roughness: 0.45 }), L.drum2);
-  many(scene, new THREE.BoxGeometry(1.4, 0.06, 0.18), lightMat, L.strip).castShadow = false;
-  many(scene, new THREE.BoxGeometry(0.08, 0.22, 0.3), lightMat, L.lamp).castShadow = false;
-  many(scene, new THREE.CylinderGeometry(0.02, 0.03, 1.5, 8), black, L.lampPole);
-
-  return [box(x, 0, z0, x + depth, height, z1, 1)];
-}
-
-// An office block / race control tower: windows in bands
-function buildOffice(scene, x0, z0, x1, z1, height) {
-  const w = x1 - x0, d = z1 - z0;
-  const floors = Math.round(height / 3.2);
-  const facade = canvasTexture(256, 256, (g, cw, ch) => {
-    g.fillStyle = '#c9c4b8';
-    g.fillRect(0, 0, cw, ch);
-    // One floor per texture repeat: a band of windows with frames
-    g.fillStyle = '#2b3a48';
-    g.fillRect(0, ch * 0.3, cw, ch * 0.45);
-    g.fillStyle = 'rgba(150,190,220,0.35)';      // sky reflected in the glass
-    g.fillRect(0, ch * 0.3, cw, ch * 0.12);
-    g.fillStyle = '#c9c4b8';
-    for (let x = 0; x < cw; x += 64) g.fillRect(x, ch * 0.3, 5, ch * 0.45);
-  }, 1, floors);
-  const mat = new THREE.MeshStandardMaterial({ map: facade, roughness: 0.75 });
-  const block = new THREE.Mesh(new THREE.BoxGeometry(w, height, d), mat);
-  // Stretch the window pattern to the building's width on each side
-  facade.repeat.set(Math.max(1, Math.round(Math.max(w, d) / 4)), floors);
-  block.position.set((x0 + x1) / 2, height / 2, (z0 + z1) / 2);
-  block.castShadow = block.receiveShadow = true;
-  scene.add(block);
-  const roof = new THREE.Mesh(
-    new THREE.BoxGeometry(w + 0.4, 0.4, d + 0.4),
-    new THREE.MeshStandardMaterial({ color: 0x55595e, roughness: 0.8 })
-  );
-  roof.position.set((x0 + x1) / 2, height + 0.2, (z0 + z1) / 2);
-  scene.add(roof);
-  addCollider(x0, x1, z0, z1, 'building');
-  ROOFS.push({ minX: x0 - 0.2, maxX: x1 + 0.2, minZ: z0 - 0.2, maxZ: z1 + 0.2, height });
-  return [box(x0, 0, z0, x1, height, z1, 1)];
-}
-
-// ---------------------------------------------------------------------
-// BARRIERS
-// ---------------------------------------------------------------------
-
-// Concrete wall: 2 m blocks (1.375 m tall) with joints, red and white kerb-style paint
-// along the bottom. Each run is [ax, az, bx, bz].
-function buildConcreteWalls(scene, runs) {
-  const H = 1.375, T = 0.5, STEP = 2;
-  const pieces = runs.flatMap(([ax, az, bx, bz]) => along(ax, az, bx, bz, STEP).slice(0, -1).map((p, i, arr) => {
-    // centre each block between this point and the next
-    const t = (i + 0.5) / arr.length;
-    return { x: ax + (bx - ax) * t, z: az + (bz - az) * t, angle: p.angle, len: p.len, i };
-  }));
-  const concrete = canvasTexture(128, 64, (g, w, h) => {
-    g.fillStyle = '#b8b5ae';
-    g.fillRect(0, 0, w, h);
-    for (let i = 0; i < 600; i++) {               // speckle
-      g.fillStyle = Math.random() < 0.5 ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.06)';
-      g.fillRect(Math.random() * w, Math.random() * h, 2, 2);
     }
-    g.fillStyle = 'rgba(0,0,0,0.25)';             // the joint at each block's end
-    g.fillRect(0, 0, 2, h);
-  });
-  const walls = new THREE.InstancedMesh(
-    new THREE.BoxGeometry(T, H, STEP - 0.02),
-    new THREE.MeshStandardMaterial({ map: concrete, roughness: 0.9 }),
-    pieces.length
-  );
-  // A painted stripe along the bottom, alternating red and white per block
-  const stripe = new THREE.InstancedMesh(
-    new THREE.BoxGeometry(T + 0.02, 0.25, STEP - 0.02),
-    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 }),
-    pieces.length
-  );
-  const red = new THREE.Color(0xc8282a), white = new THREE.Color(0xf2f2ee);
-  pieces.forEach((p, i) => {
-    q.setFromAxisAngle(UP, p.angle);
-    walls.setMatrixAt(i, m4.compose(pos.set(p.x, H / 2, p.z), q, scl.set(1, 1, p.len / STEP)));
-    stripe.setMatrixAt(i, m4.compose(pos.set(p.x, 0.125, p.z), q, scl.set(1, 1, p.len / STEP)));
-    stripe.setColorAt(i, i % 2 ? red : white);
-  });
-  walls.castShadow = walls.receiveShadow = true;
-  scene.add(walls, stripe);
-
-  // Cracks: a hit leaves a crack pattern on the wall (bigger the harder the
-  // hit) and knocks off a few chips of concrete. The wall itself doesn't move.
-  const crackTex = [0, 1, 2].map(() => canvasTexture(256, 256, (g, w, h) => {
-    g.clearRect(0, 0, w, h);
-    const branch = (x, y, a, len, width) => {
-      if (len < 6 || width < 0.4) return;
-      let cx = x, cy = y;
-      g.strokeStyle = 'rgba(25,24,22,0.85)';
-      g.lineWidth = width;
-      g.beginPath(); g.moveTo(cx, cy);
-      for (let k = 0; k < 5; k++) {
-        a += (Math.random() - 0.5) * 0.7;
-        cx += Math.cos(a) * len / 5; cy += Math.sin(a) * len / 5;
-        g.lineTo(cx, cy);
-        if (Math.random() < 0.35) branch(cx, cy, a + (Math.random() < 0.5 ? 0.8 : -0.8), len * 0.5, width * 0.6);
-      }
-      g.stroke();
-    };
-    for (let k = 0; k < 7; k++) branch(w / 2, h / 2, (k / 7) * Math.PI * 2 + Math.random() * 0.5, 70 + Math.random() * 50, 3);
-    g.fillStyle = 'rgba(40,38,35,0.55)';           // the crushed spot in the middle
-    g.beginPath(); g.arc(w / 2, h / 2, 10, 0, Math.PI * 2); g.fill();
-  }));
-  const crackGeo = new THREE.PlaneGeometry(1, 1);
-  const crackMats = crackTex.map((t) => new THREE.MeshStandardMaterial({
-    map: t, transparent: true, depthWrite: false, roughness: 0.95,
-    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
-  }));
-  const cracks = [];
-  const crackAt = (point, normal, speed) => {
-    if (speed < 2) return null;
-    const size = Math.min(1.5, 0.35 + speed * 0.05);
-    const m = new THREE.Mesh(crackGeo, crackMats[(Math.random() * 3) | 0]);
-    m.position.set(point.x + normal.x * 0.012, groundAt(point.x, point.z) + Math.min(H - size / 2, Math.max(size / 2, 0.45 + Math.random() * 0.2)), point.z + normal.z * 0.012);
-    m.rotation.set(0, Math.atan2(normal.x, normal.z), Math.random() * Math.PI * 2);
-    m.scale.setScalar(size);
-    scene.add(m);
-    cracks.push(m);
-    if (cracks.length > 40) scene.remove(cracks.shift());
-    return { chips: Math.min(14, Math.round(speed * 0.8)) };
-  };
-  // one hit box per block, so walls at any angle fit snugly
-  for (const p of pieces) pieceBox(addCollider(0, 0, 0, 0, 'concrete', { hit: crackAt }), p.x, p.z, p.angle, p.len, T);
-  return runs.map(([ax, az, bx, bz]) => box(Math.min(ax, bx) - T / 2, 0, Math.min(az, bz) - T / 2,
-    Math.max(ax, bx) + T / 2, H, Math.max(az, bz) + T / 2, 0.55));
-}
-
-// A straight barrier run, cut into short stations so it can bend anywhere
-// along its length: s = distance along, u = direction along, a = across
-// (+a = to the left of someone walking from start to end)
-function makeRun(ax, az, bx, bz, spacing) {
-  const len = Math.hypot(bx - ax, bz - az);
-  const angle = Math.atan2(bx - ax, bz - az);
-  const n = Math.max(2, Math.round(len / spacing) + 1);
-  const u = { x: Math.sin(angle), z: Math.cos(angle) };
-  const a = across(angle);
-  const s = Array.from({ length: n }, (_, i) => (i / (n - 1)) * len);
-  return { ax, az, len, angle, n, u, a, s, ds: len / (n - 1) };
-}
-// Where a point is along a run (0..len), and whether it's on the run's left
-const runPos = (r, p) => Math.max(0, Math.min(r.len, (p.x - r.ax) * r.u.x + (p.z - r.az) * r.u.z));
-const gauss = (d, sigma) => Math.exp(-(d * d) / (2 * sigma * sigma));
-
-// Armco: two W-profile steel rails on posts every 2 m. Each rail is one
-// continuous strip with a bend point every 25 cm, so a hit bends it in a
-// smooth curve exactly where (and as wide as) the car struck, deepest at
-// the bottom rail (the height a car hits). Posts lean over only as far as
-// the rail is pushed at that post.
-function buildArmco(scene, runs) {
-  const SP = 0.25, POST_EVERY = 8;                     // posts every 2 m
-  const RAILS = [{ y: 0.55, give: 1 }, { y: 0.82, give: 0.6 }];
-  // The W profile (across, up) of each rail, relative to its centre
-  const PROFILE = [[0, 0.155], [0.035, 0.08], [0.005, 0], [0.035, -0.08], [0, -0.155]];
-  const list = runs.map(([ax, az, bx, bz]) => makeRun(ax, az, bx, bz, SP));
-  let verts = 0, posts = 0;
-  for (const r of list) {
-    r.v0 = verts;
-    verts += r.n * RAILS.length * PROFILE.length;
-    r.dent = RAILS.map(() => new Float32Array(r.n));
-    r.posts = [];
-    for (let i = 0; i < r.n; i += POST_EVERY) r.posts.push({ i, k: posts++ });
-    if ((r.n - 1) % POST_EVERY) r.posts.push({ i: r.n - 1, k: posts++ });
   }
-  const position = new Float32Array(verts * 3);
-  const index = [];
-  for (const r of list) {
-    RAILS.forEach((_, k) => {
-      const base = r.v0 + k * r.n * PROFILE.length;
-      for (let i = 0; i < r.n - 1; i++) {
-        for (let j = 0; j < PROFILE.length - 1; j++) {
-          const p = base + i * PROFILE.length + j, q2 = p + PROFILE.length;
-          index.push(p, q2, p + 1, p + 1, q2, q2 + 1);
-        }
-      }
-    });
+  // Height at any point: the grid's two triangles per square (the same
+  // triangles the ground is drawn with)
+  function heightAt(x, z) {
+    const gx = (x - x0) / cell, gz = (z - z0) / cell;
+    if (!(gx >= 0 && gz >= 0 && gx < NX - 1 && gz < NZ - 1)) return base;
+    const i = Math.floor(gx), j = Math.floor(gz), fx = gx - i, fz = gz - j;
+    const k = j * NX + i;
+    const h00 = h[k], h10 = h[k + 1], h01 = h[k + NX], h11 = h[k + NX + 1];
+    return fx + fz < 1
+      ? h00 + (h10 - h00) * fx + (h01 - h00) * fz
+      : h11 + (h01 - h11) * (1 - fx) + (h10 - h11) * (1 - fz);
   }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(position, 3).setUsage(THREE.DynamicDrawUsage));
-  geo.setIndex(index);
-  const steel = new THREE.MeshStandardMaterial({ color: 0xb9c0c6, roughness: 0.35, metalness: 0.8, side: THREE.DoubleSide });
-  const railMesh = new THREE.Mesh(geo, steel);
-  railMesh.castShadow = railMesh.receiveShadow = true;
-  railMesh.frustumCulled = false;
-  const postMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.12, 0.85, 0.12),
-    new THREE.MeshStandardMaterial({ color: 0x6b7178, roughness: 0.6, metalness: 0.5 }), posts);
-  postMesh.castShadow = true;
-  scene.add(railMesh, postMesh);
-
-  const tilt = new THREE.Quaternion(), turn = new THREE.Quaternion(), axis = new THREE.Vector3();
-  const draw = (r) => {
-    RAILS.forEach((rail, k) => {
-      const base = r.v0 + k * r.n * PROFILE.length;
-      for (let i = 0; i < r.n; i++) {
-        const d = r.dent[k][i];
-        const cx = r.ax + r.u.x * r.s[i] + r.a.x * d, cz = r.az + r.u.z * r.s[i] + r.a.z * d;
-        const sag = Math.abs(d) * 0.12;                 // a crushed rail sags a little
-        const gy = groundAt(cx, cz);
-        PROFILE.forEach(([px, py], j) => {
-          const o = (base + i * PROFILE.length + j) * 3;
-          position[o] = cx + r.a.x * px;
-          position[o + 1] = gy + rail.y + py - sag;
-          position[o + 2] = cz + r.a.z * px;
-        });
+  // The ground's 3D shape (rendering.js draws it with the grass)
+  function geometry(groundY, uvSize) {
+    const pos = new Float32Array(NX * NZ * 3), uv = new Float32Array(NX * NZ * 2);
+    for (let j = 0; j < NZ; j++) {
+      for (let i = 0; i < NX; i++) {
+        const k = j * NX + i, x = x0 + i * cell, z = z0 + j * cell;
+        pos[k * 3] = x; pos[k * 3 + 1] = h[k] + groundY; pos[k * 3 + 2] = z;
+        uv[k * 2] = (x + uvSize / 2) / uvSize; uv[k * 2 + 1] = 1 - (z + uvSize / 2) / uvSize;
       }
-    });
-    for (const p of r.posts) {
-      const d = r.dent[0][p.i];
-      // the post leans with the bottom rail (tilting about the run's own
-      // direction moves its top across the run)
-      axis.set(r.u.x, 0, r.u.z);
-      const lean = Math.min(0.9, Math.abs(d) * 1.1) * Math.sign(d);
-      tilt.setFromAxisAngle(axis, -lean);
-      turn.setFromAxisAngle(UP, r.angle).premultiply(tilt);
-      const px = r.ax + r.u.x * r.s[p.i] + r.a.x * d * 0.5, pz = r.az + r.u.z * r.s[p.i] + r.a.z * d * 0.5;
-      postMesh.setMatrixAt(p.k, m4.compose(pos.set(px, groundAt(px, pz) + 0.425 - Math.abs(d) * 0.05, pz), turn, scl.set(1, 1, 1)));
     }
-    // Hit boxes: a 1 m piece every 4 stations, where the bottom rail now is
-    for (const c of r.boxes) {
-      let d = 0;
-      for (let i = c.i0; i <= c.i1; i++) if (Math.abs(r.dent[0][i]) > Math.abs(d)) d = r.dent[0][i];
-      const sm = (r.s[c.i0] + r.s[c.i1]) / 2;
-      pieceBox(c.collider, r.ax + r.u.x * sm + r.a.x * d, r.az + r.u.z * sm + r.a.z * d, r.angle, r.s[c.i1] - r.s[c.i0], 0.22);
+    const index = new (NX * NZ > 65535 ? Uint32Array : Uint16Array)((NX - 1) * (NZ - 1) * 6);
+    let n = 0;
+    for (let j = 0; j < NZ - 1; j++) {
+      for (let i = 0; i < NX - 1; i++) {
+        const a = j * NX + i, b = a + 1, c = a + NX, d = c + 1;
+        // (wound so the faces point up)
+        index[n++] = a; index[n++] = c; index[n++] = b;
+        index[n++] = d; index[n++] = b; index[n++] = c;
+      }
     }
-  };
-  for (const r of list) {
-    r.boxes = [];
-    for (let i0 = 0; i0 < r.n - 1; i0 += 4) {
-      const c = { i0, i1: Math.min(r.n - 1, i0 + 4) };
-      c.collider = addCollider(0, 0, 0, 0, 'armco', { hit: (pt, nrm, v) => dentAt(r, pt, nrm, v) });
-      r.boxes.push(c);
-    }
-    draw(r);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    g.setIndex(new THREE.BufferAttribute(index, 1));
+    g.computeVertexNormals();
+    return g;
   }
-  const finish = () => {
-    geo.attributes.position.needsUpdate = true;
-    geo.computeVertexNormals();
-    geo.computeBoundingSphere();
-    postMesh.instanceMatrix.needsUpdate = true;
-  };
-  finish();
-  // A hit: the dent is deepest where the car struck and fades out either
-  // side; harder hits push further and spread wider
-  const dentAt = (r, point, normal, speed) => {
-    if (speed < 1.5) return null;
-    const s0 = runPos(r, point);
-    const away = -Math.sign(normal.x * r.a.x + normal.z * r.a.z) || 1;
-    const push = 0.045 * speed;
-    const sigma = 0.7 + 0.015 * speed;
-    RAILS.forEach((rail, k) => {
-      const dent = r.dent[k];
-      for (let i = 0; i < r.n; i++) {
-        const f = gauss(r.s[i] - s0, sigma);
-        if (f < 0.01) continue;
-        const room = Math.max(0, 0.9 - Math.abs(dent[i]));
-        dent[i] += away * Math.min(room, push * f * rail.give);
-      }
-    });
-    draw(r);
-    finish();
-    return { absorb: 0.5 };
-  };
-  return list.map((r) => {
-    const bx = r.ax + r.u.x * r.len, bz = r.az + r.u.z * r.len;
-    return box(Math.min(r.ax, bx) - 0.1, 0, Math.min(r.az, bz) - 0.1, Math.max(r.ax, bx) + 0.1, 1, Math.max(r.az, bz) + 0.1, 0.35);
-  });
+  return { heightAt, geometry, mean, base, cell, nodes: NX * NZ };
 }
 
-// Tyre barrier: stacks of old tyres, bolted together, with a belt of
-// conveyor rubber across the front (here: the stacks, 4 high, 2 deep)
-function buildTyreWalls(scene, runs) {
-  const R = 0.32, STEP = 0.62, HIGH = 4, ROWS = 2;
-  const columns = [];
-  const spots = runs.flatMap(([ax, az, bx, bz]) => {
-    const pts = along(ax, az, bx, bz, STEP);
-    const out = [];
-    for (const p of pts) {
-      const lx = Math.cos(p.angle), lz = -Math.sin(p.angle);   // across the run
-      const col = { x: p.x, z: p.z, angle: p.angle, push: 0, tyres: [] };
-      columns.push(col);
-      for (let row = 0; row < ROWS; row++) {
-        for (let level = 0; level < HIGH; level++) {
-          const t = { x: p.x + lx * row * STEP, z: p.z + lz * row * STEP, y: 0.11 + level * 0.22, level, jx: 0, jz: 0, tilt: 0, spin: Math.random() * Math.PI, col };
-          out.push(t);
-          col.tyres.push(t);
-        }
-      }
-    }
-    return out;
-  });
-  const tyreGeo = new THREE.TorusGeometry(R - 0.09, 0.1, 8, 18);
-  tyreGeo.rotateX(Math.PI / 2);
-  const tyres = new THREE.InstancedMesh(tyreGeo, new THREE.MeshStandardMaterial({ color: 0x1c1c1e, roughness: 0.92 }), spots.length);
-  const shade = new THREE.Color();
-  spots.forEach((s, i) => {
-    q.setFromAxisAngle(UP, s.spin);
-    tyres.setMatrixAt(i, m4.compose(pos.set(s.x, s.y, s.z), q, scl.set(1, 1.15, 1)));
-    // Some old tyres are painted white or red, like at real tracks
-    const r = Math.random();
-    tyres.setColorAt(i, shade.set(r < 0.12 ? 0xe9e6df : r < 0.2 ? 0xb42a24 : 0x2a2a2c));
-  });
-  tyres.castShadow = tyres.receiveShadow = true;
-  scene.add(tyres);
-
-  // Squashing back: a hit shoves the stacks near the impact back (the
-  // front row squashes into the back row), and knocks the tyres askew,
-  // the top ones most. Each column of stacks is its own hit box.
-  const colBox = (c) => {
-    const a = across(c.angle);
-    const near = -R + c.push, far = STEP + R + c.push * 0.6;     // the back row moves less
-    const xs = [c.x + a.x * near, c.x + a.x * far], zs = [c.z + a.z * near, c.z + a.z * far];
-    const ax = Math.abs(Math.sin(c.angle)) * R, az = Math.abs(Math.cos(c.angle)) * R;
-    c.collider.minX = Math.min(...xs) - ax; c.collider.maxX = Math.max(...xs) + ax;
-    c.collider.minZ = Math.min(...zs) - az; c.collider.maxZ = Math.max(...zs) + az;
-  };
-  for (const c of columns) { c.collider = addCollider(0, 0, 0, 0, 'tyres', { hit: (pt, n, v) => squashAt(pt, n, v) }); colBox(c); }
-  const squashAt = (point, normal, speed) => {
-    if (speed < 1.5) return null;
-    for (const c of columns) {
-      const d = alongDist(point, c.x, c.z, c.angle);
-      if (d > 1.6) continue;
-      const fall = Math.pow(Math.cos((Math.PI / 2) * d / 1.6), 2);
-      const a = across(c.angle);
-      const away = -Math.sign(normal.x * a.x + normal.z * a.z);
-      const room = 0.55 - Math.abs(c.push);
-      const amount = Math.max(0, Math.min(room, 0.05 * speed * fall));
-      c.push += away * amount;
-      for (const t of c.tyres) {
-        const loose = 0.5 + t.level * 0.35;                          // higher tyres get knocked about more
-        t.jx += (Math.random() - 0.5) * 0.1 * amount * loose;
-        t.jz += (Math.random() - 0.5) * 0.1 * amount * loose;
-        t.tilt = Math.min(0.5, t.tilt + Math.random() * 0.3 * amount * loose);
-      }
-      colBox(c);
-    }
-    spots.forEach((t, i) => {
-      const a = across(t.col.angle);
-      const row = Math.hypot(t.x - t.col.x, t.z - t.col.z) > 0.1 ? 0.6 : 1;   // the back row moves less
-      const shift = t.col.push * row;
-      q.setFromAxisAngle(UP, t.spin).premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(Math.sin(t.col.angle), 0, Math.cos(t.col.angle)), t.tilt * Math.sign(t.col.push || 1)));
-      const tx = t.x + a.x * shift + t.jx, tz = t.z + a.z * shift + t.jz;
-      tyres.setMatrixAt(i, m4.compose(pos.set(tx, groundAt(t.x, t.z) + t.y, tz), q, scl.set(1, 1.15 * (1 - Math.abs(shift) * 0.25 * row), 1)));
-    });
-    tyres.instanceMatrix.needsUpdate = true;
-    return { absorb: 0.7 };
-  };
-  return runs.map(([ax, az, bx, bz]) => box(Math.min(ax, bx) - R, 0, Math.min(az, bz) - R,
-    Math.max(ax, bx) + R + STEP, HIGH * 0.22, Math.max(az, bz) + R + STEP, 0.2));
-}
-
-// Catch fence: tall posts every 3 m with chain-link mesh between them, and
-// a top section that leans in over the track. The mesh is one continuous
-// sheet per run with points every 25 cm along and 30 cm up, so a hit caves
-// it in just where the car struck: deepest at car height, fading out above
-// and to the sides, and wider and deeper for harder hits. The mesh stays
-// tied to the posts; a post leans over only as much as the mesh pulls on
-// it, and the leaning top section and its arms move with the posts and the
-// top of the mesh. Each run is [ax, az, bx, bz, lean]: lean = which side
-// the track is on (+1 = left of someone walking from a to b).
-function buildFences(scene, runs) {
-  const H = 3.6, POST = 3, SP = 0.25, ROW = 0.3;
-  const TOP = 1.1, TILT = 0.75, TOP_ROWS = 4;        // the top section: 1.1 m long, ~43 degrees in
-  const ROWS = Math.round(H / ROW) + 1;              // points up the main mesh
-  const tex = canvasTexture(64, 64, (g, w, h) => {
-    g.clearRect(0, 0, w, h);
-    g.strokeStyle = 'rgba(200,205,210,0.95)';
-    g.lineWidth = 2;
-    g.beginPath();                                  // diamond chain-link
-    g.moveTo(0, h / 2); g.lineTo(w / 2, 0); g.lineTo(w, h / 2); g.lineTo(w / 2, h); g.closePath();
-    g.stroke();
-  });
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  const list = runs.map(([ax, az, bx, bz, lean = 1]) => Object.assign(makeRun(ax, az, bx, bz, SP), { lean }));
-  let verts = 0, topVerts = 0, posts = 0;
-  for (const r of list) {
-    r.v0 = verts; verts += r.n * ROWS;
-    r.t0 = topVerts; topVerts += r.n * TOP_ROWS;
-    r.raw = new Float32Array(r.n * ROWS);           // how far each point has been pushed (before the posts hold it)
-    const every = Math.max(1, Math.round(POST / r.ds));
-    r.posts = [];
-    for (let i = 0; i < r.n; i += every) r.posts.push({ i, k: posts++, lean: 0 });
-    if (r.posts[r.posts.length - 1].i !== r.n - 1) r.posts.push({ i: r.n - 1, k: posts++, lean: 0 });
-  }
-  // Main mesh and the leaning top: grids of points
-  const grid = (count, rowsOf, startOf) => {
-    const position = new Float32Array(count * 3), uv = new Float32Array(count * 2), index = [];
-    for (const r of list) {
-      const base = startOf(r), rows = rowsOf;
-      for (let i = 0; i < r.n; i++) {
-        for (let j = 0; j < rows; j++) {
-          const v = base + i * rows + j;
-          uv[v * 2] = r.s[i] / 0.12;                   // 12 cm diamonds
-          uv[v * 2 + 1] = (rows === ROWS ? j * ROW : j * TOP / (TOP_ROWS - 1)) / 0.12;
-          if (i < r.n - 1 && j < rows - 1) index.push(v, v + rows, v + 1, v + 1, v + rows, v + rows + 1);
-        }
-      }
-    }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(position, 3).setUsage(THREE.DynamicDrawUsage));
-    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-    geo.setIndex(index);
-    return geo;
-  };
-  const meshGeo = grid(verts, ROWS, (r) => r.v0);
-  const topGeo = grid(topVerts, TOP_ROWS, (r) => r.t0);
-  const meshMat = new THREE.MeshStandardMaterial({ map: tex, transparent: true, alphaTest: 0.3, side: THREE.DoubleSide, metalness: 0.6, roughness: 0.5 });
-  const sheet = new THREE.Mesh(meshGeo, meshMat);
-  const topSheet = new THREE.Mesh(topGeo, meshMat);
-  sheet.frustumCulled = topSheet.frustumCulled = false;
-  const postMat = new THREE.MeshStandardMaterial({ color: 0x8a9096, roughness: 0.5, metalness: 0.6 });
-  const postGeo = new THREE.CylinderGeometry(0.05, 0.05, H + 0.3, 8);
-  postGeo.translate(0, (H + 0.3) / 2, 0);            // pivot at the foot, so it leans from the ground
-  const postMesh = new THREE.InstancedMesh(postGeo, postMat, posts);
-  const armGeo = new THREE.CylinderGeometry(0.04, 0.04, TOP + 0.1, 8);
-  armGeo.translate(0, (TOP + 0.1) / 2, 0);           // pivot at the post top
-  const arms = new THREE.InstancedMesh(armGeo, postMat, posts);
-  postMesh.castShadow = arms.castShadow = true;
-  scene.add(sheet, topSheet, postMesh, arms);
-
-  // How far the finished mesh is pushed at station i, row j: tied to the
-  // posts (which lean as straight lines from the ground), free to bulge
-  // most halfway between them
-  const shape = (r, i, y, raw) => {
-    let a = r.posts[0], b = r.posts[r.posts.length - 1];
-    for (let k = 0; k < r.posts.length - 1; k++) if (i >= r.posts[k].i && i <= r.posts[k + 1].i) { a = r.posts[k]; b = r.posts[k + 1]; break; }
-    const t = b.i > a.i ? (i - a.i) / (b.i - a.i) : 0;
-    const held = (a.lean + (b.lean - a.lean) * t) * y;    // the line between the two posts
-    return held + (raw - held) * Math.sin(Math.PI * t);
-  };
-  const v3 = new THREE.Vector3(), dir = new THREE.Vector3(), quat = new THREE.Quaternion();
-  const draw = (r) => {
-    // Posts lean with the mesh pulling on them at about car height
-    const at = Math.round(1.0 / ROW);
-    for (const p of r.posts) {
-      p.lean = Math.max(-0.28, Math.min(0.28, 0.3 * r.raw[p.i * ROWS + at] / 1.0));   // (posts are stiff: they lean a little, the mesh between them bulges)
-    }
-    const P = meshGeo.attributes.position.array;
-    for (let i = 0; i < r.n; i++) {
-      const bx = r.ax + r.u.x * r.s[i], bz = r.az + r.u.z * r.s[i];
-      const gy = groundAt(bx, bz);
-      for (let j = 0; j < ROWS; j++) {
-        const y = j * ROW;
-        const d = shape(r, i, y, r.raw[i * ROWS + j]);
-        const o = (r.v0 + i * ROWS + j) * 3;
-        P[o] = bx + r.a.x * d; P[o + 1] = gy + y; P[o + 2] = bz + r.a.z * d;
-      }
-      // The leaning top carries on from the top of the mesh, tilted in over the track
-      const topD = shape(r, i, H, r.raw[i * ROWS + ROWS - 1]);
-      const T = topGeo.attributes.position.array;
-      for (let j = 0; j < TOP_ROWS; j++) {
-        const t = (j / (TOP_ROWS - 1)) * TOP;
-        const out = Math.sin(TILT) * t * r.lean, up = Math.cos(TILT) * t;
-        const o = (r.t0 + i * TOP_ROWS + j) * 3;
-        T[o] = bx + r.a.x * (topD + out); T[o + 1] = gy + H + up; T[o + 2] = bz + r.a.z * (topD + out);
-      }
-    }
-    for (const p of r.posts) {
-      const bx = r.ax + r.u.x * r.s[p.i], bz = r.az + r.u.z * r.s[p.i];
-      // the post: from its foot towards (lean across, 1 up)
-      dir.set(r.a.x * p.lean, 1, r.a.z * p.lean).normalize();
-      quat.setFromUnitVectors(UP, dir);
-      const gy = groundAt(bx, bz);
-      postMesh.setMatrixAt(p.k, m4.compose(pos.set(bx, gy, bz), quat, scl.set(1, 1, 1)));
-      // the arm: from the post's top, the same tilt as the top mesh
-      const topX = bx + r.a.x * p.lean * H, topZ = bz + r.a.z * p.lean * H;
-      dir.set(r.a.x * Math.sin(TILT) * r.lean, Math.cos(TILT), r.a.z * Math.sin(TILT) * r.lean).normalize();
-      quat.setFromUnitVectors(UP, dir);
-      arms.setMatrixAt(p.k, m4.compose(pos.set(topX, gy + H, topZ), quat, scl.set(1, 1, 1)));
-    }
-    // Hit boxes: half-metre pieces where the mesh now is at car height
-    const row = Math.round(0.6 / ROW);
-    for (const c of r.boxes) {
-      let d = 0;
-      for (let i = c.i0; i <= c.i1; i++) {
-        const v = shape(r, i, row * ROW, r.raw[i * ROWS + row]);
-        if (Math.abs(v) > Math.abs(d)) d = v;
-      }
-      const sm = (r.s[c.i0] + r.s[c.i1]) / 2;
-      pieceBox(c.collider, r.ax + r.u.x * sm + r.a.x * d, r.az + r.u.z * sm + r.a.z * d, r.angle, r.s[c.i1] - r.s[c.i0], 0.12);
-    }
-  };
-  const finish = () => {
-    for (const g of [meshGeo, topGeo]) {
-      g.attributes.position.needsUpdate = true;
-      g.computeVertexNormals();
-      g.computeBoundingSphere();
-    }
-    postMesh.instanceMatrix.needsUpdate = true;
-    arms.instanceMatrix.needsUpdate = true;
-  };
-  for (const r of list) {
-    r.boxes = [];
-    for (let i0 = 0; i0 < r.n - 1; i0 += 2) {
-      const c = { i0, i1: Math.min(r.n - 1, i0 + 2) };
-      c.collider = addCollider(0, 0, 0, 0, 'fence', { hit: (pt, nrm, v) => caveAt(r, pt, nrm, v) });
-      r.boxes.push(c);
-    }
-    draw(r);
-  }
-  finish();
-  // A hit caves the mesh in around the impact
-  const caveAt = (r, point, normal, speed) => {
-    if (speed < 1.5) return null;
-    const s0 = runPos(r, point);
-    const away = -Math.sign(normal.x * r.a.x + normal.z * r.a.z) || 1;
-    const push = 0.06 * speed;
-    const sigma = 0.7 + 0.02 * speed;
-    for (let i = 0; i < r.n; i++) {
-      const f = gauss(r.s[i] - s0, sigma);
-      if (f < 0.01) continue;
-      for (let j = 0; j < ROWS; j++) {
-        const y = j * ROW;
-        const h = y <= 1.0 ? 1 : gauss(y - 1.0, 0.8);    // car height, fading above
-        const k = i * ROWS + j;
-        const room = Math.max(0, 1.3 - Math.abs(r.raw[k]));
-        r.raw[k] += away * Math.min(room, push * f * h);
-      }
-    }
-    draw(r);
-    finish();
-    return { absorb: 0.6 };
-  };
-  // Mesh lets most sound through: only a faint, rattly reflection
-  return list.map((r) => {
-    const bx = r.ax + r.u.x * r.len, bz = r.az + r.u.z * r.len;
-    return box(Math.min(r.ax, bx) - 0.05, 0, Math.min(r.az, bz) - 0.05, Math.max(r.ax, bx) + 0.05, H + 0.8, Math.max(r.az, bz) + 0.05, 0.12);
-  });
-}
-
-// ---------------------------------------------------------------------
-// THE LAYOUT around the test area (the car starts at 0,0 facing +z;
-// +x is to its left). Keeps clear of the slalom cones (x = +-1.5,
-// z = 25-151), the cone ring (around -40, 40) and the gravel trap.
-// ---------------------------------------------------------------------
-// For other tracks (sepang.js): start a fresh list of hit boxes and roofs,
-// build with the pieces above, then attach the lists to the echo surfaces
-export function startScenery() {
-  COLLIDERS = [];
-  ROOFS = [];
-}
-export function finishScenery(echoes) {
-  echoes.colliders = COLLIDERS;
-  echoes.roofs = ROOFS;
-  return echoes;
-}
-export function addRoof(minX, maxX, minZ, maxZ, height) { ROOFS.push({ minX, maxX, minZ, maxZ, height }); }
-export { buildGarages, buildOffice, buildConcreteWalls, buildArmco, buildTyreWalls, buildFences, addCollider, canvasTexture, along, box as echoBox };
-
-export function buildScenery(scene) {
-  COLLIDERS = [];
-  ROOFS = [];
-  const echoes = [];
-  // Pit garages along the left of the slalom straight, and race control
-  // further up on the right
-  echoes.push(...buildGarages(scene, 22, 40, 82));
-  echoes.push(...buildOffice(scene, -30, 72, -16, 86, 9.5));
-  // A concrete wall along the left further up the straight, and Armco on the right
-  echoes.push(...buildConcreteWalls(scene, [[10, 95, 10, 141]]));
-  echoes.push(...buildArmco(scene, [[-9, 95, -9, 145]]));
-  // Behind the gravel trap: a tyre wall, then a catch fence
-  echoes.push(...buildTyreWalls(scene, [[-17.2, 5, -17.2, 17]]));
-  // (both lean towards +x, over the track side)
-  echoes.push(...buildFences(scene, [[-20, 2, -20, 20, 1], [-11, 95, -11, 145, 1]]));
-  echoes.colliders = COLLIDERS;
-  echoes.roofs = ROOFS;
-  return echoes;
+function smooth(t) {
+  t = Math.max(0, Math.min(1, t));
+  return t * t * (3 - 2 * t);
 }
