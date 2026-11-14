@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 4;
+export const BUILD = 5;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -58,18 +58,31 @@ export const ENGINES = {
 // The car's spec with an engine fitted: its power, weight and revs, and
 // gearing worked out to suit it (each gear tops out just under the
 // limiter; top gear a little past the car's top speed)
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 export function withEngine(car, key) {
   const e = ENGINES[key] || ENGINES.duratec;
   const s = { ...car, voice: null, ...e, name: car.name, engineName: e.name, engineKey: key, mass: car.baseMass + e.massDelta };
   // top speed: where the power runs out against the drag (P = drag·v³)
   let peakW = 0;
   for (const [rpm, nm] of e.torqueCurve) peakW = Math.max(peakW, nm * rpm * Math.PI / 30);
-  const vTop = Math.cbrt((peakW * car.driveEfficiency) / car.drag) * 1.04;
-  const top = car.gears[car.gears.length - 1];
+  const vTop = Math.cbrt((peakW * car.driveEfficiency) / car.drag) * 1.01;
+  // The gears, spaced to suit this engine: first tops out at about a third
+  // of the top speed (lower for an engine with a narrow, peaky power band),
+  // the rest closing up gently towards the top, as racing gearboxes do.
+  // (The Caterham with its own engine keeps its real gearbox.)
+  if (!(car.keepGears && key === car.stockEngine)) {
+    const n = car.gears.length;
+    const firstShare = clamp(0.24 + 0.14 * (e.idleRpm / e.redline), 0.24, 0.42);
+    const top = 1;
+    const first = top / firstShare;
+    s.gears = [];
+    for (let i = 0; i < n; i++) s.gears.push(+(first * Math.pow(top / first, Math.pow(i / (n - 1), 0.88))).toFixed(3));
+  }
+  const top = s.gears[s.gears.length - 1];
   s.finalDrive = (e.redline * Math.PI / 30) * car.wheelRadius / (vTop * top);
-  s.autoUpshiftKmh = car.gears.slice(0, -1).map((g) => Math.round((e.redline * 0.97 * Math.PI / 30) * car.wheelRadius / (g * s.finalDrive) * 3.6));
+  s.autoUpshiftKmh = s.gears.slice(0, -1).map((g) => Math.round((e.redline * 0.97 * Math.PI / 30) * car.wheelRadius / (g * s.finalDrive) * 3.6));
   s.cvtTargetRpm = e.redline * 0.87;
-  s.cvtRange = [s.finalDrive * top * 0.9, s.finalDrive * car.gears[0] * 1.3];
+  s.cvtRange = [s.finalDrive * top * 0.9, s.finalDrive * s.gears[0] * 1.3];
   s.oilLeakRate = car.oilLeakRate * (e.wear || 1);
   return s;
 }
@@ -78,6 +91,7 @@ export function withEngine(car, key) {
 export const F1_CAR = {
   ...CATERHAM,
   name: 'TT-88',
+  stockEngine: 'turboV6',
   baseMass: 600,              // kg with the driver and some fuel
   inertia: 900,
   airInertia: { pitch: 950, yaw: 980, roll: 260 },
@@ -106,7 +120,7 @@ export const F1_CAR = {
   fuelCapacity: 150, idleFuel: 2.5, fuelPerKwh: 0.3,
   tyreWearBase: 1 / 160000,
 };
-export const CATERHAM_CAR = { ...CATERHAM, name: 'Caterham Seven', baseMass: CATERHAM.mass };
+export const CATERHAM_CAR = { ...CATERHAM, name: 'Caterham Seven', baseMass: CATERHAM.mass, stockEngine: 'duratec', keepGears: true };
 // the engine each car comes with
 export const STOCK_ENGINE = { caterham: 'duratec', f1: 'turboV6' };
 
