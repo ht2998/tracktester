@@ -21,11 +21,20 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 52;
+export const BUILD = 53;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 48, date: '14 Nov 2026', title: 'Phone menus and Back on track',
+    items: [
+      ['Menus in front', 'On phones the side panel and the menu now sit in front of everything, and what is behind them is hidden while they are open', 'update'],
+      ['Back on track', 'Stuck in the gravel or facing the wrong way? Press B (or Back on track in the phone menu) to go back onto the track where you are, facing the right way. Your damage stays', 'update'],
+      ['Smaller map', 'The track map in the corner is a little smaller', 'update'],
+      ['The secret', 'If you have found it: it starts fresh now (no damage from before), Reset works in it, and on phones you can tap a spot to aim and use the FIRE and MG buttons', 'fire'],
+    ],
+  },
   {
     id: 47, date: '14 Nov 2026', title: 'The secret meets the AI',
     items: [
