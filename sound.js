@@ -11,7 +11,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 8;
+export const BUILD = 9;
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -198,16 +198,19 @@ class EnginePulses extends AudioWorkletProcessor {
 registerProcessor('engine-pulses', EnginePulses);
 
 // ---------------------------------------------------------------------
-// The heavy vehicle's engine (the secret one): a 4.2-litre straight six,
-// six uneven firings every two turns, labouring under 8 tonnes, with a
-// soft tap at idle, the hull booming, a deep sub-rumble, and the tracks
-// clanking and roaring. Built the same way as the preview that was
-// approved: each sound is a set of ringing tones struck by each event.
+// The heavy vehicle's engine (the secret one): a 6-cylinder turbo-diesel
+// (idle about 720 rpm, governed at 2,700), three firings per turn, each
+// one uneven, with a sharp diesel clatter as the fuel lights, a turbo that
+// whistles up a beat after the throttle, a low uneven burble in the
+// exhaust, a soft deep tap at idle, the hull booming, a deep sub-rumble,
+// and the tracks clanking and roaring. Built the same way as the preview
+// that was approved: each sound is a set of ringing tones struck by each
+// event.
 // ---------------------------------------------------------------------
 class HeavyEngine extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
-      { name: 'rpm', defaultValue: 680, minValue: 0, maxValue: 6000, automationRate: 'k-rate' },
+      { name: 'rpm', defaultValue: 720, minValue: 0, maxValue: 4000, automationRate: 'k-rate' },
       { name: 'load', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
       { name: 'speed', defaultValue: 0, minValue: 0, maxValue: 40, automationRate: 'k-rate' },
     ];
@@ -216,26 +219,30 @@ class HeavyEngine extends AudioWorkletProcessor {
     super();
     // a ringing tone: [freq, decay seconds, amplitude]
     const bank = (modes) => modes.map(([f, d, a]) => ({ f, d, a, y1: 0, y2: 0 }));
-    this.dark = bank([[78, 0.030, 1.0], [165, 0.020, 0.6], [310, 0.010, 0.25]]);
-    this.bright = bank([[240, 0.012, 0.5], [520, 0.006, 0.35], [1100, 0.003, 0.15]]);
+    this.dark = bank([[70, 0.030, 1.0], [140, 0.020, 0.6], [260, 0.010, 0.3]]);
+    this.bright = bank([[200, 0.012, 0.5], [450, 0.006, 0.35], [950, 0.003, 0.2]]);
     this.lug = bank([[62, 0.035, 1.0], [118, 0.02, 0.7], [380, 0.006, 0.3]]);
+    this.knockB = bank([[1250, 0.0025, 0.6], [2300, 0.0016, 0.5], [3600, 0.0011, 0.4]]);
+    this.burbleB = bank([[95, 0.045, 1.0], [150, 0.03, 0.7], [230, 0.018, 0.35]]);
     this.hull = bank([[34, 0.09, 1.0], [52, 0.06, 0.6]]);
     this.tapB = bank([[420, 0.007, 0.8], [780, 0.005, 0.6], [1300, 0.003, 0.25]]);
     this.thudB = bank([[70, 0.02, 1.0], [120, 0.012, 0.5]]);
     this.clankB = bank([[1700, 0.004, 0.5], [2600, 0.003, 0.4], [3900, 0.002, 0.3]]);
-    for (const b of [this.dark, this.bright, this.lug, this.hull, this.tapB, this.thudB, this.clankB]) {
+    for (const b of [this.dark, this.bright, this.lug, this.knockB, this.burbleB, this.hull, this.tapB, this.thudB, this.clankB]) {
       for (const m of b) {
         const w = 2 * Math.PI * m.f / sampleRate, r = Math.exp(-1 / (sampleRate * m.d));
         m.c1 = 2 * r * Math.cos(w); m.c2 = -r * r; m.gain = m.a * Math.sin(w);
       }
     }
-    this.gain = [1.0, 0.93, 1.06, 0.97, 1.03, 0.9];   // each cylinder a touch different (firing order 1-5-3-6-2-4)
+    this.gain = [1.0, 0.93, 1.06, 0.97, 1.03, 0.9];   // each cylinder a touch different
     this.cyl = 0; this.phase = 0; this.tickPhase = 0; this.linkPhase = 0; this.whinePhase = 0;
-    this.burstB = 0; this.burstL = 0; this.burstT = 0; this.burstC = 0;
+    this.burblePhase = 0; this.burbleWait = -1; this.burbleSize = 0; this.wobble = 0;
+    this.boost = 0; this.turboPhase = 0;
+    this.burstB = 0; this.burstL = 0; this.burstK = 0; this.burstU = 0; this.burstT = 0; this.burstC = 0;
     this.subA = 0; this.subB = 0; this.subC = 0; this.subD = 0;
-    this.inA = 0; this.inB = 0; this.roarA = 0; this.roarB = 0;
-    this.burstDecay = Math.exp(-1 / (sampleRate * 0.004));
-    this.bigNorm = 1 / 3.19;   // the preview's loudness, so it sounds the same
+    this.inA = 0; this.inB = 0; this.roarA = 0; this.roarB = 0; this.blA = 0; this.blB = 0;
+    this.decay4 = Math.exp(-1 / (sampleRate * 0.004));
+    this.norm = 0.85 / 5.14;   // the preview's loudness, so it sounds the same
   }
   run(bank, x) {
     let out = 0;
@@ -250,22 +257,24 @@ class HeavyEngine extends AudioWorkletProcessor {
     const out = outputs[0][0];
     if (!out) return true;
     const rpm = parameters.rpm[0], load = parameters.load[0], spd = parameters.speed[0];
-    const lugAmt = Math.max(0, Math.min(1, load * (1.15 - rpm / 4500)));
+    const lugAmt = Math.max(0, Math.min(1, load * (1.15 - rpm / 2700)));
     const fires = rpm / 60 * 3, ticks = rpm / 120, links = spd / 0.135;
+    const clatterAmt = 0.55 + 0.25 * load + 0.35 * Math.max(0, Math.min(1, (1100 - rpm) / 400));
     const tapAmt = Math.max(0, Math.min(1, (1400 - rpm) / 700));
-    const subLevel = (0.35 + 0.65 * rpm / 4300) * 2.2;
-    const intakeLevel = Math.pow(load * rpm / 4300, 1.5) * 0.08;
+    const subLevel = (0.35 + 0.65 * rpm / 2700) * 2.2;
     const roarLevel = Math.pow(spd / 22, 1.2) * 0.5;
     const whineLevel = 0.015 * spd / 22;
     const linkHit = Math.min(1, spd / 3);
-    const drive = 1.2 + 2.2 * lugAmt, after = 1 / (1 + 0.6 * lugAmt);
-    // simple filters for the noises (one-pole steps)
+    const boostWant = load * Math.min(1, rpm / 2700);
+    const kUp = 1 - Math.exp(-1 / (sampleRate * 0.7)), kDown = 1 - Math.exp(-1 / (sampleRate * 0.35));
     const kSub = 1 - Math.exp(-2 * Math.PI * 45 / sampleRate);
-    const kInLo = 1 - Math.exp(-2 * Math.PI * 500 / sampleRate), kInHi = 1 - Math.exp(-2 * Math.PI * 1800 / sampleRate);
+    const kInLo = 1 - Math.exp(-2 * Math.PI * 900 / sampleRate), kInHi = 1 - Math.exp(-2 * Math.PI * 3200 / sampleRate);
     const kRoLo = 1 - Math.exp(-2 * Math.PI * 60 / sampleRate), kRoHi = 1 - Math.exp(-2 * Math.PI * 400 / sampleRate);
+    const kBl = 1 - Math.exp(-2 * Math.PI * 400 / sampleRate);
+    const lugBoost = 1 + 0.3 * lugAmt;
     for (let i = 0; i < out.length; i++) {
-      let pd = 0, pb = 0, pl = 0, tk = 0, lk = 0;
-      // a firing: uneven strength and timing, the odd weak one
+      let pd = 0, pb = 0, pl = 0, pk = 0, tk = 0, lk = 0, bu = 0;
+      // a firing: uneven strength and timing, the odd weak one, and its diesel knock
       this.phase += fires / sampleRate;
       if (this.phase >= 1) {
         this.phase -= 1 + this.gauss() * 0.035;
@@ -273,37 +282,56 @@ class HeavyEngine extends AudioWorkletProcessor {
         let g = this.gain[this.cyl] * (0.8 + 0.2 * load) * (1 + 0.16 * this.gauss());
         if (Math.random() < 0.025) g *= 0.45;
         pd = g; pb = g * load; pl = g * lugAmt;
-        this.burstB += pb * 0.25; this.burstL += pl * 0.4;
+        pk = (0.8 + 0.4 * Math.random()) * clatterAmt;
+        this.burstB += pb * 0.12; this.burstL += pl * 0.4; this.burstK += pk * 0.5;
       }
+      // the burble: soft, uneven pops in the exhaust (about every other turn)
+      this.wobble += 0.7 / sampleRate;
+      this.burblePhase += (rpm / 60 * 0.75 * (1 + 0.3 * Math.sin(2 * Math.PI * this.wobble))) / sampleRate;
+      if (this.burblePhase >= 1) {
+        this.burblePhase -= 1;
+        if (Math.random() >= 0.25) {
+          this.burbleWait = Math.max(0, Math.round(this.gauss() * 0.012 * sampleRate + 0.03 * sampleRate));
+          this.burbleSize = (0.5 + 0.8 * Math.random()) * (0.6 + 0.6 * (1 - load));
+        }
+      }
+      if (this.burbleWait >= 0 && this.burbleWait-- === 0) { bu = this.burbleSize; this.burstU += bu * 0.15; }
       // the idle tap, once per camshaft turn
       this.tickPhase += ticks / sampleRate;
       if (this.tickPhase >= 1) { this.tickPhase -= 1 + this.gauss() * 0.01; tk = (0.7 + 0.3 * Math.random()) * tapAmt; this.burstT += tk * 0.12; }
       // a track link slapping down
       this.linkPhase += links / sampleRate;
       if (this.linkPhase >= 1) { this.linkPhase -= 1; lk = (0.5 + 0.5 * Math.random()) * linkHit; this.burstC += lk * 0.3; }
-      const n1 = Math.random() * 2 - 1;
-      let engine = this.run(this.dark, pd) + 0.8 * (this.run(this.bright, pb) + this.burstB * n1)
-        + 1.1 * (this.run(this.lug, pl) + this.burstL * (Math.random() * 2 - 1));
-      engine = Math.tanh(engine * drive) * after;
+      // exhaust, clear even when it's labouring
+      const engine = (this.run(this.dark, pd) + 0.8 * (this.run(this.bright, pb) + this.burstB * this.gauss())
+        + 1.1 * (this.run(this.lug, pl) + this.burstL * this.gauss())) * lugBoost;
+      const clatter = this.run(this.knockB, pk) + this.burstK * this.gauss();
+      // turbo: the boost lags the throttle, the whistle rises with it
+      this.boost += (boostWant - this.boost) * (boostWant > this.boost ? kUp : kDown);
+      this.turboPhase = (this.turboPhase + (2600 + 4200 * this.boost) / sampleRate) % 1;
+      const whistle = 0.022 * this.boost * Math.sin(2 * Math.PI * this.turboPhase);
+      const nn = this.gauss();
+      this.inA += (nn - this.inA) * kInHi; this.inB += (this.inA - this.inB) * kInLo;
+      const intake = (this.inA - this.inB) * Math.pow(this.boost, 1.3) * 0.07 * 1.6;
+      // burble, kept soft and low
+      const bRaw = this.run(this.burbleB, bu) + this.burstU * this.gauss();
+      this.blA += (bRaw - this.blA) * kBl; this.blB += (this.blA - this.blB) * kBl;
+      const burble = this.blB;
       const hull = 0.9 * this.run(this.hull, pd);
-      // deep sub-rumble: noise through four smoothing steps
       this.subA += (this.gauss() - this.subA) * kSub; this.subB += (this.subA - this.subB) * kSub;
       this.subC += (this.subB - this.subC) * kSub; this.subD += (this.subC - this.subD) * kSub;
       const sub = this.subD * subLevel * 6;
-      // intake roar: a band of noise
-      const nn = Math.random() * 2 - 1;
-      this.inA += (nn - this.inA) * kInHi; this.inB += (this.inA - this.inB) * kInLo;
-      const intake = (this.inA - this.inB) * intakeLevel * 2.5;
-      const tap = this.run(this.tapB, tk) + this.burstT * (Math.random() * 2 - 1);
+      const tap = this.run(this.tapB, tk) + this.burstT * this.gauss();
       const thud = this.run(this.thudB, lk);
-      const clank = this.run(this.clankB, lk) + this.burstC * (Math.random() * 2 - 1);
-      this.roarA += (Math.random() * 2 - 1 - this.roarA) * kRoHi; this.roarB += (this.roarA - this.roarB) * kRoLo;
-      const roar = (this.roarA - this.roarB) * roarLevel * 2;
+      const clank = this.run(this.clankB, lk) + this.burstC * this.gauss();
+      this.roarA += (this.gauss() - this.roarA) * kRoHi; this.roarB += (this.roarA - this.roarB) * kRoLo;
+      const roar = (this.roarA - this.roarB) * roarLevel * 1.2;
       this.whinePhase = (this.whinePhase + spd * 38 / sampleRate) % 1;
       const whine = whineLevel * Math.sin(2 * Math.PI * this.whinePhase);
-      this.burstB *= this.burstDecay; this.burstL *= this.burstDecay; this.burstT *= this.burstDecay; this.burstC *= this.burstDecay;
-      const mix = 1.2 * (engine + intake + hull + 0.5 * sub) + 0.2 * tap + 0.55 * thud + 0.12 * clank + 0.25 * roar + whine;
-      out[i] = Math.tanh(mix * this.bigNorm * 0.9) * 0.9;
+      this.burstB *= this.decay4; this.burstL *= this.decay4; this.burstK *= this.decay4; this.burstU *= this.decay4; this.burstT *= this.decay4; this.burstC *= this.decay4;
+      const mix = 1.2 * (engine + intake + hull + 0.5 * sub + 0.32 * clatter + whistle + 0.45 * burble)
+        + 0.2 * tap + 0.55 * thud + 0.12 * clank + 0.25 * roar + whine;
+      out[i] = Math.tanh(mix * this.norm) * 0.92;
     }
     for (let ch = 1; ch < outputs[0].length; ch++) outputs[0][ch].set(out);
     return true;
