@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 54;
+export const BUILD = 55;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 50, date: '14 Nov 2026', title: 'One more under the bonnet',
+    items: [
+      ['Screaming', 'If you know where the engines are kept, there is a new one that revs to 19,000', 'update'],
+    ],
+  },
   {
     id: 49, date: '14 Nov 2026', title: 'New car: the TT-88',
     items: [
