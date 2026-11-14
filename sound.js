@@ -11,7 +11,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 10;
+export const BUILD = 12;
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -1093,7 +1093,8 @@ export class EngineSound {
         this.heavy = new AudioWorkletNode(ctx, 'heavy-engine', { outputChannelCount: [1] });
         this.heavyGain = ctx.createGain();
         this.heavyGain.gain.value = 0;
-        this.heavy.connect(this.heavyGain).connect(this.carBus);
+        this.heavyPan = ctx.createStereoPanner ? ctx.createStereoPanner() : ctx.createGain();
+        this.heavy.connect(this.heavyPan).connect(this.heavyGain).connect(this.carBus);
         this.setHeavy(this.heavyOn);
       }).catch((err) => console.warn('Engine sound could not start:', err));
     }
@@ -1104,8 +1105,90 @@ export class EngineSound {
     this.heavyOn = !!on;
     if (!this.ctx || !this.heavyGain) return;
     const t = this.ctx.currentTime;
-    this.heavyGain.gain.setTargetAtTime(on ? 0.85 : 0, t, 0.1);
+    this.heavyGain.gain.setTargetAtTime(on ? 0.85 * (this.driverEar ? 1.35 : 1) : 0, t, 0.1);
     this.carVoiceGain.gain.setTargetAtTime(on ? 0 : 1, t, 0.1);
+  }
+
+  // Sitting in the driver's seat: the engine is right beside you, on your
+  // right, so it's louder and comes from that side
+  setDriverEar(on) {
+    if (this.driverEar === !!on) return;
+    this.driverEar = !!on;
+    if (!this.ctx || !this.heavyPan) return;
+    const t = this.ctx.currentTime;
+    if (this.heavyPan.pan) this.heavyPan.pan.setTargetAtTime(on ? 0.55 : 0, t, 0.1);
+    this.setHeavy(this.heavyOn);
+  }
+
+  // The 90 mm gun firing: a deep, round bang ringing on for two seconds, a
+  // huge boom you feel in your chest with a long roll dragging after it,
+  // the breech clanging open and the empty case dropping out (it echoes
+  // off buildings like everything else)
+  playCannon() {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t0 = ctx.currentTime, out = this.carBus;
+    const burst = (at, length, type, freq, q, peak, attack = 0.001) => {
+      const src = ctx.createBufferSource();
+      src.buffer = this.noise;
+      const f = ctx.createBiquadFilter();
+      f.type = type; f.frequency.value = freq; f.Q.value = q;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(peak, at + attack);
+      g.gain.exponentialRampToValueAtTime(0.0006, at + length);
+      src.connect(f).connect(g).connect(out);
+      src.start(at, Math.random() * 1.5);
+      src.stop(at + length + 0.05);
+    };
+    const thump = (at, freq, length, peak) => {
+      const o = ctx.createOscillator();
+      o.frequency.setValueAtTime(freq * 1.6, at);
+      o.frequency.exponentialRampToValueAtTime(freq, at + 0.12);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(peak, at + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.0006, at + length);
+      o.connect(g).connect(out);
+      o.start(at); o.stop(at + length + 0.05);
+    };
+    // (as approved in the preview, take 4, then 50% louder)
+    const L = 1.5;
+    burst(t0, 2.0, 'lowpass', 520, 0.7, 6.0 * L, 0.002);       // the shot: deep and round, ringing on for 2 s
+    thump(t0, 62, 0.9, 4.0 * L);                               // its round punch
+    burst(t0, 1.8, 'lowpass', 85, 0.9, 8.0 * L, 0.003);        // the boom
+    thump(t0, 34, 1.1, 3.6 * L);                               // the chest thump
+    burst(t0 + 0.05, 2.6, 'lowpass', 380, 0.7, 0.9 * L, 0.05); // the rumble rolling away
+    burst(t0 + 0.1, 4.8, 'lowpass', 170, 0.8, 2.0 * L, 0.25);  // the boom dragging on: a long, low roll
+    burst(t0 + 0.42, 0.09, 'bandpass', 2600, 4, 0.9 * L);     // the breech clanging open
+    burst(t0 + 0.47, 0.12, 'bandpass', 900, 3, 0.7 * L);
+    burst(t0 + 0.95, 0.06, 'bandpass', 3400, 6, 0.5 * L);     // the empty case hitting the floor
+    burst(t0 + 1.05, 0.05, 'bandpass', 3000, 6, 0.3 * L);
+  }
+
+  // A shell landing: a deep boom with a long roll after it (later, quieter
+  // and duller the further away it is)
+  playExplosion(distance) {
+    if (!this.ctx) return;
+    const ctx = this.ctx, out = this.master;
+    const t0 = ctx.currentTime + Math.min(3, distance / 343);   // sound takes time to arrive
+    const near = 1 / (1 + distance / 45);
+    const dull = Math.max(250, 4000 / (1 + distance / 60));     // far away, the high end is lost
+    const burst = (at, length, type, freq, q, peak, attack = 0.002) => {
+      const src = ctx.createBufferSource();
+      src.buffer = this.noise;
+      const f = ctx.createBiquadFilter();
+      f.type = type; f.frequency.value = freq; f.Q.value = q;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(Math.max(0.001, peak), at + attack);
+      g.gain.exponentialRampToValueAtTime(0.0006, at + length);
+      src.connect(f).connect(g).connect(out);
+      src.start(at, Math.random() * 1.5);
+      src.stop(at + length + 0.05);
+    };
+    burst(t0, 2.2, 'lowpass', 110, 0.9, 5.2 * near, 0.004);           // the boom
+    burst(t0 + 0.1, 4.0, 'lowpass', 150, 0.8, 1.6 * near, 0.3);       // its long roll
+    burst(t0, 0.18, 'lowpass', dull, 0.7, 3.0 * near);                // the blast
   }
 
   setMuted(muted) {
