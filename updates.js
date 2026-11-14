@@ -21,11 +21,20 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 64;
+export const BUILD = 65;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 56, date: '14 Nov 2026', title: 'The Garage, and a V12',
+    items: [
+      ['The Garage', 'Open it from the side panel (Car → Garage). Your car stands on a turntable in a studio: drag to walk round it, pinch or scroll to step in. Its figures and power curve are at the side, and it blips its throttle now and then', 'new'],
+      ['Change car', 'The key button opens the collection: Formula, GT3, Rally and more side by side, each dropping down to its cars by age, oldest first, a busy decade dropping down again. Only the TT-88 is ready; the rest are coming soon', 'new'],
+      ['Fire it up', 'Pick a car and it starts with a couple of big revs, then settles to idle. Drive takes you back to the track', 'new'],
+      ['The V12', 'The 3.5 V12 in the engine swap now has its own voice: the crank\'s two octaves under the firing note, its fifth on top, the same way the V10 was made. Six gears, each change up landing a little higher', 'update'],
+    ],
+  },
   {
     id: 55, date: '14 Nov 2026', title: 'Wheels, wings and scratches',
     items: [
