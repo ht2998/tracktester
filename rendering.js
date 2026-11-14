@@ -55,7 +55,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 28;
+const BUILD = 29;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -1053,6 +1053,24 @@ const cockpit = new Cockpit(carModel.car, MAT, { isMobile, redline: CATERHAM.red
 // Scorpion-inspired light tank (tank.js), and again to swap back.
 // (For now it drives with the car's physics.)
 const tank = buildScorpion();
+// Where the mouse is pointing (for the tank's turret): a spot on the
+// ground under the pointer, or far off if it's pointing at the sky
+const mouseAim = { x: 0, y: 0, moved: false };
+window.addEventListener('mousemove', (e) => {
+  mouseAim.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouseAim.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  mouseAim.moved = true;
+});
+const aimRayEnd = new THREE.Vector3();
+function aimPoint() {
+  const from = camera.position;
+  const dir = aimRayEnd.set(mouseAim.x, mouseAim.y, 0.5).unproject(camera).sub(from).normalize();
+  const groundY = tankPhys.y;
+  // where the ray meets the ground (within 400 m), else 400 m out
+  let dist = dir.y < -0.01 ? (groundY - from.y) / dir.y : 400;
+  if (!(dist > 0) || dist > 400) dist = 400;
+  return from.clone().addScaledVector(dir, dist);
+}
 const tankPhys = new TankPhysics();
 scene.add(tank.group);
 let tankMode = false;
@@ -1618,6 +1636,16 @@ const engineSmoke = new TyreSmoke(scene, {
   wind: { x: 1.1, z: 0.6 },
 });
 engineSmoke.setViewport(renderer.domElement.height, camera.fov);
+// The tank's diesel exhaust: a light grey haze at idle, and a thick black
+// puff when you floor it (more fuel than the turbo has air for yet)
+const dieselSmoke = new TyreSmoke(scene, {
+  maxParticles: isMobile ? 160 : 260, puffsPerSecond: isMobile ? 26 : 40,
+  color: 0x1b1b1c, thickness: 2.4, sizeScale: 0.42, rise: 1.6, lifeScale: 1.3,
+  wind: { x: 1.1, z: 0.6 },
+});
+dieselSmoke.setViewport(renderer.domElement.height, camera.fov);
+let dieselBoost = 0;              // how much air the turbo is giving (lags the throttle)
+const exhaustWorld = new THREE.Vector3();
 
 // --- Crash damage you can see: a crumpled nose and tail, scratches down
 // the sides from scraping along walls, steam from a holed or boiling
@@ -1826,7 +1854,7 @@ const mudSpray = new TyreSmoke(scene, {
 });
 mudSpray.setViewport(renderer.domElement.height, camera.fov);
 // How much of the ground wind each cloud of smoke or spray feels
-WIND_USERS.push([smoke, 0.5], [engineSmoke, 0.6], [steam, 0.6], [flames, 0.3], [flameCore, 0.3],
+WIND_USERS.push([smoke, 0.5], [engineSmoke, 0.6], [dieselSmoke, 0.6], [steam, 0.6], [flames, 0.3], [flameCore, 0.3],
   [dust, 0.4], [spray, 0.5], [sideSpray, 0.4], [grassDust, 0.4], [mudSpray, 0.2], [coolantMist, 0.5]);
 // Bits flung by the tyres: grass clippings, and clumps of mud
 const grassBits = new FlyingBits(scene, {
@@ -1977,6 +2005,7 @@ function updateSmoke(dt) {
   const fire = physics.fireLevel;
   engineSmoke.emitFrom('engine', engineBayWorld, Math.max(physics.engineBlown ? 1 : 0, fire * 0.9, physics.oilSmoke), carVelocity, dt);   // (black smoke: blown, burning, or cooking its oil)
   engineSmoke.update(dt);
+  dieselSmoke.update(dt);
   // Steam from the radiator, flames from the engine bay
   radiatorWorld.set(RADIATOR.x, RADIATOR.y, RADIATOR.z - physics.noseCrush);
   carModel.car.localToWorld(radiatorWorld);
@@ -2351,6 +2380,7 @@ function updateCamera(dt) {
 function fitViewport() {
   smoke.setViewport(renderer.domElement.height, camera.fov);
   engineSmoke.setViewport(renderer.domElement.height, camera.fov);
+  dieselSmoke.setViewport(renderer.domElement.height, camera.fov);
   for (const f of [steam, flames, flameCore, coolantMist]) f.setViewport(renderer.domElement.height, camera.fov);
   dust.setViewport(renderer.domElement.height, camera.fov);
   for (const fx of [spray, sideSpray, grassDust, mudSpray]) fx.setViewport(renderer.domElement.height, camera.fov);
@@ -2537,6 +2567,13 @@ renderer.setAnimationLoop(() => {
     tank.group.quaternion.copy(carModel.car.quaternion);
     tank.update(dt, physics.vx - physics.yawRate * 0.88, physics.vx + physics.yawRate * 0.88);
     tank.setLights(lightsMode > 0);
+    // the turret turns to face the mouse pointer
+    if (mouseAim.moved) tank.aimAt(aimPoint(), dt);
+    // black smoke when the throttle runs ahead of the turbo
+    const thr = input.throttle || 0;
+    dieselBoost += (thr * Math.min(1, tankPhys.rpm / 2700) - dieselBoost) * Math.min(1, dt / (thr > dieselBoost ? 0.7 : 0.35));
+    const sooty = 0.12 + 0.25 * thr + 1.4 * Math.max(0, thr - dieselBoost);
+    dieselSmoke.emitFrom('exhaust', tank.exhaust.getWorldPosition(exhaustWorld), Math.min(1, sooty), carVelocity, dt);
   }
   cockpit.update(dt, {
     steer: physics.steer, kick: physics.steerKick || 0, gear: physics.gear, transmission: physics.transmission,
