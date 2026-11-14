@@ -11,7 +11,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 15;
+export const BUILD = 16;
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -1227,7 +1227,10 @@ export class EngineSound {
         this.v10 = new AudioWorkletNode(ctx, 'v10-engine', { outputChannelCount: [1] });
         this.v10Gain = ctx.createGain();
         this.v10Gain.gain.value = 0;
-        this.v10.connect(this.v10Gain).connect(this.engineInput);
+        // (straight out, not through the car engine's warm, closing filter, so
+        // it isn't muffled; the game's own compressor and peak limiter keep it
+        // from clipping)
+        this.v10.connect(this.v10Gain).connect(this.carBus);
         this.setHeavy(this.heavyOn);
       }).catch((err) => console.warn('Engine sound could not start:', err));
     }
@@ -1241,7 +1244,7 @@ export class EngineSound {
     this.heavyGain.gain.setTargetAtTime(on ? 0.85 * (this.driverEar ? 1.35 : 1) : 0, t, 0.1);
     const v10 = !on && this.spec.voice === 'v10';
     this.carVoiceGain.gain.setTargetAtTime(on || v10 ? 0 : 1, t, 0.1);
-    this.v10Gain?.gain.setTargetAtTime(v10 ? 1 : 0, t, 0.1);
+    if (!v10) this.v10Gain?.gain.setTargetAtTime(0, t, 0.1);
   }
 
   // Sitting in the driver's seat: the engine is right beside you, on your
@@ -1454,6 +1457,11 @@ export class EngineSound {
     // (the limiter's stutter is made by the pulses themselves)
     // Shifts and the engine dying stay quick; everything else eases
     this.engineGain.gain.setTargetAtTime(volume, t, shifting || car.engineBlown ? 0.03 : car.engineDead ? 0.4 : loadEase);
+    // the V10 (its own path): the loudest engine in the game, cut in a shift
+    if (this.v10Gain && this.spec.voice === 'v10' && !this.heavyOn) {
+      const v = (car.engineDead ? 0 : 3.2) * (shifting ? 0.5 : 1) * (0.8 + 0.2 * load);
+      this.v10Gain.gain.setTargetAtTime(v, t, shifting ? 0.02 : car.engineDead ? 0.4 : 0.06);
+    }
 
     this.echo.update(listenerPos, car.heading);
   }
