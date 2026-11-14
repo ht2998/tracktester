@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 51;
+export const BUILD = 52;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 47, date: '14 Nov 2026', title: 'The secret meets the AI',
+    items: [
+      ['Rag dolls', 'If you have found the secret, the AI cars really do not like it when it bites', 'fire'],
+    ],
+  },
   {
     id: 46, date: '14 Nov 2026', title: 'AI cars at Sepang',
     items: [
