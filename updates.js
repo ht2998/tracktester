@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 46;
+export const BUILD = 47;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
@@ -48,6 +48,7 @@ export const UPDATES = [
       ['...and leaves its mark', 'Not tyre marks', 'update'],
       ['...and has its own views', 'Try the on-board cameras', 'camera'],
       ['...and bites', 'Click', 'fire'],
+      ['...hard', 'Barriers, fences, tyre walls and concrete do not like it', 'barriers'],
     ],
   },
   {
