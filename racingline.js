@@ -24,7 +24,7 @@
 //    Rubbered-in track grips a little better. Rain washes it away.
 import * as THREE from 'three';
 
-export const BUILD = 4;
+export const BUILD = 5;
 
 const G = 9.81;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -871,8 +871,8 @@ export class TrackMap {
     const style = document.createElement('style');
     style.textContent = `
       #track-map { position: fixed; right: calc(10px + env(safe-area-inset-right)); top: calc(36px + env(safe-area-inset-top));
-        width: 150px; height: 150px; pointer-events: none; z-index: 30; border-radius: 10px; background: rgba(8, 10, 14, 0.45); }
-      @media (max-width: 700px), (max-height: 500px) { #track-map { width: 96px; height: 96px; top: calc(32px + env(safe-area-inset-top)); } }`;
+        width: 124px; height: 124px; pointer-events: none; z-index: 30; border-radius: 10px; background: rgba(8, 10, 14, 0.45); }
+      @media (max-width: 700px), (max-height: 500px) { #track-map { width: 80px; height: 80px; top: calc(32px + env(safe-area-inset-top)); } }`;
     document.head.appendChild(style);
     document.body.appendChild(cv);
     this.cv = cv;
