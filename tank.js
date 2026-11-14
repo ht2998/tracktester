@@ -18,11 +18,11 @@ import { groundAt } from './ground.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 6;
+export const BUILD = 8;
 
 // Where the driver's eye would be if you look out of the commander's hatch
 const SIGHT_TURN = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
-const DRIVER_TURN = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.07, Math.PI, 0, 'YXZ'));   // looking forward, a touch down
+const DRIVER_TURN = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.12, Math.PI, 0, 'YXZ'));   // looking forward and a little down, through the vision block
 export const TANK_EYE = new THREE.Vector3(0.42, 2.22, -0.62);
 
 const TRACK_X = 0.88;      // middle of each track from the centre line
@@ -475,6 +475,156 @@ export function buildScorpion() {
   }
   place();
 
+
+  // ---------------- THE DRIVER'S COMPARTMENT (seen only from his seat) ----------------
+  // Front left of the hull, the engine through the bulkhead on his right.
+  // Cream-painted walls, a vision block in the sloping front plate with its
+  // periscope housing, the instrument panel under it, his two steering
+  // levers with his gloved hands on them, the gear selector, the pedals
+  // under his boots, a fire extinguisher, cables and a dim roof lamp.
+  const interior = new THREE.Group();
+  interior.visible = false;
+  body.add(interior);
+  const IMAT = {
+    cream: new THREE.MeshStandardMaterial({ color: 0xd8d2bd, roughness: 0.9 }),
+    grey: new THREE.MeshStandardMaterial({ color: 0x6d7068, roughness: 0.75, metalness: 0.3 }),
+    dark: new THREE.MeshStandardMaterial({ color: 0x24261f, roughness: 0.8 }),
+    steel: new THREE.MeshStandardMaterial({ color: 0x8b8d86, roughness: 0.4, metalness: 0.8 }),
+    vinyl: new THREE.MeshStandardMaterial({ color: 0x3c4430, roughness: 0.7 }),
+    khaki: new THREE.MeshStandardMaterial({ color: 0x5c5a3e, roughness: 0.95 }),
+    glove: new THREE.MeshStandardMaterial({ color: 0x2a2620, roughness: 0.85 }),
+    red: new THREE.MeshStandardMaterial({ color: 0xa3231b, roughness: 0.5 }),
+    glass: new THREE.MeshStandardMaterial({ color: 0x9fb5a8, roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.12, depthWrite: false }),
+  };
+  const iAdd = (geo, mat) => { const m = new THREE.Mesh(geo, mat); m.receiveShadow = false; m.castShadow = false; interior.add(m); return m; };
+  // walls, floor and roof (the roof has the hatch well above the driver's head)
+  const SLOPE = Math.atan2(0.39, 1.15);                      // the front plate's slope
+  const onFront = (z) => 1.32 - (z - 1.0) * (0.39 / 1.15);    // height of the inside of the front plate
+  iAdd(merge([
+    box(0.92, 0.02, 2.0, 0.53, 0.47, 0.98),                  // floor
+    box(0.02, 0.86, 2.0, 0.99, 0.9, 0.98),                   // left wall
+    box(0.92, 0.86, 0.02, 0.53, 0.9, 0.0),                   // back wall, behind the seat
+    box(0.92, 0.02, 0.42, 0.53, 1.33, 0.21),                 // roof behind the hatch
+    box(0.92, 0.02, 0.2, 0.53, 1.33, 0.9),                   // roof ahead of the hatch
+    box(0.24, 0.02, 0.38, 0.85, 1.33, 0.61), box(0.24, 0.02, 0.38, 0.17, 1.33, 0.61),
+    box(0.36, 0.14, 0.02, 0.48, 1.4, 0.42), box(0.36, 0.14, 0.02, 0.48, 1.4, 0.8),   // hatch well
+    box(0.02, 0.14, 0.38, 0.3, 1.4, 0.61), box(0.02, 0.14, 0.38, 0.66, 1.4, 0.61),
+  ]), IMAT.cream);
+  iAdd(box(0.36, 0.03, 0.38, 0.48, 1.47, 0.61), IMAT.grey);   // the hatch, shut, from underneath
+  iAdd(cyl(0.025, 0.025, 0.22, 8, 0.48, 1.44, 0.61, 'x'), IMAT.steel);   // its handle
+  // the sloping front plate, with the vision block cut out of it
+  const plate = (x0, x1, z0, z1) => {
+    const zc = (z0 + z1) / 2, len = (z1 - z0) / Math.cos(SLOPE);
+    const g = new THREE.BoxGeometry(x1 - x0, 0.02, len);
+    g.rotateX(SLOPE);
+    return g.translate((x0 + x1) / 2, onFront(zc), zc);
+  };
+  iAdd(merge([
+    plate(0.07, 0.99, 1.0, 1.06),          // above the window
+    plate(0.07, 0.99, 1.4, 2.1),           // below it, down to the nose
+    plate(0.07, 0.22, 1.06, 1.4),          // beside it
+    plate(0.74, 0.99, 1.06, 1.4),
+  ]), IMAT.cream);
+  iAdd(plate(0.22, 0.74, 1.06, 1.4), IMAT.glass);              // the vision block's glass
+  // the periscope housing: a dark frame round the window, standing off the plate
+  iAdd(merge([
+    plate(0.19, 0.77, 1.02, 1.06), plate(0.19, 0.77, 1.4, 1.44),
+    plate(0.19, 0.22, 1.06, 1.4), plate(0.74, 0.77, 1.06, 1.4),
+  ].map((g) => g.translate(0, -0.03, 0))), IMAT.dark);
+  // the engine bulkhead on his right: grey, with insulation and hot pipes
+  iAdd(box(0.02, 0.86, 2.0, 0.07, 0.9, 0.98), IMAT.grey);
+  iAdd(merge([
+    cyl(0.03, 0.03, 1.6, 10, 0.1, 1.15, 1.0, 'z'), cyl(0.022, 0.022, 1.6, 10, 0.1, 1.05, 1.0, 'z'),
+    cyl(0.015, 0.015, 1.8, 8, 0.97, 1.25, 0.95, 'z'), cyl(0.015, 0.015, 1.8, 8, 0.97, 1.2, 0.95, 'z'),   // cables on the left wall
+  ]), IMAT.steel);
+  iAdd(box(0.04, 0.4, 0.7, 0.1, 0.8, 1.0), IMAT.dark);          // a box of electrics on the bulkhead
+  iAdd(cyl(0.06, 0.06, 0.38, 14, 0.93, 0.8, 0.25), IMAT.red);   // fire extinguisher on the left wall
+  // instrument panel, under the window, with live dials (a small screen)
+  const panelCanvas = document.createElement('canvas');
+  panelCanvas.width = 256; panelCanvas.height = 96;
+  const panelTex = new THREE.CanvasTexture(panelCanvas);
+  panelTex.colorSpace = THREE.SRGBColorSpace;
+  const panel = iAdd(new THREE.PlaneGeometry(0.5, 0.19), new THREE.MeshBasicMaterial({ map: panelTex }));
+  panel.position.set(0.48, 1.06, 1.36);
+  panel.rotation.set(-0.45, Math.PI, 0);
+  iAdd(box(0.56, 0.24, 0.06, 0.48, 1.055, 1.39, -0.45, 0, 0), IMAT.dark);
+  // the seat (mostly out of sight below and behind)
+  iAdd(merge([box(0.44, 0.08, 0.42, 0.48, 0.72, 0.4), box(0.44, 0.5, 0.08, 0.48, 1.0, 0.14, -0.2, 0, 0)]), IMAT.vinyl);
+  // pedals and his boots on them, his legs stretched forward
+  iAdd(merge([box(0.08, 0.02, 0.14, 0.38, 0.62, 1.62, -0.6, 0, 0), box(0.1, 0.02, 0.16, 0.6, 0.6, 1.6, -0.6, 0, 0)]), IMAT.steel);
+  for (const x of [0.38, 0.6]) {
+    iAdd(cyl(0.07, 0.065, 0.62, 10, x, 0.72, 0.9, 'z'), IMAT.khaki);   // thigh
+    iAdd(cyl(0.055, 0.05, 0.5, 10, x, 0.66, 1.38, 'z'), IMAT.khaki);   // shin
+    iAdd(box(0.1, 0.1, 0.24, x, 0.66, 1.66), IMAT.glove);              // boot
+  }
+  // the gear selector, by his right hand
+  iAdd(merge([box(0.08, 0.04, 0.16, 0.2, 0.86, 0.72), cyl(0.012, 0.012, 0.2, 8, 0.2, 0.96, 0.72)]), IMAT.dark);
+  iAdd(new THREE.SphereGeometry(0.03, 10, 8).translate(0.2, 1.07, 0.72), IMAT.dark);
+  // the two steering levers: pull one back to slow that track and turn
+  // that way, both to brake. His hands are on them.
+  const levers = [0.22, 0.74].map((x) => {
+    const pivot = new THREE.Group();
+    pivot.position.set(x, 0.55, 1.0);
+    interior.add(pivot);
+    const rod = new THREE.Mesh(merge([cyl(0.016, 0.016, 0.56, 8, 0, 0.28, 0), box(0.06, 0.05, 0.06, 0, 0.02, 0)]), IMAT.steel);
+    rod.rotation.x = -0.35;               // leaning back towards him
+    pivot.add(rod);
+    const grip = new THREE.Mesh(cyl(0.028, 0.028, 0.13, 10, 0, 0.6, 0), IMAT.dark);
+    rod.add(grip);
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.05, 12, 10).scale(1, 1.3, 1.1).translate(0, 0.6, -0.02), IMAT.glove);
+    rod.add(hand);
+    return { pivot, rod };
+  });
+  // his forearms, from the levers back towards his elbows
+  const forearms = levers.map(() => { const m = iAdd(cyl(0.04, 0.034, 1, 10, 0, 0, 0), IMAT.khaki); return m; });
+  const handWorld = new THREE.Vector3(), elbow = new THREE.Vector3(), mid = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+  // the dim roof lamp (and the light from the vision block)
+  const lamp = new THREE.PointLight(0xffe2b0, 0, 2.2, 2);
+  lamp.position.set(0.5, 1.25, 0.35);
+  interior.add(lamp);
+  let panelClock = 0;
+  function updateInterior(dt, steer, brake, kmh, rpm, gear) {
+    // levers pulled back by the steering and the brake
+    const pull = [Math.min(1, Math.max(0, -steer) + brake * 0.8), Math.min(1, Math.max(0, steer) + brake * 0.8)];
+    levers.forEach((l, i) => {
+      l.pivot.rotation.x += (-0.45 * pull[i] - l.pivot.rotation.x) * Math.min(1, dt / 0.08);
+      // forearm from the hand back to the elbow
+      l.rod.updateMatrixWorld(true);
+      interior.updateMatrixWorld(true);
+      handWorld.set(0, 0.56, -0.05);
+      l.rod.localToWorld(handWorld);
+      interior.worldToLocal(handWorld);
+      elbow.set(l.pivot.position.x + (i === 0 ? -0.08 : 0.08), 0.88, 0.5);
+      mid.addVectors(handWorld, elbow).multiplyScalar(0.5);
+      const f = forearms[i];
+      f.position.copy(mid);
+      f.scale.set(1, handWorld.distanceTo(elbow), 1);
+      f.quaternion.setFromUnitVectors(up, elbow.clone().sub(handWorld).normalize());
+    });
+    // the instrument panel, ten times a second
+    panelClock -= dt;
+    if (panelClock > 0) return;
+    panelClock = 0.1;
+    const g = panelCanvas.getContext('2d');
+    g.fillStyle = '#1b1d17'; g.fillRect(0, 0, 256, 96);
+    const dial = (cx, value, max, label) => {
+      g.strokeStyle = '#5b5f52'; g.lineWidth = 3;
+      g.beginPath(); g.arc(cx, 50, 34, 0, Math.PI * 2); g.stroke();
+      g.fillStyle = '#9da38c'; g.font = '11px sans-serif'; g.textAlign = 'center';
+      g.fillText(label, cx, 88);
+      const a = Math.PI * (0.75 + 1.5 * Math.min(1, value / max));
+      g.strokeStyle = '#eee6c8'; g.lineWidth = 3;
+      g.beginPath(); g.moveTo(cx, 50); g.lineTo(cx + Math.cos(a) * 28, 50 + Math.sin(a) * 28); g.stroke();
+    };
+    dial(48, kmh, 80, 'km/h');
+    dial(208, rpm, 3000, 'rpm');
+    g.fillStyle = '#e0d9b8'; g.font = 'bold 30px sans-serif'; g.textAlign = 'center';
+    g.fillText(gear, 128, 60);
+    g.fillStyle = rpm > 2650 ? '#e0322b' : '#3a2a20';
+    g.beginPath(); g.arc(128, 20, 6, 0, Math.PI * 2); g.fill();
+    panelTex.needsUpdate = true;
+  }
+
   group.visible = false;
   // where the exhaust pipe comes out (right side, front), for the smoke
   const exhaust = new THREE.Object3D();
@@ -507,9 +657,16 @@ export function buildScorpion() {
     // position and turn (it tips and rolls with the hull).
     driverView(posOut, quatOut) {
       group.updateMatrixWorld();
-      body.localToWorld(posOut.set(0.48, 1.47, 1.02));
+      body.localToWorld(posOut.set(0.48, 1.29, 0.62));        // his head up in the hatch well
       group.getWorldQuaternion(quatOut);
       return quatOut.multiply(DRIVER_TURN);
+    },
+    // show the inside of the driver's compartment (only from his seat), and
+    // move his levers and dials
+    setInterior(on, dt = 0, c = {}) {
+      interior.visible = on;
+      lamp.intensity = on ? 0.6 : 0;
+      if (on) updateInterior(dt, c.steer || 0, c.brake || 0, c.kmh || 0, c.rpm || 720, c.gear || 'N');
     },
     // A shot: the barrel slams back and runs out again
     fired() { recoil = 0.28; },
@@ -574,7 +731,7 @@ export class TankPhysics {
     this.x = 0; this.z = 0; this.heading = 0;
     this.vx = 0; this.vy = 0; this.yawRate = 0;
     this.y = 0; this.pitch = 0; this.roll = 0;
-    this.rpm = 720; this.load = 0;   // engine speed starts at idle
+    this.rpm = 720; this.load = 0; this.gearLabel = 'N';   // engine speed starts at idle, in neutral
     // rocking from the gun's recoil: the hull tips away from the shot on its
     // suspension and settles (pitch: + = nose down; roll: + = left side up)
     this.rock = { pitch: 0, roll: 0, vPitch: 0, vRoll: 0 };
@@ -662,10 +819,13 @@ export class TankPhysics {
     // engine speed: the seven-speed gearbox keeps the diesel between about
     // 1,800 and 2,700 rpm when it's pulling (idle 720)
     const frac = Math.min(1, Math.abs(this.vx) / this.topSpeed);
-    const gearPos = (frac * 7) % 1;                                     // where it is within the current gear
+    const gearPos = frac * 7 - Math.min(6, Math.floor(frac * 7));        // where it is within the current gear (top gear runs up to the governor)
     const pulling = Math.abs(this.vx) > 0.5 ? 1850 + 850 * gearPos : 720 + 1400 * throttle;
     if (!Number.isFinite(this.rpm)) this.rpm = 720;
     this.rpm += ((throttle > 0.05 || Math.abs(this.vx) > 0.5 ? pulling : 720) - this.rpm) * Math.min(1, dt / 0.25);
     this.load = throttle;
+    // which of the seven gears it's in (the TN15 gearbox changes by itself)
+    const sp = this.vx;
+    this.gearLabel = sp < -0.3 ? 'R' : Math.abs(sp) < 0.3 && throttle < 0.05 ? 'N' : String(Math.min(7, Math.floor(frac * 7) + 1));
   }
 }
