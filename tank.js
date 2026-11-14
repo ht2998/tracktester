@@ -18,11 +18,12 @@ import { groundAt } from './ground.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 11;
+export const BUILD = 12;
 
 // Where the driver's eye would be if you look out of the commander's hatch
 const SIGHT_TURN = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
 const DRIVER_TURN = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.25, Math.PI, 0, 'YXZ'));   // looking forward and a little down: the periscope's window, his levers below it
+const CREW_TURN = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.2, Math.PI, 0, 'YXZ'));   // the crew view: looking forward over the breech
 const PERISCOPE_TURN = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.07, Math.PI, 0, 'YXZ'));  // the periscope's head, looking out over the front
 export const TANK_EYE = new THREE.Vector3(0.42, 2.22, -0.62);
 
@@ -826,13 +827,272 @@ export function buildScorpion() {
     panelTex.needsUpdate = true;
   }
 
+  // ---------------- THE TURRET'S INSIDE (seen only from the crew view) ----------------
+  // Seen from behind the two men in the turret: the gunner on the right,
+  // pressed to his sight, hands on his controls; the commander on the left,
+  // who loads. Between them the breech of the 90 mm. When it fires the whole
+  // breech slams back 40 cm and runs out again with a little bounce, the
+  // breech block drops open and throws the empty case back into the canvas
+  // bag on the floor; the commander turns, pulls the next round from the
+  // rack beside him, swings it in behind the breech and rams it home, and
+  // the block slams shut upwards.
+  const crew = new THREE.Group();
+  crew.visible = false;
+  turret.add(crew);
+  const gunInside = new THREE.Group();          // the breech end: tips with the gun
+  gunInside.visible = false;
+  gun.add(gunInside);
+  const recoiling = new THREE.Group();          // the part that slides back
+  gunInside.add(recoiling);
+  const cAdd = (geo, mat, parent = crew) => { const m = new THREE.Mesh(geo, mat); m.castShadow = m.receiveShadow = false; parent.add(m); return m; };
+  const CMAT = {
+    wall: new THREE.MeshStandardMaterial({ color: 0xd3ccb4, roughness: 0.85, side: THREE.BackSide }),
+    floor: new THREE.MeshStandardMaterial({ map: greyTex, bumpMap: greyTex, bumpScale: 1, roughness: 0.8, metalness: 0.3 }),
+    gunSteel: new THREE.MeshStandardMaterial({ color: 0x4a4c47, roughness: 0.45, metalness: 0.8 }),
+    olive: new THREE.MeshStandardMaterial({ color: 0x3d4426, roughness: 0.6 }),
+    brass: new THREE.MeshStandardMaterial({ color: 0xc39a4c, roughness: 0.3, metalness: 0.9 }),
+    canvas: new THREE.MeshStandardMaterial({ color: 0x6a6446, roughness: 1 }),
+    skin: new THREE.MeshStandardMaterial({ color: 0xc89a7a, roughness: 0.7 }),
+  };
+  // the walls and roof (the inside of the turret's shell) and the floor
+  {
+    const cz0 = tz - 0.3;
+    const shrink = (pts, k) => pts.map(([x, z]) => [x * k, (z - cz0) * k + cz0]);
+    cAdd(slopedPrism(shrink(bottom, 0.95), shrink(top, 0.95), 1.42, 1.95), CMAT.wall);
+    const fl = new THREE.CircleGeometry(0.8, 32).rotateX(-Math.PI / 2).translate(0, 1.425, RING_Z);
+    cAdd(metreUV(fl), CMAT.floor);
+    // the turret ring, a ring of bolts round it, a roof lamp
+    cAdd(new THREE.TorusGeometry(0.74, 0.02, 6, 40).rotateX(Math.PI / 2).translate(0, 1.44, RING_Z), IMAT.steel);
+    cAdd(merge([cyl(0.04, 0.04, 0.012, 12, -0.05, 1.945, -0.9), new THREE.SphereGeometry(0.018, 10, 8).translate(-0.05, 1.93, -0.9)]), IMAT.bulb);
+    // a radio and an intercom box on the back wall, cables along the roof
+    cAdd(box(0.42, 0.22, 0.22, 0.05, 1.62, -1.32), IMAT.dark);
+    cAdd(merge([0, 1, 2, 3].map((k) => cyl(0.012, 0.012, 0.02, 8, -0.08 + k * 0.08, 1.66, -1.205, 'z'))), IMAT.steel);
+    cAdd(box(0.08, 0.04, 0.04, 0.12, 1.58, -1.205), IMAT.lampGreen);
+    cAdd(merge([cyl(0.01, 0.01, 1.4, 6, 0.2, 1.93, -0.55, 'z'), cyl(0.01, 0.01, 1.4, 6, 0.24, 1.93, -0.55, 'z')]), IMAT.black);
+  }
+  // the commander's cupola opening above his head (a dark ring) and the
+  // gunner's sight hanging from the roof, with its eyepiece and brow pad
+  cAdd(new THREE.TorusGeometry(0.27, 0.025, 6, 30).rotateX(Math.PI / 2).translate(0.4, 1.94, tz - 0.32), IMAT.dark);
+  cAdd(merge([box(0.15, 0.17, 0.26, -0.36, 1.86, tz + 0.2), cyl(0.035, 0.03, 0.12, 14, -0.36, 1.83, tz + 0.03, 'z')]), IMAT.dark);
+  cAdd(cyl(0.045, 0.045, 0.04, 14, -0.36, 1.83, tz - 0.04, 'z'), IMAT.rubber);
+  // the gunner's control handles: a box with two grips he twists
+  cAdd(merge([box(0.22, 0.08, 0.1, -0.38, 1.46, tz + 0.07), box(0.04, 0.3, 0.04, -0.38, 1.6, tz + 0.12)]), IMAT.dark);
+  const handles = new THREE.Group();
+  handles.position.set(-0.38, 1.5, tz + 0.07);
+  crew.add(handles);
+  for (const x of [-0.11, 0.11]) handles.add(new THREE.Mesh(cyl(0.022, 0.022, 0.12, 10, x, 0.02, 0, 'x'), IMAT.rubber));
+  handles.add(new THREE.Mesh(cyl(0.012, 0.012, 0.22, 8, 0, 0.02, 0, 'x'), IMAT.steel));
+
+  // THE BREECH: the breech ring (two cheeks and a top, open underneath for
+  // the block), the sliding block, the chamber, the opening crank; fixed to
+  // the cradle behind it: the recoil cylinders and the recoil guard rails
+  recoiling.add(new THREE.Mesh(merge([
+    box(0.07, 0.3, 0.34, 0.125, 0, -0.37), box(0.07, 0.3, 0.34, -0.125, 0, -0.37),
+    box(0.18, 0.08, 0.34, 0, 0.11, -0.37), box(0.18, 0.03, 0.34, 0, -0.135, -0.37),
+    cyl(0.09, 0.09, 0.22, 20, 0, 0, -0.1, 'z'),                     // the end of the barrel
+  ]), CMAT.gunSteel));
+  const chamber = new THREE.Mesh(new THREE.CircleGeometry(0.05, 20).rotateY(Math.PI).translate(0, 0, -0.4), IMAT.black);
+  recoiling.add(chamber);
+  const block = new THREE.Mesh(merge([box(0.18, 0.17, 0.1, 0, 0, -0.49), cyl(0.02, 0.02, 0.06, 10, 0, -0.04, -0.55, 'z')]), CMAT.gunSteel);
+  recoiling.add(block);
+  const crank = new THREE.Mesh(merge([box(0.03, 0.03, 0.2, 0.17, 0.06, -0.4), box(0.03, 0.12, 0.03, 0.17, 0.0, -0.5)]), IMAT.steel);
+  recoiling.add(crank);
+  cAdd(merge([
+    cyl(0.04, 0.04, 0.5, 14, 0.1, 0.19, -0.12, 'z'), cyl(0.04, 0.04, 0.5, 14, -0.1, 0.19, -0.12, 'z'),   // recoil cylinders
+    box(0.03, 0.03, 0.68, 0.21, -0.12, -0.78), box(0.03, 0.03, 0.68, -0.21, -0.12, -0.78),             // guard rails
+    box(0.45, 0.03, 0.03, 0, -0.14, -1.12), box(0.03, 0.12, 0.03, 0.21, -0.07, -1.12), box(0.03, 0.12, 0.03, -0.21, -0.07, -1.12),
+  ]), IMAT.steel, gunInside);
+  cAdd(box(0.04, 0.04, 0.3, -0.21, -0.12, -0.6), IMAT.red, gunInside);   // a red danger strip on the guard
+
+  // THE ROUNDS: brass case, olive shell with a black tip (base at 0, nose at +z)
+  const roundGeo = { case: merge([cyl(0.048, 0.048, 0.5, 16, 0, 0, 0.25, 'z'), cyl(0.056, 0.056, 0.015, 16, 0, 0, 0.008, 'z')]),
+    shell: merge([cyl(0.045, 0.045, 0.1, 16, 0, 0, 0.55, 'z'), new THREE.ConeGeometry(0.045, 0.16, 16).rotateX(Math.PI / 2).translate(0, 0, 0.68)]) };
+  const makeRound = (parent, withShell = true) => {
+    const r = new THREE.Group();
+    r.add(new THREE.Mesh(roundGeo.case, CMAT.brass));
+    if (withShell) r.add(new THREE.Mesh(roundGeo.shell, CMAT.olive));
+    parent.add(r);
+    return r;
+  };
+  // the ready rack on the left wall beside the commander: two by two, lying
+  // pointing forward, held in clips
+  const RACK = [[0.6, 1.6], [0.71, 1.6], [0.6, 1.49], [0.71, 1.49]];
+  const RACK_Z = -0.48;
+  const rackRounds = RACK.map(([x, y]) => { const r = makeRound(crew); r.position.set(x, y, RACK_Z); return r; });
+  cAdd(merge([0.1, 0.45].flatMap((dz) => [box(0.26, 0.02, 0.03, 0.655, 1.43, RACK_Z + dz), box(0.03, 0.26, 0.03, 0.535, 1.55, RACK_Z + dz), box(0.26, 0.02, 0.03, 0.655, 1.545, RACK_Z + dz)])), IMAT.dark);
+  // the round in the commander's hands, and the empty case flying out
+  const carried = makeRound(crew);
+  carried.visible = false;
+  const spent = makeRound(crew, false);
+  spent.visible = false;
+  // the canvas bag on the floor behind the breech, filling up with cases
+  const BAG = new THREE.Vector3(0.02, 1.43, -0.95);
+  const bag = cAdd(new THREE.CylinderGeometry(0.17, 0.14, 0.24, 16, 1, true).translate(BAG.x, BAG.y + 0.12, BAG.z), new THREE.MeshStandardMaterial({ color: 0x6a6446, roughness: 1, side: THREE.DoubleSide }));
+  cAdd(new THREE.TorusGeometry(0.17, 0.012, 6, 24).rotateX(Math.PI / 2).translate(BAG.x, BAG.y + 0.24, BAG.z), IMAT.dark);
+  cAdd(new THREE.CircleGeometry(0.14, 16).rotateX(-Math.PI / 2).translate(BAG.x, BAG.y + 0.005, BAG.z), CMAT.canvas);
+  const bagCases = [0, 1, 2, 3, 4, 5].map((k) => {
+    const r = makeRound(crew, false);
+    const a = k * 2.1;
+    r.position.set(BAG.x + Math.cos(a) * 0.07, BAG.y + 0.02 + (k % 3) * 0.015, BAG.z + Math.sin(a) * 0.07);
+    r.rotation.set(-Math.PI / 2 + (Math.random() - 0.5) * 0.5, 0, (Math.random() - 0.5) * 0.5);
+    r.scale.setScalar(0.9);
+    r.visible = false;
+    return r;
+  });
+
+  // THE TWO MEN: coveralls, gloves, a headset over a beret
+  const crewMesh = (geo, mat, parent) => { const m = new THREE.Mesh(geo, mat); parent.add(m); return m; };
+  const makeMan = (hips) => {
+    const torso = new THREE.Group();
+    torso.position.copy(hips);
+    crew.add(torso);
+    const chest = crewMesh(new THREE.CapsuleGeometry(0.15, 0.22, 6, 14), IMAT.khaki, torso);
+    chest.position.y = 0.2; chest.scale.set(1.05, 1, 0.72);
+    crewMesh(new THREE.CylinderGeometry(0.05, 0.055, 0.08, 12).translate(0, 0.45, 0), CMAT.skin, torso);   // neck
+    const head = new THREE.Group();
+    head.position.set(0, 0.55, 0);
+    torso.add(head);
+    crewMesh(new THREE.SphereGeometry(0.095, 18, 14).scale(0.9, 1.05, 1), CMAT.skin, head);
+    crewMesh(new THREE.SphereGeometry(0.1, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2).scale(0.95, 0.7, 1.05).translate(0, 0.02, -0.005), IMAT.black, head);   // beret / cap
+    for (const s of [1, -1]) crewMesh(cyl(0.045, 0.045, 0.035, 14, s * 0.09, 0, 0, 'x'), IMAT.black, head);   // headset ear cups
+    crewMesh(new THREE.TorusGeometry(0.1, 0.008, 6, 20, Math.PI).rotateY(Math.PI / 2).translate(0, 0.02, 0), IMAT.black, head);
+    const arms = [0, 1].map(() => ({
+      upper: crewMesh(new THREE.CapsuleGeometry(0.045, 0.3, 6, 12), IMAT.khaki, crew),
+      fore: crewMesh(new THREE.CapsuleGeometry(0.04, 0.28, 6, 12), IMAT.khaki, crew),
+      hand: crewMesh(new THREE.SphereGeometry(0.045, 12, 10).scale(0.9, 0.8, 1.25), IMAT.glove, crew),
+    }));
+    return { torso, head, arms, shoulders: [new THREE.Vector3(-0.19, 0.38, 0), new THREE.Vector3(0.19, 0.38, 0)] };
+  };
+  const commander = makeMan(new THREE.Vector3(0.42, 1.32, tz - 0.3));
+  const gunner = makeMan(new THREE.Vector3(-0.38, 1.31, tz - 0.36));
+  gunner.torso.rotation.x = 0.42;        // leaning forward into his sight
+  gunner.head.rotation.x = -0.25;
+  const cv = { a: new THREE.Vector3(), d: new THREE.Vector3(), e: new THREE.Vector3(), p: new THREE.Vector3(), dir: new THREE.Vector3(), up: new THREE.Vector3(0, 1, 0), s: new THREE.Vector3() };
+  const setSeg = (m, a, b, len) => {
+    cv.dir.subVectors(b, a);
+    const l = cv.dir.length();
+    m.position.addVectors(a, b).multiplyScalar(0.5);
+    m.quaternion.setFromUnitVectors(cv.up, cv.dir.divideScalar(l || 1));
+    m.scale.set(1, l / len, 1);
+  };
+  // one arm from its shoulder to a hand target, bending at the elbow
+  const reach = (man, i, target, pole) => {
+    const U = 0.3, F = 0.28, arm = man.arms[i];
+    man.torso.updateMatrixWorld(true);
+    const sh = crew.worldToLocal(man.torso.localToWorld(cv.s.copy(man.shoulders[i])));
+    cv.d.subVectors(target, sh);
+    let len = cv.d.length();
+    const maxLen = U + F - 0.005;
+    if (len > maxLen) { cv.d.multiplyScalar(maxLen / len); len = maxLen; }
+    const along = (U * U - F * F + len * len) / (2 * len);
+    const lift = Math.sqrt(Math.max(0, U * U - along * along));
+    cv.dir.copy(cv.d).normalize();
+    cv.p.copy(pole).addScaledVector(cv.dir, -pole.dot(cv.dir)).normalize();
+    const elbow = cv.e.copy(sh).addScaledVector(cv.dir, along).addScaledVector(cv.p, lift).clone();
+    const hand = sh.clone().add(cv.d);
+    setSeg(arm.upper, sh, elbow, U);
+    setSeg(arm.fore, elbow, hand, F);
+    arm.hand.position.copy(hand);
+    arm.hand.quaternion.copy(arm.fore.quaternion);
+  };
+
+  // the loading drill, timed from the shot (seconds)
+  const DRILL = { open: 0.75, ejectEnd: 1.3, reach: [1.4, 2.2], lift: [2.2, 3.3], ram: [3.3, 4.0], close: 4.05, back: [4.2, 5.0] };
+  const drill = { t: 99, loaded: true, rounds: 34, slot: -1, cases: 0 };   // slot: which rack round this reload uses
+  const ease = (x) => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
+  const phase = (t, [a, b]) => ease((t - a) / (b - a));
+  const POLES = { cr: new THREE.Vector3(-0.3, -1, 0.2), cl: new THREE.Vector3(0.4, -1, 0.2), gr: new THREE.Vector3(-0.5, -1, 0), gl: new THREE.Vector3(0.5, -1, 0) };
+  const REST = { r: new THREE.Vector3(0.3, 1.5, tz - 0.08), l: new THREE.Vector3(0.58, 1.5, tz - 0.05) };
+  const tmpQ = new THREE.Quaternion(), qRack = new THREE.Quaternion(), qGun = new THREE.Quaternion(), qa = new THREE.Quaternion();
+  const pA = new THREE.Vector3(), pB = new THREE.Vector3(), handR = new THREE.Vector3(), handL = new THREE.Vector3(), axis = new THREE.Vector3();
+  // a point on the gun's line (gun-local z), in the turret's own space
+  const onGun = (out, z, y = 0) => crew.worldToLocal(gun.localToWorld(out.set(0, y, z)));
+  // the breech's slide back and run-out: 40 cm back almost instantly, back
+  // out over about 0.7 s, and a little bounce at the end
+  const recoilAt = (t) => {
+    if (t < 0.05) return 0.4 * Math.sqrt(t / 0.05);
+    if (t < 0.75) return 0.4 * (1 - ease((t - 0.05) / 0.7));
+    if (t < 1.15) return 0.018 * Math.sin(Math.PI * (t - 0.75) / 0.2) * Math.exp(-(t - 0.75) * 6);
+    return 0;
+  };
+  function updateCrew(dt, traverse, elevate) {
+    const t = drill.t;
+    // the breech block: down (open) from just after the shot until the new
+    // round is rammed, then it slams up
+    const open = drill.loaded ? 0 : Math.max(0, Math.min(1, (t - DRILL.open) / 0.12));
+    block.position.y = -0.17 * open;
+    crank.rotation.z = 0.6 * open;
+    crew.updateMatrixWorld(true);
+    gun.updateMatrixWorld(true);
+    // the empty case flying back into the bag
+    if (t >= DRILL.open && t < DRILL.ejectEnd) {
+      const u = (t - DRILL.open) / (DRILL.ejectEnd - DRILL.open);
+      onGun(pA, -0.4);
+      pB.set(BAG.x, BAG.y + 0.3, BAG.z);
+      spent.visible = true;
+      if (u < 0.35) spent.position.copy(onGun(axis, -0.4 - 0.6 * (u / 0.35)));
+      else spent.position.copy(onGun(axis, -1.0)).lerp(pB, (u - 0.35) / 0.65).y += Math.sin(Math.PI * (u - 0.35) / 0.65) * 0.05;
+      gun.getWorldQuaternion(qGun); crew.getWorldQuaternion(qa); qGun.premultiply(qa.invert());
+      spent.quaternion.copy(qGun).multiply(tmpQ.setFromAxisAngle(cv.up.set(1, 0, 0), Math.PI * 1.4 * u));
+      cv.up.set(0, 1, 0);
+    } else spent.visible = false;
+    bagCases.forEach((c, k) => { c.visible = k < Math.min(6, drill.cases); });
+    // the rack: what's still in it
+    const inHand = drill.slot >= 0 && !drill.loaded && t >= DRILL.lift[0];
+    const inRack = Math.min(4, Math.max(0, drill.rounds - (drill.loaded || inHand ? 1 : 0)));
+    rackRounds.forEach((r, k) => { r.visible = k < inRack; });
+    // the commander's drill
+    let yaw = 0;
+    handR.copy(REST.r); handL.copy(REST.l);
+    carried.visible = false;
+    if (drill.slot >= 0 && t >= DRILL.reach[0] && t < DRILL.back[1]) {
+      const [sx, sy] = RACK[drill.slot];
+      // where the round is: in the rack, swung across behind the breech, rammed in
+      gun.getWorldQuaternion(qGun); crew.getWorldQuaternion(qa); qGun.premultiply(qa.invert());
+      qRack.identity();
+      const lift = phase(t, DRILL.lift), ram = phase(t, DRILL.ram);
+      onGun(pB, -1.25 + 0.71 * ram);                       // its base on the gun's line
+      // (swung across in front of his chest, lifted clear: a curve from the
+      // rack to behind the breech)
+      const u = lift, w0 = (1 - u) * (1 - u), w1 = 2 * u * (1 - u), w2 = u * u;
+      pA.set(sx * w0 + 0.3 * w1 + pB.x * w2, sy * w0 + 1.8 * w1 + pB.y * w2, RACK_Z * w0 + (tz + 0.02) * w1 + pB.z * w2);
+      carried.position.copy(pA);
+      carried.quaternion.copy(qRack).slerp(qGun, lift);
+      carried.visible = t < DRILL.ram[1];
+      axis.set(0, 0, 1).applyQuaternion(carried.quaternion);
+      const reachIn = phase(t, DRILL.reach);
+      // hands: right on the base of the case, left round the middle
+      handR.lerp(cv.a.copy(pA).addScaledVector(axis, -0.03), reachIn);
+      handL.lerp(cv.d.copy(pA).addScaledVector(axis, 0.3), reachIn);
+      if (t > DRILL.ram[0]) handL.lerp(REST.l, phase(t, [DRILL.ram[0], DRILL.ram[0] + 0.4]));
+      if (t > DRILL.ram[1]) handR.copy(cv.a.copy(onGun(pB, -0.57))).lerp(REST.r, phase(t, DRILL.back));
+      yaw = 0.5 * reachIn - 1.0 * lift * (1 - phase(t, DRILL.back));
+    }
+    commander.torso.rotation.y += (yaw - commander.torso.rotation.y) * Math.min(1, dt * 10);
+    // (he leans forward to push the round right in)
+    const leanIn = drill.slot >= 0 ? phase(t, DRILL.ram) * (1 - phase(t, DRILL.back)) : 0;
+    commander.torso.rotation.x = 0.45 * leanIn;
+    commander.head.rotation.y = commander.torso.rotation.y * 0.4;
+    reach(commander, 0, handR, POLES.cr);
+    reach(commander, 1, handL, POLES.cl);
+    // the gunner: twisting his handles to traverse and elevate
+    handles.rotation.x += (-elevate * 0.35 - handles.rotation.x) * Math.min(1, dt * 12);
+    handles.rotation.y += (traverse * 0.35 - handles.rotation.y) * Math.min(1, dt * 12);
+    handles.updateMatrixWorld(true);
+    reach(gunner, 0, crew.worldToLocal(handles.localToWorld(cv.a.set(-0.11, 0.03, -0.02))).clone(), POLES.gr);
+    reach(gunner, 1, crew.worldToLocal(handles.localToWorld(cv.a.set(0.11, 0.03, -0.02))).clone(), POLES.gl);
+  }
+  const crewLamp = new THREE.PointLight(0xffe2b0, 0, 3, 2);
+  crewLamp.position.set(-0.05, 1.88, -0.9);
+  crew.add(crewLamp);
+
   group.visible = false;
   // where the exhaust pipe comes out (right side, front), for the smoke
   const exhaust = new THREE.Object3D();
   exhaust.position.set(-1.19, 1.0, 1.25);
   group.add(exhaust);
   let turretYaw = 0, gunPitch = 0;
-  let recoil = 0;          // how far back the barrel has slid after a shot (m)
+  let driverIn = false, crewIn = false;
   const barrelHome = barrel.position.z;
   const muzzleLocal = new THREE.Vector3(0, 0, 2.95);
   return {
@@ -888,12 +1148,47 @@ export function buildScorpion() {
     // move his levers and dials
     setInterior(on, dt = 0, c = {}) {
       interior.visible = on;
-      lowerHullMesh.visible = driverHatch.visible = !on;
+      driverIn = on;
+      driverHatch.visible = !on;
+      lowerHullMesh.visible = !(driverIn || crewIn);
       lamp.intensity = on ? 1.4 : 0;
       if (on) updateInterior(dt, c.steer || 0, c.brake || 0, c.kmh || 0, c.rpm || 720, c.gear || 'N');
     },
-    // A shot: the barrel slams back and runs out again
-    fired() { recoil = 0.28; },
+    // A shot: the gun slams back 40 cm and runs out again, the breech opens
+    // and throws out the case, and the commander loads the next round (if
+    // there is one). roundsLeft: how many are left, counting the next one.
+    fired(roundsLeft = 0) {
+      drill.t = 0;
+      drill.loaded = false;
+      drill.cases++;
+      drill.rounds = roundsLeft;
+      drill.slot = roundsLeft > 0 ? Math.min(4, roundsLeft) - 1 : -1;
+    },
+    // The view from behind the gunner and commander in the turret (turns
+    // with the turret). Writes a camera's position and turn.
+    crewView(posOut, quatOut) {
+      group.updateMatrixWorld();
+      turret.localToWorld(posOut.set(-0.08, 1.85, tz - 0.83));
+      turret.getWorldQuaternion(quatOut);
+      return quatOut.multiply(CREW_TURN);
+    },
+    // show the inside of the turret (only in the crew view) and move the
+    // men; traverse / elevate: how hard the gunner is turning his handles (-1..1)
+    setCrew(on, dt = 0, traverse = 0, elevate = 0) {
+      crew.visible = gunInside.visible = on;
+      crewIn = on;
+      lowerHullMesh.visible = !(driverIn || crewIn);
+      crewLamp.intensity = on ? 1.6 : 0;
+      if (on) updateCrew(dt, traverse, elevate);
+    },
+    // Turn the turret and lift the gun directly (the gunner's handles):
+    // radians, within the turret's speed and the gun's stops
+    turnBy(dYaw, dPitch) {
+      turretYaw += dYaw;
+      turretPivot.rotation.y = turretYaw;
+      gunPitch = Math.max(-0.17, Math.min(0.61, gunPitch + dPitch));
+      gun.rotation.x = -gunPitch;
+    },
     // which way the turret is facing, relative to the hull (radians, + = left)
     get turretYaw() { return turretYaw; },
     // Aim the turret at a point in the world: it turns (at about 40
@@ -928,9 +1223,13 @@ export function buildScorpion() {
       travel[0] += speedLeft * dt;
       travel[1] += speedRight * dt;
       place();
-      // the barrel running back out after recoil (about half a second)
-      recoil = Math.max(0, recoil - dt * 0.55);
-      barrel.position.z = barrelHome - recoil;
+      // the loading drill's clock; the barrel and breech sliding back and out
+      drill.t += dt;
+      if (!drill.loaded && drill.slot >= 0 && drill.t >= DRILL.close) drill.loaded = true;
+      if (drill.slot >= 0 && drill.t >= DRILL.back[1]) drill.slot = -1;
+      const back = recoilAt(drill.t);
+      barrel.position.z = barrelHome - back;
+      recoiling.position.z = -back;
     },
     // the headlights glow when the car's lights are on
     setLights(on) { MAT.lamp.emissive.setHex(on ? 0xfff1d6 : 0x000000); MAT.lamp.emissiveIntensity = on ? 1.5 : 0; },
