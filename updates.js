@@ -21,11 +21,35 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 61;
+export const BUILD = 64;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 55, date: '14 Nov 2026', title: 'Wheels, wings and scratches',
+    items: [
+      ['Bent suspension', 'A hit near a wheel bends its suspension: the wheel is knocked out of line, leans over and sags, and that corner grips less', 'update'],
+      ['Wheels that come off', 'A hard enough hit (or one too many on the same corner) tears the wheel off, tyre and all, with bits of suspension, and it rolls away. For every car', 'update'],
+      ['Wings that snap', 'The TT-88\'s front wing (each side) and rear wing get crushed in hits, sag and twist, then snap off and tumble down the track. Without them it loses that end\'s downforce', 'update'],
+      ['Scratch marks', 'Scrapes and hits leave pale scratches in the paint, on whichever panel touched, along the way you were sliding', 'update'],
+    ],
+  },
+  {
+    id: 54, date: '14 Nov 2026', title: 'The TT-88 goes boxy',
+    items: [
+      ['More 80s', 'Its body is boxier now: slab sides, flat tops and crisp edges, like the cars of the time', 'update'],
+    ],
+  },
+  {
+    id: 53, date: '14 Nov 2026', title: 'The TT-88, properly',
+    items: [
+      ['A real car now', 'The TT-88 now has everything the Caterham has: its own rims, brake discs that glow, calipers, suspension arms and pushrods that move, tyre wear and blowouts, wheels that can come off, and a body that dents', 'update'],
+      ['Its own cockpit', 'Sit in it (the cockpit camera): a small steering wheel, a screen with shift lights, the gear lever on the right, and a driver fighting the car all the time, reaching for the lever at every change, his head thrown about', 'camera'],
+      ['Stiff and low', 'Very stiff springs and very little travel: the floor runs a few centimetres off the road, and throws sparks when it touches over bumps, kerbs and under braking', 'update'],
+      ['Picking a car', 'Changing car in the side panel now restarts the game, so everything is built for the car you picked. The racing line plans its speeds and braking points for your car', 'update'],
+    ],
+  },
   {
     id: 52, date: '14 Nov 2026', title: 'Engines with character',
     items: [
