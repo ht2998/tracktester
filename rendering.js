@@ -55,7 +55,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 29;
+const BUILD = 30;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -2147,6 +2147,13 @@ function findContact() {
   return best;
 }
 
+// How high the car (or the tank) is sitting right now: the tank keeps its
+// own height, as the car's physics isn't running while you drive it
+function vehicleGroundY() {
+  if (tankMode) return tankPhys.y;
+  return physics.air ? physics.pose.y : physics.ground.y;
+}
+
 function collide(now) {
   if (physics.air && physics.airHeight > 0.9) return;   // flying over the barriers
   for (let iter = 0; iter < 4; iter++) {
@@ -2330,7 +2337,7 @@ window.addEventListener('pointerup', endLook);
 window.addEventListener('pointercancel', endLook);
 
 function updateCamera(dt) {
-  const gy = physics.air ? physics.pose.y : physics.ground.y;   // (follows the car up into the air)
+  const gy = vehicleGroundY();   // (follows the car or tank over the hills and up into the air)
   carPos.set(physics.x, gy, physics.z);
   forward.set(Math.sin(physics.heading), 0, Math.cos(physics.heading));
 
@@ -2399,8 +2406,8 @@ function switchCamera() {
   fitViewport();
   controls.enabled = cameraMode === 'showroom';
   if (controls.enabled) {
-    camera.position.set(physics.x, 0, physics.z).addScaledVector(forward, -6).setY(physics.ground.y + 2.2);
-    controls.target.set(physics.x, physics.ground.y + 0.45, physics.z);
+    camera.position.set(physics.x, 0, physics.z).addScaledVector(forward, -6).setY(vehicleGroundY() + 2.2);
+    controls.target.set(physics.x, vehicleGroundY() + 0.45, physics.z);
     controls.update();
   }
 }
@@ -2614,7 +2621,7 @@ renderer.setAnimationLoop(() => {
   if (rain.thunderNow) engineSound.playThunder?.(rain.thunderNow.strength);
 
   // The sky follows the car; the sun's shadow area sits ahead of it
-  carSpot.set(physics.x, physics.ground.y, physics.z);
+  carSpot.set(physics.x, vehicleGroundY(), physics.z);
   sky.update(dt, carSpot, camera);
   placeShadows();
   // Eyes adjust to the dark: a little brighter overall at night
