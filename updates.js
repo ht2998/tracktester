@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 41;
+export const BUILD = 42;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 41, date: '14 Nov 2026', title: 'Fix: free camera on the hills',
+    items: [
+      ['Free camera follows you up and down', 'In the free (orbit) camera, the point it turns around could stay at the height where you started instead of following you over the hills. It now stays on your vehicle wherever you are, and the shadows follow too', 'camera'],
+    ],
+  },
   {
     id: 40, date: '13 Nov 2026', title: 'Something is hiding in the game',
     items: [
