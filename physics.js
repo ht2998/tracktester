@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 14;
+export const BUILD = 15;
 
 const G = 9.81;   // gravity, m/s²
 const RPM_PER_RADS = 60 / (2 * Math.PI);
@@ -343,6 +343,9 @@ export class CarPhysics {
     this.coolantTemp = 0.45;  // engine temperature gauge: ~0.45 normal, 1 = boiling
     this.fuelLeak = 0;        // litres per second leaking from a split tank (rear hits)
     this.wheelBend = [0, 0, 0, 0];   // each wheel knocked out of line, radians (+ = toe out to the left)
+    this.suspDamage = [0, 0, 0, 0];  // each corner's suspension, bent (0) to torn off (1): the wheel leans, grips less, and at 1 comes off
+    this.wingDamage = { fl: 0, fr: 0, rear: 0 };   // a car with wings (the TT-88): each crushed (0) to snapped off (1)
+    this.aeroLoss = { front: 0, rear: 0 };         // how much of its downforce it's lost with them
     this.noseCrush = 0;       // metres the nose has been pushed in
     this.tailCrush = 0;       // metres the back has been pushed in
     this.dryTime = 0;         // seconds the engine has run with (almost) no coolant
@@ -390,6 +393,23 @@ export class CarPhysics {
     const wheelNear = (front, left) => (front ? 0 : 2) + (left ? 0 : 1);
     const bend = (i, amount, dir) => {
       this.wheelBend[i] = clamp(this.wheelBend[i] + Math.min(0.03, amount) * dir, -0.06, 0.06);
+      // the suspension on that corner bends too; a big enough hit (or one too
+      // many) tears the wheel off with it
+      this.suspDamage[i] = Math.min(1, this.suspDamage[i] + Math.max(0, v - 6) * 0.045);
+      if ((this.suspDamage[i] >= 1 || v > 24) && !this.tyres[i].detached) {
+        this.suspDamage[i] = 1;
+        this.tyres[i].detached = true;
+        this.events.push({ type: 'wheelOff', wheel: i, torn: true });
+      }
+    };
+    // wings (the TT-88's): crushed by a hit at that end, snapped off when crushed enough
+    const crushWing = (part, amount) => {
+      if (!this.spec.wings || this.wingDamage[part] >= 1) return;
+      this.wingDamage[part] = Math.min(1, this.wingDamage[part] + amount);
+      if (this.wingDamage[part] >= 1) {
+        if (part === 'rear') this.aeroLoss.rear = 0.8; else this.aeroLoss.front = Math.min(0.9, this.aeroLoss.front + 0.45);
+        this.events.push({ type: 'wingOff', part });
+      }
     };
     if (zone === 'front') {
       const wasHoled = this.radiator < 0.75;
@@ -413,15 +433,21 @@ export class CarPhysics {
       }
       // Off-centre: the front wheel on that side gets knocked back too
       if (Math.abs(across) > 0.5 && v > 5) bend(wheelNear(true, across > 0), (v - 5) * 0.0025, across > 0 ? 1 : -1);
+      // the front wing takes it first (one side, or both if it's head on)
+      const crushF = Math.max(0, v - 2.5) * 0.09;
+      if (across > 0.15) crushWing('fl', crushF); else if (across < -0.15) crushWing('fr', crushF);
+      else { crushWing('fl', crushF * 0.8); crushWing('fr', crushF * 0.8); }
     } else if (zone === 'rear') {
       this.tailCrush = Math.min(0.25, this.tailCrush + Math.max(0, v - 3) * 0.018);
       if (v > 7) this.fuelLeak = Math.min(0.6, this.fuelLeak + (v - 7) * 0.025);
       if (Math.abs(across) > 0.5 && v > 5) bend(wheelNear(false, across > 0), (v - 5) * 0.0025, across > 0 ? 1 : -1);
+      crushWing('rear', Math.max(0, v - 2.5) * 0.08);
     } else {
       const left = zone === 'left';
       const front = along > -0.2;
       const i = wheelNear(front, left);
       bend(i, (v - 2.5) * 0.004, left ? -1 : 1);       // pushed in towards the car
+      if (front && along > 1.2) crushWing(left ? 'fl' : 'fr', Math.max(0, v - 4) * 0.07);
       if (v > 8) this.puncture(i, 0.04 * (v - 8));
     }
     // Fire: a big hit on a badly damaged engine, or with fuel spilling out
@@ -1124,7 +1150,7 @@ export class CarPhysics {
       const a = w.front ? s.cgToFront : -s.cgToRear, b = w.side * s.trackHalf;
       const wx = this.x + fx * a + lx * b, wz = this.z + fz * a + lz * b;
       W4.at[i * 2] = wx; W4.at[i * 2 + 1] = wz;
-      mu[i] = (w.front ? s.frontGrip : s.rearGrip) * this.surfaceGrip(wx, wz) * this.tyreGrip(i);
+      mu[i] = (w.front ? s.frontGrip : s.rearGrip) * this.surfaceGrip(wx, wz) * this.tyreGrip(i) * (1 - 0.3 * this.suspDamage[i]);
       soft[i] = firm(this.tyres[i]);
       // the road's height under the wheel (bumps, kerbs), less however far a
       // flat tyre or bare rim lets that corner drop. The tyre's own rubber
@@ -1376,7 +1402,7 @@ export class CarPhysics {
     const Lr = s.cgToRear, Lf = s.cgToFront, tH = s.trackHalf, R = s.wheelRadius;
     const staticF = m * G * Lr / (Lf + Lr) / 2, staticR = m * G * Lf / (Lf + Lr) / 2;
     const aero = s.downforce * this.vx * this.vx;
-    const aeroF = aero * s.downforceFront / 2, aeroR = aero * (1 - s.downforceFront) / 2;
+    const aeroF = aero * s.downforceFront / 2 * (1 - this.aeroLoss.front), aeroR = aero * (1 - s.downforceFront) / 2 * (1 - this.aeroLoss.rear);
     // Steering: the inside front wheel turns a little more (Ackermann)
     // plus any bend from a crash
     const ack = 0.12 * d * Math.abs(d) / Math.max(1e-3, s.maxSteer);
