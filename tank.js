@@ -18,11 +18,12 @@ import { groundAt } from './ground.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 9;
+export const BUILD = 11;
 
 // Where the driver's eye would be if you look out of the commander's hatch
 const SIGHT_TURN = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
-const DRIVER_TURN = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.22, Math.PI, 0, 'YXZ'));   // looking forward and a little down, through the vision block
+const DRIVER_TURN = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.25, Math.PI, 0, 'YXZ'));   // looking forward and a little down: the periscope's window, his levers below it
+const PERISCOPE_TURN = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.07, Math.PI, 0, 'YXZ'));  // the periscope's head, looking out over the front
 export const TANK_EYE = new THREE.Vector3(0.42, 2.22, -0.62);
 
 const TRACK_X = 0.88;      // middle of each track from the centre line
@@ -561,9 +562,14 @@ export function buildScorpion() {
   const SLOPE = Math.atan2(0.39, 1.15);                      // the front plate's slope
   const onFront = (z) => 1.32 - (z - 1.0) * (0.39 / 1.15);    // height of the inside of the front plate
   iAdd(metreUV(merge([
-    box(0.92, 0.02, 2.0, 0.53, 0.47, 0.98),                  // floor
-    box(0.02, 0.86, 2.0, 0.99, 0.9, 0.98),                   // left wall
-    box(0.92, 0.86, 0.02, 0.53, 0.9, 0.0),                   // back wall, behind the seat
+    // (the bottom of the compartment is only as wide as the hull between
+    // the tracks; above the track it widens out over a shelf)
+    box(0.57, 0.02, 2.0, 0.355, 0.58, 0.98),                 // floor
+    box(0.02, 0.3, 2.0, 0.64, 0.73, 0.98),                   // lower left wall, beside the track
+    box(0.35, 0.02, 2.0, 0.815, 0.88, 0.98),                 // the shelf over the track
+    box(0.02, 0.45, 2.0, 0.99, 1.105, 0.98),                 // left wall above it
+    box(0.92, 0.4, 0.02, 0.53, 0.77, 1.98),                  // the nose, down at his feet
+    box(0.92, 0.76, 0.02, 0.53, 0.95, 0.0),                  // back wall, behind the seat
     box(0.92, 0.02, 0.42, 0.53, 1.33, 0.21),                 // roof behind the hatch
     box(0.92, 0.02, 0.2, 0.53, 1.33, 0.9),                   // roof ahead of the hatch
     box(0.24, 0.02, 0.38, 0.85, 1.33, 0.61), box(0.24, 0.02, 0.38, 0.17, 1.33, 0.61),
@@ -590,36 +596,36 @@ export function buildScorpion() {
     plate(0.07, 0.22, 1.06, 1.4),          // beside it
     plate(0.74, 0.99, 1.06, 1.4),
   ])), IMAT.cream);
-  iAdd(plate(0.22, 0.74, 1.06, 1.4), IMAT.glass);              // the vision block's glass
-  // the periscope housing: a thick dark frame round the window standing off
-  // the plate, bolted on, with a padded brow rest above it
+  iAdd(metreUV(plate(0.22, 0.74, 1.06, 1.4)), IMAT.cream);
+  // THE PERISCOPE: its body hangs down from the roof in front of his face,
+  // with a wide window he looks into; the window shows what the periscope's
+  // head (up on the roof) sees outside (drawn by the game each frame)
   iAdd(merge([
-    plate(0.18, 0.78, 1.0, 1.06), plate(0.18, 0.78, 1.4, 1.46),
-    plate(0.18, 0.22, 1.06, 1.4), plate(0.74, 0.78, 1.06, 1.4),
-  ].map((g) => g.translate(0, -0.04, 0))), IMAT.dark);
-  const bolts = [];
-  for (let k = 0; k <= 6; k++) {
-    const x = 0.2 + k * 0.093;
-    for (const z of [1.03, 1.43]) bolts.push(cyl(0.009, 0.009, 0.012, 6, x, onFront(z) - 0.055, z));
-  }
-  for (const x of [0.2, 0.76]) for (const z of [1.15, 1.3]) bolts.push(cyl(0.009, 0.009, 0.012, 6, x, onFront(z) - 0.055, z));
-  iAdd(merge(bolts), IMAT.steel);
+    box(0.58, 0.2, 0.11, 0.42, 1.23, 0.955),                  // the body
+    box(0.5, 0.06, 0.12, 0.42, 1.36, 0.98),                   // up through the roof
+  ]), IMAT.dark);
+  iAdd(merge([                                                // a lip round the window
+    box(0.54, 0.018, 0.03, 0.42, 1.312, 0.89), box(0.54, 0.018, 0.03, 0.42, 1.138, 0.89),
+    box(0.02, 0.19, 0.03, 0.159, 1.225, 0.89), box(0.02, 0.19, 0.03, 0.681, 1.225, 0.89),
+  ]), IMAT.black);
+  iAdd(merge([[0.18, 1.3], [0.66, 1.3], [0.18, 1.15], [0.66, 1.15]].map(([x, y]) => cyl(0.007, 0.007, 0.01, 6, x, y, 0.873, 'z'))), IMAT.steel);
+  const periscopeScreen = iAdd(new THREE.PlaneGeometry(0.5, 0.16).rotateY(Math.PI).translate(0.42, 1.225, 0.898), new THREE.MeshBasicMaterial({ color: 0x0b0c0a }));
   {
-    const pad = new THREE.CapsuleGeometry(0.04, 0.42, 6, 12);
+    const pad = new THREE.CapsuleGeometry(0.018, 0.44, 6, 12);      // the rubber brow pad on top
     pad.rotateZ(Math.PI / 2);
-    pad.translate(0.48, onFront(0.96) - 0.08, 0.96);
-    iAdd(pad, IMAT.vinyl);
+    pad.translate(0.42, 1.3, 0.875);
+    iAdd(pad, IMAT.rubber);
   }
   // the engine bulkhead on his right: grey, with hot pipes, an electrics
   // box and cables; cables and a switch box on the left wall
-  iAdd(metreUV(box(0.02, 0.86, 2.0, 0.07, 0.9, 0.98)), IMAT.grey);
+  iAdd(metreUV(box(0.02, 0.76, 2.0, 0.07, 0.95, 0.98)), IMAT.grey);
   iAdd(merge([
-    cyl(0.03, 0.03, 1.6, 12, 0.11, 1.15, 1.0, 'z'), cyl(0.022, 0.022, 1.6, 12, 0.11, 1.05, 1.0, 'z'),
-    cyl(0.04, 0.04, 0.03, 12, 0.11, 1.15, 0.5, 'z'), cyl(0.04, 0.04, 0.03, 12, 0.11, 1.15, 1.4, 'z'),   // pipe clamps
+    cyl(0.03, 0.03, 1.6, 12, 0.11, 1.27, 1.0, 'z'), cyl(0.022, 0.022, 1.6, 12, 0.11, 1.19, 1.0, 'z'),
+    cyl(0.04, 0.04, 0.03, 12, 0.11, 1.27, 0.5, 'z'), cyl(0.04, 0.04, 0.03, 12, 0.11, 1.27, 1.4, 'z'),   // pipe clamps
     cyl(0.012, 0.012, 1.8, 8, 0.97, 1.25, 0.95, 'z'), cyl(0.012, 0.012, 1.8, 8, 0.97, 1.21, 0.95, 'z'),
   ]), IMAT.steel);
-  iAdd(metreUV(box(0.05, 0.36, 0.5, 0.1, 0.82, 0.95)), IMAT.grey);              // the electrics box
-  iAdd(merge([0, 1, 2].map((k) => cyl(0.016, 0.016, 0.03, 10, 0.13, 0.92 - k * 0.08, 0.8, 'x'))), IMAT.black);   // its plugs
+  iAdd(metreUV(box(0.05, 0.3, 0.4, 0.1, 0.8, 1.55)), IMAT.grey);               // the electrics box, down by his right foot
+  iAdd(merge([0, 1, 2].map((k) => cyl(0.016, 0.016, 0.03, 10, 0.13, 0.88 - k * 0.08, 1.4, 'x'))), IMAT.black);   // its plugs
   // the switch box on the left wall: toggle switches and warning lamps
   iAdd(box(0.06, 0.16, 0.3, 0.95, 1.1, 0.95), IMAT.dark);
   iAdd(merge([0, 1, 2, 3].map((k) => cyl(0.005, 0.005, 0.04, 6, 0.91, 1.13, 0.85 + k * 0.06, 'x').rotateZ(0))), IMAT.steel);
@@ -631,14 +637,14 @@ export function buildScorpion() {
     const pts = [];
     for (let k = 0; k <= 120; k++) {
       const t = k / 120, a = t * Math.PI * 2 * 12;
-      pts.push(new THREE.Vector3(0.9 + Math.cos(a) * 0.015, 1.12 - t * 0.32, 0.42 + Math.sin(a) * 0.015 + t * 0.06));
+      pts.push(new THREE.Vector3(0.93 + Math.cos(a) * 0.015, 1.12 - t * 0.2, 0.42 + Math.sin(a) * 0.015 + t * 0.06));
     }
     iAdd(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 240, 0.004, 5), IMAT.black);
   }
   // fire extinguisher on the left wall, strapped on
-  iAdd(merge([cyl(0.06, 0.06, 0.36, 16, 0.92, 0.8, 0.22), new THREE.SphereGeometry(0.06, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2).translate(0.92, 0.98, 0.22)]), IMAT.red);
-  iAdd(merge([cyl(0.015, 0.015, 0.06, 8, 0.92, 1.05, 0.22), box(0.02, 0.02, 0.08, 0.92, 1.08, 0.25)]), IMAT.black);
-  iAdd(merge([cyl(0.064, 0.064, 0.025, 16, 0.92, 0.7, 0.22), cyl(0.064, 0.064, 0.025, 16, 0.92, 0.9, 0.22)]), IMAT.dark);
+  iAdd(merge([cyl(0.055, 0.055, 0.26, 16, 0.92, 1.02, 0.22), new THREE.SphereGeometry(0.055, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2).translate(0.92, 1.15, 0.22)]), IMAT.red);
+  iAdd(merge([cyl(0.014, 0.014, 0.05, 8, 0.92, 1.22, 0.22), box(0.02, 0.02, 0.07, 0.92, 1.25, 0.25)]), IMAT.black);
+  iAdd(merge([cyl(0.059, 0.059, 0.022, 16, 0.92, 0.95, 0.22), cyl(0.059, 0.059, 0.022, 16, 0.92, 1.1, 0.22)]), IMAT.dark);
   // the roof lamp in its little wire cage
   iAdd(new THREE.SphereGeometry(0.022, 12, 8).translate(0.75, 1.3, 0.3), IMAT.bulb);
   iAdd(merge([cyl(0.04, 0.04, 0.012, 14, 0.75, 1.318, 0.3), cyl(0.032, 0.032, 0.004, 14, 0.75, 1.28, 0.3)]), IMAT.steel);
@@ -648,14 +654,14 @@ export function buildScorpion() {
   const panelTex = new THREE.CanvasTexture(panelCanvas);
   panelTex.colorSpace = THREE.SRGBColorSpace;
   const panel = iAdd(new THREE.PlaneGeometry(0.5, 0.19), new THREE.MeshBasicMaterial({ map: panelTex }));
-  panel.position.set(0.48, 1.06, 1.355);
+  panel.position.set(0.48, 1.0, 1.325);
   panel.rotation.set(-0.45, Math.PI, 0);
-  iAdd(box(0.56, 0.24, 0.06, 0.48, 1.055, 1.39, -0.45, 0, 0), IMAT.dark);
-  iAdd(merge([[-0.26, 0.1], [0.26, 0.1], [-0.26, -0.1], [0.26, -0.1]].map(([dx, dy]) => cyl(0.008, 0.008, 0.01, 6, 0.48 + dx, 1.055 + dy * Math.cos(0.45), 1.36 - dy * Math.sin(0.45), 'z'))), IMAT.steel);
+  iAdd(box(0.56, 0.24, 0.06, 0.48, 0.995, 1.36, -0.45, 0, 0), IMAT.dark);
+  iAdd(merge([[-0.26, 0.1], [0.26, 0.1], [-0.26, -0.1], [0.26, -0.1]].map(([dx, dy]) => cyl(0.008, 0.008, 0.01, 6, 0.48 + dx, 0.995 + dy * Math.cos(0.45), 1.33 - dy * Math.sin(0.45), 'z'))), IMAT.steel);
   // the seat (mostly out of sight below and behind)
-  iAdd(merge([box(0.44, 0.08, 0.42, 0.48, 0.72, 0.4), box(0.44, 0.5, 0.08, 0.48, 1.0, 0.14, -0.2, 0, 0)]), IMAT.vinyl);
+  iAdd(merge([box(0.42, 0.08, 0.42, 0.33, 0.74, 0.4), box(0.42, 0.5, 0.08, 0.33, 1.0, 0.14, -0.2, 0, 0), box(0.06, 0.16, 0.04, 0.33, 0.66, 0.4)]), IMAT.vinyl);
   // pedals, and his legs stretched forward to them
-  iAdd(merge([box(0.08, 0.02, 0.14, 0.38, 0.62, 1.62, -0.6, 0, 0), box(0.1, 0.02, 0.16, 0.6, 0.6, 1.6, -0.6, 0, 0)]), IMAT.steel);
+  iAdd(merge([box(0.08, 0.02, 0.14, 0.26, 0.68, 1.62, -0.6, 0, 0), box(0.1, 0.02, 0.16, 0.4, 0.66, 1.6, -0.6, 0, 0)]), IMAT.steel);
   const limbBetween = (a, b, r, mat) => {
     const len = a.distanceTo(b);
     const g = new THREE.CapsuleGeometry(r, len, 6, 12);
@@ -664,28 +670,28 @@ export function buildScorpion() {
     m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
     return m;
   };
-  for (const x of [0.38, 0.6]) {
-    const hip = new THREE.Vector3(x, 0.8, 0.42), knee = new THREE.Vector3(x, 0.92, 0.98), ankle = new THREE.Vector3(x, 0.68, 1.5);
-    limbBetween(hip, knee, 0.075, IMAT.khaki);
-    limbBetween(knee, ankle, 0.055, IMAT.khaki);
-    iAdd(new THREE.SphereGeometry(0.07, 12, 10).translate(knee.x, knee.y, knee.z), IMAT.khaki);
-    iAdd(new THREE.CapsuleGeometry(0.05, 0.18, 4, 10).rotateX(Math.PI / 2 - 0.5).translate(x, 0.66, 1.6), IMAT.black);   // boot
+  for (const x of [0.26, 0.4]) {
+    const hip = new THREE.Vector3(x, 0.84, 0.42), knee = new THREE.Vector3(x, 0.94, 0.98), ankle = new THREE.Vector3(x, 0.74, 1.5);
+    limbBetween(hip, knee, 0.066, IMAT.khaki);
+    limbBetween(knee, ankle, 0.05, IMAT.khaki);
+    iAdd(new THREE.SphereGeometry(0.064, 12, 10).translate(knee.x, knee.y, knee.z), IMAT.khaki);
+    iAdd(new THREE.CapsuleGeometry(0.045, 0.18, 4, 10).rotateX(Math.PI / 2 - 0.5).translate(x, 0.72, 1.6), IMAT.black);   // boot
   }
   // the gear selector, by his right hand, in its gate
-  iAdd(merge([box(0.09, 0.05, 0.2, 0.17, 0.86, 0.75)]), IMAT.dark);
-  iAdd(merge([cyl(0.01, 0.01, 0.2, 8, 0.17, 0.97, 0.75)]), IMAT.steel);
-  iAdd(new THREE.SphereGeometry(0.028, 12, 10).translate(0.17, 1.08, 0.75), IMAT.black);
+  iAdd(merge([box(0.07, 0.05, 0.2, 0.115, 0.86, 0.5)]), IMAT.dark);
+  iAdd(merge([cyl(0.01, 0.01, 0.2, 8, 0.115, 0.97, 0.5)]), IMAT.steel);
+  iAdd(new THREE.SphereGeometry(0.028, 12, 10).translate(0.115, 1.08, 0.5), IMAT.black);
 
   // THE TWO STEERING LEVERS, standing up in front of him either side of his
   // knees: pull one back to slow that track and turn that way, both to
   // brake. Rubber boots where they come up through the floor, steel rods,
   // rubber grips with his gloved hands wrapped round them.
   const GRIP_Y = 0.44;
-  const levers = [0.22, 0.74].map((x, i) => {
+  const levers = [0.12, 0.52].map((x, i) => {
     const pivot = new THREE.Group();
-    pivot.position.set(x, 0.6, 1.08);
+    pivot.position.set(x, 0.6, 1.18);
     interior.add(pivot);
-    iAdd(merge([cyl(0.05, 0.07, 0.1, 12, x, 0.62, 1.08), box(0.14, 0.04, 0.14, x, 0.58, 1.08)]), IMAT.rubber);   // the boot and its mount
+    iAdd(merge([cyl(0.035, 0.05, 0.1, 12, x, 0.64, 1.18), box(0.1, 0.03, 0.1, x, 0.595, 1.18)]), IMAT.rubber);   // the boot and its mount
     const rod = new THREE.Group();
     rod.rotation.x = -0.06;
     pivot.add(rod);
@@ -725,10 +731,10 @@ export function buildScorpion() {
   // his hands, bending at the elbows, which hang out and down
   const UPPER = 0.31, FORE = 0.29;
   const driverArms = levers.map(() => ({
-    upper: iAdd(new THREE.CapsuleGeometry(0.05, UPPER, 6, 12), IMAT.khaki),
-    fore: iAdd(new THREE.CapsuleGeometry(0.043, FORE, 6, 12), IMAT.khaki),
+    upper: iAdd(new THREE.CapsuleGeometry(0.046, UPPER, 6, 12), IMAT.khaki),
+    fore: iAdd(new THREE.CapsuleGeometry(0.04, FORE, 6, 12), IMAT.khaki),
   }));
-  const SHOULDERS = [new THREE.Vector3(0.29, 1.03, 0.56), new THREE.Vector3(0.67, 1.03, 0.56)];
+  const SHOULDERS = [new THREE.Vector3(0.23, 1.03, 0.56), new THREE.Vector3(0.61, 1.03, 0.56)];
   const _w = new THREE.Vector3(), _d = new THREE.Vector3(), _el = new THREE.Vector3(), _pole = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0), _dir = new THREE.Vector3();
   const placeLimb = (m, a, b, len) => {
     _dir.subVectors(b, a);
@@ -751,7 +757,7 @@ export function buildScorpion() {
     const along = (UPPER * UPPER - FORE * FORE + len * len) / (2 * len);
     const lift = Math.sqrt(Math.max(0, UPPER * UPPER - along * along));
     _dir.copy(_d).normalize();
-    _pole.set(i === 0 ? -0.8 : 0.8, -1, 0);            // elbows out and down
+    _pole.set(i === 0 ? -0.15 : 0.1, -1, 0);           // elbows hanging down (clear of the walls and his knees)
     _pole.addScaledVector(_dir, -_pole.dot(_dir)).normalize();
     _el.copy(sh).addScaledVector(_dir, along).addScaledVector(_pole, lift);
     const wrist = _dir.multiplyScalar(len).add(sh);
@@ -860,9 +866,23 @@ export function buildScorpion() {
     // position and turn (it tips and rolls with the hull).
     driverView(posOut, quatOut) {
       group.updateMatrixWorld();
-      body.localToWorld(posOut.set(0.48, 1.29, 0.62));        // his head up in the hatch well
+      body.localToWorld(posOut.set(0.42, 1.25, 0.62));        // his eyes, just behind the periscope's window
       group.getWorldQuaternion(quatOut);
       return quatOut.multiply(DRIVER_TURN);
+    },
+    // The periscope's head, up on the roof in front of the hatch: where the
+    // picture in its window is seen from (writes a camera's position and turn)
+    periscopeView(posOut, quatOut) {
+      group.updateMatrixWorld();
+      body.localToWorld(posOut.set(0.42, 1.5, 1.0));
+      group.getWorldQuaternion(quatOut);
+      return quatOut.multiply(PERISCOPE_TURN);
+    },
+    // show this picture in the periscope's window
+    setPeriscopePicture(texture) {
+      periscopeScreen.material.map = texture;
+      periscopeScreen.material.color.set(0xffffff);
+      periscopeScreen.material.needsUpdate = true;
     },
     // show the inside of the driver's compartment (only from his seat), and
     // move his levers and dials
