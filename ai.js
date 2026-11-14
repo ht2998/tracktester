@@ -23,7 +23,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 2;
+export const BUILD = 4;
 
 import * as THREE from 'three';
 import { CarPhysics, CATERHAM } from './physics.js';
@@ -341,7 +341,7 @@ export class AIField {
     const m = this.m;
     for (let k = 0; k < this.count; k++) {
       const i = Math.round(this.startIndex + 60 + (k + 0.5) * (m / this.count)) % m;
-      this.addCar(k, i, 0, this.racing.vPlan[i] * 0.85);
+      this.addCar(k, i, 0, this.plan().v[i] * 0.85);
     }
   }
 
@@ -373,6 +373,14 @@ export class AIField {
       c.model.paint.opacity = c.model.helmet.opacity = o;
       c.model.paint.depthWrite = c.model.helmet.depthWrite = o === 1;
     }
+  }
+
+  // The AI cars' own speed plan (they're Caterhams, whatever you drive):
+  // worked out from the racing line for their car, at today's grip
+  plan() {
+    const g = this.racing.grip > 0 ? this.racing.grip : 1.3;
+    if (!this._plan || Math.abs(g - this._planGrip) > 0.02) { this._planGrip = g; this._plan = this.racing.speedsFor(CATERHAM, g); }
+    return this._plan;
   }
 
   // where a point is on the line, searched near where it was last time
@@ -455,7 +463,7 @@ export class AIField {
   // A car far away: just moves along the line at the pace he'd be doing
   glide(c, dt) {
     const pts = this.racing.pts, m = this.m;
-    const target = this.racing.vPlan[c.near] * c.lapPace;
+    const target = this.plan().v[c.near] * c.lapPace;
     c.speed += clamp(target - c.speed, -9 * dt, 4 * dt);
     c.frac += Math.max(0, c.speed) * dt;
     while (c.frac >= (pts[c.near].ds || 2)) { c.frac -= pts[c.near].ds || 2; c.near = (c.near + 1) % m; }
@@ -480,7 +488,7 @@ export class AIField {
     // a new lap: his pace for this one (never quite the same)
     if (c.near < prev - m / 2) c.lapPace = clamp(D.skill * (1 + gauss() * 0.012 * (1.2 - D.consistency)), 0.85, 0.985);
     // a new braking zone: does he get this one right?
-    const bh = racing.brakeHard;
+    const bh = this.plan().brakeHard;
     if (bh[c.near] > 0 && bh[prev] === 0 && !c.mistake && Math.random() < D.mistakes * (1 + wetness)) {
       const kinds = ['late', 'late', 'early', 'wide', 'lock'];
       c.mistake = { kind: kinds[(Math.random() * kinds.length) | 0], left: 70, side: Math.sign(pts[(c.near + 25) % m].curve) || 1 };
@@ -500,8 +508,9 @@ export class AIField {
     const tx = pts[j].x + pts[j].nx * wantLat - P.x, tz = pts[j].z + pts[j].nz * wantLat - P.z;
     const fx = Math.sin(P.heading), fz = Math.cos(P.heading), lx = Math.cos(P.heading), lz = -Math.sin(P.heading);
     const alpha = Math.atan2(tx * lx + tz * lz, tx * fx + tz * fz);
-    const wheel = Math.atan(2 * 2.2 * Math.sin(alpha) / Math.max(4, Math.hypot(tx, tz)));
-    const limit = CATERHAM.maxSteer / (1 + Math.abs(v) / 14);
+    const wb = P.spec.cgToFront + P.spec.cgToRear;
+    const wheel = Math.atan(2 * wb * Math.sin(alpha) / Math.max(4, Math.hypot(tx, tz)));
+    const limit = P.spec.maxSteer / (1 + Math.abs(v) / 14);
     // (catching a slide: steer into it)
     const slide = Math.atan2(P.vy, Math.max(3, Math.abs(v)));
     let steer = clamp((wheel + slide * 0.6) / limit, -1, 1);
@@ -509,7 +518,7 @@ export class AIField {
     // how fast: the plan's speed a little ahead (when he'd react), at his pace
     let lead = Math.round((Math.max(0, v) * 0.32 + 3) / 2 + D.brakeLate * -1);
     if (mk === 'late') lead -= 5;
-    let target = racing.vPlan[(c.near + Math.max(1, lead)) % m] * c.lapPace;
+    let target = this.plan().v[(c.near + Math.max(1, lead)) % m] * c.lapPace;
     if (mk === 'late') target *= 1.05;
     if (mk === 'early') target *= 0.9;
     // don't drive into the car ahead: follow it, or pull out to pass
@@ -545,6 +554,8 @@ export class AIField {
       P.update(controls, dt / steps);
       this.walls(c);
     }
+    // a wheel torn off in a crash (or worn down to nothing): gone from the car
+    for (const e of P.events) if (e.type === 'wheelOff' && c.model.wheels[e.wheel]) c.model.wheels[e.wheel].steerer.visible = false;
     P.events.length = 0;
     P.trackWetness = wetness;
     c.brakeLight = brake > 0.05;
@@ -707,7 +718,10 @@ export class AIField {
     c.spin += (Math.max(-80, Math.min(80, P.vx / CATERHAM.wheelRadius))) * dt;
     M.wheels.forEach((w, k) => {
       w.spin.rotation.x = c.spin;
-      if (k < 2) w.steerer.rotation.y = c.full ? P.steer : 0;
+      // steering, and any crash damage: knocked out of line, leaning over
+      const bent = P.wheelBend ? P.wheelBend[k] * 3 : 0, sd = P.suspDamage ? P.suspDamage[k] : 0;
+      w.steerer.rotation.y = (k < 2 && c.full ? P.steer : 0) + bent;
+      w.steerer.rotation.z = -(k % 2 === 0 ? 1 : -1) * sd * 0.28;
     });
   }
 
