@@ -11,7 +11,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 18;
+export const BUILD = 19;
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -485,15 +485,22 @@ class V10Shaper extends AudioWorkletProcessor {
       { name: 'load', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
     ];
   }
-  constructor() {
+  // options: fire (bangs a turn: 5 for a V10, 6 for a V12), red and idle
+  // (its revs), norm (its loudness, matched to its approved preview)
+  constructor(options) {
     super();
     const sr = this.sr = sampleRate;
-    this.RED = 19200;
+    const o = (options && options.processorOptions) || {};
+    this.FIRE = o.fire || 5;
+    this.RED = o.red || 19200;
+    this.IDLE = o.idle || 4000;
+    this.NORM = o.norm || 0.2023;
     this.ph = 0;                       // crank turns
     this.lvl = 0;                      // running level (for the chord)
     this.ls = this.shelf(160, 9);
     this.lp1 = this.bq(); this.lp2 = this.bq();
-    this.peaks = [[0.2, 6, 3], [0.4, 5, 3], [0.8, 3, 3.5], [1, 9, 3.5], [2, 5, 4]].map(([m, db, q]) => ({ m, db, q, f: this.bq() }));
+    // (the crank's note and its octaves, as shares of the firing note; then the firing note and its octave)
+    this.peaks = [[1 / this.FIRE, 6, 3], [2 / this.FIRE, 5, 3], [4 / this.FIRE, 3, 3.5], [1, 9, 3.5], [2, 5, 4]].map(([m, db, q]) => ({ m, db, q, f: this.bq() }));
     this.drift = [0, 0, 0, 0, 0];
     this.lumps = 1; this.lastCycle = -1;
     this.spike = 0; this.spikeA = 1; this.lastTen = -1;
@@ -525,15 +532,15 @@ class V10Shaper extends AudioWorkletProcessor {
     const inp = inputs[0] && inputs[0][0];
     const sr = this.sr, RED = this.RED;
     const rpm = Math.max(0, parameters.rpm[0]), load = Math.min(1, Math.max(0, parameters.load[0]));
-    const firing = rpm / 60 * 5;
+    const firing = rpm / 60 * this.FIRE;
     // the block's filter settings, following the revs
     this.setLP(this.lp1, (500 + (rpm / RED) * 2432 + load * 1600) * 1.18); this.setLP(this.lp2, (500 + (rpm / RED) * 2432 + load * 1600) * 1.18);
     for (const p of this.peaks) this.setPeak(p.f, firing * p.m, p.db, p.q);
     this.setBP(this.rb, 100, 0.7); this.setBP(this.rb2, 100, 0.7);
-    const hi = Math.min(1, Math.max(0, (rpm - 9000) / 9000));
-    const idleness = Math.min(1, Math.max(0, 1 - (rpm - 4000) / 5000));
+    const hi = Math.min(1, Math.max(0, (rpm - 0.469 * RED) / (0.469 * RED)));
+    const idleness = Math.min(1, Math.max(0, 1 - (rpm - this.IDLE) / (0.26 * RED)));
     const rv = Math.min(1, rpm / RED);
-    const vol = (0.5 + 0.25 * rv + 0.35 * load) * (1 + 1.6 * Math.min(1, Math.max(0, 1 - (rpm - 4000) / 6000)));   // (idle as loud as in the approved idle preview)
+    const vol = (0.5 + 0.25 * rv + 0.35 * load) * (1 + 1.6 * Math.min(1, Math.max(0, 1 - (rpm - this.IDLE) / (0.3125 * this.RED))));   // (idle as loud as in the approved idle preview)
     const tps = rpm / 60 / sr;
     const W = Math.tanh(1.4);
     for (let n = 0; n < out.length; n++) {
@@ -552,7 +559,7 @@ class V10Shaper extends AudioWorkletProcessor {
       let chord = 0.55 * Math.sin(P + this.drift[0]) + 0.6 * Math.sin(2 * P + this.drift[1]) + 0.45 * Math.sin(4 * P + this.drift[2]) + 0.12 * Math.sin(3 * P + this.drift[3]);
       chord = Math.tanh(chord * 1.3);
       y += chord * lvl * 0.9 * (1 - 0.45 * hi);
-      const top = Math.sin(5 * P + this.drift[4]) + 0.3 * Math.sin(10 * P);
+      const top = Math.sin(this.FIRE * P + this.drift[4]) + 0.3 * Math.sin(2 * this.FIRE * P);   // (the main note: the V10's major third, the V12's fifth)
       y += Math.tanh(top * 1.5) * lvl * (0.35 + 1.4 * hi);
       for (const p of this.peaks) y = this.run(p.f, y);
       // the idle: a lumpy beat every turn and every cycle (each cycle a
@@ -583,7 +590,7 @@ class V10Shaper extends AudioWorkletProcessor {
       y += this.eLP2;
       // no rumble below 30 Hz, then squashed loud
       this.hpY = 0.996 * (this.hpY + y - this.hpX); this.hpX = y;
-      out[n] = Math.tanh(this.hpY * 0.2023) / Math.tanh(3.2);   // (squashed exactly as loud as the approved preview: measured offline)
+      out[n] = Math.tanh(this.hpY * this.NORM) / Math.tanh(3.2);   // (squashed exactly as loud as the approved preview: measured offline)
     }
     for (let ch = 1; ch < outputs[0].length; ch++) outputs[0][ch].set(out);
     return true;
@@ -1357,14 +1364,20 @@ export class EngineSound {
   // The V10's voice, built the first time it's needed (it costs a little,
   // so nobody who never fits it pays for it)
   ensureV10() {
-    if (this.v10 || !this.workletReady) return;
+    const kind = this.spec.voice;
+    const VOICES = { v10: { fire: 5, red: 19200, idle: 4000, norm: 0.2023 }, v12: { fire: 6, red: 13500, idle: 3800, norm: 0.2065 } };
+    if (!this.workletReady || !VOICES[kind]) return;
+    if (this.v10 && this.v10Kind === kind) return;
     const ctx = this.ctx;
+    // (a different engine fitted: its own voice instead)
+    if (this.v10) { try { this.v10.disconnect(); this.v10Shape.disconnect(); this.v10Gain.disconnect(); this.v10Linger.disconnect(); } catch (e) { /* already apart */ } }
+    this.v10Kind = kind;
     // (the Caterham's own pulses with ten cylinders, through the V10's
     // shaping; straight out, not through the car engine's filter; then a
     // lingering tail from a soft reverb about 1.3 s long)
     this.v10 = new AudioWorkletNode(ctx, 'engine-pulses', { outputChannelCount: [1] });
-    this.v10.parameters.get('cylinders').value = 10;
-    this.v10Shape = new AudioWorkletNode(ctx, 'v10-shaper', { outputChannelCount: [1] });
+    this.v10.parameters.get('cylinders').value = VOICES[kind].fire * 2;
+    this.v10Shape = new AudioWorkletNode(ctx, 'v10-shaper', { outputChannelCount: [1], processorOptions: VOICES[kind] });
     this.v10Gain = ctx.createGain();
     this.v10Gain.gain.value = 0;
     this.v10.connect(this.v10Shape).connect(this.v10Gain).connect(this.carBus);
@@ -1384,7 +1397,7 @@ export class EngineSound {
     if (!this.ctx || !this.heavyGain) return;
     const t = this.ctx.currentTime;
     this.heavyGain.gain.setTargetAtTime(on ? 0.85 * (this.driverEar ? 1.35 : 1) : 0, t, 0.1);
-    const v10 = !on && this.spec.voice === 'v10';
+    const v10 = !on && (this.spec.voice === 'v10' || this.spec.voice === 'v12');
     if (v10) this.ensureV10();
     // (the engine's character: how hard it drives the warmth)
     const ch = this.spec.sound || {};
@@ -1580,7 +1593,7 @@ export class EngineSound {
       this.heavy.parameters.get('load').setTargetAtTime(clamp(num(car.engineLoad, 0), 0, 1), t, loadEase);
       this.heavy.parameters.get('speed').setTargetAtTime(Math.min(40, Math.abs(num(car.vx, 0))), t, 0.1);
     }
-    if (this.v10 && this.spec.voice === 'v10') {
+    if (this.v10 && this.spec.voice === this.v10Kind) {
       this.v10.parameters.get('rpm').setTargetAtTime(rpm, t, 0.03);
       this.v10.parameters.get('load').setTargetAtTime(load, t, loadEase);
       this.v10.parameters.get('limiter').setValueAtTime(car.onLimiter ? 1 : 0, t);
@@ -1610,7 +1623,7 @@ export class EngineSound {
     // Shifts and the engine dying stay quick; everything else eases
     this.engineGain.gain.setTargetAtTime(volume, t, shifting || car.engineBlown ? 0.03 : car.engineDead ? 0.4 : loadEase);
     // the V10 (its own path): the loudest engine in the game, cut in a shift
-    if (this.v10Gain && this.spec.voice === 'v10' && !this.heavyOn) {
+    if (this.v10Gain && this.spec.voice === this.v10Kind && !this.heavyOn) {
       const v = (car.engineDead ? 0 : 1.6) * (shifting ? 0.5 : 1);   // (about twice the other engines)
       this.v10Gain.gain.setTargetAtTime(v, t, shifting ? 0.02 : car.engineDead ? 0.4 : 0.06);
     }
