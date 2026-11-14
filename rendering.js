@@ -56,7 +56,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 42;
+const BUILD = 43;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -1063,6 +1063,36 @@ window.addEventListener('mousemove', (e) => {
   mouseAim.moved = true;
 });
 const aimRayEnd = new THREE.Vector3();
+// PHONES: no mouse, so tap the spot you want to hit (a quick tap, not a
+// drag) and the turret turns to it and stays on it; fire with the buttons
+let touchAim = null;                  // a fixed spot in the world (phones)
+let tapFrom = null;
+window.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch' && e.target === renderer.domElement) tapFrom = { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId }; });
+window.addEventListener('pointerup', (e) => {
+  if (!tapFrom || e.pointerId !== tapFrom.id) return;
+  const still = Math.hypot(e.clientX - tapFrom.x, e.clientY - tapFrom.y) < 12 && performance.now() - tapFrom.t < 400;
+  tapFrom = null;
+  if (!still || !tankMode || cameraMode === 'cockpit') return;
+  mouseAim.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouseAim.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  touchAim = aimPoint().clone();
+});
+const tankButtons = document.createElement('div');
+tankButtons.style.cssText = 'position:fixed;right:calc(12px + env(safe-area-inset-right));top:calc(150px + env(safe-area-inset-top));display:none;flex-direction:column;gap:10px;z-index:20';
+const tankButton = (label, size, colour) => {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.textContent = label;
+  b.style.cssText = `width:${size}px;height:${size}px;border-radius:50%;border:2px solid ${colour};background:rgba(20,22,16,0.6);color:${colour};font:700 13px system-ui,sans-serif;touch-action:none;-webkit-tap-highlight-color:transparent`;
+  tankButtons.appendChild(b);
+  return b;
+};
+const fireButton = tankButton('FIRE', 68, '#ffb347');
+const mgButton = tankButton('MG', 52, '#e8dfb8');
+document.body.appendChild(tankButtons);
+fireButton.addEventListener('pointerdown', (e) => { e.preventDefault(); fireGun(); });
+mgButton.addEventListener('pointerdown', (e) => { e.preventDefault(); COAX.held = true; });
+for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) mgButton.addEventListener(ev, () => { COAX.held = false; });
 // The pointer becomes a crosshair in the tank, and a ring shows where the
 // gun is actually pointing (it catches up with the crosshair as the turret turns)
 const gunRing = document.createElement('div');
@@ -1085,7 +1115,8 @@ function ringAt(el, pos, dir) {
 }
 const gunPos = new THREE.Vector3(), gunDir = new THREE.Vector3(), gunScreen = new THREE.Vector3();
 function placeGunRing() {
-  if (!tankMode || isMobile || cameraMode === 'cockpit' || cameraMode === 'turret') { gunRing.style.display = coaxRing.style.display = 'none'; return; }
+  tankButtons.style.display = tankMode && isMobile ? 'flex' : 'none';
+  if (!tankMode || cameraMode === 'cockpit' || cameraMode === 'turret') { gunRing.style.display = coaxRing.style.display = 'none'; return; }
   ringAt(gunRing, tank.muzzle(gunPos, gunDir), gunDir);
   ringAt(coaxRing, tank.coaxMuzzle(coaxPos, coaxDir), coaxDir);
 }
@@ -1129,6 +1160,8 @@ function enterCode(code) {
   code = String(code || '').toUpperCase().replace(/\s+/g, '');
   if (code === 'FV101') {
     tankMode = !tankMode;
+    // (a fresh start: the car's damage, leaks and dents don't carry over)
+    { const x = physics.x, z = physics.z, h = physics.heading; repairAll(); physics.x = x; physics.z = z; physics.heading = h; }
     // hand over where you are, facing the same way, from a standstill
     if (tankMode) tankPhys.place(physics.x, physics.z, physics.heading);
     else {
@@ -2519,7 +2552,7 @@ const COAX = { rounds: 3000, RATE: 12.5, SPEED: 840, wait: 0, held: false, n: 0 
 const bullets = [];
 const bulletGeo = new THREE.BoxGeometry(0.02, 0.02, 0.9);
 const bulletMat = new THREE.MeshBasicMaterial({ color: 0xff7a3a });
-window.addEventListener('keydown', (e) => { if (e.code === 'KeyT' && tankMode && !isMobile) COAX.held = true; });
+window.addEventListener('keydown', (e) => { if (e.code === 'KeyT' && tankMode) COAX.held = true; });
 window.addEventListener('keyup', (e) => { if (e.code === 'KeyT') COAX.held = false; });
 window.addEventListener('blur', () => { COAX.held = false; });
 const coaxMuzzlePos = new THREE.Vector3(), coaxMuzzleDir = new THREE.Vector3();
@@ -2952,6 +2985,80 @@ function layerEffects() {
   effectsLayered = true;
 }
 
+// A fresh car: repaired, cleaned up (no leaks, debris, dents or loose bits)
+function repairAll() {
+  physics.reset();   // also repairs the engine
+  oil.clear();
+  coolant.clear();
+  coolantBurst = 0;
+  debris.clear();
+  shreds.clear();
+  blowoutPending.length = 0;
+  wheelOffPending.length = 0;
+  for (const w of looseWheels) w.clear();
+  flakes.clear();
+  grassBits.clear();
+  mudClumps.clear();
+  clearDents();
+}
+// RETURN TO TRACK (B, or the phone menu): back onto the track where you
+// are, facing the right way, stopped (no repairs)
+let backToTrack = false;
+window.addEventListener('keydown', (e) => { if (e.code === 'KeyB' && !(e.target && e.target.tagName === 'INPUT')) backToTrack = true; });
+function returnToTrack() {
+  let x, z, h;
+  if (racing) {
+    const pts = racing.pts;
+    let best = 0, bd = Infinity;
+    for (let i = 0; i < pts.length; i++) { const d = (pts[i].x - physics.x) ** 2 + (pts[i].z - physics.z) ** 2; if (d < bd) { bd = d; best = i; } }
+    const p = pts[best];
+    x = p.x - p.nx * (p.off || 0); z = p.z - p.nz * (p.off || 0);   // (the middle of the track)
+    h = Math.atan2(p.fx, p.fz);
+  } else if (sepang) { x = sepang.start.x; z = sepang.start.z; h = sepang.start.heading; }
+  else { x = 0; z = 0; h = physics.heading; }
+  physics.x = x; physics.z = z; physics.heading = h;
+  physics.vx = physics.vy = physics.yawRate = 0;
+  physics.steer = 0;
+  physics.air = false;
+  physics.ground.synced = false;
+  if (tankMode) tankPhys.place(x, z, h);
+  showToast('BACK ON TRACK');
+}
+{
+  // ...and in the phone's menu
+  const sheet = document.querySelector('#touch .t-sheet');
+  if (sheet) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = sheet.querySelector('button')?.className || 't-btn small';
+    b.textContent = 'Back on track';
+    b.addEventListener('pointerdown', (e) => { e.preventDefault(); backToTrack = true; });
+    b.addEventListener('pointerup', () => { sheet.classList.remove('open'); });
+    sheet.appendChild(b);
+  }
+}
+// MENUS ON PHONES: the side panel and the phone menu sit in front of
+// everything, and what's behind them is hidden while they're open
+{
+  const css = document.createElement('style');
+  css.textContent = `
+    #sidepanel { z-index: 60; }
+    body.ui-panel > *:not(#sidepanel):not(canvas):not(style):not(script) { visibility: hidden !important; }
+    body.ui-menu #touch { z-index: 60; }
+    body.ui-menu > *:not(#touch):not(canvas):not(style):not(script) { visibility: hidden !important; }
+    body.ui-menu #touch > *:not(.t-menu):not(.t-sheet) { visibility: hidden !important; }`;
+  document.head.appendChild(css);
+  const watch = () => {
+    const side = document.getElementById('sidepanel'), sheet = document.querySelector('#touch .t-sheet');
+    document.body.classList.toggle('ui-panel', !!side && side.classList.contains('open') && isMobile);
+    document.body.classList.toggle('ui-menu', !!sheet && sheet.classList.contains('open'));
+  };
+  if (typeof MutationObserver !== 'undefined') {
+    const mo = new MutationObserver(watch);
+    for (const el of [document.getElementById('sidepanel'), document.querySelector('#touch .t-sheet')]) if (el) mo.observe(el, { attributes: true, attributeFilter: ['class'] });
+  }
+}
+
 // AI CARS (ai.js): other Caterhams to practise with or race, at Sepang.
 // Their settings are in the side panel.
 const aiField = racing ? new AIField(scene, {
@@ -2977,21 +3084,12 @@ renderer.setAnimationLoop(() => {
 
   if (wasTapped('camera')) switchCamera();
   if (wasTapped('reset')) {
-    physics.reset();   // also repairs the engine
+    repairAll();
     placeAtStart();
-    oil.clear();
-    coolant.clear();
-    coolantBurst = 0;
-    debris.clear();
-    shreds.clear();
-    blowoutPending.length = 0;
-    wheelOffPending.length = 0;
-    for (const w of looseWheels) w.clear();
-    flakes.clear();
-    grassBits.clear();
-    mudClumps.clear();
-    clearDents();             // the body's straightened out and the scratches polished away
+    if (tankMode) tankPhys.place(physics.x, physics.z, physics.heading);   // (the tank goes back too)
   }
+  if (backToTrack) { backToTrack = false; returnToTrack(); }
+
   if (wasTapped('reverse')) physics.toggleReverse();
   if (wasTapped('shiftUp')) physics.shiftUp();
   if (wasTapped('shiftDown')) physics.shiftDown();
@@ -3117,8 +3215,10 @@ renderer.setAnimationLoop(() => {
       const dead = (v) => (Math.abs(v) < 0.05 ? 0 : Math.sign(v) * Math.min(1, (Math.abs(v) - 0.05) / 0.55));
       crewHandles.traverse = mouseAim.moved && !isMobile ? dead(mouseAim.x) : 0;
       crewHandles.elevate = mouseAim.moved && !isMobile ? dead(mouseAim.y) : 0;
-      tank.turnBy(-crewHandles.traverse * 0.7 * dt, crewHandles.elevate * 0.4 * dt);
-    } else if (mouseAim.moved && cameraMode !== 'cockpit') tank.aimAt(aimPoint(), dt);
+      if (isMobile && touchAim) tank.aimAt(touchAim, dt);       // (phones: on the spot you tapped)
+      else tank.turnBy(-crewHandles.traverse * 0.7 * dt, crewHandles.elevate * 0.4 * dt);
+    } else if (isMobile && touchAim && cameraMode !== 'cockpit') tank.aimAt(touchAim, dt);
+    else if (mouseAim.moved && !isMobile && cameraMode !== 'cockpit') tank.aimAt(aimPoint(), dt);
     // black smoke when the throttle runs ahead of the turbo
     const thr = input.throttle || 0;
     dieselBoost += (thr * Math.min(1, tankPhys.rpm / 2700) - dieselBoost) * Math.min(1, dt / (thr > dieselBoost ? 0.7 : 0.35));
