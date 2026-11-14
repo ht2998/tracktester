@@ -11,7 +11,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 13;
+export const BUILD = 14;
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -1167,6 +1167,32 @@ export class EngineSound {
 
   // One round from the coaxial machine gun: a sharp crack, a short punchy
   // thump and a ring of the action (a little different every time)
+  // A different car or engine: its cylinders and revs (the engine note
+  // follows from those)
+  setSpec(spec) {
+    this.spec = spec;
+    if (this.voice) this.voice.parameters.get('cylinders').value = spec.cylinders;
+  }
+
+  // A turbo popping on the overrun: a sharp crack and a thump from the exhaust
+  playPop(size = 1) {
+    if (!this.ctx || !this.noise) return;
+    const ctx = this.ctx, t0 = ctx.currentTime, out = this.carBus;
+    const n = 1 + Math.floor(Math.random() * 3);
+    for (let k = 0; k < n; k++) {
+      const at = t0 + k * (0.05 + Math.random() * 0.07);
+      const src = ctx.createBufferSource();
+      src.buffer = this.noise;
+      const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 500 + Math.random() * 700; f.Q.value = 0.9;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(1.2 * size, at + 0.002);
+      g.gain.exponentialRampToValueAtTime(0.0004, at + 0.09);
+      src.connect(f).connect(g).connect(out);
+      src.start(at, Math.random()); src.stop(at + 0.12);
+    }
+  }
+
   playMG() {
     if (!this.ctx) return;
     const ctx = this.ctx, t0 = ctx.currentTime, out = this.carBus;
@@ -1235,6 +1261,21 @@ export class EngineSound {
     if (!this.ctx) return;
     const s = this.spec;
     const t = this.ctx.currentTime;
+    // the turbo's whistle, rising with the boost
+    if (!this.whistle && this.carBus) {
+      const o = this.ctx.createOscillator(), g = this.ctx.createGain(), f = this.ctx.createBiquadFilter();
+      o.type = 'sine'; f.type = 'bandpass'; f.Q.value = 4; g.gain.value = 0;
+      o.connect(f).connect(g).connect(this.carBus);
+      o.start();
+      this.whistle = { o, g, f };
+    }
+    if (this.whistle) {
+      const boost = Number.isFinite(car.boost) ? car.boost : 0;
+      const on = s.turbo && !this.heavyOn ? boost : 0;
+      this.whistle.o.frequency.setTargetAtTime(1600 + 5200 * boost, t, 0.05);
+      this.whistle.f.frequency.setTargetAtTime(1600 + 5200 * boost, t, 0.05);
+      this.whistle.g.gain.setTargetAtTime(0.045 * on * on, t, 0.08);
+    }
     // (anything not a proper number is treated as idle / nothing, so one bad
     // value can never stop the sound)
     const num = (v, d) => (Number.isFinite(v) ? v : d);
