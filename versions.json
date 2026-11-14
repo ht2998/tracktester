@@ -4,7 +4,7 @@
     "cockpit.js": 13,
     "godrays.js": 1,
     "scenery.js": 6,
-    "updates.js": 57,
+    "updates.js": 58,
     "debris.js": 4,
     "effects.js": 4,
     "sky.js": 6,
@@ -26,6 +26,6 @@
     "ground.js": 1,
     "tank.js": 12,
     "ai.js": 2,
-    "f1.js": 4
+    "f1.js": 5
   }
 }
