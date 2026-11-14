@@ -21,11 +21,19 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 53;
+export const BUILD = 54;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 49, date: '14 Nov 2026', title: 'New car: the TT-88',
+    items: [
+      ['A 1988-style turbo F1 car', 'Our own design of a late-80s turbo Formula 1 car: very low and flat, huge slicks, a big rear wing, and a 1.5-litre turbo V6 with lag, whistle and pops. Pick it in the side panel under "Car"', 'update'],
+      ['Basic handling for now', 'It drives with lots of grip, downforce and big carbon brakes; the finer details come later', 'update'],
+      ['Under the bonnet', 'There may be more than one engine to choose from, if you know where to look', 'update'],
+    ],
+  },
   {
     id: 48, date: '14 Nov 2026', title: 'Phone menus and Back on track',
     items: [
