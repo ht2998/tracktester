@@ -55,7 +55,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 30;
+const BUILD = 31;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -1509,6 +1509,55 @@ const grassTrails = new SkidMarks(scene, {
   maxSegments: isMobile ? 800 : 1600, tyreWidth: 0.18, rubberBonus: 0,
   threshold: 0.05, height: 0.006, base: 0x4a3b28, mark: 0x33261a,
 });
+// The tank's track marks: the imprint of the track's cleats, two to each
+// piece, laid evenly (faint scuffs on tarmac, deep prints in the grass
+// and gravel)
+function cleatPattern() {
+  const c = document.createElement('canvas');
+  c.width = 32; c.height = 64;
+  const g = c.getContext('2d');
+  g.fillStyle = 'rgba(255,255,255,0.35)';          // the pressed band of the track
+  g.fillRect(0, 0, 32, 64);
+  g.fillStyle = 'rgba(255,255,255,1)';             // two cleats across it
+  g.fillRect(1, 6, 30, 11);
+  g.fillRect(1, 38, 30, 11);
+  g.clearRect(14, 0, 4, 64);                       // the gap down the middle (the guide horns)
+  g.fillStyle = 'rgba(255,255,255,0.2)';
+  g.fillRect(14, 0, 4, 64);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const cleats = cleatPattern();
+const TRACK_STEP = 0.27;   // two links of the tank's track
+const trackMarks = {
+  tarmac: new SkidMarks(scene, { maxSegments: isMobile ? 1200 : 3000, tyreWidth: 0.43, rubberBonus: 0, threshold: 0.05, height: 0.0035, base: 0x4a4d50, mark: 0x26272a, step: TRACK_STEP, pattern: cleats }),
+  grass: new SkidMarks(scene, { maxSegments: isMobile ? 1200 : 3000, tyreWidth: 0.43, rubberBonus: 0, threshold: 0.05, height: 0.007, base: 0x4a3b28, mark: 0x2c2116, step: TRACK_STEP, pattern: cleats }),
+  gravel: new SkidMarks(scene, { maxSegments: isMobile ? 800 : 2000, tyreWidth: 0.43, rubberBonus: 0, threshold: 0.05, height: 0.007, base: 0xa88c5f, mark: 0x7d6442, step: TRACK_STEP, pattern: cleats }),
+};
+const trackWorld = new THREE.Vector3();
+function layTrackMarks(speed) {
+  // turning on the spot (or sharply) drags the tracks sideways: darker scuffs
+  const scrub = Math.min(1, Math.abs(physics.yawRate) * 1.2);
+  for (const side of [1, -1]) {
+    trackWorld.set(side * 0.88, 0, -0.12);
+    carModel.car.localToWorld(trackWorld);
+    const id = side > 0 ? 'trackL' : 'trackR';
+    const moving = speed > 0.2 || scrub > 0.15;
+    const onGravel = inGravel(trackWorld.x, trackWorld.z);
+    const onGrass = !onGravel && grass.contains(trackWorld.x, trackWorld.z);
+    const soft = onGravel || onGrass || surfaceAt(trackWorld.x, trackWorld.z) === 'grass';
+    trackMarks.tarmac.update(id, trackWorld.x, trackWorld.z, moving && !soft ? 0.25 + 0.6 * scrub : 0);
+    trackMarks.grass.update(id, trackWorld.x, trackWorld.z, moving && soft && !onGravel ? 0.75 + 0.25 * scrub : 0);
+    trackMarks.gravel.update(id, trackWorld.x, trackWorld.z, moving && onGravel ? 0.75 + 0.25 * scrub : 0);
+    // the whole width of the track flattens the grass
+    if (moving && onGrass) {
+      const lx = Math.cos(physics.heading), lz = -Math.sin(physics.heading);
+      for (const o of [-0.15, 0, 0.15]) grass.flatten(trackWorld.x + lx * o, trackWorld.z + lz * o, 0.12);
+    }
+  }
+}
+
 // Strips of tread flung off a blown tyre (they land as crumbs of rubber)
 const shreds = new TyreShreds(scene, skids, { max: isMobile ? 40 : 60 });
 // What's under a tyre: 'gravel', 'grass', 'soil' (see SURFACES in
@@ -1979,10 +2028,12 @@ function updateSmoke(dt) {
   const onTarmac = 1 - (gravelWheels + grassWheels) / 4;
   // (only tyres with rubber on them squeal: bare rims screech instead, see the sound section)
   const rubber = (a, b) => [a, b].filter((i) => !physics.tyres[i].blown).length / 2;
-  engineSound.setSqueal(Math.max(rearSkid * rubber(2, 3), frontSkid * rubber(0, 1)) * onTarmac * (1 - 0.75 * rain.wetness), speed);
+  engineSound.setSqueal(tankMode ? 0 : Math.max(rearSkid * rubber(2, 3), frontSkid * rubber(0, 1)) * onTarmac * (1 - 0.75 * rain.wetness), speed);
   engineSound.setGravel(gravelWheels / 4, speed, Math.max(rearSkid, frontSkid));
   engineSound.setGrass(grassWheels / 4, speed, Math.max(rearSkid, frontSkid));
-  for (const p of SMOKE_POINTS) {
+  // the tank leaves track marks, not tyre marks
+  if (tankMode) layTrackMarks(speed);
+  for (const p of tankMode ? [] : SMOKE_POINTS) {
     skidWorld.set(p.local.x, 0, p.local.z);
     carModel.car.localToWorld(skidWorld);
     // (a bare rim or a missing wheel leaves no rubber; a wet track takes far less)
@@ -2617,6 +2668,7 @@ renderer.setAnimationLoop(() => {
   oil.weather(dt, rain.intensity);
   coolant.weather(dt, rain.intensity);
   skids.weather(dt, rain.intensity);
+  trackMarks.tarmac.weather(dt, rain.intensity);
   if (rain.flash > 0) sky.flash = Math.max(sky.flash ?? 0, rain.flash);
   if (rain.thunderNow) engineSound.playThunder?.(rain.thunderNow.strength);
 
