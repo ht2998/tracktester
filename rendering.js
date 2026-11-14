@@ -33,6 +33,7 @@ import { TyreLooks } from './tyres.js';
 import { setGround, groundAt, lieOnGround } from './ground.js';
 import { buildScorpion, TANK_EYE, TankPhysics } from './tank.js';
 import * as tankFile from './tank.js';
+import { AIField, BUILD as AI_BUILD } from './ai.js';
 import * as groundFile from './ground.js';
 import * as tyresFile from './tyres.js';
 import * as cockpitFile from './cockpit.js';
@@ -55,7 +56,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 40;
+const BUILD = 41;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -64,7 +65,7 @@ const updateScreen = startUpdates({
   'smoke.js': smokeFile.BUILD, 'hud.js': hudFile.BUILD, 'oil.js': oilFile.BUILD,
   'skids.js': skidsFile.BUILD, 'scenery.js': sceneryFile.BUILD, 'grass.js': grassFile.BUILD,
   'sky.js': skyFile.BUILD, 'debris.js': debrisFile.BUILD, 'touch.js': touchFile.BUILD,
-  'rain.js': rainFile.BUILD, 'effects.js': effectsFile.BUILD, 'cockpit.js': cockpitFile.BUILD, 'tyres.js': tyresFile.BUILD, 'sepang.js': sepangFile.BUILD, 'flora.js': floraFile.BUILD, 'racingline.js': racingLineFile.BUILD, 'ground.js': groundFile.BUILD, 'tank.js': tankFile.BUILD,
+  'rain.js': rainFile.BUILD, 'effects.js': effectsFile.BUILD, 'cockpit.js': cockpitFile.BUILD, 'tyres.js': tyresFile.BUILD, 'sepang.js': sepangFile.BUILD, 'flora.js': floraFile.BUILD, 'racingline.js': racingLineFile.BUILD, 'ground.js': groundFile.BUILD, 'tank.js': tankFile.BUILD, 'ai.js': AI_BUILD,
 });
 
 // ---------------------------------------------------------------------
@@ -2794,6 +2795,7 @@ const ON_CAR = {
   bonnet: { spot: new THREE.Vector3(0, 0.9, 0.42), pitch: 0, near: 0.05 },
   cockpit: { spot: EYE, pitch: -0.1, near: 0.02 },
   tcam: { spot: new THREE.Vector3(0, 1.2, -0.75), pitch: -0.08, near: 0.05 },
+  turret: { spot: new THREE.Vector3(0, 1.2, -0.75), pitch: 0, near: 0.02 },   // (the tank's crew view: placed by the tank itself)
 };
 let cameraMode = 'chase';
 // The tank's own on-board views (the roof machine gun is in the way of the
@@ -2947,6 +2949,25 @@ function layerEffects() {
   effectsLayered = true;
 }
 
+// AI CARS (ai.js): other Caterhams to practise with or race, at Sepang.
+// Their settings are in the side panel.
+const aiField = racing ? new AIField(scene, {
+  racing, track: sepang.line, start: sepang.start, colliders: COLLIDERS, isMobile, sound: engineSound,
+  hooks: {
+    surfaceGrip: (x, z) => physics.surfaceGrip(x, z), surfaceDrag: (x, z) => physics.surfaceDrag(x, z),
+    groundHeight: groundAt, roadHeight: (x, z) => physics.roadHeight(x, z), wearScale: () => physics.wearScale(),
+  },
+  // the race grid: you go to the back of it, stopped and straightened up
+  onPlacePlayer: (x, z, heading) => {
+    physics.x = x; physics.z = z; physics.heading = heading;
+    physics.vx = physics.vy = physics.yawRate = 0;
+    physics.steer = 0;
+    physics.air = false;
+    physics.ground.synced = false;
+    if (tankMode) tankPhys.place(x, z, heading);
+  },
+}) : null;
+
 renderer.setAnimationLoop(() => {
   if (!effectsLayered) layerEffects();
   const dt = Math.min(clock.getDelta(), 0.05);   // avoid huge jumps after a pause
@@ -3000,6 +3021,8 @@ renderer.setAnimationLoop(() => {
   }
 
   const input = readControls();
+  // (on the race grid: held on the brakes until the lights go out)
+  if (aiField?.holdPlayer) { input.throttle = 0; input.brake = 1; }
   // Fast cars move in smaller steps, so they can't skip through a thin
   // barrier between one frame and the next
   const stepSpeed = Math.hypot(physics.vx, physics.vy);
@@ -3017,6 +3040,7 @@ renderer.setAnimationLoop(() => {
       collide(clock.elapsedTime);
     }
   }
+  aiField?.update(dt, { player: physics, camera, playerMass: tankMode ? 8720 : 560, wetness: rain.wetness });
   engineSound.setHorn(input.horn);
   // Brake lights: bright while braking, dim red with the lights on
   carModel.tailLens.emissiveIntensity = input.brake > 0.05 ? 2.2 : lightsMode ? 0.6 : 0;
