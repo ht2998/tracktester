@@ -11,7 +11,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 14;
+export const BUILD = 15;
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -338,6 +338,134 @@ class HeavyEngine extends AudioWorkletProcessor {
   }
 }
 registerProcessor('heavy-engine', HeavyEngine);
+
+// ---------------------------------------------------------------------
+// The early-2000s F1 V10 (the engine swap's 3.0 V10): built the same way
+// as the approved preview (take 8). Five exhaust bangs a turn, the two
+// banks of five each with their own pipes; every cylinder a little
+// different and every firing a touch early or late, which puts a lumpy
+// rumble under the scream (stronger lower down the revs); a sharp push and
+// suck-back in each bang, pipe resonances, a little combustion roar, rasp,
+// crackle on the overrun, extra low end, the shrill top and the 'iiing'
+// taken out.
+// ---------------------------------------------------------------------
+class V10Engine extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [
+      { name: 'rpm', defaultValue: 4000, minValue: 0, maxValue: 22000, automationRate: 'k-rate' },
+      { name: 'load', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+    ];
+  }
+  constructor() {
+    super();
+    const sr = sampleRate;
+    this.sr = sr;
+    this.phase = 0; this.lastFire = 0; this.gap = sr / 300;
+    this.cylAmp = [];
+    for (let k = 0; k < 10; k++) this.cylAmp.push(Math.max(0.35, 1 + this.gauss() * 0.28));
+    this.pending = [];                 // bangs waiting for their (slightly late) moment
+    this.banks = [0, 1].map(() => ({ a1: 0, a2: 0, d1: 0.9, d2: 0.97 }));
+    // pipe resonances (constant 0 dB peak band-passes), per bank
+    const peaks = [
+      [[95, 1.5, 1.0], [170, 2, 1.1], [330, 2.5, 1.0], [800, 4, 0.45], [2200, 5, 0.18]],
+      [[85, 1.5, 1.0], [150, 2, 1.1], [300, 2.5, 1.0], [720, 4, 0.45], [2500, 5, 0.15]],
+    ];
+    this.res = peaks.map((list) => list.map(([f, q, g]) => this.bp(f, q, g)));
+    this.roarHP = 0; this.roarLP = 0; this.roarIn = 0; this.env = 0;
+    this.crack = 0; this.crackT = 0; this.crLP = 0; this.crHP = 0; this.crIn = 0;
+    this.low1 = 0; this.low2 = 0; this.top1 = 0; this.top2 = 0; this.hp = 0; this.hpIn = 0;
+    this.mid = this.bp(1900, 1.3, 1);
+  }
+  gauss() { let s = 0; for (let k = 0; k < 4; k++) s += Math.random(); return (s - 2) / 0.58; }
+  bp(f, q, g) {
+    const w = 2 * Math.PI * f / this.sr, al = Math.sin(w) / (2 * q), a0 = 1 + al;
+    return { b0: al / a0 * g, b2: -al / a0 * g, a1: -2 * Math.cos(w) / a0, a2: (1 - al) / a0, x1: 0, x2: 0, y1: 0, y2: 0 };
+  }
+  run(f, x) {
+    const y = f.b0 * x + f.b2 * f.x2 - f.a1 * f.y1 - f.a2 * f.y2;
+    f.x2 = f.x1; f.x1 = x; f.y2 = f.y1; f.y1 = y;
+    return y;
+  }
+  process(inputs, outputs, parameters) {
+    const out = outputs[0][0];
+    if (!out) return true;
+    const sr = this.sr;
+    const rpm = Math.max(0, parameters.rpm[0]), load = Math.min(1, Math.max(0, parameters.load[0]));
+    const bright = Math.min(1, Math.max(0, (rpm - 6000) / 13200)), lowRev = 1 - bright;
+    const turnsPerSample = rpm / 60 / sr;
+    const lp = (fc) => 1 - Math.exp(-2 * Math.PI * fc / sr);
+    const kRoarHP = lp(500), kRoarLP = lp(9000), kLow = lp(350), kTop = lp(5200), kHP = lp(35), kCrLP = lp(4000), kCrHP = lp(400), kEnv = 0.02;
+    const T = Math.tanh(0.3);
+    for (let n = 0; n < out.length; n++) {
+      this.phase += turnsPerSample;
+      // a firing: five a turn; each a touch late (up to a few % of the gap)
+      const fireNo = Math.floor(this.phase * 5);
+      if (fireNo !== this.lastFire) {
+        this.gap = turnsPerSample > 0 ? 1 / (5 * turnsPerSample) : this.gap;
+        this.lastFire = fireNo;
+        const cyl = ((fireNo % 10) + 10) % 10;
+        const delay = Math.max(0, Math.abs(this.gauss()) * 0.035 * this.gap);
+        const a = (0.35 + 0.65 * load) * this.cylAmp[cyl] * (1 + this.gauss() * (0.14 + 0.12 * lowRev)) * (cyl % 2 === 0 ? 1.32 : 0.72);
+        const tau = (0.00032 + 0.0006 * lowRev) * sr * (0.75 + 0.5 * Math.random());
+        this.pending.push({ at: delay, a, tau, bank: cyl % 2 });
+      }
+      for (let k = this.pending.length - 1; k >= 0; k--) {
+        const p = this.pending[k];
+        p.at -= 1;
+        if (p.at <= 0) {
+          const B = this.banks[p.bank];
+          B.a1 += p.a; B.a2 += p.a * 0.35;
+          B.d1 = Math.exp(-1 / p.tau); B.d2 = Math.exp(-1 / (p.tau * 3));
+          this.pending.splice(k, 1);
+        }
+      }
+      // the bangs through each bank's pipes
+      let x = 0, raw = 0;
+      for (let b = 0; b < 2; b++) {
+        const B = this.banks[b];
+        const pulse = B.a1 - B.a2;
+        B.a1 *= B.d1; B.a2 *= B.d2;
+        raw += pulse;
+        let r = 0.5 * pulse;
+        for (const f of this.res[b]) r += this.run(f, pulse);
+        x += r;
+      }
+      // combustion roar, pulsing with the bangs
+      this.env += (Math.abs(raw) - this.env) * kEnv;
+      const nz = Math.random() * 2 - 1;
+      this.roarLP += (nz - this.roarLP) * kRoarLP;
+      this.roarHP += (this.roarLP - this.roarHP) * kRoarHP;
+      const roar = (this.roarLP - this.roarHP) * this.env * (0.3 + 0.4 * bright) * 0.5 * 2.2;
+      // the lumpy beat of the uneven cylinders (every engine cycle and every turn)
+      const ph = this.phase * 2 * Math.PI;
+      const cyc = Math.sin(ph * 0.5) * 0.35 + Math.sin(ph) * 0.25;
+      x *= 1 + (0.35 + 0.45 * lowRev) * cyc;
+      let y = Math.tanh((x * 2.0 + roar * 0.6) * 2.4 + 0.3) - T;
+      // crackle on the overrun
+      if (load < 0.2 && rpm > 8000) {
+        this.crackT -= 1;
+        if (this.crackT <= 0) { this.crackT = sr * 0.03; if (Math.random() < 0.55) this.crack = 0.9; }
+      }
+      const cn = (Math.random() * 2 - 1) * this.crack;
+      this.crack *= Math.exp(-1 / (sr * 0.004));
+      this.crLP += (cn - this.crLP) * kCrLP;
+      this.crHP += (this.crLP - this.crHP) * kCrHP;
+      y += this.crLP - this.crHP;
+      // more low end (more lower down the revs)
+      this.low1 += (y - this.low1) * kLow; this.low2 += (this.low1 - this.low2) * kLow;
+      y += (1.6 + 1.8 * lowRev) * this.low2;
+      // the shrill top off, and the 'iiing' (1.3-2.6 kHz) dipped
+      this.top1 += (y - this.top1) * kTop; this.top2 += (this.top1 - this.top2) * kTop;
+      y = this.top2;
+      y -= 0.55 * this.run(this.mid, y);
+      this.hp += (y - this.hp) * kHP;
+      out[n] = (y - this.hp) * 0.42;
+    }
+    for (let ch = 1; ch < outputs[0].length; ch++) outputs[0][ch].set(out);
+    return true;
+  }
+}
+registerProcessor('v10-engine', V10Engine);
 `;
 
 // Short white-noise recording, made once and reused (for gear-shift clacks)
@@ -1095,6 +1223,11 @@ export class EngineSound {
         this.heavyGain.gain.value = 0;
         this.heavyPan = ctx.createStereoPanner ? ctx.createStereoPanner() : ctx.createGain();
         this.heavy.connect(this.heavyPan).connect(this.heavyGain).connect(this.carBus);
+        // the swappable F1 V10's own voice (silent unless it's fitted)
+        this.v10 = new AudioWorkletNode(ctx, 'v10-engine', { outputChannelCount: [1] });
+        this.v10Gain = ctx.createGain();
+        this.v10Gain.gain.value = 0;
+        this.v10.connect(this.v10Gain).connect(this.engineInput);
         this.setHeavy(this.heavyOn);
       }).catch((err) => console.warn('Engine sound could not start:', err));
     }
@@ -1106,7 +1239,9 @@ export class EngineSound {
     if (!this.ctx || !this.heavyGain) return;
     const t = this.ctx.currentTime;
     this.heavyGain.gain.setTargetAtTime(on ? 0.85 * (this.driverEar ? 1.35 : 1) : 0, t, 0.1);
-    this.carVoiceGain.gain.setTargetAtTime(on ? 0 : 1, t, 0.1);
+    const v10 = !on && this.spec.voice === 'v10';
+    this.carVoiceGain.gain.setTargetAtTime(on || v10 ? 0 : 1, t, 0.1);
+    this.v10Gain?.gain.setTargetAtTime(v10 ? 1 : 0, t, 0.1);
   }
 
   // Sitting in the driver's seat: the engine is right beside you, on your
@@ -1172,6 +1307,7 @@ export class EngineSound {
   setSpec(spec) {
     this.spec = spec;
     if (this.voice) this.voice.parameters.get('cylinders').value = spec.cylinders;
+    this.setHeavy(this.heavyOn);          // (which voice is speaking)
   }
 
   // A turbo popping on the overrun: a sharp crack and a thump from the exhaust
@@ -1294,6 +1430,10 @@ export class EngineSound {
       this.heavy.parameters.get('rpm').setTargetAtTime(rpm, t, 0.08);
       this.heavy.parameters.get('load').setTargetAtTime(clamp(num(car.engineLoad, 0), 0, 1), t, loadEase);
       this.heavy.parameters.get('speed').setTargetAtTime(Math.min(40, Math.abs(num(car.vx, 0))), t, 0.1);
+    }
+    if (this.v10 && this.spec.voice === 'v10') {
+      this.v10.parameters.get('rpm').setTargetAtTime(rpm, t, 0.03);
+      this.v10.parameters.get('load').setTargetAtTime(load, t, loadEase);
     }
     if (this.voice) {
       this.voice.parameters.get('rpm').setTargetAtTime(rpm, t, 0.03);
