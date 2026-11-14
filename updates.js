@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 43;
+export const BUILD = 44;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 42, date: '14 Nov 2026', title: 'Fix: a sound error',
+    items: [
+      ['Sound error fixed', 'An error ("the provided float value is not finite") could stop part of the engine sound. Fixed, and the sound now ignores any bad value instead of stopping', 'echo'],
+    ],
+  },
   {
     id: 41, date: '14 Nov 2026', title: 'Fix: free camera on the hills',
     items: [
