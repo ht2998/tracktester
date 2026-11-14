@@ -34,7 +34,7 @@ import { setGround, groundAt, lieOnGround } from './ground.js';
 import { buildScorpion, TANK_EYE, TankPhysics } from './tank.js';
 import * as tankFile from './tank.js';
 import { AIField, BUILD as AI_BUILD } from './ai.js';
-import { buildF1, F1_CAR, CATERHAM_CAR, ENGINES, withEngine, STOCK_ENGINE, BUILD as F1_BUILD } from './f1.js';
+import { buildF1Body, buildF1Cockpit, buildF1RimGeometry, F1_CAR, CATERHAM_CAR, ENGINES, withEngine, STOCK_ENGINE, BUILD as F1_BUILD } from './f1.js';
 import * as groundFile from './ground.js';
 import * as tyresFile from './tyres.js';
 import * as cockpitFile from './cockpit.js';
@@ -57,7 +57,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 44;
+const BUILD = 46;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -668,11 +668,17 @@ fenderMat.side = THREE.DoubleSide;
 // TEST CAR: a simple Caterham-style car built from basic shapes
 // The front of the car points along +z, and +x is the car's left side.
 // ---------------------------------------------------------------------
-const WHEEL_RADIUS = 0.288;   // 195/50 R15, same as the physics
-const WHEEL_WIDTH = 0.2;
-const TRACK_HALF = 0.68;   // half the distance between left and right wheels
-const FRONT_AXLE = 1.1;
-const REAR_AXLE = -1.1;
+// WHICH CAR: the Caterham or the TT-88 (f1.js). It's settled when the game
+// starts (picking another car restarts the game), so every part of the
+// game (wheels, brakes, suspension, tyres, damage, cameras) is built for it.
+const CAR_KIND = (() => { try { const c = JSON.parse(localStorage.getItem('tracktester-car') || 'null'); return c && c.kind === 'f1' ? 'f1' : 'caterham'; } catch (e) { return 'caterham'; } })();
+const IS_F1 = CAR_KIND === 'f1';
+const WHEEL_RADIUS = IS_F1 ? 0.33 : 0.288;   // 195/50 R15 on the Caterham; big slicks on the TT-88 (same as the physics)
+const WHEEL_WIDTH = IS_F1 ? 0.36 : 0.2;      // (the TT-88's fronts are narrower and its rears wider: see WHEEL_WIDTHS)
+const WHEEL_WIDTHS = IS_F1 ? [0.3 / 0.36, 0.3 / 0.36, 0.42 / 0.36, 0.42 / 0.36] : [1, 1, 1, 1];
+const TRACK_HALF = IS_F1 ? 0.88 : 0.68;   // half the distance between left and right wheels
+const FRONT_AXLE = IS_F1 ? 1.62 : 1.1;
+const REAR_AXLE = IS_F1 ? -1.28 : -1.1;
 
 function part(geometry, material, x, y, z) {
   const mesh = new THREE.Mesh(geometry, material);
@@ -823,129 +829,143 @@ function softBox(w, h, d, r, segs) {
 function buildCar() {
   const car = new THREE.Group();
 
-  // --- Main body tub: a solid lower half, then an open-topped cockpit with
-  // a footwell running forward under the scuttle (the seats, pedals and
-  // driver's legs are in cockpit.js). Rounded edges all round. ---
-  // (every panel is made of a fine grid of points, so a crash can dent it
-  // where it hit: see dentBody)
-  const panels = [];
-  const panel = (geo, mat, x, y, z) => { const m = part(geo, mat, x, y, z); car.add(m); panels.push(m); return m; };
-  panel(softBox(0.9, 0.32, 1.9, 0.05), MAT.paint, 0, 0.31, -0.35);                       // lower tub (floor at 0.47)
-  for (const side of [-1, 1]) {
-    panel(softBox(0.04, 0.22, 1.9, 0.018), MAT.paint, side * 0.43, 0.56, -0.35);         // cockpit sides
+  let crush, headLens, beam, tailLens;
+  if (IS_F1) {
+    // THE TT-88's body (f1.js): every painted panel can be dented
+    const panels = [];
+    const body = buildF1Body(car, (m) => panels.push(m));
+    crush = { panels, grille: new THREE.Object3D(), lamps: [], tail: [] };
+    headLens = new THREE.MeshStandardMaterial({ color: 0x000000 });          // (no headlights: an F1 car)
+    beam = new THREE.SpotLight(0xfff1d6, 0, 60, 0.5, 0.5, 1.3);
+    beam.visible = false;
+    car.add(beam, beam.target);
+    tailLens = body.rainMat;                                                 // the rain light does the braking and lights glow
+    car.userData.f1 = body;
+  } else {
+    // --- Main body tub: a solid lower half, then an open-topped cockpit with
+    // a footwell running forward under the scuttle (the seats, pedals and
+    // driver's legs are in cockpit.js). Rounded edges all round. ---
+    // (every panel is made of a fine grid of points, so a crash can dent it
+    // where it hit: see dentBody)
+    const panels = [];
+    const panel = (geo, mat, x, y, z) => { const m = part(geo, mat, x, y, z); car.add(m); panels.push(m); return m; };
+    panel(softBox(0.9, 0.32, 1.9, 0.05), MAT.paint, 0, 0.31, -0.35);                       // lower tub (floor at 0.47)
+    for (const side of [-1, 1]) {
+      panel(softBox(0.04, 0.22, 1.9, 0.018), MAT.paint, side * 0.43, 0.56, -0.35);         // cockpit sides
+    }
+    panel(softBox(0.9, 0.22, 0.04, 0.018), MAT.paint, 0, 0.56, -1.28);                     // back of the cockpit
+    panel(softBox(0.9, 0.04, 0.62, 0.018), MAT.paint, 0, 0.65, -0.98);                     // rear deck behind the seats
+    panel(softBox(0.9, 0.04, 0.44, 0.018), MAT.paint, 0, 0.65, 0.39);                      // scuttle over the footwell
+    panel(softBox(0.9, 0.22, 0.04, 0.018), MAT.paint, 0, 0.56, 0.58);                      // front bulkhead
+
+    // --- Long nose (aluminium, like a classic Seven) ---
+    const nose = part(softBox(0.62, 0.34, 0.9, 0.06, [12, 7, 16]), MAT.aluminium, 0, 0.38, 1.05);
+    panels.push(nose);
+    car.add(nose);
+    // Grille at the very front
+    const grille = part(new THREE.BoxGeometry(0.5, 0.26, 0.02), MAT.black, 0, 0.38, 1.505);
+    car.add(grille);
+    crush = { panels, grille, lamps: [], tail: [] };   // parts that get dented or pushed in by crashes
+
+    // --- Bonnet top between cockpit and nose ---
+    panel(softBox(0.66, 0.04, 0.16, 0.015), MAT.aluminium, 0, 0.58, 0.66);
+
+    // (the seats, floor, pedals, steering wheel, levers, mirrors and the
+    // driver are in cockpit.js)
+
+    // --- Windscreen ---
+    const screen = part(new THREE.PlaneGeometry(0.82, 0.26), MAT.glass, 0, 0.78, 0.22);
+    screen.rotation.x = -0.25;
+    screen.castShadow = false;
+    car.add(screen);
+    // ...in a thin frame: a bar along the top and a post up each side (the
+    // rear-view mirror hangs from the middle of the top bar: cockpit.js)
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x1b1c1e, metalness: 0.4, roughness: 0.5 });
+    const rodBetween = (a, b, r) => {
+      const A = new THREE.Vector3(...a), B = new THREE.Vector3(...b);
+      const m = part(new THREE.CylinderGeometry(r, r, A.distanceTo(B), 10), frameMat, (A.x + B.x) / 2, (A.y + B.y) / 2, (A.z + B.z) / 2);
+      m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), B.clone().sub(A).normalize());
+      car.add(m);
+    };
+    const TOP = [0.906, 0.188], BOTTOM = [0.654, 0.252];            // the glass's top and bottom edge (height, along)
+    rodBetween([-0.42, TOP[0], TOP[1]], [0.42, TOP[0], TOP[1]], 0.012);
+    for (const side of [-1, 1]) rodBetween([side * 0.42, BOTTOM[0], BOTTOM[1]], [side * 0.42, TOP[0], TOP[1]], 0.012);
+
+    // --- Roll bar behind the seats ---
+    const barSide = new THREE.CylinderGeometry(0.025, 0.025, 0.42, 10);
+    car.add(part(barSide, MAT.chrome, -0.33, 0.86, -0.75));
+    car.add(part(barSide, MAT.chrome, 0.33, 0.86, -0.75));
+    const barTop = part(new THREE.CylinderGeometry(0.025, 0.025, 0.66, 10), MAT.chrome, 0, 1.07, -0.75);
+    barTop.rotation.z = Math.PI / 2;
+    car.add(barTop);
+
+    // --- Fuel filler cap: on the rear deck, on the car's left (the fuel
+    // gauge's arrow points this way) ---
+    const filler = part(new THREE.CylinderGeometry(0.055, 0.06, 0.03, 18), MAT.chrome, 0.3, 0.665, -1.12);
+    car.add(filler);
+    car.add(part(new THREE.BoxGeometry(0.07, 0.012, 0.016), MAT.chrome, 0.3, 0.684, -1.12));   // its flip handle
+
+    // --- Rear wings (fenders over the back wheels) ---
+    for (const side of [-1, 1]) {
+      panel(softBox(0.3, 0.06, 0.8, 0.025, [5, 1, 12]), MAT.paint, side * 0.62, 0.64, -1.1);
+      panel(softBox(0.3, 0.25, 0.06, 0.02, [5, 4, 1]), MAT.paint, side * 0.62, 0.52, -1.48);
+    }
+
+    // --- Front cycle wings (curved fenders over the front wheels) ---
+    const cycleWing = new THREE.CylinderGeometry(0.36, 0.36, 0.24, 20, 1, true, 0.25, 2.3);
+    cycleWing.rotateZ(Math.PI / 2);
+    car.add(part(cycleWing, fenderMat, -TRACK_HALF, WHEEL_RADIUS, FRONT_AXLE));
+    car.add(part(cycleWing, fenderMat, TRACK_HALF, WHEEL_RADIUS, FRONT_AXLE));
+
+    // --- Headlights: round lamps, each a chrome bowl at the back, a domed
+    // glass front over a silver reflector, and a chrome rim where they meet ---
+    headLens = MAT.lens.clone();           // its own, so it can glow when switched on
+    headLens.metalness = 0.35;                   // the reflector shows through the glass
+    headLens.roughness = 0.08;
+    const lampChrome = new THREE.MeshStandardMaterial({ color: 0xe8eaec, metalness: 0.9, roughness: 0.25 });   // satin, not a mirror
+    const bowlGeo = new THREE.SphereGeometry(0.09, 22, 10, 0, Math.PI * 2, 0, Math.PI / 2);
+    bowlGeo.rotateX(-Math.PI / 2);               // the half that faces backwards
+    const domeGeo = new THREE.SphereGeometry(0.086, 22, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+    domeGeo.rotateX(Math.PI / 2);                // the half that faces forwards
+    const lampRimGeo = new THREE.TorusGeometry(0.09, 0.009, 8, 28);
+    for (const side of [-1, 1]) {
+      const lamp = new THREE.Group();
+      lamp.position.set(side * 0.42, 0.64, 1.22);
+      const bowl = part(bowlGeo, lampChrome, 0, 0, 0);
+      bowl.scale.z = 0.9;
+      const dome = part(domeGeo, headLens, 0, 0, 0.004);
+      dome.scale.z = 0.45;                       // a shallow dome of glass
+      dome.castShadow = false;
+      const lampRim = part(lampRimGeo, lampChrome, 0, 0, 0.004);
+      lamp.add(bowl, dome, lampRim);
+      car.add(lamp);
+      crush.lamps.push(lamp);
+    }
+    // The beam: one light between the two lamps (one is much cheaper than
+    // two, and looks the same from the driver's seat). It's always there,
+    // just at zero when off, so switching on doesn't stall the game.
+    beam = new THREE.SpotLight(0xfff1d6, 0, 60, 0.5, 0.5, 1.3);
+    beam.position.set(0, 0.64, 1.32);
+    beam.target.position.set(0, 0, 14);
+    car.add(beam, beam.target);
+
+    // --- Tail lights on the back of the rear wings: dim red with the lights
+    // on, bright when braking ---
+    tailLens = new THREE.MeshStandardMaterial({ color: 0x8a1010, emissive: 0xff1a10, emissiveIntensity: 0, roughness: 0.3 });
+    const tailGeo = new THREE.CircleGeometry(0.045, 14);
+    for (const side of [-1, 1]) {
+      const tail = part(tailGeo, tailLens, side * 0.62, 0.55, -1.512);
+      tail.rotation.y = Math.PI;                  // facing backwards
+      tail.castShadow = false;
+      car.add(tail);
+      crush.tail.push(tail);
+    }
+
+    // --- Side exhaust ---
+    const exhaust = part(new THREE.CylinderGeometry(0.05, 0.05, 1.2, 12), MAT.chrome, 0.5, 0.3, -0.45);
+    exhaust.rotation.x = Math.PI / 2;
+    car.add(exhaust);
   }
-  panel(softBox(0.9, 0.22, 0.04, 0.018), MAT.paint, 0, 0.56, -1.28);                     // back of the cockpit
-  panel(softBox(0.9, 0.04, 0.62, 0.018), MAT.paint, 0, 0.65, -0.98);                     // rear deck behind the seats
-  panel(softBox(0.9, 0.04, 0.44, 0.018), MAT.paint, 0, 0.65, 0.39);                      // scuttle over the footwell
-  panel(softBox(0.9, 0.22, 0.04, 0.018), MAT.paint, 0, 0.56, 0.58);                      // front bulkhead
-
-  // --- Long nose (aluminium, like a classic Seven) ---
-  const nose = part(softBox(0.62, 0.34, 0.9, 0.06, [12, 7, 16]), MAT.aluminium, 0, 0.38, 1.05);
-  panels.push(nose);
-  car.add(nose);
-  // Grille at the very front
-  const grille = part(new THREE.BoxGeometry(0.5, 0.26, 0.02), MAT.black, 0, 0.38, 1.505);
-  car.add(grille);
-  const crush = { panels, grille, lamps: [], tail: [] };   // parts that get dented or pushed in by crashes
-
-  // --- Bonnet top between cockpit and nose ---
-  panel(softBox(0.66, 0.04, 0.16, 0.015), MAT.aluminium, 0, 0.58, 0.66);
-
-  // (the seats, floor, pedals, steering wheel, levers, mirrors and the
-  // driver are in cockpit.js)
-
-  // --- Windscreen ---
-  const screen = part(new THREE.PlaneGeometry(0.82, 0.26), MAT.glass, 0, 0.78, 0.22);
-  screen.rotation.x = -0.25;
-  screen.castShadow = false;
-  car.add(screen);
-  // ...in a thin frame: a bar along the top and a post up each side (the
-  // rear-view mirror hangs from the middle of the top bar: cockpit.js)
-  const frameMat = new THREE.MeshStandardMaterial({ color: 0x1b1c1e, metalness: 0.4, roughness: 0.5 });
-  const rodBetween = (a, b, r) => {
-    const A = new THREE.Vector3(...a), B = new THREE.Vector3(...b);
-    const m = part(new THREE.CylinderGeometry(r, r, A.distanceTo(B), 10), frameMat, (A.x + B.x) / 2, (A.y + B.y) / 2, (A.z + B.z) / 2);
-    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), B.clone().sub(A).normalize());
-    car.add(m);
-  };
-  const TOP = [0.906, 0.188], BOTTOM = [0.654, 0.252];            // the glass's top and bottom edge (height, along)
-  rodBetween([-0.42, TOP[0], TOP[1]], [0.42, TOP[0], TOP[1]], 0.012);
-  for (const side of [-1, 1]) rodBetween([side * 0.42, BOTTOM[0], BOTTOM[1]], [side * 0.42, TOP[0], TOP[1]], 0.012);
-
-  // --- Roll bar behind the seats ---
-  const barSide = new THREE.CylinderGeometry(0.025, 0.025, 0.42, 10);
-  car.add(part(barSide, MAT.chrome, -0.33, 0.86, -0.75));
-  car.add(part(barSide, MAT.chrome, 0.33, 0.86, -0.75));
-  const barTop = part(new THREE.CylinderGeometry(0.025, 0.025, 0.66, 10), MAT.chrome, 0, 1.07, -0.75);
-  barTop.rotation.z = Math.PI / 2;
-  car.add(barTop);
-
-  // --- Fuel filler cap: on the rear deck, on the car's left (the fuel
-  // gauge's arrow points this way) ---
-  const filler = part(new THREE.CylinderGeometry(0.055, 0.06, 0.03, 18), MAT.chrome, 0.3, 0.665, -1.12);
-  car.add(filler);
-  car.add(part(new THREE.BoxGeometry(0.07, 0.012, 0.016), MAT.chrome, 0.3, 0.684, -1.12));   // its flip handle
-
-  // --- Rear wings (fenders over the back wheels) ---
-  for (const side of [-1, 1]) {
-    panel(softBox(0.3, 0.06, 0.8, 0.025, [5, 1, 12]), MAT.paint, side * 0.62, 0.64, -1.1);
-    panel(softBox(0.3, 0.25, 0.06, 0.02, [5, 4, 1]), MAT.paint, side * 0.62, 0.52, -1.48);
-  }
-
-  // --- Front cycle wings (curved fenders over the front wheels) ---
-  const cycleWing = new THREE.CylinderGeometry(0.36, 0.36, 0.24, 20, 1, true, 0.25, 2.3);
-  cycleWing.rotateZ(Math.PI / 2);
-  car.add(part(cycleWing, fenderMat, -TRACK_HALF, WHEEL_RADIUS, FRONT_AXLE));
-  car.add(part(cycleWing, fenderMat, TRACK_HALF, WHEEL_RADIUS, FRONT_AXLE));
-
-  // --- Headlights: round lamps, each a chrome bowl at the back, a domed
-  // glass front over a silver reflector, and a chrome rim where they meet ---
-  const headLens = MAT.lens.clone();           // its own, so it can glow when switched on
-  headLens.metalness = 0.35;                   // the reflector shows through the glass
-  headLens.roughness = 0.08;
-  const lampChrome = new THREE.MeshStandardMaterial({ color: 0xe8eaec, metalness: 0.9, roughness: 0.25 });   // satin, not a mirror
-  const bowlGeo = new THREE.SphereGeometry(0.09, 22, 10, 0, Math.PI * 2, 0, Math.PI / 2);
-  bowlGeo.rotateX(-Math.PI / 2);               // the half that faces backwards
-  const domeGeo = new THREE.SphereGeometry(0.086, 22, 8, 0, Math.PI * 2, 0, Math.PI / 2);
-  domeGeo.rotateX(Math.PI / 2);                // the half that faces forwards
-  const lampRimGeo = new THREE.TorusGeometry(0.09, 0.009, 8, 28);
-  for (const side of [-1, 1]) {
-    const lamp = new THREE.Group();
-    lamp.position.set(side * 0.42, 0.64, 1.22);
-    const bowl = part(bowlGeo, lampChrome, 0, 0, 0);
-    bowl.scale.z = 0.9;
-    const dome = part(domeGeo, headLens, 0, 0, 0.004);
-    dome.scale.z = 0.45;                       // a shallow dome of glass
-    dome.castShadow = false;
-    const lampRim = part(lampRimGeo, lampChrome, 0, 0, 0.004);
-    lamp.add(bowl, dome, lampRim);
-    car.add(lamp);
-    crush.lamps.push(lamp);
-  }
-  // The beam: one light between the two lamps (one is much cheaper than
-  // two, and looks the same from the driver's seat). It's always there,
-  // just at zero when off, so switching on doesn't stall the game.
-  const beam = new THREE.SpotLight(0xfff1d6, 0, 60, 0.5, 0.5, 1.3);
-  beam.position.set(0, 0.64, 1.32);
-  beam.target.position.set(0, 0, 14);
-  car.add(beam, beam.target);
-
-  // --- Tail lights on the back of the rear wings: dim red with the lights
-  // on, bright when braking ---
-  const tailLens = new THREE.MeshStandardMaterial({ color: 0x8a1010, emissive: 0xff1a10, emissiveIntensity: 0, roughness: 0.3 });
-  const tailGeo = new THREE.CircleGeometry(0.045, 14);
-  for (const side of [-1, 1]) {
-    const tail = part(tailGeo, tailLens, side * 0.62, 0.55, -1.512);
-    tail.rotation.y = Math.PI;                  // facing backwards
-    tail.castShadow = false;
-    car.add(tail);
-    crush.tail.push(tail);
-  }
-
-  // --- Side exhaust ---
-  const exhaust = part(new THREE.CylinderGeometry(0.05, 0.05, 1.2, 12), MAT.chrome, 0.5, 0.3, -0.45);
-  exhaust.rotation.x = Math.PI / 2;
-  car.add(exhaust);
 
   // --- Suspension: double wishbones, uprights, dampers, tie rods, driveshafts ---
   // Every rod links a point on the body to a point on the wheel's upright,
@@ -963,6 +983,26 @@ function buildCar() {
     const F = FRONT_AXLE;
     const R = REAR_AXLE;
     const fw = s > 0 ? 0 : 1, rw = s > 0 ? 2 : 3;   // (+x is the car's left)
+    if (IS_F1) {
+      // THE TT-88: long thin wishbones from the narrow tub out to the wheels,
+      // pushrods up to the rockers on the tub, track rods, driveshafts
+      const ux = s * (TRACK_HALF - 0.13), rx = s * (TRACK_HALF - 0.15);
+      rod(arms, [s * 0.2, 0.14, F + 0.22], [ux, 0.2, F], 0.012, fw, 0, 1);
+      rod(arms, [s * 0.22, 0.13, F - 0.27], [ux, 0.2, F], 0.012, fw, 0, 1);
+      rod(arms, [s * 0.2, 0.32, F + 0.2], [ux, 0.4, F], 0.011, fw, 0, 1);
+      rod(arms, [s * 0.22, 0.3, F - 0.24], [ux, 0.4, F], 0.011, fw, 0, 1);
+      rod(arms, [ux, 0.2, F], [ux, 0.4, F], 0.02, fw, 1, 1);                          // upright
+      rod(arms, [s * 0.2, 0.26, F - 0.1], [ux, 0.28, F - 0.1], 0.009, fw, 0, 1, true);  // track rod
+      rod(dampers, [ux * 0.92, 0.21, F + 0.01], [s * 0.2, 0.46, F - 0.05], 0.011, fw, 0.9, 0);   // pushrod
+      rod(arms, [s * 0.2, 0.12, R + 0.32], [rx, 0.18, R], 0.012, rw, 0, 1);
+      rod(arms, [s * 0.3, 0.12, R - 0.3], [rx, 0.18, R], 0.012, rw, 0, 1);
+      rod(arms, [s * 0.2, 0.3, R + 0.28], [rx, 0.4, R], 0.011, rw, 0, 1);
+      rod(arms, [s * 0.3, 0.3, R - 0.26], [rx, 0.4, R], 0.011, rw, 0, 1);
+      rod(arms, [rx, 0.18, R], [rx, 0.4, R], 0.02, rw, 1, 1);
+      rod(arms, [s * 0.14, 0.28, R - 0.45], [rx, 0.29, R], 0.022, rw, 0, 1);            // driveshaft
+      rod(dampers, [rx * 0.9, 0.19, R + 0.02], [s * 0.18, 0.44, R + 0.12], 0.011, rw, 0.9, 0);   // pushrod
+      continue;
+    }
 
     // Front lower wishbone (two legs meeting at the upright)
     rod(arms, [s * 0.30, 0.22, F + 0.18], [s * 0.56, 0.24, F], 0.014, fw, 0, 1);
@@ -1001,14 +1041,14 @@ function buildCar() {
   // single step. The tyre is a ring (tread and two sidewalls) round an
   // open-spoked alloy rim, so you can see the brake disc and caliper
   // behind the spokes.
-  const RIM_R = WHEEL_RADIUS * 0.66;          // 15-inch rim (the tyre's bead)
+  const RIM_R = WHEEL_RADIUS * (IS_F1 ? 0.6 : 0.66);   // 15-inch rim on the Caterham; 13-inch in a tall slick on the TT-88
   const tyreGeo = mergeGeos([
     new THREE.CylinderGeometry(WHEEL_RADIUS, WHEEL_RADIUS, WHEEL_WIDTH, 32, 1, true),   // tread
     new THREE.RingGeometry(RIM_R * 0.99, WHEEL_RADIUS, 32, 1).rotateX(-Math.PI / 2).translate(0, WHEEL_WIDTH / 2, 0),   // sidewalls
     new THREE.RingGeometry(RIM_R * 0.99, WHEEL_RADIUS, 32, 1).rotateX(Math.PI / 2).translate(0, -WHEEL_WIDTH / 2, 0),
   ], true);
   tyreGeo.rotateZ(Math.PI / 2);
-  const rimGeo = buildRimGeometry(RIM_R, WHEEL_WIDTH);
+  const rimGeo = IS_F1 ? buildF1RimGeometry(RIM_R, WHEEL_WIDTH) : buildRimGeometry(RIM_R, WHEEL_WIDTH);
   // (old spokes: kept but hidden, the rim has its own now)
   const spokeGeo = new THREE.BoxGeometry(0.001, 0.001, 0.001);
 
@@ -1050,6 +1090,10 @@ function buildCar() {
 const carModel = buildCar();
 // The cockpit and the driver (cockpit.js)
 const cockpit = new Cockpit(carModel.car, MAT, { isMobile, redline: CATERHAM.redline });
+if (IS_F1) cockpit.group.visible = false;   // (the TT-88 has its own cockpit:)
+// THE TT-88's COCKPIT (f1.js): the wheel, the lever on the right, the
+// driver's arms fighting the car, his head thrown about
+const f1Cockpit = IS_F1 ? buildF1Cockpit(carModel.car) : null;
 
 // SECRET: type F V 1 0 1 on the keyboard to swap the car for an FV101
 // Scorpion-inspired light tank (tank.js), and again to swap back.
@@ -1181,8 +1225,7 @@ function enterCode(code) {
     setCrashBox(tankMode);
     if (!tankMode && cameraMode === 'turret') { cameraMode = 'bonnet'; applyCamera(); }
     engineSound.setHeavy?.(tankMode);   // its own engine and tracks
-    carModel.car.visible = !tankMode && carKind === 'caterham';
-    f1.group.visible = !tankMode && carKind === 'f1';
+    carModel.car.visible = !tankMode;
     renderer.domElement.style.cursor = tankMode ? 'crosshair' : '';
     tank.group.visible = tankMode;
     showToast(tankMode ? 'FV101 SCORPION' : 'BACK IN THE CAR');
@@ -1362,19 +1405,26 @@ function updateWheels(steer, spin) {
     // A bare rim grinds down: smaller and smaller as it wears
     const pi = physicsWheel(x, isFront);
     const rimScale = tyre.rim ? Math.min(1, (WHEEL_RADIUS - physics.tyreSink[pi]) / (WHEEL_RADIUS * 0.62)) : 1;
-    wheelScale.set(1, rimScale, rimScale);
+    wheelScale.set(WHEEL_WIDTHS[i], rimScale, rimScale);
     // The rim's face (with its spokes and wheel nuts) points out on both
     // sides: the right-hand wheels are the same rim turned round
     const turnRound = x < 0;
+    // A crash-bent corner: the wheel knocked out of line (toe) and leaning
+    // (camber), and sagging in towards the car
+    const sd = physics.suspDamage ? physics.suspDamage[pi] : 0;
+    const toe = physics.wheelBend ? physics.wheelBend[pi] * 3 : 0;
+    const camber = -Math.sign(x) * sd * 0.28;
+    if (sd > 0) { wheelPos.x -= Math.sign(x) * 0.05 * sd; wheelPos.y -= 0.03 * sd; }
+    const yawBent = (isFront ? steer : 0) + toe;
     // the caliper: steers with the wheel, but doesn't spin
-    wheelEuler.set(0, isFront ? steer : 0, 0);
+    wheelEuler.set(0, yawBent, camber);
     wheelRot.setFromEuler(wheelEuler);
     wheelMatrix.compose(wheelPos, wheelRot, ONE);
     carModel.calipers.setMatrixAt(i, wheelMatrix);
     for (let k = 0; k < 2; k++) {
       // (each wheel turns at its own speed: a locked wheel stops, a spinning one blurs)
       const turned = (physics.w4 ? physics.w4.angle[pi] : spin) + k * Math.PI / 2;
-      wheelEuler.set(turnRound ? -turned : turned, (isFront ? steer : 0) + (turnRound ? Math.PI : 0), 0);
+      wheelEuler.set(turnRound ? -turned : turned, yawBent + (turnRound ? Math.PI : 0), camber);
       wheelRot.setFromEuler(wheelEuler);
       wheelMatrix.compose(wheelPos, wheelRot, wheelScale);
       if (k === 0) {
@@ -1598,10 +1648,17 @@ const wheelOffPending = [];
 const hubWorld = new THREE.Vector3();
 function releaseWheels() {
   while (wheelOffPending.length) {
-    const i = wheelOffPending.shift();
+    const { i, torn } = wheelOffPending.shift();
     hubWorld.set(HUB_X[i], WHEEL_RADIUS * 0.5, HUB_Z[i]);
     carModel.car.localToWorld(hubWorld);
-    const worn = Math.min(1, (WHEEL_RADIUS - CATERHAM.frameSink * 0.85) / (WHEEL_RADIUS * 0.62));
+    // (worn down to the rim, or torn off whole, tyre and all, in a crash)
+    const worn = torn ? 1 : Math.min(1, (WHEEL_RADIUS - CATERHAM.frameSink * 0.85) / (WHEEL_RADIUS * 0.62));
+    if (torn) {
+      // bits of the suspension come away with it
+      chipVel.set(0, 2, 0).addScaledVector(carVelocity, 0.6);
+      for (let k = 0; k < 14; k++) chips.spawn({ x: hubWorld.x, z: hubWorld.z }, chipVel, 1);
+      addPaintScratch(hubWorld, 0, 0);
+    }
     looseWheels[i].release(hubWorld, carVelocity, physics.heading, i % 2 === 0 ? 1 : -1, worn);
     // a burst of sparks as it tears free
     for (let k = 0; k < 30; k++) debris.spawnRimSpark(hubWorld, carVelocity, physics.heading);
@@ -2400,11 +2457,16 @@ function collide(now) {
     // Friction along the wall (no more than the push allows)
     const tx = -k.nz, tz = k.nx;
     const vt = (vx + w * rz) * tx + (vz - w * rx) * tz;
-    // Sliding along it on the car's side: scratches
-    if ((zone === 'left' || zone === 'right') && Math.abs(vt) > 2 && now - lastScratchAt > 0.05) {
+    // Sliding along it: scratches (the Caterham's sides have their own
+    // fitted ones; anywhere else, and anywhere on the TT-88, painted on
+    // the panel that touched)
+    if (Math.abs(vt) > 2 && now - lastScratchAt > 0.05 && !tankMode) {
       lastScratchAt = now;
-      addScratch(along, zone === 'left', Math.min(1, Math.abs(vt) / 15));
+      if (!IS_F1 && (zone === 'left' || zone === 'right')) addScratch(along, zone === 'left', Math.min(1, Math.abs(vt) / 15));
+      else { scrA.set(k.px, vehicleGroundY() + 0.3, k.pz); addPaintScratch(scrA, k.nx, k.nz, Math.min(1.5, Math.abs(vt) / 10)); }
     }
+    // a hard hit marks the paint where it struck, too
+    if (-vn > 4 && !tankMode && now - lastScratchAt > 0.02) { scrA.set(k.px, vehicleGroundY() + 0.3, k.pz); addPaintScratch(scrA, k.nx, k.nz, 1.2); }
     const rt = rz * tx - rx * tz;
     let jt = -vt / (1 / CAR_MASS + rt * rt / CAR_INERTIA);
     jt = Math.max(-props.grip * jn, Math.min(props.grip * jn, jt));
@@ -2931,8 +2993,9 @@ function updateCamera(dt) {
       tank.driverView(camera.position, camera.quaternion);
       camera.quaternion.multiply(lookTurn.setFromEuler(lookEuler.set(look.pitch, look.yaw, 0)));
     } else {
-      const f1View = !tankMode && carKind === 'f1' ? f1.views[cameraMode] : null;
+      const f1View = !tankMode && IS_F1 ? F1_VIEWS[cameraMode] : null;
       camera.position.copy(tankMode ? TANK_VIEWS[cameraMode] : f1View ? f1View.spot : mount.spot);
+      if (f1View && cameraMode === 'cockpit') camera.position.add(f1Cockpit.head);   // (his head thrown about as he fights the car)
       carModel.car.localToWorld(camera.position);
       carModel.car.getWorldQuaternion(carTurn);
       lookEuler.set((tankMode && cameraMode === 'bonnet' ? -0.05 : f1View ? f1View.pitch : mount.pitch) + look.pitch, Math.PI + look.yaw, 0);   // the camera looks along -z; the car faces +z
@@ -2974,7 +3037,7 @@ function applyCamera() {
   camera.fov = CAMERA_FOV[cameraMode];
   camera.near = ON_CAR[cameraMode]?.near ?? (cameraMode === 'turret' ? 0.02 : 0.1);
   cockpit.setFirstPerson(cameraMode === 'cockpit');
-  hud.setInCar?.(cameraMode === 'cockpit' && carKind === 'caterham');
+  hud.setInCar?.(cameraMode === 'cockpit' && !IS_F1);
   camera.updateProjectionMatrix();
   fitViewport();
   controls.enabled = cameraMode === 'showroom';
@@ -3027,26 +3090,41 @@ function repairAll() {
   grassBits.clear();
   mudClumps.clear();
   clearDents();
+  clearScratchDecals();
+  clearFlyingParts();
 }
 // THE CARS: the Caterham and the TT-88 (f1.js), and the engine in it (the
 // engine swap is in the secret menu). Switching repairs the car and keeps
 // it where it is.
-const f1 = buildF1();
-scene.add(f1.group);
-let carKind = 'caterham', engineKey = STOCK_ENGINE.caterham;
+// the cameras on the TT-88 (car's own frame: +z forward)
+const F1_VIEWS = {
+  bonnet: { spot: new THREE.Vector3(0, 0.62, 0.95), pitch: -0.06 },
+  cockpit: { spot: new THREE.Vector3(0, 0.72, 0.1), pitch: -0.2 },
+  tcam: { spot: new THREE.Vector3(0, 0.98, -0.32), pitch: -0.08 },
+};
+let carKind = CAR_KIND, engineKey = STOCK_ENGINE[CAR_KIND];
 function setCar(kind, engine) {
-  carKind = kind === 'f1' ? 'f1' : 'caterham';
-  engineKey = ENGINES[engine] ? engine : STOCK_ENGINE[carKind];
+  kind = kind === 'f1' ? 'f1' : 'caterham';
+  const key = ENGINES[engine] ? engine : STOCK_ENGINE[kind];
+  if (kind !== CAR_KIND) {
+    // another car: save it and start the game again with it (so everything
+    // is built for that car)
+    try { localStorage.setItem('tracktester-car', JSON.stringify({ kind, engine: key })); } catch (e) { /* storage blocked */ }
+    location.reload();
+    return;
+  }
+  carKind = kind;
+  engineKey = key;
   physics.spec = withEngine(carKind === 'f1' ? F1_CAR : CATERHAM_CAR, engineKey);
   const x = physics.x, z = physics.z, h = physics.heading;
   repairAll();
   physics.x = x; physics.z = z; physics.heading = h;
   engineSound.setSpec?.(physics.spec);
-  carModel.car.visible = !tankMode && carKind === 'caterham';
-  f1.group.visible = !tankMode && carKind === 'f1';
+  racing?.setCar(physics.spec);          // (the racing line's speeds and braking points for this car and engine)
+  // (the TT-88 runs on racing slicks: if road tyres were fitted, it gets Racing Mediums)
+  if (IS_F1 && TYRES[physics.tyreCompound]?.kind === 'road') { physics.setTyres('RM'); tyreLooks.apply('RM'); }
   try { localStorage.setItem('tracktester-car', JSON.stringify({ kind: carKind, engine: engineKey })); } catch (e) { /* storage blocked */ }
   if (carPicker) carPicker.value = carKind;
-  hud.setInCar?.(cameraMode === 'cockpit' && carKind === 'caterham');
 }
 // the car picker in the side panel
 let carPicker = null;
@@ -3062,13 +3140,149 @@ let carPicker = null;
     panel.insertBefore(box, panel.firstChild);
     panel.insertBefore(heading, box);
     carPicker = box.querySelector('select');
+    carPicker.value = CAR_KIND;
     carPicker.addEventListener('change', () => { setCar(carPicker.value, STOCK_ENGINE[carPicker.value]); carPicker.blur(); showToast(carKind === 'f1' ? 'TT-88' : 'CATERHAM SEVEN'); });
   }
 }
 try {
   const saved = JSON.parse(localStorage.getItem('tracktester-car') || 'null');
-  if (saved && (saved.kind !== 'caterham' || saved.engine !== STOCK_ENGINE.caterham)) { setCar(saved.kind, saved.engine); placeAtStart(); }
+  if (IS_F1 || (saved && saved.engine && saved.engine !== STOCK_ENGINE.caterham)) { setCar(CAR_KIND, saved?.engine); placeAtStart(); }
 } catch (e) { /* storage blocked */ }
+
+// THE TT-88's FLOOR SCRAPING: it runs a few centimetres off the road on
+// stiff springs, so over bumps and kerbs, under hard braking and squashed
+// down by its downforce at speed, the plank under it touches: a shower of
+// sparks from wherever it touches (more the harder and faster)
+const PLANK = [[0.12, 1.15], [-0.12, 1.15], [0.12, 0.3], [-0.12, 0.3], [0.12, -0.6], [-0.12, -0.6], [0.12, -1.35], [-0.12, -1.35]];
+const plankPt = new THREE.Vector3();
+const scrapeCarry = new Array(PLANK.length).fill(0);
+function scrapeFloor(dt) {
+  if (physics.air) return;
+  const speed = Math.hypot(physics.vx, physics.vy);
+  if (speed < 4) return;
+  carModel.car.updateMatrixWorld();
+  let sparked = false;
+  PLANK.forEach(([x, z], k) => {
+    carModel.car.localToWorld(plankPt.set(x, 0.024, z));
+    const road = groundAt(plankPt.x, plankPt.z) + (physics.roadHeight ? physics.roadHeight(plankPt.x, plankPt.z) : 0);
+    const gap = plankPt.y - road;
+    if (gap > 0.006) return;                     // (touching, or within a few millimetres: ever so slightly)
+    const press = Math.min(1, (0.006 - gap) / 0.02);
+    scrapeCarry[k] += (6 + 60 * press) * Math.min(1, speed / 25) * (1 - 0.6 * rain.wetness) * dt;
+    while (scrapeCarry[k] >= 1) {
+      plankPt.y = road + 0.01;
+      debris.spawnRimSpark(plankPt, carVelocity, physics.heading);
+      scrapeCarry[k] -= 1;
+      sparked = true;
+    }
+  });
+  if (sparked) debris.sparks.geometry.attributes.aSize.needsUpdate = true;
+}
+
+// WINGS SNAPPING OFF (the TT-88): a wing crushed enough breaks away and
+// flies off, tumbling, then skids to a stop on the track; the car loses
+// that end's downforce (physics)
+const flyingParts = [];
+function snapWing(part) {
+  const F = carModel.car.userData.f1;
+  const g = F?.wings?.[part];
+  if (!g || !g.parent) return;
+  carModel.car.updateMatrixWorld();
+  g.updateMatrixWorld();
+  const piece = g;
+  scene.attach(piece);                       // (keeps where it is, now loose in the world)
+  const side = part === 'fl' ? 1 : part === 'fr' ? -1 : 0;
+  const fx = Math.sin(physics.heading), fz = Math.cos(physics.heading), lx = Math.cos(physics.heading), lz = -Math.sin(physics.heading);
+  const v = new THREE.Vector3().copy(carVelocity).multiplyScalar(0.7)
+    .add(new THREE.Vector3(lx * side * 3 + (Math.random() - 0.5) * 2, 3 + Math.random() * 3, lz * side * 3 + (Math.random() - 0.5) * 2));
+  flyingParts.push({ obj: piece, v, w: new THREE.Vector3((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 14), rest: false });
+  chipVel.set(0, 2, 0).addScaledVector(carVelocity, 0.5);
+  for (let k = 0; k < 18; k++) chips.spawn({ x: piece.position.x, z: piece.position.z }, chipVel, 1);
+  engineSound.playClunk?.();
+  showToast(part === 'rear' ? 'REAR WING GONE' : 'FRONT WING DAMAGED');
+}
+const _q = new THREE.Quaternion(), _wv = new THREE.Vector3();
+function updateFlyingParts(dt) {
+  for (const p of flyingParts) {
+    if (p.rest) continue;
+    p.v.y -= 9.81 * dt;
+    p.obj.position.addScaledVector(p.v, dt);
+    _wv.copy(p.w).multiplyScalar(dt);
+    _q.setFromAxisAngle(_wv.clone().normalize(), _wv.length() || 0);
+    if (_wv.lengthSq() > 0) p.obj.quaternion.premultiply(_q);
+    const gy = groundAt(p.obj.position.x, p.obj.position.z) + 0.05;
+    if (p.obj.position.y < gy) {
+      // hits the ground: bounces a little, skids, slows down, and stops
+      p.obj.position.y = gy;
+      p.v.y = Math.abs(p.v.y) * 0.25;
+      p.v.x *= 0.7; p.v.z *= 0.7;
+      p.w.multiplyScalar(0.6);
+      if (p.v.length() > 4) { debris.spawnRimSpark(p.obj.position, p.v, 0); debris.sparks.geometry.attributes.aSize.needsUpdate = true; }
+      if (p.v.length() < 0.4 && p.w.length() < 0.5) p.rest = true;
+    }
+  }
+}
+function clearFlyingParts() {
+  // (a fresh car: its wings back on)
+  const F = carModel.car.userData.f1;
+  for (const p of flyingParts) scene.remove(p.obj);
+  flyingParts.length = 0;
+  if (F?.wings) for (const [k, g] of Object.entries(F.wings)) { if (g.parent !== carModel.car) { carModel.car.add(g); g.position.set(0, 0, 0); g.quaternion.identity(); } }
+}
+
+// SCRATCH MARKS ON ANY BODY (the TT-88's, and anywhere on the Caterham the
+// side scratches above don't reach: the nose, the tail): wherever the car
+// scrapes or hits something, the paint is scratched there: pale streaks along the way it was moving, on the
+// panel's own surface (found by aiming at the body from outside)
+const scratchTex = (() => {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 64;
+  const g = c.getContext('2d');
+  for (let k = 0; k < 26; k++) {
+    const y = 6 + Math.random() * 52, x0 = Math.random() * 60, x1 = 120 + Math.random() * 136;
+    g.strokeStyle = `rgba(${210 + Math.random() * 40},${210 + Math.random() * 40},${205 + Math.random() * 40},${0.35 + Math.random() * 0.5})`;
+    g.lineWidth = 0.6 + Math.random() * 1.6;
+    g.beginPath(); g.moveTo(x0, y); g.lineTo(x1, y + (Math.random() - 0.5) * 6); g.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+})();
+const scratchMat = new THREE.MeshStandardMaterial({ map: scratchTex, transparent: true, depthWrite: false, roughness: 0.4, metalness: 0.6, polygonOffset: true, polygonOffsetFactor: -2 });
+const scratchGeo = new THREE.PlaneGeometry(1, 0.28);
+const scratchDecals = [];
+const scratchRay = new THREE.Raycaster();
+const scrA = new THREE.Vector3(), scrN = new THREE.Vector3(), scrO = new THREE.Vector3();
+// at: a world point on (or near) the body; nx, nz: the way the wall pushed (world)
+function addPaintScratch(at, nx, nz, size = 1) {
+  if (!carModel.crush?.panels?.length || typeof scratchRay.intersectObjects !== 'function') return;
+  carModel.car.updateMatrixWorld();
+  // aim at the body from just outside where it was hit, back towards the car
+  scrN.set(nx, 0, nz);
+  if (scrN.lengthSq() < 1e-6) scrN.set(at.x - physics.x, 0, at.z - physics.z);
+  scrN.normalize();
+  scrO.copy(at).addScaledVector(scrN, 1.2);
+  scratchRay.set(scrO, scrA.copy(scrN).multiplyScalar(-1));
+  scratchRay.far = 2.4;
+  const onCar = carModel.crush.panels.filter((m) => { let o = m; while (o && o !== carModel.car) o = o.parent; return !!o; });   // (not a wing lying on the track)
+  const res = scratchRay.intersectObjects(onCar, false);
+  const hit = Array.isArray(res) ? res[0] : null;
+  if (!hit || !hit.face) return;
+  const m = new THREE.Mesh(scratchGeo, scratchMat);
+  m.renderOrder = 2;
+  const p = carModel.car.worldToLocal(hit.point.clone());
+  const n = hit.face.normal.clone();                       // (in the panel's own frame: the panels sit in the car's frame)
+  m.position.copy(p).addScaledVector(n, 0.004);
+  m.lookAt(m.position.clone().add(n));
+  // streaks along the way the car was going past it
+  m.rotateZ((Math.random() - 0.5) * 0.3);
+  const len = 0.25 + Math.random() * 0.35 * size;
+  m.scale.set(len, 0.6 + Math.random() * 0.6, 1);
+  carModel.car.add(m);
+  scratchDecals.push(m);
+  if (scratchDecals.length > (isMobile ? 30 : 70)) carModel.car.remove(scratchDecals.shift());
+}
+function clearScratchDecals() { for (const m of scratchDecals) carModel.car.remove(m); scratchDecals.length = 0; }
 
 // RETURN TO TRACK (B, or the phone menu): back onto the track where you
 // are, facing the right way, stopped (no repairs)
@@ -3222,6 +3436,7 @@ renderer.setAnimationLoop(() => {
     if (e.type === 'shift') {
       engineSound.playShift(physics.transmission === 'cvt' ? 'cvt' : e.style);
       cockpit.onShift(physics.transmission, e.direction);
+      f1Cockpit?.onShift(e.direction);
     }
     if (e.type === 'grind') engineSound.playGrind();
     if (e.type === 'blown') {
@@ -3232,7 +3447,8 @@ renderer.setAnimationLoop(() => {
       engineSound.playBlowout();
       blowoutPending.push(e.wheel);
     }
-    if (e.type === 'wheelOff') wheelOffPending.push(e.wheel);
+    if (e.type === 'wheelOff') wheelOffPending.push({ i: e.wheel, torn: !!e.torn });
+    if (e.type === 'wingOff') snapWing(e.part);
     if (e.type === 'coolantBurst') coolantBurst = Math.max(coolantBurst, 0.7 * e.strength);
     // landing hard on the bodywork (a rollover, a bad landing): a dent where it struck
     if (e.type === 'bodyHit' && e.speed > 4.5) {
@@ -3270,12 +3486,26 @@ renderer.setAnimationLoop(() => {
     carModel.car.rotation.set(bodyLean.pitch + slopeView.pitch, physics.heading, bodyLean.roll + slopeView.roll, 'YXZ');
   }
   updateWheels(physics.steer, physics.wheelSpin);
-  if (f1.group.visible) {
-    f1.group.position.copy(carModel.car.position);
-    f1.group.quaternion.copy(carModel.car.quaternion);
-    f1.setFirstPerson(cameraMode === 'cockpit');
-    f1.update(dt, { steer: physics.steer, speed: physics.vx, rpm: physics.rpm, boost: physics.boost || 0, braking: input.brake > 0.05, rain: rain.intensity, lights: lightsMode > 0 });
+  if (IS_F1) {
+    // the TT-88: the driver's helmet hidden in his own view; exhausts glowing with the revs and boost
+    const F = carModel.car.userData.f1;
+    for (const m of F.helmet) m.visible = cameraMode !== 'cockpit';
+    F.exhaustMat.emissiveIntensity = Math.max(0, physics.rpm / physics.spec.redline - 0.55) * 3 * (0.5 + (physics.boost || 0));
+    f1Cockpit.update(dt, {
+      steer: physics.steer, maxSteer: physics.spec.maxSteer, speed: physics.vx, slip: physics.vy,
+      bump: Math.abs(physics.ground.rate || 0) * 0.02 + Math.abs(bodyLean.heave) * 2,
+      gear: physics.gearLabel, rpm: physics.rpm, redline: physics.spec.redline, kmh: physics.speedKmh,
+    });
+    scrapeFloor(dt);
+    // crushed wings sag and twist before they snap
+    if (F.wings) for (const [k, g] of Object.entries(F.wings)) {
+      if (g.parent !== carModel.car) continue;
+      const d = physics.wingDamage?.[k] || 0;
+      g.position.y = -0.035 * d;
+      g.rotation.z = (k === 'fl' ? -1 : k === 'fr' ? 1 : 0) * 0.08 * d;
+    }
   }
+  updateFlyingParts(dt);
   // The tank (secret): sits where the car is, each track running at the
   // speed of its own side
   if (tankMode) {
@@ -3308,7 +3538,7 @@ renderer.setAnimationLoop(() => {
     throttle: input.throttle, brake: input.brake, clutch: physics.clutchPedal, horn: !!input.horn,
   });
   cockpit.drawScreen(dt, {
-    speedKmh: physics.speedKmh, rpm: physics.rpm, redline: tankMode ? 2700 : CATERHAM.redline, gearLabel: tankMode ? tankPhys.gearLabel : physics.gearLabel,
+    speedKmh: physics.speedKmh, rpm: physics.rpm, redline: tankMode ? 2700 : physics.spec.redline, gearLabel: tankMode ? tankPhys.gearLabel : physics.gearLabel,
     limiter: physics.limiter, fuel: physics.fuelLevel, oil: physics.oilLevel, tyres: physics.tyres,
     health: physics.engineHealth, tyreWindow: physics.tempWindow,
     coolant: physics.coolantTemp, fire: physics.onFire,
@@ -3406,7 +3636,7 @@ renderer.setAnimationLoop(() => {
   });
   touchUI?.update({ transmission: physics.transmission, gearLabel: physics.gearLabel, muted: engineSound.muted, lights: lightsSetting, racingLine: racing ? racingLineOn : null });
 
-  if (cameraMode === 'cockpit' && !tankMode) cockpit.renderMirrors(renderer, scene);
+  if (cameraMode === 'cockpit' && !tankMode && !IS_F1) cockpit.renderMirrors(renderer, scene);
   if (cameraMode === 'cockpit' && tankMode) renderPeriscope();
   updateGun(dt);
   updateDriverSeat(input);
