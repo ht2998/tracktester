@@ -56,7 +56,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 41;
+const BUILD = 42;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -2610,6 +2610,8 @@ function explode(at) {
       if (res?.chips) for (let i = 0; i < res.chips + 4; i++) chips.spawn({ x: cx, z: cz }, chipVel.set(-nx * 8, 0, -nz * 8), 1);
     }
   }
+  // AI cars nearby are flung into the air, tumbling (ai.js)
+  aiField?.blast(at, 9);
   const d = camera.position.distanceTo(at);
   engineSound.playExplosion(d);
   shake = Math.max(shake, 0.6 / (1 + d / 25));
@@ -2619,6 +2621,7 @@ function explode(at) {
 function shellHit(p) {
   const gy = groundAt(p.x, p.z);
   if (p.y <= gy + 0.05) { p.y = gy + 0.05; return true; }
+  if (aiField?.hitTest(p)) return true;          // (an AI car)
   if (p.y - gy > 12) return false;
   for (const c of COLLIDERS) {
     if (p.x < c.minX || p.x > c.maxX || p.z < c.minZ || p.z > c.maxZ) continue;
