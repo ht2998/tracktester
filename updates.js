@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 56;
+export const BUILD = 57;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 51, date: '14 Nov 2026', title: 'Louder, clearer',
+    items: [
+      ['Unmuffled', 'The 19,200 rpm engine (if you know where to find it) is now the loudest in the game, and no longer muffled', 'update'],
+    ],
+  },
   {
     id: 50, date: '14 Nov 2026', title: 'One more under the bonnet',
     items: [
