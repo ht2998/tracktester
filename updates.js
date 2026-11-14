@@ -21,11 +21,18 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 48;
+export const BUILD = 49;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 44, date: '14 Nov 2026', title: 'Fix: barriers vanishing',
+    items: [
+      ['Hit barriers stay put', 'On the hills at Sepang, hitting a barrier (armco, tyre wall, catch fence, a bollard) could make it vanish: it was being redrawn at ground level of the flat test area, under the hill. It now dents, squashes or caves in right where it stands, and cracks in concrete walls show up where they should', 'barriers'],
+      ['Tidier secret seat', 'Inside the secret, nothing pokes through anything any more, and you can see out properly', 'camera'],
+    ],
+  },
   {
     id: 43, date: '14 Nov 2026', title: 'The secret gets better',
     items: [
