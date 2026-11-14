@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 40;
+export const BUILD = 41;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
@@ -31,7 +31,8 @@ export const UPDATES = [
     items: [
       ['A secret', 'Something heavy and green is now hidden in Track Tester. It needs a code, typed on a keyboard. Ask whoever sent you the link', 'update'],
       ['...and it drives like one', 'Whatever it is weighs about 8 tonnes, tops out around 80 km/h, turns on the spot, and barely notices the walls', 'update'],
-      ['...and sounds like one', 'A big straight-six, straining under the weight, with a deep rumble you can feel', 'echo'],
+      ['...and sounds like one', 'A big six-cylinder diesel with a turbo, straining under the weight, with a burble and a deep rumble you can feel. It smokes, too', 'echo'],
+      ['...and looks where you look', 'Once you have found it, move the mouse', 'update'],
     ],
   },
   {
