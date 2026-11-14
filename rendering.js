@@ -55,7 +55,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 37;
+const BUILD = 39;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -1119,9 +1119,14 @@ function showToast(text) {
 }
 window.addEventListener('keydown', (e) => {
   if (!e.key || e.key.length !== 1) return;
+  if (e.target && e.target.tagName === 'INPUT') return;     // (typing in the phone's code box)
   secretKeys = (secretKeys + e.key.toUpperCase()).slice(-5);
-  if (secretKeys === 'FV101') {
-    secretKeys = '';
+  if (secretKeys === 'FV101') { secretKeys = ''; enterCode('FV101'); }
+});
+// A secret code, typed on a keyboard or entered in the phone's code box
+function enterCode(code) {
+  code = String(code || '').toUpperCase().replace(/\s+/g, '');
+  if (code === 'FV101') {
     tankMode = !tankMode;
     // hand over where you are, facing the same way, from a standstill
     if (tankMode) tankPhys.place(physics.x, physics.z, physics.heading);
@@ -1137,8 +1142,49 @@ window.addEventListener('keydown', (e) => {
     renderer.domElement.style.cursor = tankMode ? 'crosshair' : '';
     tank.group.visible = tankMode;
     showToast(tankMode ? 'FV101 SCORPION' : 'BACK IN THE CAR');
+    return true;
   }
+  return false;
+}
+// THE HIDDEN VEHICLES MENU: tap (or click) the rev counter 5 times
+// quickly and a menu of the hidden vehicles opens (works on phones, which
+// have no keyboard for the codes). The tank is the first one.
+const HIDDEN_VEHICLES = [
+  { name: 'FV101 Scorpion', code: 'FV101', active: () => tankMode },
+];
+const codeSpot = document.createElement('div');
+codeSpot.style.cssText = 'position:absolute;inset:0;pointer-events:auto;-webkit-tap-highlight-color:transparent';
+let codeTaps = [];
+codeSpot.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  const now = performance.now();
+  codeTaps = codeTaps.filter((t) => now - t < 2000);
+  codeTaps.push(now);
+  if (codeTaps.length >= 5) { codeTaps = []; openVehicleMenu(); }
 });
+const vehicleMenu = document.createElement('div');
+vehicleMenu.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);display:none;flex-direction:column;gap:8px;min-width:220px;padding:14px;border-radius:14px;background:rgba(20,24,16,0.94);box-shadow:0 8px 30px rgba(0,0,0,0.5);z-index:40;font:600 15px system-ui,sans-serif;color:#e8e2c4';
+document.body.appendChild(vehicleMenu);
+const menuButton = (label, onTap, dim) => {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.textContent = label;
+  b.style.cssText = `padding:10px 12px;border-radius:9px;border:0;text-align:left;font:inherit;color:#f0ecd8;background:${dim ? '#33362c' : '#4f5c30'}`;
+  b.addEventListener('click', (e) => { e.stopPropagation(); onTap(); });
+  return b;
+};
+function openVehicleMenu() {
+  vehicleMenu.innerHTML = '<div style="font-size:12px;letter-spacing:0.12em;color:#9ea48c;margin-bottom:2px">HIDDEN VEHICLES</div>';
+  for (const v of HIDDEN_VEHICLES) {
+    vehicleMenu.appendChild(menuButton(v.active() ? `${v.name}  ✓` : v.name, () => { if (!v.active()) enterCode(v.code); vehicleMenu.style.display = 'none'; }));
+  }
+  if (HIDDEN_VEHICLES.some((v) => v.active())) {
+    vehicleMenu.appendChild(menuButton('Back to the car', () => { const v = HIDDEN_VEHICLES.find((h) => h.active()); if (v) enterCode(v.code); vehicleMenu.style.display = 'none'; }, true));
+  }
+  vehicleMenu.appendChild(menuButton('Close', () => { vehicleMenu.style.display = 'none'; }, true));
+  vehicleMenu.style.display = 'flex';
+}
 // Each kind of tyre has its own look: F1-style coloured bands, tread
 // patterns, knobbly dirt tyres, snow chains (tyres.js)
 const tyreLooks = new TyreLooks(carModel.car, carModel.tyres, { radius: WHEEL_RADIUS, width: WHEEL_WIDTH });
@@ -2370,6 +2416,8 @@ const hud = new Hud({
     changing: (on) => sky.setChanging(on),
   },
 });
+// (the hidden vehicles menu's tap spot lives on the rev counter)
+(document.getElementById('dash') || document.body).appendChild(codeSpot);
 // The car's own dashboard dials show the HUD's drawings (cockpit.js)
 cockpit.useHudDials(hud.parts);
 
@@ -3068,6 +3116,7 @@ renderer.setAnimationLoop(() => {
   engineSound.setMud?.(mudUnder, carSpeed);
 
   hud.setRevScale?.(tankMode ? 2700 : CATERHAM.redline);   // (the tank's diesel is governed at 2,700)
+  hud.setTyreWear?.(!tankMode);                            // (no tyres on a tank)
   hud.update({
     sky: { clock: sky.clock, hours: sky.hours, speed: sky.speed, locked: sky.locked,
            weather: sky.weather, changing: sky.changing, now: sky.weatherNow },
