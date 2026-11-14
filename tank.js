@@ -18,9 +18,10 @@ import { groundAt } from './ground.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 4;
+export const BUILD = 5;
 
 // Where the driver's eye would be if you look out of the commander's hatch
+const SIGHT_TURN = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
 export const TANK_EYE = new THREE.Vector3(0.42, 2.22, -0.62);
 
 const TRACK_X = 0.88;      // middle of each track from the centre line
@@ -479,8 +480,31 @@ export function buildScorpion() {
   exhaust.position.set(-1.19, 1.0, 1.25);
   group.add(exhaust);
   let turretYaw = 0, gunPitch = 0;
+  let recoil = 0;          // how far back the barrel has slid after a shot (m)
+  const barrelHome = barrel.position.z;
+  const muzzleLocal = new THREE.Vector3(0, 0, 2.95);
   return {
     group, turret, gun, exhaust,
+    // Where the end of the barrel is and which way it points (world)
+    muzzle(posOut, dirOut) {
+      group.updateMatrixWorld();
+      gun.localToWorld(posOut.copy(muzzleLocal));
+      gun.getWorldDirection(dirOut);
+      return posOut;
+    },
+    // The gunner's sight: just right of the gun and above it, looking along
+    // it (so it turns and lifts with the gun). Writes a camera's position
+    // and turn.
+    sight(posOut, quatOut) {
+      group.updateMatrixWorld();
+      gun.localToWorld(posOut.set(-0.34, 0.3, 0.1));
+      gun.getWorldQuaternion(quatOut);
+      return quatOut.multiply(SIGHT_TURN);      // (a camera looks along -z; the gun points along +z)
+    },
+    // A shot: the barrel slams back and runs out again
+    fired() { recoil = 0.28; },
+    // which way the turret is facing, relative to the hull (radians, + = left)
+    get turretYaw() { return turretYaw; },
     // Aim the turret at a point in the world: it turns (at about 40
     // degrees a second, like the real one's powered traverse) until the
     // gun faces it, and the gun lifts or dips towards it (-10 to +35 deg)
@@ -506,6 +530,9 @@ export function buildScorpion() {
       travel[0] += speedLeft * dt;
       travel[1] += speedRight * dt;
       place();
+      // the barrel running back out after recoil (about half a second)
+      recoil = Math.max(0, recoil - dt * 0.55);
+      barrel.position.z = barrelHome - recoil;
     },
     // the headlights glow when the car's lights are on
     setLights(on) { MAT.lamp.emissive.setHex(on ? 0xfff1d6 : 0x000000); MAT.lamp.emissiveIntensity = on ? 1.5 : 0; },
@@ -531,6 +558,22 @@ export class TankPhysics {
     this.vx = 0; this.vy = 0; this.yawRate = 0;
     this.y = 0; this.pitch = 0; this.roll = 0;
     this.rpm = 720; this.load = 0;   // engine speed starts at idle
+    // rocking from the gun's recoil: the hull tips away from the shot on its
+    // suspension and settles (pitch: + = nose down; roll: + = left side up)
+    this.rock = { pitch: 0, roll: 0, vPitch: 0, vRoll: 0 };
+  }
+
+  // The 90 mm fires with the turret at turretYaw (relative to the hull):
+  // the hull is kicked back, away from the gun, and rocks on its springs,
+  // and the whole tank is shoved a little the other way
+  recoilKick(turretYaw) {
+    const kick = 0.75;     // rad/s: tips about 3 degrees at the peak
+    this.rock.vPitch -= kick * Math.cos(turretYaw);   // gun forward: the nose lifts
+    this.rock.vRoll += kick * Math.sin(turretYaw);    // gun to the left: the left side lifts
+    // the shove: about 0.3 m/s back along the gun line
+    const shove = 0.3;
+    this.vx -= shove * Math.cos(turretYaw);
+    this.vy -= shove * Math.sin(turretYaw);
   }
 
   place(x, z, heading) {
@@ -586,6 +629,14 @@ export class TankPhysics {
     const sn = Math.sin(this.heading), cs = Math.cos(this.heading);
     this.x += (sn * this.vx + cs * this.vy) * dt;
     this.z += (cs * this.vx - sn * this.vy) * dt;
+    // the recoil rock: a stiff, well-damped spring (about 1.6 wobbles a second)
+    {
+      const R = this.rock, w = 2 * Math.PI * 1.6, zeta = 0.28;
+      R.vPitch += (-w * w * R.pitch - 2 * zeta * w * R.vPitch) * dt;
+      R.vRoll += (-w * w * R.roll - 2 * zeta * w * R.vRoll) * dt;
+      R.pitch += R.vPitch * dt;
+      R.roll += R.vRoll * dt;
+    }
     // sit on the ground, tilted with it (heavy: no bounce)
     this.y = groundAt(this.x, this.z);
     this.pitch += (-Math.atan(slopeF) - this.pitch) * Math.min(1, dt / 0.15);
