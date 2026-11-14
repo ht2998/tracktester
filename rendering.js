@@ -30,7 +30,7 @@ import * as racingLineFile from './racingline.js';
 import * as floraFile from './flora.js';
 import { Cockpit, EYE } from './cockpit.js';
 import { TyreLooks } from './tyres.js';
-import { setGround, groundAt } from './ground.js';
+import { setGround, groundAt, lieOnGround } from './ground.js';
 import { buildScorpion, TANK_EYE, TankPhysics } from './tank.js';
 import * as tankFile from './tank.js';
 import * as groundFile from './ground.js';
@@ -55,7 +55,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 32;
+const BUILD = 33;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -2372,6 +2372,230 @@ cockpit.useHudDials(hud.parts);
 const CAMERA_MODES = ['chase', 'close', 'bonnet', 'cockpit', 'tcam', 'showroom'];
 const CAMERA_FOV = { chase: 50, close: 58, bonnet: 66, cockpit: 70, tcam: 62, showroom: 50 };
 // Cameras fixed to the car: where they sit, and how far they look down
+// =====================================================================
+// THE TANK'S GUN (secret): left-click (a click, not a drag) fires the
+// 90 mm. The barrel recoils and the hull rocks back, there's a flash, a
+// blast of smoke and dust, and a tracer flies out. Where it lands: a
+// fireball, a flash, a cloud of smoke and dirt, a scorch mark, and a boom
+// that arrives later the further away it is. 34 rounds, about 6.5 s to
+// load each one. Computers only.
+// =====================================================================
+const GUN = { rounds: 34, reload: 0, RELOAD: 6.5, SPEED: 700 };
+const shells = [];
+const tracerGeo = new THREE.BoxGeometry(0.05, 0.05, 1.6);
+const tracerMat = new THREE.MeshBasicMaterial({ color: 0xffb35a });
+const blastLight = new THREE.PointLight(0xffa64d, 0, 60, 2);
+scene.add(blastLight);
+const muzzleLight = new THREE.PointLight(0xffc27a, 0, 30, 2);
+scene.add(muzzleLight);
+let shake = 0;                      // camera shake, dying away
+// scorch marks: dark, soft-edged rings of burnt ground
+const scorchTex = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(32, 32, 2, 32, 32, 32);
+  grad.addColorStop(0, 'rgba(10,9,8,0.95)');
+  grad.addColorStop(0.55, 'rgba(25,20,15,0.7)');
+  grad.addColorStop(1, 'rgba(30,25,20,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+const scorchGeo = new THREE.CircleGeometry(1, 20);
+scorchGeo.rotateX(-Math.PI / 2);
+const scorches = new THREE.InstancedMesh(scorchGeo, new THREE.MeshStandardMaterial({ map: scorchTex, transparent: true, depthWrite: false, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }), 30);
+scorches.count = 0;
+scorches.frustumCulled = false;
+scene.add(scorches);
+let nextScorch = 0;
+const fxM = new THREE.Matrix4(), fxQ = new THREE.Quaternion(), fxS = new THREE.Vector3(), fxP = new THREE.Vector3(), fxV = new THREE.Vector3();
+const muzzlePos = new THREE.Vector3(), muzzleDir = new THREE.Vector3();
+
+function fireGun() {
+  if (!tankMode || GUN.reload > 0 || GUN.rounds <= 0) return;
+  GUN.rounds--;
+  GUN.reload = GUN.RELOAD;
+  tank.muzzle(muzzlePos, muzzleDir);
+  // the shell (with the tank's own speed added), and its tracer
+  const tracer = new THREE.Mesh(tracerGeo, tracerMat);
+  scene.add(tracer);
+  shells.push({ p: muzzlePos.clone(), v: muzzleDir.clone().multiplyScalar(GUN.SPEED).add(carVelocity), t: 0, tracer });
+  // the gun and hull kick back
+  tank.fired();
+  tankPhys.recoilKick(tank.turretYaw);
+  // flash, flame, a blast of smoke and dust round the muzzle
+  muzzleLight.position.copy(muzzlePos);
+  muzzleLight.intensity = 40;
+  for (let k = 0; k < 8; k++) {
+    fxP.copy(muzzlePos).addScaledVector(muzzleDir, 0.3 + Math.random() * 1.2);
+    flames.spawn(fxP, 1, fxV.copy(muzzleDir).multiplyScalar(8 + Math.random() * 6));
+  }
+  for (let k = 0; k < 18; k++) {
+    fxP.copy(muzzlePos).addScaledVector(muzzleDir, Math.random() * 3);
+    fxV.copy(muzzleDir).multiplyScalar(4 + Math.random() * 8);
+    fxV.x += (Math.random() - 0.5) * 4; fxV.z += (Math.random() - 0.5) * 4;
+    dust.spawn(fxP, 1, fxV);
+  }
+  // the ground under the muzzle blasted up into dust
+  for (let k = 0; k < 14; k++) {
+    fxP.copy(muzzlePos).addScaledVector(muzzleDir, 1 + Math.random() * 3);
+    fxP.y = groundAt(fxP.x, fxP.z) + 0.2;
+    dust.spawn(fxP, 1, fxV.set((Math.random() - 0.5) * 6, 1, (Math.random() - 0.5) * 6));
+  }
+  engineSound.playCannon();
+  shake = Math.max(shake, 0.35);
+}
+
+function explode(at) {
+  blastLight.position.copy(at).y += 1.5;
+  blastLight.intensity = 90;
+  for (let k = 0; k < 22; k++) {
+    fxP.copy(at).add(fxV.set((Math.random() - 0.5) * 2, Math.random() * 1.5, (Math.random() - 0.5) * 2));
+    flames.spawn(fxP, 1, fxV.set((Math.random() - 0.5) * 6, 2 + Math.random() * 5, (Math.random() - 0.5) * 6));
+  }
+  for (let k = 0; k < 26; k++) {
+    fxP.copy(at).add(fxV.set((Math.random() - 0.5) * 3, Math.random() * 2, (Math.random() - 0.5) * 3));
+    dieselSmoke.spawn(fxP, 1, fxV.set((Math.random() - 0.5) * 5, 3 + Math.random() * 6, (Math.random() - 0.5) * 5));
+  }
+  for (let k = 0; k < 30; k++) {
+    fxP.copy(at).add(fxV.set((Math.random() - 0.5) * 2, 0.2, (Math.random() - 0.5) * 2));
+    dust.spawn(fxP, 1, fxV.set((Math.random() - 0.5) * 12, 4 + Math.random() * 10, (Math.random() - 0.5) * 12));
+  }
+  // a scorch mark on the ground
+  const gy = groundAt(at.x, at.z);
+  if (at.y - gy < 1.5) {
+    lieOnGround(fxQ, at.x, at.z, Math.random() * 6.28);
+    fxM.compose(fxP.set(at.x, gy + 0.012, at.z), fxQ, fxS.setScalar(1.6 + Math.random() * 0.8));
+    scorches.setMatrixAt(nextScorch, fxM);
+    nextScorch = (nextScorch + 1) % 30;
+    scorches.count = Math.max(scorches.count, nextScorch === 0 ? 30 : nextScorch);
+    scorches.instanceMatrix.needsUpdate = true;
+  }
+  const d = camera.position.distanceTo(at);
+  engineSound.playExplosion(d);
+  shake = Math.max(shake, 0.6 / (1 + d / 25));
+}
+
+// what a shell hits: the ground, or a wall, building, barrier or tree
+function shellHit(p) {
+  const gy = groundAt(p.x, p.z);
+  if (p.y <= gy + 0.05) { p.y = gy + 0.05; return true; }
+  if (p.y - gy > 12) return false;
+  for (const c of COLLIDERS) {
+    if (p.x < c.minX || p.x > c.maxX || p.z < c.minZ || p.z > c.maxZ) continue;
+    if (p.y - gy < (c.kind === 'tree' ? 10 : 3)) return true;
+  }
+  return false;
+}
+
+function updateGun(dt) {
+  GUN.reload = Math.max(0, GUN.reload - dt);
+  muzzleLight.intensity *= Math.exp(-dt * 30);
+  blastLight.intensity *= Math.exp(-dt * 7);
+  shake *= Math.exp(-dt * 6);
+  for (let i = shells.length - 1; i >= 0; i--) {
+    const s = shells[i];
+    let hit = false;
+    const steps = 12, h = dt / steps;
+    for (let k = 0; k < steps && !hit; k++) {
+      s.v.y -= 9.81 * h;
+      s.p.addScaledVector(s.v, h);
+      s.t += h;
+      if (s.t > 0.01 && shellHit(s.p)) hit = true;
+    }
+    s.tracer.position.copy(s.p);
+    s.tracer.lookAt(fxP.copy(s.p).add(s.v));
+    if (hit || s.t > 3) {
+      if (hit) explode(s.p);
+      scene.remove(s.tracer);
+      shells.splice(i, 1);
+    }
+  }
+  // the ammunition and loading display
+  gunHud.style.display = tankMode && !isMobile ? 'block' : 'none';
+  if (tankMode) gunHud.textContent = `90 mm  ·  ${GUN.rounds} rounds  ·  ${GUN.rounds <= 0 ? 'EMPTY' : GUN.reload > 0 ? 'LOADING ' + GUN.reload.toFixed(1) + ' s' : 'READY'}`;
+}
+const gunHud = document.createElement('div');
+gunHud.style.cssText = 'position:fixed;left:50%;bottom:16px;transform:translateX(-50%);padding:5px 12px;border-radius:8px;background:rgba(15,18,12,0.7);color:#dfe8c4;font:600 13px system-ui,sans-serif;letter-spacing:0.05em;pointer-events:none;display:none;z-index:15';
+document.body.appendChild(gunHud);
+// a click (not a drag) fires
+let clickFrom = null;
+window.addEventListener('mousedown', (e) => { if (e.button === 0) clickFrom = { x: e.clientX, y: e.clientY, t: performance.now() }; });
+window.addEventListener('mouseup', (e) => {
+  if (e.button !== 0 || !clickFrom) return;
+  const still = Math.hypot(e.clientX - clickFrom.x, e.clientY - clickFrom.y) < 6 && performance.now() - clickFrom.t < 450;
+  clickFrom = null;
+  if (still && tankMode && e.target === renderer.domElement) fireGun();
+});
+
+// =====================================================================
+// THE DRIVER'S SEAT (the tank's first-person view, camera 4): the driver
+// sits at the front left, the engine right beside him on his right. He
+// sees out through the wide periscope in his hatch; below it, his two
+// steering levers (pull the left one to slow the left track and turn
+// left, both to brake) and his instruments. At night the periscope is an
+// image intensifier: everything glows green and grainy.
+// =====================================================================
+const driverSeat = document.createElement('div');
+driverSeat.style.cssText = 'position:fixed;inset:0;pointer-events:none;display:none;z-index:12';
+driverSeat.innerHTML = `
+  <div style="position:absolute;left:9%;right:9%;top:7%;height:40%;border-radius:18px;box-shadow:0 0 0 200vmax rgba(13,14,11,0.97), inset 0 0 40px 14px rgba(0,0,0,0.75);border:3px solid #2a2c25"></div>
+  <div class="nv-grain" style="position:absolute;left:9%;right:9%;top:7%;height:40%;border-radius:18px;opacity:0;mix-blend-mode:screen"></div>
+  <svg viewBox="0 0 1000 560" preserveAspectRatio="xMidYMax meet" style="position:absolute;left:0;right:0;bottom:0;width:100%;height:52%">
+    <rect x="300" y="40" width="400" height="120" rx="14" fill="#23251f" stroke="#3a3d33" stroke-width="4"/>
+    <circle cx="400" cy="100" r="44" fill="#121410" stroke="#55594a" stroke-width="4"/>
+    <circle cx="600" cy="100" r="44" fill="#121410" stroke="#55594a" stroke-width="4"/>
+    <line class="needle-speed" x1="400" y1="100" x2="400" y2="66" stroke="#e8e2c8" stroke-width="5" stroke-linecap="round"/>
+    <line class="needle-rpm" x1="600" y1="100" x2="600" y2="66" stroke="#e8e2c8" stroke-width="5" stroke-linecap="round"/>
+    <text x="400" y="150" fill="#9aa08a" font-size="18" text-anchor="middle" font-family="system-ui">km/h</text>
+    <text x="600" y="150" fill="#9aa08a" font-size="18" text-anchor="middle" font-family="system-ui">rpm</text>
+    <g class="lever-left" transform="rotate(0 330 560)">
+      <rect x="318" y="250" width="24" height="310" rx="8" fill="#34372f"/>
+      <rect x="300" y="215" width="60" height="58" rx="16" fill="#151612"/>
+    </g>
+    <g class="lever-right" transform="rotate(0 670 560)">
+      <rect x="658" y="250" width="24" height="310" rx="8" fill="#34372f"/>
+      <rect x="640" y="215" width="60" height="58" rx="16" fill="#151612"/>
+    </g>
+  </svg>`;
+document.body.appendChild(driverSeat);
+const leverL = driverSeat.querySelector('.lever-left'), leverR = driverSeat.querySelector('.lever-right');
+const needleSpeed = driverSeat.querySelector('.needle-speed'), needleRpm = driverSeat.querySelector('.needle-rpm');
+const nvGrain = driverSeat.querySelector('.nv-grain');
+const grainCanvas = document.createElement('canvas');
+grainCanvas.width = grainCanvas.height = 96;
+let nightVision = false;
+function updateDriverSeat(input) {
+  const inSeat = tankMode && cameraMode === 'cockpit';
+  driverSeat.style.display = inSeat ? 'block' : 'none';
+  engineSound.setDriverEar?.(inSeat);
+  // night vision at night (the image intensifier), off by day
+  const nv = inSeat && sky.daylight < 0.35;
+  if (nv !== nightVision) {
+    nightVision = nv;
+    renderer.domElement.style.filter = nv ? 'grayscale(1) sepia(1) hue-rotate(52deg) saturate(3.5) brightness(2.7) contrast(1.2)' : '';
+    if (nvGrain) nvGrain.style.opacity = nv ? '0.35' : '0';
+  }
+  if (!inSeat) return;
+  if (nv && nvGrain) {
+    // fresh grain every frame (the intensifier's sparkle)
+    const g = grainCanvas.getContext('2d');
+    const img = g.createImageData(96, 96);
+    for (let i = 0; i < img.data.length; i += 4) { const v = Math.random() * 255; img.data[i] = v * 0.5; img.data[i + 1] = v; img.data[i + 2] = v * 0.4; img.data[i + 3] = 255; }
+    g.putImageData(img, 0, 0);
+    nvGrain.style.backgroundImage = `url(${grainCanvas.toDataURL()})`;
+  }
+  // the levers: pulled back to steer that side (both to brake)
+  const steer = input.steer || 0, brake = input.brake || 0;
+  const pullL = Math.min(1, Math.max(0, steer) + brake * 0.8), pullR = Math.min(1, Math.max(0, -steer) + brake * 0.8);
+  leverL?.setAttribute('transform', `rotate(${(-14 * pullL).toFixed(1)} 330 560)`);
+  leverR?.setAttribute('transform', `rotate(${(14 * pullR).toFixed(1)} 670 560)`);
+  const kmh = Math.abs(physics.vx) * 3.6, rpm = tankPhys.rpm || 720;
+  needleSpeed?.setAttribute('transform', `rotate(${(-120 + 240 * Math.min(1, kmh / 80)).toFixed(1)} 400 100)`);
+  needleRpm?.setAttribute('transform', `rotate(${(-120 + 240 * Math.min(1, rpm / 3000)).toFixed(1)} 600 100)`);
+}
+
 const ON_CAR = {
   bonnet: { spot: new THREE.Vector3(0, 0.9, 0.42), pitch: 0, near: 0.05 },
   cockpit: { spot: EYE, pitch: -0.1, near: 0.02 },
@@ -2382,7 +2606,6 @@ let cameraMode = 'chase';
 // commander's hatch): the driver's hatch at the front left, and high up
 // behind the turret (the gunner's sight is worked out from the gun itself)
 const TANK_VIEWS = {
-  bonnet: new THREE.Vector3(0.48, 1.52, 0.86),
   tcam: new THREE.Vector3(0, 2.75, -1.55),
 };
 const carPos = new THREE.Vector3();
@@ -2440,9 +2663,12 @@ function updateCamera(dt) {
     }
     carModel.car.updateMatrixWorld();
     const mount = ON_CAR[cameraMode];
-    if (tankMode && cameraMode === 'cockpit') {
+    if (tankMode && cameraMode === 'bonnet') {
       // the tank's gunner's sight: beside the gun, turning and lifting with it
       tank.sight(camera.position, camera.quaternion);
+    } else if (tankMode && cameraMode === 'cockpit') {
+      // the tank's driver, looking out through his periscope (see DRIVER'S SEAT)
+      tank.driverView(camera.position, camera.quaternion);
     } else {
       camera.position.copy(tankMode ? TANK_VIEWS[cameraMode] : mount.spot);
       carModel.car.localToWorld(camera.position);
@@ -2767,7 +2993,12 @@ renderer.setAnimationLoop(() => {
   touchUI?.update({ transmission: physics.transmission, gearLabel: physics.gearLabel, muted: engineSound.muted, lights: lightsSetting, racingLine: racing ? racingLineOn : null });
 
   if (cameraMode === 'cockpit') cockpit.renderMirrors(renderer, scene);
+  updateGun(dt);
+  updateDriverSeat(input);
   placeGunRing();
+  // the gun's blast shakes the camera
+  if (shake > 0.005) camera.position.add(fxP.set((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake));
   renderer.render(scene, camera);
+  if (shake > 0.005) camera.position.sub(fxP);
   godRays.render(sky.rays);
 });
