@@ -14,7 +14,7 @@ import { groundAt } from './ground.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 3;
+export const BUILD = 4;
 
 const CELL = 2;   // metres: size of each square in the lookup grid
 const cellKey = (x, z) => `${Math.floor(x / CELL)},${Math.floor(z / CELL)}`;
@@ -30,7 +30,11 @@ export class SkidMarks {
   constructor(scene, {
     maxSegments = 4000, tyreWidth = 0.19, rubberBonus = 0.05,
     threshold = MARK_THRESHOLD, height = 0.003, base = TARMAC, mark = RUBBER,
+    step = 0, pattern = null,
   } = {}) {
+    // step: lay the mark in pieces exactly this long (so a pattern like a
+    // tank track's cleats repeats evenly); pattern: a picture laid along each piece
+    this.step = step;
     this.max = maxSegments;
     this.threshold = threshold;
     this.height = height;
@@ -47,6 +51,8 @@ export class SkidMarks {
     geo.rotateX(-Math.PI / 2);
     const mat = new THREE.MeshStandardMaterial({
       color: 0xffffff,                // each mark's own shade comes from its instance colour
+      map: pattern,
+      transparent: !!pattern,
       roughness: 0.95,
       polygonOffset: true,            // on the tarmac without flickering (oil draws on top)
       polygonOffsetFactor: -1,
@@ -82,18 +88,31 @@ export class SkidMarks {
       return;
     }
     const len = Math.hypot(x - prev.x, z - prev.z);
-    if (len < 0.2) return;
+    if (len < (this.step || 0.2)) return;
     if (len > 3) {            // teleported (reset): don't draw a streak across the map
       this.last.set(id, { x, z });
       return;
     }
     // Faint just past the threshold, black on a full slide
     const dark = Math.min(1, 0.3 + 0.7 * (intensity - this.threshold) / (1 - this.threshold));
+    if (this.step) {
+      // in even pieces along the way, carrying on from the last one
+      const n = Math.floor(len / this.step);
+      const ux = (x - prev.x) / len, uz = (z - prev.z) / len;
+      let ax = prev.x, az = prev.z;
+      for (let k = 0; k < n; k++) {
+        const bx = ax + ux * this.step, bz = az + uz * this.step;
+        this.addSegment(ax, az, bx, bz, dark, true);
+        ax = bx; az = bz;
+      }
+      this.last.set(id, { x: ax, z: az });
+      return;
+    }
     this.addSegment(prev.x, prev.z, x, z, dark);
     this.last.set(id, { x, z });
   }
 
-  addSegment(ax, az, bx, bz, dark) {
+  addSegment(ax, az, bx, bz, dark, exact = false) {
     const i = this.next;
     this.next = (this.next + 1) % this.max;
     if (this.segments[i]) this.unregister(i, this.segments[i].cells);
@@ -104,13 +123,13 @@ export class SkidMarks {
 
     const len = Math.hypot(bx - ax, bz - az);
     // Each mark varies a touch in width and shade, like real rubber
-    const w = this.tyreWidth * (0.9 + Math.random() * 0.15);
+    const w = this.tyreWidth * (exact ? 1 : 0.9 + Math.random() * 0.15);
     // (lying on the ground: on a hill it tilts with the slope)
     const ya = groundAt(ax, az), yb = groundAt(bx, bz);
     this._p.set((ax + bx) / 2, this.height + (ya + yb) / 2, (az + bz) / 2);
     this._eu.set(-Math.atan2(yb - ya, Math.max(len, 1e-3)), Math.atan2(bx - ax, bz - az), 0, 'YXZ');
     this._q.setFromEuler(this._eu);
-    this._s.set(w, 1, len + 0.04);
+    this._s.set(w, 1, exact ? len : len + 0.04);
     this._m.compose(this._p, this._q, this._s);
     this.mesh.setMatrixAt(i, this._m);
     this._c.copy(this.base).lerp(this.mark, dark * (0.88 + Math.random() * 0.12));
