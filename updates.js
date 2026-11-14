@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 58;
+export const BUILD = 59;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 52, date: '14 Nov 2026', title: 'Engines with character',
+    items: [
+      ['Every engine its own voice', 'The engines under the bonnet (if you know where to look) now each have their own sound, built from the Caterham\'s: brighter or deeper, smoother or rougher, and no longer muffled at high revs', 'update'],
+    ],
+  },
   {
     id: 51, date: '14 Nov 2026', title: 'Louder, clearer',
     items: [
