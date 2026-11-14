@@ -18,7 +18,7 @@ import { groundAt } from './ground.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 3;
+export const BUILD = 4;
 
 // Where the driver's eye would be if you look out of the commander's hatch
 export const TANK_EYE = new THREE.Vector3(0.42, 2.22, -0.62);
@@ -530,6 +530,7 @@ export class TankPhysics {
     this.x = 0; this.z = 0; this.heading = 0;
     this.vx = 0; this.vy = 0; this.yawRate = 0;
     this.y = 0; this.pitch = 0; this.roll = 0;
+    this.rpm = 720; this.load = 0;   // engine speed starts at idle
   }
 
   place(x, z, heading) {
@@ -595,7 +596,8 @@ export class TankPhysics {
     const frac = Math.min(1, Math.abs(this.vx) / this.topSpeed);
     const gearPos = (frac * 7) % 1;                                     // where it is within the current gear
     const pulling = Math.abs(this.vx) > 0.5 ? 1850 + 850 * gearPos : 720 + 1400 * throttle;
-    this.rpm += ((throttle > 0.05 || Math.abs(this.vx) > 0.5 ? pulling : 720) - (this.rpm || 720)) * Math.min(1, dt / 0.25);
+    if (!Number.isFinite(this.rpm)) this.rpm = 720;
+    this.rpm += ((throttle > 0.05 || Math.abs(this.vx) > 0.5 ? pulling : 720) - this.rpm) * Math.min(1, dt / 0.25);
     this.load = throttle;
   }
 }
