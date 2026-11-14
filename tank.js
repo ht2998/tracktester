@@ -1,9 +1,9 @@
 // =====================================================================
-// FV101 SCORPION-INSPIRED LIGHT TANK (secret: type FV101 on the keyboard)
+// SCORPION 90-INSPIRED LIGHT TANK (Perkins diesel)
 // A model of the British light reconnaissance tank, to real proportions:
 // hull 4.4 m long and 2.2 m wide, 2.1 m to the turret roof, aluminium
 // hull with a long sloping front (engine front right, driver front left),
-// a low faceted turret on the back half with a short 76 mm gun, the
+// a low faceted turret on the back half with a long 90 mm gun, the
 // commander's cupola on the left, the gunner's sight on the right, four
 // smoke dischargers on each front corner of the turret, a stowage basket
 // on the back, and on each side five big rubber-tyred road wheels, the
@@ -18,18 +18,18 @@ import { groundAt } from './ground.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 2;
+export const BUILD = 3;
 
 // Where the driver's eye would be if you look out of the commander's hatch
-export const TANK_EYE = new THREE.Vector3(0.42, 2.32, -0.62);
+export const TANK_EYE = new THREE.Vector3(0.42, 2.22, -0.62);
 
 const TRACK_X = 0.88;      // middle of each track from the centre line
 const TRACK_W = 0.43;      // track width
 const WHEEL_R = 0.27;      // road wheels (about 0.54 m across)
 const WHEEL_Y = 0.30;      // road wheel axle height (wheel + track under it)
 const WHEEL_Z = [1.12, 0.5, -0.12, -0.74, -1.36];   // five road wheels, front to back
-const SPROCKET = { z: 1.78, y: 0.62, r: 0.25 };     // drive sprocket, at the front
-const IDLER = { z: -1.9, y: 0.56, r: 0.24 };        // idler, at the back
+const SPROCKET = { z: 1.78, y: 0.56, r: 0.25 };     // drive sprocket, at the front
+const IDLER = { z: -1.9, y: 0.5, r: 0.24 };        // idler, at the back
 
 // ---------------------------------------------------------------------
 // Small helpers
@@ -203,11 +203,16 @@ export function buildScorpion() {
     lamp: new THREE.MeshStandardMaterial({ color: 0xd9d4c2, roughness: 0.2, metalness: 0.5, emissive: 0x000000 }),
     canvas: new THREE.MeshStandardMaterial({ color: 0x5d5a3e, roughness: 1 }),
   };
+  // The hull sits 0.35 m off the ground (the real Scorpion's clearance);
+  // the wheels and tracks stay where they are, under it
+  const body = new THREE.Group();
+  body.position.y = -0.07;
+  group.add(body);
   const add = (geo, mat, shadow = true) => {
     const m = new THREE.Mesh(geo, mat);
     m.castShadow = shadow;
     m.receiveShadow = true;
-    group.add(m);
+    body.add(m);
     return m;
   };
 
@@ -266,8 +271,15 @@ export function buildScorpion() {
   const tz = -0.32;
   const bottom = [[0.5, 0.66], [0.86, 0.22], [0.86, -0.98], [0.6, -1.24], [-0.6, -1.24], [-0.86, -0.98], [-0.86, 0.22], [-0.5, 0.66]].map(([x, z]) => [x, z + tz]);
   const top = [[0.4, 0.5], [0.72, 0.16], [0.72, -0.9], [0.52, -1.1], [-0.52, -1.1], [-0.72, -0.9], [-0.72, 0.16], [-0.4, 0.5]].map(([x, z]) => [x, z + tz]);
+  // The turret turns about the middle of its ring; it sits 10 cm lower
+  // than it used to (overall height 2.10 m, to the cupola)
+  const RING_Z = tz - 0.25;
+  const turretPivot = new THREE.Group();
+  turretPivot.position.set(0, -0.1, RING_Z);
+  group.add(turretPivot);
   const turret = new THREE.Group();
-  group.add(turret);
+  turret.position.z = -RING_Z;
+  turretPivot.add(turret);
   const tAdd = (geo, mat, shadow = true) => {
     const m = new THREE.Mesh(geo, mat);
     m.castShadow = shadow;
@@ -303,15 +315,17 @@ export function buildScorpion() {
   scopes.push(box(0.16, 0.1, 0.03, -0.36, 2.09, tz + 0.31));   // gunner's sight window
   tAdd(merge(scopes), MAT.glass, false);
 
-  // The 76 mm gun: a short barrel with a slightly thicker base and muzzle,
-  // and the coaxial machine gun beside it
+  // The 90 mm Cockerill Mk III gun (Scorpion 90): a long, slim barrel,
+  // thicker at the base, with a plain muzzle (5.29 m long overall with the
+  // gun forward), and the coaxial machine gun beside it
   const gun = new THREE.Group();
   gun.position.set(0, 1.66, tz + 0.82);
   turret.add(gun);
   const gunGeo = merge([
-    cyl(0.072, 0.072, 0.3, 20, 0, 0, 0.15, 'z'),       // the base, out of the mantlet
-    cyl(0.055, 0.058, 1.85, 20, 0, 0, 1.2, 'z'),       // the barrel
-    cyl(0.068, 0.068, 0.14, 20, 0, 0, 2.15, 'z'),      // the muzzle
+    cyl(0.085, 0.085, 0.35, 20, 0, 0, 0.17, 'z'),      // the base, out of the mantlet
+    cyl(0.062, 0.072, 0.6, 20, 0, 0, 0.65, 'z'),       // the thick first part of the barrel
+    cyl(0.058, 0.062, 1.88, 20, 0, 0, 1.89, 'z'),      // the barrel
+    cyl(0.066, 0.066, 0.12, 20, 0, 0, 2.86, 'z'),      // the muzzle
   ]);
   const barrel = new THREE.Mesh(gunGeo, MAT.darkPaint);
   barrel.castShadow = true;
@@ -320,8 +334,18 @@ export function buildScorpion() {
   gun.add(coax);
   // Muzzle bore (dark)
   const bore = new THREE.Mesh(new THREE.CircleGeometry(0.035, 16), new THREE.MeshBasicMaterial({ color: 0x050505 }));
-  bore.position.set(0, 0, 2.225);
+  bore.position.set(0, 0, 2.925);
   gun.add(bore);
+
+  // The roof machine gun on the commander's cupola: a pintle, the gun and
+  // its ammunition box
+  tAdd(merge([
+    cyl(0.02, 0.02, 0.22, 8, 0.4, 2.29, tz - 0.12),
+    cyl(0.017, 0.017, 1.0, 8, 0.4, 2.4, tz + 0.18, 'z'),
+    box(0.06, 0.08, 0.34, 0.4, 2.42, tz - 0.08),
+    box(0.03, 0.12, 0.22, 0.4, 2.36, tz - 0.22),
+  ]), MAT.metal);
+  tAdd(box(0.1, 0.1, 0.14, 0.47, 2.38, tz - 0.05), MAT.darkPaint);
 
   // Smoke dischargers: four tubes on each front corner of the turret,
   // aimed forwards and up
@@ -450,8 +474,32 @@ export function buildScorpion() {
   place();
 
   group.visible = false;
+  // where the exhaust pipe comes out (right side, front), for the smoke
+  const exhaust = new THREE.Object3D();
+  exhaust.position.set(-1.19, 1.0, 1.25);
+  group.add(exhaust);
+  let turretYaw = 0, gunPitch = 0;
   return {
-    group, turret, gun,
+    group, turret, gun, exhaust,
+    // Aim the turret at a point in the world: it turns (at about 40
+    // degrees a second, like the real one's powered traverse) until the
+    // gun faces it, and the gun lifts or dips towards it (-10 to +35 deg)
+    aimAt(target, dt) {
+      if (!target) return;
+      group.updateMatrixWorld();
+      const local = group.worldToLocal(target.clone());
+      const dx = local.x - turretPivot.position.x, dz = local.z - turretPivot.position.z;
+      const want = Math.atan2(dx, dz);
+      let diff = want - turretYaw;
+      diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+      const step = 0.7 * dt;
+      turretYaw += Math.max(-step, Math.min(step, diff));
+      turretPivot.rotation.y = turretYaw;
+      const dist = Math.max(1, Math.hypot(dx, dz));
+      const wantPitch = Math.max(-0.17, Math.min(0.61, Math.atan2(local.y - 1.56, dist)));
+      gunPitch += Math.max(-0.4 * dt, Math.min(0.4 * dt, wantPitch - gunPitch));
+      gun.rotation.x = -gunPitch;
+    },
     // speedLeft / speedRight: how fast each side of the tank is moving over
     // the ground (m/s), so each track runs at its own speed when turning
     update(dt, speedLeft, speedRight) {
@@ -465,8 +513,8 @@ export function buildScorpion() {
 }
 
 // =====================================================================
-// HOW THE TANK DRIVES: about 8 tonnes, a 190 hp engine (about 142 kW),
-// governed to about 80 km/h. It's slow to get going and takes a long way
+// HOW THE TANK DRIVES: about 8.7 tonnes, a 200 hp turbo-diesel (about
+// 149 kW), top speed about 72 km/h. It's slow to get going and takes a long way
 // to stop. It steers by slowing one track: it can spin on the spot when
 // stopped, turns less sharply the faster it goes, and steering scrubs off
 // speed. The tracks barely slide sideways and grip well on grass and
@@ -474,10 +522,10 @@ export function buildScorpion() {
 // =====================================================================
 export class TankPhysics {
   constructor() {
-    this.mass = 8000;
-    this.power = 142000;         // W
+    this.mass = 8720;            // Scorpion 90 (kg)
+    this.power = 149000;         // W: the Perkins 6-cylinder turbo-diesel, 200 hp at 2,700 rpm
     this.maxPull = 42000;        // N: the most the tracks can push before they slip
-    this.topSpeed = 80 / 3.6;    // m/s (governed)
+    this.topSpeed = 72.5 / 3.6;  // m/s
     this.reverseSpeed = 15 / 3.6;
     this.x = 0; this.z = 0; this.heading = 0;
     this.vx = 0; this.vy = 0; this.yawRate = 0;
@@ -542,6 +590,12 @@ export class TankPhysics {
     this.pitch += (-Math.atan(slopeF) - this.pitch) * Math.min(1, dt / 0.15);
     this.roll += (Math.atan(slopeL) - this.roll) * Math.min(1, dt / 0.15);
     // a rough engine speed, for the sound and the dials
-    this.rpm = 900 + 3600 * Math.min(1, Math.abs(this.vx) / this.topSpeed) * 0.7 + 1500 * throttle * 0.6;
+    // engine speed: the seven-speed gearbox keeps the diesel between about
+    // 1,800 and 2,700 rpm when it's pulling (idle 720)
+    const frac = Math.min(1, Math.abs(this.vx) / this.topSpeed);
+    const gearPos = (frac * 7) % 1;                                     // where it is within the current gear
+    const pulling = Math.abs(this.vx) > 0.5 ? 1850 + 850 * gearPos : 720 + 1400 * throttle;
+    this.rpm += ((throttle > 0.05 || Math.abs(this.vx) > 0.5 ? pulling : 720) - (this.rpm || 720)) * Math.min(1, dt / 0.25);
+    this.load = throttle;
   }
 }
