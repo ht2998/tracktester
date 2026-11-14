@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 6;
+export const BUILD = 8;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -45,7 +45,8 @@ export const ENGINES = {
   // an early-2000s F1 V10, on the figures BMW published for theirs: 3.0
   // litres, 90 degrees, idling at 4,000, a 19,200 limit, over 900 bhp,
   // under 90 kg (the short-stroke shape of Cosworth's: 95 x 42.3 mm)
-  v10x: { name: '3.0 V10 (2003 F1-style, 19,200 rpm)', voice: 'v10', cylinders: 10, idleRpm: 4000, redline: 19200, launchRpm: 12000, engineBraking: 90, peakTorque: 365, massDelta: -10,
+  // (seven gears, like the real cars of 2005: each change up lands a little higher)
+  v10x: { name: '3.0 V10 (2003 F1-style, 19,200 rpm)', voice: 'v10', shiftAt: [17800 / 19200, 18000 / 19200, 18150 / 19200, 18300 / 19200, 18500 / 19200, 18650 / 19200], landAt: [14000, 14500, 15000, 15500, 16000, 16400], cylinders: 10, idleRpm: 4000, redline: 19200, launchRpm: 12000, engineBraking: 90, peakTorque: 365, massDelta: -10,
     torqueCurve: [[3000, 150], [6000, 220], [9000, 280], [12000, 320], [15000, 352], [17000, 365], [18500, 357], [19200, 345], [19500, 150], [19800, 0]], turbo: null },
   v12: { sound: { tone: 1.4, bass: 0, drive: 1.15, vol: 1.25 }, name: '3.5 V12', cylinders: 12, idleRpm: 3800, redline: 13500, launchRpm: 9000, engineBraking: 80, peakTorque: 360, massDelta: 30,
     torqueCurve: [[2500, 160], [5000, 240], [8000, 310], [10000, 345], [11500, 360], [12800, 350], [13500, 335], [14000, 130], [14300, 0]], turbo: null },
@@ -70,7 +71,13 @@ export function withEngine(car, key) {
   // of the top speed (lower for an engine with a narrow, peaky power band),
   // the rest closing up gently towards the top, as racing gearboxes do.
   // (The Caterham with its own engine keeps its real gearbox.)
-  if (!(car.keepGears && key === car.stockEngine)) {
+  if (e.landAt && e.shiftAt) {
+    // gears set by where each change up lands: each gear's ratio is the
+    // last one's times (landing revs / change-up revs)
+    s.gears = [1];
+    for (let i = 0; i < e.landAt.length; i++) s.gears.push(s.gears[i] * e.landAt[i] / (e.shiftAt[i] * e.redline));
+    s.gears = s.gears.map((g) => +(g / s.gears[s.gears.length - 1]).toFixed(3));
+  } else if (!(car.keepGears && key === car.stockEngine)) {
     const n = car.gears.length;
     const firstShare = clamp(0.24 + 0.14 * (e.idleRpm / e.redline), 0.24, 0.42);
     const top = 1;
@@ -80,7 +87,9 @@ export function withEngine(car, key) {
   }
   const top = s.gears[s.gears.length - 1];
   s.finalDrive = (e.redline * Math.PI / 30) * car.wheelRadius / (vTop * top);
-  s.autoUpshiftKmh = s.gears.slice(0, -1).map((g) => Math.round((e.redline * 0.97 * Math.PI / 30) * car.wheelRadius / (g * s.finalDrive) * 3.6));
+  // where the automatic changes up: just under the limit, unless the
+  // engine says otherwise (shiftAt: share of the limit, gear by gear)
+  s.autoUpshiftKmh = s.gears.slice(0, -1).map((g, i) => Math.round((e.redline * (e.shiftAt?.[i] ?? 0.97) * Math.PI / 30) * car.wheelRadius / (g * s.finalDrive) * 3.6));
   s.cvtTargetRpm = e.redline * 0.87;
   s.cvtRange = [s.finalDrive * top * 0.9, s.finalDrive * s.gears[0] * 1.3];
   s.oilLeakRate = car.oilLeakRate * (e.wear || 1);
