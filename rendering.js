@@ -55,7 +55,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 39;
+const BUILD = 40;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -1084,7 +1084,7 @@ function ringAt(el, pos, dir) {
 }
 const gunPos = new THREE.Vector3(), gunDir = new THREE.Vector3(), gunScreen = new THREE.Vector3();
 function placeGunRing() {
-  if (!tankMode || isMobile) { gunRing.style.display = coaxRing.style.display = 'none'; return; }
+  if (!tankMode || isMobile || cameraMode === 'cockpit' || cameraMode === 'turret') { gunRing.style.display = coaxRing.style.display = 'none'; return; }
   ringAt(gunRing, tank.muzzle(gunPos, gunDir), gunDir);
   ringAt(coaxRing, tank.coaxMuzzle(coaxPos, coaxDir), coaxDir);
 }
@@ -1137,6 +1137,7 @@ function enterCode(code) {
       physics.ground.synced = false;
     }
     setCrashBox(tankMode);
+    if (!tankMode && cameraMode === 'turret') { cameraMode = 'bonnet'; applyCamera(); }
     engineSound.setHeavy?.(tankMode);   // its own engine and tracks
     carModel.car.visible = !tankMode;
     renderer.domElement.style.cursor = tankMode ? 'crosshair' : '';
@@ -2432,8 +2433,8 @@ cockpit.useHudDials(hud.parts);
 // In the cameras fixed to the car (bonnet, cockpit, T-cam) you can drag to
 // look around, even straight up at the sky.
 // ---------------------------------------------------------------------
-const CAMERA_MODES = ['chase', 'close', 'bonnet', 'cockpit', 'tcam', 'showroom'];
-const CAMERA_FOV = { chase: 50, close: 58, bonnet: 66, cockpit: 70, tcam: 62, showroom: 50 };
+const CAMERA_MODES = ['chase', 'close', 'bonnet', 'turret', 'cockpit', 'tcam', 'showroom'];   // ('turret': the tank's crew view only)
+const CAMERA_FOV = { chase: 50, close: 58, bonnet: 66, turret: 80, cockpit: 70, tcam: 62, showroom: 50 };
 // Cameras fixed to the car: where they sit, and how far they look down
 // =====================================================================
 // THE TANK'S GUN (secret): left-click (a click, not a drag) fires the
@@ -2485,7 +2486,7 @@ function fireGun() {
   scene.add(tracer);
   shells.push({ p: muzzlePos.clone(), v: muzzleDir.clone().multiplyScalar(GUN.SPEED).add(carVelocity), t: 0, tracer });
   // the gun and hull kick back
-  tank.fired();
+  tank.fired(GUN.rounds);
   tankPhys.recoilKick(tank.turretYaw);
   // flash, flame, a blast of smoke and dust round the muzzle
   muzzleLight.position.copy(muzzlePos);
@@ -2704,6 +2705,42 @@ const nvGrain = driverSeat.querySelector('.nv-grain');
 const grainCanvas = document.createElement('canvas');
 grainCanvas.width = grainCanvas.height = 96;
 let nightVision = false;
+// THE CREW VIEW (inside the turret): the gunner's handles, and his sight's
+// picture in the corner of the screen (magnified, with its aiming marks)
+const crewHandles = { traverse: 0, elevate: 0 };
+const sightCam = new THREE.PerspectiveCamera(9, 16 / 9, 0.5, 900);
+const sightTurn = new THREE.Quaternion(), sightSize = new THREE.Vector2();
+const sightBox = document.createElement('div');
+sightBox.style.cssText = 'position:fixed;right:16px;bottom:16px;width:min(38vw,480px);aspect-ratio:16/9;border:3px solid #1b1d17;border-radius:10px;box-shadow:0 0 0 2px rgba(0,0,0,0.4);pointer-events:none;display:none;z-index:15;overflow:hidden';
+sightBox.innerHTML = '<svg viewBox="0 0 160 90" style="position:absolute;inset:0;width:100%;height:100%"><g stroke="#ffb347" stroke-width="0.6" fill="none">'
+  + '<line x1="0" y1="45" x2="72" y2="45"/><line x1="88" y1="45" x2="160" y2="45"/><line x1="80" y1="49" x2="80" y2="90"/>'
+  + '<path d="M76 45 L80 41 L84 45"/>'
+  + [1, 2, 3, 4].map((k) => `<line x1="${80 - k * 2}" y1="${49 + k * 6}" x2="${80 + k * 2}" y2="${49 + k * 6}"/>`).join('')
+  + '</g><text x="4" y="86" font-size="5" fill="#ffb347" font-family="sans-serif">×8</text></svg>';
+document.body.appendChild(sightBox);
+function renderSightInset() {
+  const show = tankMode && cameraMode === 'turret';
+  sightBox.style.display = show ? 'block' : 'none';
+  if (!show) return;
+  const r = sightBox.getBoundingClientRect();
+  if (r.width < 4) return;
+  tank.sight(sightCam.position, sightTurn);
+  sightCam.quaternion.copy(sightTurn);
+  sightCam.aspect = r.width / r.height;
+  sightCam.updateProjectionMatrix();
+  sightCam.updateMatrixWorld();
+  const H = window.innerHeight;
+  const keepShadows = renderer.shadowMap.autoUpdate;
+  renderer.shadowMap.autoUpdate = false;
+  renderer.setScissorTest(true);
+  renderer.setViewport(r.left, H - r.bottom, r.width, r.height);
+  renderer.setScissor(r.left, H - r.bottom, r.width, r.height);
+  renderer.render(scene, sightCam);
+  renderer.setScissorTest(false);
+  renderer.getSize(sightSize);
+  renderer.setViewport(0, 0, sightSize.x, sightSize.y);
+  renderer.shadowMap.autoUpdate = keepShadows;
+}
 // The driver's periscope: what its head on the roof sees, drawn into the
 // window in front of his face (like the car's mirrors)
 const periscopeRT = new THREE.WebGLRenderTarget(isMobile ? 512 : 1024, isMobile ? 164 : 328, { type: THREE.HalfFloatType, depthBuffer: true });
@@ -2724,6 +2761,7 @@ function renderPeriscope() {
 function updateDriverSeat(input) {
   const inSeat = tankMode && cameraMode === 'cockpit';
   driverSeat.style.display = 'none';      // (the old flat picture: the real compartment is drawn in 3D now)
+  tank.setCrew(tankMode && cameraMode === 'turret', 1 / 60, crewHandles.traverse, crewHandles.elevate);
   tank.setInterior(inSeat, 1 / 60, { steer: input.steer, brake: input.brake, kmh: Math.abs(physics.vx) * 3.6, rpm: tankPhys.rpm, gear: tankPhys.gearLabel });
   engineSound.setDriverEar?.(inSeat);
   // night vision at night (the image intensifier), off by day
@@ -2820,7 +2858,11 @@ function updateCamera(dt) {
     }
     carModel.car.updateMatrixWorld();
     const mount = ON_CAR[cameraMode];
-    if (tankMode && cameraMode === 'cockpit') {
+    if (tankMode && cameraMode === 'turret') {
+      // inside the turret, behind the gunner and the commander (turns with the turret)
+      tank.crewView(camera.position, camera.quaternion);
+      camera.quaternion.multiply(lookTurn.setFromEuler(lookEuler.set(look.pitch, look.yaw, 0)));
+    } else if (tankMode && cameraMode === 'cockpit') {
       // the tank's driver, in his compartment (see DRIVER'S SEAT), able to look round
       tank.driverView(camera.position, camera.quaternion);
       camera.quaternion.multiply(lookTurn.setFromEuler(lookEuler.set(look.pitch, look.yaw, 0)));
@@ -2859,9 +2901,13 @@ function fitViewport() {
 
 function switchCamera() {
   cameraMode = CAMERA_MODES[(CAMERA_MODES.indexOf(cameraMode) + 1) % CAMERA_MODES.length];
+  if (cameraMode === 'turret' && !tankMode) cameraMode = CAMERA_MODES[CAMERA_MODES.indexOf('turret') + 1];
+  applyCamera();
+}
+function applyCamera() {
   look.yaw = look.pitch = 0;
   camera.fov = CAMERA_FOV[cameraMode];
-  camera.near = ON_CAR[cameraMode]?.near ?? 0.1;
+  camera.near = ON_CAR[cameraMode]?.near ?? (cameraMode === 'turret' ? 0.02 : 0.1);
   cockpit.setFirstPerson(cameraMode === 'cockpit');
   hud.setInCar?.(cameraMode === 'cockpit');
   camera.updateProjectionMatrix();
@@ -3037,7 +3083,15 @@ renderer.setAnimationLoop(() => {
     tank.update(dt, physics.vx - physics.yawRate * 0.88, physics.vx + physics.yawRate * 0.88);
     tank.setLights(lightsMode > 0);
     // the turret turns to face the mouse pointer
-    if (mouseAim.moved) tank.aimAt(aimPoint(), dt);
+    // (the driver doesn't aim the gun; inside the turret the gunner turns it
+    // with his handles: the further the mouse is from the middle of the
+    // screen, the faster it turns that way)
+    if (cameraMode === 'turret') {
+      const dead = (v) => (Math.abs(v) < 0.05 ? 0 : Math.sign(v) * Math.min(1, (Math.abs(v) - 0.05) / 0.55));
+      crewHandles.traverse = mouseAim.moved && !isMobile ? dead(mouseAim.x) : 0;
+      crewHandles.elevate = mouseAim.moved && !isMobile ? dead(mouseAim.y) : 0;
+      tank.turnBy(-crewHandles.traverse * 0.7 * dt, crewHandles.elevate * 0.4 * dt);
+    } else if (mouseAim.moved && cameraMode !== 'cockpit') tank.aimAt(aimPoint(), dt);
     // black smoke when the throttle runs ahead of the turbo
     const thr = input.throttle || 0;
     dieselBoost += (thr * Math.min(1, tankPhys.rpm / 2700) - dieselBoost) * Math.min(1, dt / (thr > dieselBoost ? 0.7 : 0.35));
@@ -3159,4 +3213,5 @@ renderer.setAnimationLoop(() => {
   renderer.render(scene, camera);
   if (shake > 0.005) camera.position.sub(fxP);
   godRays.render(sky.rays);
+  renderSightInset();
 });
