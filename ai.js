@@ -23,7 +23,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 1;
+export const BUILD = 2;
 
 import * as THREE from 'three';
 import { CarPhysics, CATERHAM } from './physics.js';
@@ -530,10 +530,11 @@ export class AIField {
     else if (err < -0.6) brake = clamp(-err * 0.28, 0, 1);
     if (mk === 'lock' && bh[c.near] > 0.3) brake = 1;
     if (holding) { throttle = 0; brake = 1; }
+    if (c.wrecked) { throttle = 0; brake = 0.3; c.steer = 0; }   // (blown up: he's given up)
     // stuck (spun, in the gravel, nose in a wall): after a while, back on
     // the track (only when you're not watching closely)
     if (!holding && Math.abs(v) < 1.5) c.stuck += dt; else c.stuck = Math.max(0, c.stuck - dt);
-    if (c.stuck > 5 && c.dist > 25) {
+    if (c.stuck > 5 && c.dist > 25 && !c.wrecked) {
       c.stuck = 0;
       this.placeOnLine(c, c.near, 0, 0);
       return;
@@ -646,6 +647,47 @@ export class AIField {
     };
     set(pa, WA, 1, wa, A);
     set(pb, WB, -1, wb, B);
+  }
+
+  // Is this point (a shell in flight) inside one of the cars?
+  hitTest(p) {
+    for (const c of this.cars) {
+      const P = c.physics, y = P.air ? P.pose.y : P.ground.y;
+      if (p.y < y - 0.2 || p.y > y + 1.3) continue;
+      const fx = Math.sin(P.heading), fz = Math.cos(P.heading);
+      for (const o of CIRCLES) if ((p.x - P.x - fx * o) ** 2 + (p.z - P.z - fz * o) ** 2 < CAR_R * CAR_R) return true;
+    }
+    return false;
+  }
+
+  // A shell going off: every car near it is flung into the air, tumbling,
+  // like a rag doll (harder the closer it was), and smashed; a car caught
+  // close is wrecked and its driver gives up
+  blast(at, radius = 9) {
+    for (const c of this.cars) {
+      const P = c.physics;
+      const y = P.air ? P.pose.y : P.ground.y;
+      const dx = P.x - at.x, dz = P.z - at.z, d = Math.hypot(dx, dz, (y + 0.5 - at.y) * 0.7);
+      if (d > radius) continue;
+      const f = 1 - d / radius;
+      if (!c.full) { this.placeOnLine(c, c.near, c.lateral, c.speed); c.full = true; }
+      if (!P.air) P.enterAir();
+      const F = P.fb, h = Math.hypot(dx, dz) || 1;
+      const push = 6 + 22 * f, lift = 4 + 14 * f;
+      F.v[0] += (dx / h) * push; F.v[2] += (dz / h) * push; F.v[1] += lift;
+      // tumbling: mostly rolling away from the blast, with a random twist
+      const spin = 3 + 9 * f;
+      F.w[0] += (dz / h) * spin + (Math.random() - 0.5) * spin * 0.6;
+      F.w[1] += (Math.random() - 0.5) * spin;
+      F.w[2] += -(dx / h) * spin + (Math.random() - 0.5) * spin * 0.6;
+      F.settle = 0;
+      const lx = Math.cos(P.heading), lz = -Math.sin(P.heading), fx = Math.sin(P.heading), fz = Math.cos(P.heading);
+      const nf = (-dx * fx - dz * fz) / h, nl = (-dx * lx - dz * lz) / h;
+      const zone = nf > 0.6 ? 'front' : nf < -0.6 ? 'rear' : nl > 0 ? 'left' : 'right';
+      P.crashHit({ zone, speed: 8 + 30 * f, along: 0, across: 0 });
+      if (f > 0.45) { c.wrecked = true; P.damageEngine?.(0.6 * f); }
+      c.stuck = 0;
+    }
   }
 
   // where the car is drawn
