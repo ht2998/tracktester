@@ -18,10 +18,11 @@ import { groundAt } from './ground.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 5;
+export const BUILD = 6;
 
 // Where the driver's eye would be if you look out of the commander's hatch
 const SIGHT_TURN = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+const DRIVER_TURN = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.07, Math.PI, 0, 'YXZ'));   // looking forward, a touch down
 export const TANK_EYE = new THREE.Vector3(0.42, 2.22, -0.62);
 
 const TRACK_X = 0.88;      // middle of each track from the centre line
@@ -501,6 +502,15 @@ export function buildScorpion() {
       gun.getWorldQuaternion(quatOut);
       return quatOut.multiply(SIGHT_TURN);      // (a camera looks along -z; the gun points along +z)
     },
+    // The driver's periscope: in the hatch at the front left of the hull,
+    // looking ahead and a little down over the front. Writes a camera's
+    // position and turn (it tips and rolls with the hull).
+    driverView(posOut, quatOut) {
+      group.updateMatrixWorld();
+      body.localToWorld(posOut.set(0.48, 1.47, 1.02));
+      group.getWorldQuaternion(quatOut);
+      return quatOut.multiply(DRIVER_TURN);
+    },
     // A shot: the barrel slams back and runs out again
     fired() { recoil = 0.28; },
     // which way the turret is facing, relative to the hull (radians, + = left)
@@ -510,6 +520,9 @@ export function buildScorpion() {
     // gun faces it, and the gun lifts or dips towards it (-10 to +35 deg)
     aimAt(target, dt) {
       if (!target) return;
+      // The turret swings round towards the target and stops when the gun
+      // faces it; the gun lifts or dips until its line passes through the
+      // target, or until it reaches its stops (+35 / -10 degrees)
       group.updateMatrixWorld();
       const local = group.worldToLocal(target.clone());
       const dx = local.x - turretPivot.position.x, dz = local.z - turretPivot.position.z;
@@ -517,11 +530,15 @@ export function buildScorpion() {
       let diff = want - turretYaw;
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
       const step = 0.7 * dt;
-      turretYaw += Math.max(-step, Math.min(step, diff));
+      turretYaw += Math.abs(diff) < 0.0015 ? diff : Math.max(-step, Math.min(step, diff));
       turretPivot.rotation.y = turretYaw;
-      const dist = Math.max(1, Math.hypot(dx, dz));
-      const wantPitch = Math.max(-0.17, Math.min(0.61, Math.atan2(local.y - 1.56, dist)));
-      gunPitch += Math.max(-0.4 * dt, Math.min(0.4 * dt, wantPitch - gunPitch));
+      // (measured from the gun's own pivot, so its line really meets the target)
+      group.updateMatrixWorld();
+      const pivot = group.worldToLocal(gun.getWorldPosition(new THREE.Vector3()));
+      const dist = Math.max(0.5, Math.hypot(local.x - pivot.x, local.z - pivot.z));
+      const wantPitch = Math.max(-0.17, Math.min(0.61, Math.atan2(local.y - pivot.y, dist)));
+      const pd = wantPitch - gunPitch;
+      gunPitch += Math.abs(pd) < 0.001 ? pd : Math.max(-0.4 * dt, Math.min(0.4 * dt, pd));
       gun.rotation.x = -gunPitch;
     },
     // speedLeft / speedRight: how fast each side of the tank is moving over
