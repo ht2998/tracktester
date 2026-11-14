@@ -21,11 +21,19 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 47;
+export const BUILD = 48;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 43, date: '14 Nov 2026', title: 'The secret gets better',
+    items: [
+      ['A better seat', 'If you have found the secret, its first-person view is much more detailed now, and you can see what your hands are doing', 'camera'],
+      ['Easier aiming', 'In one of its views, the view no longer swings around while you aim', 'update'],
+      ['...and chatters', 'Hold T', 'fire'],
+    ],
+  },
   {
     id: 42, date: '14 Nov 2026', title: 'Fix: a sound error',
     items: [
