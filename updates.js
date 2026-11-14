@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 49;
+export const BUILD = 50;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 45, date: '14 Nov 2026', title: 'The secret has a crew',
+    items: [
+      ['A view inside', 'If you have found the secret, one of its cameras now puts you inside with the crew, watching them work. Move the mouse away from the middle to turn, and keep an eye on the corner of the screen', 'camera'],
+    ],
+  },
   {
     id: 44, date: '14 Nov 2026', title: 'Fix: barriers vanishing',
     items: [
