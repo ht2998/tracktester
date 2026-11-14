@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 11;
+export const BUILD = 12;
 
 const COLORS = {
   face: '#15181c',
@@ -1041,6 +1041,11 @@ export class Hud {
     t.major = redline < 4000 ? 500 : 1000;
     t.labelEvery = redline < 4000 ? 500 : 1000;
     t.drawBackground();
+  }
+
+  // Show or hide the tyre wear bars (a tank has tracks, not tyres)
+  setTyreWear(show) {
+    this.tyreBars.canvas.style.display = show ? '' : 'none';
   }
 
   update({ speedKmh, rpm, gearLabel, limiter, transmission, engineHealth = 1, oilLevel = 1,
