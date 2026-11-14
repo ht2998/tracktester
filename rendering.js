@@ -1067,43 +1067,34 @@ const aimRayEnd = new THREE.Vector3();
 const gunRing = document.createElement('div');
 gunRing.style.cssText = 'position:fixed;width:34px;height:34px;margin:-17px 0 0 -17px;border:2px solid rgba(235,240,215,0.85);border-radius:50%;box-shadow:0 0 0 1px rgba(0,0,0,0.35);pointer-events:none;display:none;z-index:15';
 document.body.appendChild(gunRing);
+// the coaxial machine gun's aim: a smaller circle (it points the same way
+// as the big gun, from just beside it, so it sits inside the big one)
+const coaxRing = document.createElement('div');
+coaxRing.style.cssText = 'position:fixed;width:12px;height:12px;margin:-6px 0 0 -6px;border:1.5px solid rgba(255,214,150,0.9);border-radius:50%;box-shadow:0 0 0 1px rgba(0,0,0,0.35);pointer-events:none;display:none;z-index:15';
+document.body.appendChild(coaxRing);
+const coaxPos = new THREE.Vector3(), coaxDir = new THREE.Vector3();
+// put a circle on screen where a gun's line meets the ground (or 400 m out)
+function ringAt(el, pos, dir) {
+  const dist = dir.y < -0.005 ? Math.min(400, (tankPhys.y - pos.y) / dir.y) : 400;
+  gunScreen.copy(pos).addScaledVector(dir, dist).project(camera);
+  if (gunScreen.z > 1 || Math.abs(gunScreen.x) > 1.2 || Math.abs(gunScreen.y) > 1.2) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.style.left = ((gunScreen.x + 1) / 2 * window.innerWidth).toFixed(1) + 'px';
+  el.style.top = ((1 - gunScreen.y) / 2 * window.innerHeight).toFixed(1) + 'px';
+}
 const gunPos = new THREE.Vector3(), gunDir = new THREE.Vector3(), gunScreen = new THREE.Vector3();
 function placeGunRing() {
-  sightCross.style.display = inSight() ? 'block' : 'none';
-  if (!inSight() && pointerLocked()) document.exitPointerLock?.();
-  if (!tankMode || isMobile) { gunRing.style.display = 'none'; return; }
-  tank.muzzle(gunPos, gunDir);
-  // where the gun's line meets the ground (or 400 m out)
-  let dist = gunDir.y < -0.005 ? Math.min(400, (tankPhys.y - gunPos.y) / gunDir.y) : 400;
-  gunScreen.copy(gunPos).addScaledVector(gunDir, dist).project(camera);
-  if (gunScreen.z > 1 || Math.abs(gunScreen.x) > 1.2 || Math.abs(gunScreen.y) > 1.2) { gunRing.style.display = 'none'; return; }
-  gunRing.style.display = 'block';
-  gunRing.style.left = ((gunScreen.x + 1) / 2 * window.innerWidth).toFixed(1) + 'px';
-  gunRing.style.top = ((1 - gunScreen.y) / 2 * window.innerHeight).toFixed(1) + 'px';
+  if (!tankMode || isMobile) { gunRing.style.display = coaxRing.style.display = 'none'; return; }
+  ringAt(gunRing, tank.muzzle(gunPos, gunDir), gunDir);
+  ringAt(coaxRing, tank.coaxMuzzle(coaxPos, coaxDir), coaxDir);
 }
-// In the gunner's sight (camera 3) the view is the gunner's: the mouse
-// moves where he's looking (the crosshair stays in the middle of the
-// screen) and the gun swings round to follow; the circle shows where the
-// gun is actually pointing until it catches up. Click to grab the mouse
-// (Esc lets it go); clicking again fires.
-const sightAim = { yaw: 0, pitch: 0, set: false };
-const sightCross = document.createElement('div');
-sightCross.style.cssText = 'position:fixed;left:50%;top:50%;width:26px;height:26px;margin:-13px 0 0 -13px;pointer-events:none;display:none;z-index:15;'
-  + 'background:linear-gradient(rgba(235,240,215,0.9),rgba(235,240,215,0.9)) center/2px 100% no-repeat,linear-gradient(rgba(235,240,215,0.9),rgba(235,240,215,0.9)) center/100% 2px no-repeat';
-document.body.appendChild(sightCross);
+// In the gunner's view (camera 3) the view sits up on the turret but
+// faces the way the hull points: it doesn't turn with the turret. The
+// mouse is a crosshair you move round the screen; the turret turns until
+// its circle sits on the crosshair and stops (the two never chase each
+// other, because turning the turret doesn't move the view).
 const inSight = () => tankMode && cameraMode === 'bonnet' && !isMobile;
-const pointerLocked = () => document.pointerLockElement === renderer.domElement;
-window.addEventListener('mousemove', (e) => {
-  if (!inSight() || !pointerLocked()) return;
-  sightAim.yaw -= (e.movementX || 0) * 0.0022;
-  sightAim.pitch = Math.max(-0.6, Math.min(0.8, sightAim.pitch - (e.movementY || 0) * 0.0022));
-});
-function sightAimPoint(from) {
-  const cp = Math.cos(sightAim.pitch);
-  return from.clone().add(aimRayEnd.set(Math.sin(sightAim.yaw) * cp, Math.sin(sightAim.pitch), Math.cos(sightAim.yaw) * cp).multiplyScalar(400));
-}
 function aimPoint() {
-  if (inSight()) return sightAimPoint(camera.position);
   const from = camera.position;
   const dir = aimRayEnd.set(mouseAim.x, mouseAim.y, 0.5).unproject(camera).sub(from).normalize();
   const groundY = tankPhys.y;
@@ -2471,6 +2462,61 @@ function fireGun() {
   shake = Math.max(shake, 0.35);
 }
 
+// THE COAXIAL MACHINE GUN: hold T. A 7.62 mm gun mounted beside the
+// 90 mm, so it fires wherever the gunner is aiming: about 750 rounds a
+// minute, every fourth one a tracer, puffs of dirt where they land.
+const COAX = { rounds: 3000, RATE: 12.5, SPEED: 840, wait: 0, held: false, n: 0 };
+const bullets = [];
+const bulletGeo = new THREE.BoxGeometry(0.02, 0.02, 0.9);
+const bulletMat = new THREE.MeshBasicMaterial({ color: 0xff7a3a });
+window.addEventListener('keydown', (e) => { if (e.code === 'KeyT' && tankMode && !isMobile) COAX.held = true; });
+window.addEventListener('keyup', (e) => { if (e.code === 'KeyT') COAX.held = false; });
+window.addEventListener('blur', () => { COAX.held = false; });
+const coaxMuzzlePos = new THREE.Vector3(), coaxMuzzleDir = new THREE.Vector3();
+function fireCoax() {
+  COAX.rounds--;
+  tank.coaxMuzzle(coaxMuzzlePos, coaxMuzzleDir);
+  // a little scatter
+  coaxMuzzleDir.x += (Math.random() - 0.5) * 0.004;
+  coaxMuzzleDir.y += (Math.random() - 0.5) * 0.004;
+  coaxMuzzleDir.z += (Math.random() - 0.5) * 0.004;
+  coaxMuzzleDir.normalize();
+  let tracer = null;
+  if (COAX.n++ % 4 === 0) { tracer = new THREE.Mesh(bulletGeo, bulletMat); scene.add(tracer); }
+  bullets.push({ p: coaxMuzzlePos.clone(), v: coaxMuzzleDir.clone().multiplyScalar(COAX.SPEED).add(carVelocity), t: 0, tracer });
+  muzzleLight.position.copy(coaxMuzzlePos);
+  muzzleLight.intensity = Math.max(muzzleLight.intensity, 6);
+  if (Math.random() < 0.5) dust.spawn(fxP.copy(coaxMuzzlePos).addScaledVector(coaxMuzzleDir, 0.4), 1, fxV.copy(coaxMuzzleDir).multiplyScalar(3));
+  engineSound.playMG?.();
+  shake = Math.max(shake, 0.03);
+}
+function updateCoax(dt) {
+  COAX.wait -= dt;
+  if (!tankMode) COAX.held = false;
+  while (COAX.held && COAX.rounds > 0 && COAX.wait <= 0) { fireCoax(); COAX.wait += 1 / COAX.RATE; }
+  if (!COAX.held) COAX.wait = Math.max(COAX.wait, 0);
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i];
+    let hit = false;
+    const steps = 8, h = dt / steps;
+    for (let k = 0; k < steps && !hit; k++) {
+      b.v.y -= 9.81 * h;
+      b.p.addScaledVector(b.v, h);
+      b.t += h;
+      if (b.t > 0.005 && shellHit(b.p)) hit = true;
+    }
+    if (b.tracer) { b.tracer.position.copy(b.p); b.tracer.lookAt(fxP.copy(b.p).add(b.v)); }
+    if (hit || b.t > 2.5) {
+      if (hit) {
+        // a puff of dirt (or dust off whatever it hit)
+        for (let k = 0; k < 3; k++) dust.spawn(b.p, 1, fxV.set((Math.random() - 0.5) * 3, 1.5 + Math.random() * 3, (Math.random() - 0.5) * 3));
+      }
+      if (b.tracer) scene.remove(b.tracer);
+      bullets.splice(i, 1);
+    }
+  }
+}
+
 function explode(at) {
   blastLight.position.copy(at).y += 1.5;
   blastLight.intensity = 90;
@@ -2532,6 +2578,7 @@ function shellHit(p) {
 }
 
 function updateGun(dt) {
+  updateCoax(dt);
   GUN.reload = Math.max(0, GUN.reload - dt);
   muzzleLight.intensity *= Math.exp(-dt * 30);
   blastLight.intensity *= Math.exp(-dt * 7);
@@ -2556,7 +2603,7 @@ function updateGun(dt) {
   }
   // the ammunition and loading display
   gunHud.style.display = tankMode && !isMobile ? 'block' : 'none';
-  if (tankMode) gunHud.textContent = `90 mm  ·  ${GUN.rounds} rounds  ·  ${GUN.rounds <= 0 ? 'EMPTY' : GUN.reload > 0 ? 'LOADING ' + GUN.reload.toFixed(1) + ' s' : 'READY'}`;
+  if (tankMode) gunHud.textContent = `90 mm  ·  ${GUN.rounds} rounds  ·  ${GUN.rounds <= 0 ? 'EMPTY' : GUN.reload > 0 ? 'LOADING ' + GUN.reload.toFixed(1) + ' s' : 'READY'}  ·  7.62 mm (T)  ${COAX.rounds}`;
 }
 const gunHud = document.createElement('div');
 gunHud.style.cssText = 'position:fixed;left:50%;bottom:16px;transform:translateX(-50%);padding:5px 12px;border-radius:8px;background:rgba(15,18,12,0.7);color:#dfe8c4;font:600 13px system-ui,sans-serif;letter-spacing:0.05em;pointer-events:none;display:none;z-index:15';
@@ -2569,7 +2616,6 @@ window.addEventListener('mouseup', (e) => {
   const still = Math.hypot(e.clientX - clickFrom.x, e.clientY - clickFrom.y) < 6 && performance.now() - clickFrom.t < 450;
   clickFrom = null;
   if (!still || !tankMode || e.target !== renderer.domElement) return;
-  if (inSight() && !pointerLocked()) { renderer.domElement.requestPointerLock?.(); return; }
   fireGun();
 });
 
@@ -2652,6 +2698,7 @@ let cameraMode = 'chase';
 // behind the turret (the gunner's sight is worked out from the gun itself)
 const TANK_VIEWS = {
   tcam: new THREE.Vector3(0, 2.75, -1.55),
+  bonnet: new THREE.Vector3(-0.3, 2.3, -0.42),   // the gunner's view: on the turret roof, his side (right)
 };
 const carPos = new THREE.Vector3();
 const lastCarPos = new THREE.Vector3();
@@ -2708,12 +2755,7 @@ function updateCamera(dt) {
     }
     carModel.car.updateMatrixWorld();
     const mount = ON_CAR[cameraMode];
-    if (tankMode && cameraMode === 'bonnet') {
-      // the tank's gunner's sight: by the gun, looking where the gunner is
-      // looking (the gun follows)
-      tank.sight(camera.position, camera.quaternion);
-      if (!isMobile) camera.quaternion.setFromEuler(lookEuler.set(sightAim.pitch, sightAim.yaw + Math.PI, 0));
-    } else if (tankMode && cameraMode === 'cockpit') {
+    if (tankMode && cameraMode === 'cockpit') {
       // the tank's driver, in his compartment (see DRIVER'S SEAT), able to look round
       tank.driverView(camera.position, camera.quaternion);
       camera.quaternion.multiply(lookTurn.setFromEuler(lookEuler.set(look.pitch, look.yaw, 0)));
@@ -2721,7 +2763,7 @@ function updateCamera(dt) {
       camera.position.copy(tankMode ? TANK_VIEWS[cameraMode] : mount.spot);
       carModel.car.localToWorld(camera.position);
       carModel.car.getWorldQuaternion(carTurn);
-      lookEuler.set(mount.pitch + look.pitch, Math.PI + look.yaw, 0);   // the camera looks along -z; the car faces +z
+      lookEuler.set((tankMode && cameraMode === 'bonnet' ? -0.05 : mount.pitch) + look.pitch, Math.PI + look.yaw, 0);   // the camera looks along -z; the car faces +z
       camera.quaternion.copy(carTurn).multiply(lookTurn.setFromEuler(lookEuler));
     }
   } else {
@@ -2841,7 +2883,7 @@ renderer.setAnimationLoop(() => {
   }
   const wantLights = [0, autoLightsOn ? 1 : 0, 1, 2][lightsSetting];
   if (wantLights !== lightsMode) setLights(wantLights);
-  if (wasTapped('transmission')) {
+  if (wasTapped('transmission') && !tankMode) {   // (in the tank, T fires the machine gun)
     const next = TRANSMISSIONS[(TRANSMISSIONS.indexOf(physics.transmission) + 1) % TRANSMISSIONS.length];
     physics.setTransmission(next);
   }
@@ -2930,14 +2972,7 @@ renderer.setAnimationLoop(() => {
     tank.update(dt, physics.vx - physics.yawRate * 0.88, physics.vx + physics.yawRate * 0.88);
     tank.setLights(lightsMode > 0);
     // the turret turns to face the mouse pointer
-    // (entering the gunner's sight: start looking where the gun points)
-    if (inSight() && !sightAim.set) {
-      tank.muzzle(gunPos, gunDir);
-      sightAim.yaw = Math.atan2(gunDir.x, gunDir.z); sightAim.pitch = Math.asin(Math.max(-1, Math.min(1, gunDir.y)));
-      sightAim.set = true;
-    }
-    if (!inSight()) sightAim.set = false;
-    if (mouseAim.moved || inSight()) tank.aimAt(aimPoint(), dt);
+    if (mouseAim.moved) tank.aimAt(aimPoint(), dt);
     // black smoke when the throttle runs ahead of the turbo
     const thr = input.throttle || 0;
     dieselBoost += (thr * Math.min(1, tankPhys.rpm / 2700) - dieselBoost) * Math.min(1, dt / (thr > dieselBoost ? 0.7 : 0.35));
