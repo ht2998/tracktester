@@ -21,11 +21,19 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 69;
+export const BUILD = 70;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 60, date: '15 Nov 2026', title: 'Proper crashes, and brake fires',
+    items: [
+      ['Big crashes', 'Damage now grows with how hard you hit. A nudge dents the nose; at 100 km/h the front crumples in folds about 80 cm deep and the front suspension bends; at 150 km/h the whole front of the car goes, both front wheels come off and the engine usually goes with it. Big hits from behind fold the rear suspension too', 'update'],
+      ['Tougher radiator', 'A tap into a wall at 15 or 20 km/h no longer holes the radiator: it sits back behind the nose', 'fix'],
+      ['Brake fires', 'Brakes cooked well past fading can catch fire, flames at that wheel. Air through them at speed (or letting them cool) puts it out; left burning it cooks the tyre and spreads to the car. The pit crew put it out where it is', 'new'],
+    ],
+  },
   {
     id: 59, date: '15 Nov 2026', title: 'Pause on phones, and a proper cockpit',
     items: [
