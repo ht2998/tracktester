@@ -23,10 +23,11 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 4;
+export const BUILD = 5;
 
 import * as THREE from 'three';
 import { CarPhysics, CATERHAM } from './physics.js';
+import { buildF1Body, buildF1RimGeometry } from './f1.js';
 
 const DRIVERS = [
   { name: 'Hamid', colour: 0xc8202a, helmet: 0xffffff },
@@ -63,7 +64,8 @@ function mergeGeos(geos) {
     if (!g.attributes.normal) g.computeVertexNormals();
     const p = g.attributes.position, n = g.attributes.normal;
     for (let i = 0; i < p.count; i++) { pos.push(p.getX(i), p.getY(i), p.getZ(i)); nor.push(n.getX(i), n.getY(i), n.getZ(i)); }
-    const ix = g.index ? Array.from(g.index.array) : [...Array(p.count).keys()];
+    const ia = g.index ? (g.index.array || g.index) : null;
+    const ix = ia && ia.length != null ? Array.from(ia) : [...Array(p.count).keys()];
     for (const v of ix) idx.push(v + base);
     base += p.count;
   }
@@ -131,6 +133,67 @@ function buildAICar(driver) {
   return { car, wheels, paint, helmet };
 }
 
+// THE TT-88 for the computer drivers: the player's TT-88 body, built once
+// and squashed into a few shapes (one per colour), shared by every car;
+// each driver gets his own two paint colours and helmet
+let F1_SHARED = null;
+function f1Parts() {
+  if (F1_SHARED) return F1_SHARED;
+  const g = new THREE.Group();
+  const body = buildF1Body(g, () => {});
+  g.updateMatrixWorld(true);
+  const byMat = new Map();
+  g.traverse((o) => {
+    if (!o.isMesh) return;
+    const geo = o.geometry.clone().applyMatrix4(o.matrixWorld);
+    if (!byMat.has(o.material)) byMat.set(o.material, []);
+    byMat.get(o.material).push(geo.index ? geo : geo);
+  });
+  const M = body.mats;
+  const parts = [];
+  for (const [mat, geos] of byMat) {
+    const role = mat === M.blue ? 'paint' : mat === M.yellow ? 'paint2' : mat === M.helmet ? 'helmet' : 'fixed';
+    parts.push({ geo: mergeGeos(geos.map((x) => x.toNonIndexed ? x : x)), mat, role });
+  }
+  const r = 0.33;
+  F1_SHARED = {
+    parts, r,
+    wheels: [[0.88, 1.62, 0.3], [-0.88, 1.62, 0.3], [0.88, -1.28, 0.42], [-0.88, -1.28, 0.42]],
+    tyre: { 0.3: new THREE.CylinderGeometry(r, r, 0.3, 18).rotateZ(Math.PI / 2), 0.42: new THREE.CylinderGeometry(r, r, 0.42, 18).rotateZ(Math.PI / 2) },
+    rim: { 0.3: buildF1RimGeometry(r * 0.6, 0.3), 0.42: buildF1RimGeometry(r * 0.6, 0.42) },
+  };
+  return F1_SHARED;
+}
+function buildAIF1(driver) {
+  const S = sharedParts(), F = f1Parts();
+  const car = new THREE.Group();
+  const paint = new THREE.MeshStandardMaterial({ color: driver.colour, roughness: 0.3, metalness: 0.2, transparent: true, opacity: 1 });
+  const paint2 = new THREE.MeshStandardMaterial({ color: driver.helmet, roughness: 0.3, metalness: 0.1, transparent: true, opacity: 1 });
+  const helmet = new THREE.MeshStandardMaterial({ color: driver.helmet, roughness: 0.3, transparent: true, opacity: 1 });
+  const own = [paint, paint2, helmet];
+  for (const p of F.parts) {
+    // (his own copy of the other materials too, so the whole car can fade when contact is off)
+    let mat = p.role === 'paint' ? paint : p.role === 'paint2' ? paint2 : p.role === 'helmet' ? helmet : null;
+    if (!mat) { mat = p.mat.clone(); mat.transparent = true; own.push(mat); }
+    const m = new THREE.Mesh(p.geo, mat);
+    m.castShadow = true;
+    car.add(m);
+  }
+  const wheels = F.wheels.map(([x, z, w]) => {
+    const steerer = new THREE.Group();
+    steerer.position.set(x, F.r, z);
+    car.add(steerer);
+    const spin = new THREE.Group();
+    steerer.add(spin);
+    const t = new THREE.Mesh(F.tyre[w], S.mats.tyre); t.castShadow = true; spin.add(t);
+    const rim = new THREE.Mesh(F.rim[w], S.mats.rim);
+    if (x < 0) rim.rotation.y = Math.PI;
+    spin.add(rim);
+    return { steerer, spin };
+  });
+  return { car, wheels, paint, helmet, paints: own };
+}
+
 // ---------------------------------------------------------------------
 // The field
 // ---------------------------------------------------------------------
@@ -141,8 +204,11 @@ export class AIField {
   // hooks: the ground and surface functions the player's car uses
   // colliders: the walls, barriers and buildings
   // onPlacePlayer(x, z, heading): put the player's car somewhere (the grid)
-  constructor(scene, { racing, track, start, hooks, colliders, isMobile = false, onPlacePlayer, sound }) {
+  // spec: the car they drive (the player's kind, with its stock engine; the Caterham if none)
+  constructor(scene, { racing, track, start, hooks, colliders, isMobile = false, onPlacePlayer, sound, spec = null }) {
     this.scene = scene;
+    this.spec = spec || CATERHAM;
+    this.isF1 = !!this.spec.wings;
     this.racing = racing;
     this.track = track;
     this.hooks = hooks;
@@ -299,12 +365,16 @@ export class AIField {
   }
   addCar(k, index, lateral, speed) {
     const driver = this.makeDriver(k);
-    const model = buildAICar(driver);
+    const model = this.isF1 ? buildAIF1(driver) : buildAICar(driver);
     this.scene.add(model.car);
-    const physics = new CarPhysics(CATERHAM);
+    const physics = new CarPhysics(this.spec);
     physics.setTransmission('auto');
     physics.assists.abs = Math.random() < 0.3 ? 3 : 5;     // (some drivers lock up more)
     physics.assists.tcs = Math.random() < 0.35 ? 2 : 4;    // (and some spin the wheels more out of corners)
+    // (the TT-88 on racing slicks, and every driver keeps its traction
+    // control fully on: with 900 horsepower of turbo the weaker setting
+    // just spins them)
+    if (this.isF1) { physics.setTyres('RM'); physics.assists.tcs = 4; }
     for (const h of ['surfaceGrip', 'surfaceDrag', 'groundHeight', 'roadHeight', 'wearScale']) if (this.hooks[h]) physics[h] = this.hooks[h];
     const car = {
       driver, model, physics,
@@ -370,8 +440,7 @@ export class AIField {
   applyGhost() {
     for (const c of this.cars) {
       const o = this.contact ? 1 : 0.45;
-      c.model.paint.opacity = c.model.helmet.opacity = o;
-      c.model.paint.depthWrite = c.model.helmet.depthWrite = o === 1;
+      for (const m of c.model.paints || [c.model.paint, c.model.helmet]) { m.opacity = o; m.depthWrite = o === 1; }
     }
   }
 
@@ -379,7 +448,7 @@ export class AIField {
   // worked out from the racing line for their car, at today's grip
   plan() {
     const g = this.racing.grip > 0 ? this.racing.grip : 1.3;
-    if (!this._plan || Math.abs(g - this._planGrip) > 0.02) { this._planGrip = g; this._plan = this.racing.speedsFor(CATERHAM, g); }
+    if (!this._plan || Math.abs(g - this._planGrip) > 0.02) { this._planGrip = g; this._plan = this.racing.speedsFor(this.spec, g); }
     return this._plan;
   }
 
@@ -521,6 +590,17 @@ export class AIField {
     let target = this.plan().v[(c.near + Math.max(1, lead)) % m] * c.lapPace;
     if (mk === 'late') target *= 1.05;
     if (mk === 'early') target *= 0.9;
+    // running out of steering, or drifting wide of his line: ease off until
+    // the car comes back to it (as a driver feels the front washing out)
+    // (the TT-88: its high-speed corners need more lock than it has, so it
+    // has to feel for it; the Caterham never runs out)
+    if (this.isF1) {
+      const p0 = pts[c.near], offErr = (P.x - p0.x) * p0.nx + (P.z - p0.z) * p0.nz - wantLat;
+      const K = globalThis.__AIK || [0.9, 0.7, 3.5, 3, 0.05];   // (steering past 90%, or 3.5 m off his line: lift)
+      const sat = Math.max(0, Math.abs(c.steer) - K[0]) / (1 - K[0]), wide = Math.max(0, Math.abs(offErr) - K[2]) / K[3];
+      const ease = Math.min(1, sat * K[1] + wide);
+      if (ease > 0) target = Math.min(target, Math.max(0, v) * (1 - K[4] * ease));
+    }
     // don't drive into the car ahead: follow it, or pull out to pass
     c.pass = (c.pass || 0) * (1 - Math.min(1, dt * 0.5));
     for (const o of this.others(c)) {
@@ -715,7 +795,7 @@ export class AIField {
       M.car.position.set(P.x, G.y, P.z);
       M.car.rotation.set(-Math.atan(G.slopeF || 0), P.heading, Math.atan(G.slopeL || 0), 'YXZ');
     }
-    c.spin += (Math.max(-80, Math.min(80, P.vx / CATERHAM.wheelRadius))) * dt;
+    c.spin += (Math.max(-80, Math.min(80, P.vx / (this.spec.wheelRadius || CATERHAM.wheelRadius)))) * dt;
     M.wheels.forEach((w, k) => {
       w.spin.rotation.x = c.spin;
       // steering, and any crash damage: knocked out of line, leaning over
@@ -748,7 +828,7 @@ export class AIField {
       } else if (!want && c.voice) { c.voice.stop(); c.voice = null; }
       if (!c.voice) continue;
       const rpm = c.full ? (c.physics.rpm || 1000) : 2500 + c.speed * 90;
-      const fire = rpm / 60 * 2;                           // four cylinders: two firings a turn
+      const fire = rpm / 60 * (this.spec.cylinders || 4) / 2;   // (four cylinders: two firings a turn; the TT-88's six: three)
       const t = ctx.currentTime;
       c.voice.o1.frequency.setTargetAtTime(fire, t, 0.03);
       c.voice.o2.frequency.setTargetAtTime(fire * 0.5, t, 0.03);
@@ -768,7 +848,8 @@ export class AIField {
     const L = this.racing.length, pts = this.racing.pts;
     const progress = (t, near) => t.lap * L + ((pts[near].s - pts[this.startIndex].s + L) % L);
     const field = this.cars.map((c) => ({ name: c.driver.name, colour: c.driver.colour, p: c.finished ? 1e9 - c.finishTime : progress(c, c.near), lap: c.lap, me: false }));
-    field.push({ name: 'You', colour: 0xffd76a, p: this.player.finished ? 1e9 - this.player.finishTime : progress(this.player, this.player.near), lap: this.player.lap, me: true });
+    // (retired in the pits: DNF, at the bottom)
+    field.push({ name: 'You', colour: 0xffd76a, p: this.player.dnf ? -1e12 : this.player.finished ? 1e9 - this.player.finishTime : progress(this.player, this.player.near), lap: this.player.lap, me: true, dnf: !!this.player.dnf });
     field.sort((a, b) => b.p - a.p);
     const myPos = field.findIndex((f) => f.me) + 1;
     const lap = Math.min(this.laps, Math.max(1, this.player.lap + 1));
@@ -785,7 +866,7 @@ export class AIField {
     const lead = field[0].p;
     const hex = (c) => '#' + c.toString(16).padStart(6, '0');
     const rows = field.slice(0, 10).map((f, k) => {
-      const gap = k === 0 ? '' : f.p > 1e8 ? '' : `+${Math.max(0, (lead > 1e8 ? 0 : lead - f.p) / 45).toFixed(1)}`;
+      const gap = f.dnf ? 'DNF' : k === 0 ? '' : f.p > 1e8 ? '' : `+${Math.max(0, (lead > 1e8 ? 0 : lead - f.p) / 45).toFixed(1)}`;
       return `<div style="display:flex;gap:6px;align-items:center;${f.me ? 'color:#ffd76a' : ''}"><span style="width:16px;text-align:right">${k + 1}</span><span style="width:8px;height:8px;border-radius:2px;background:${hex(f.colour)}"></span><span style="flex:1">${f.name}</span><span style="opacity:0.7">${gap}</span></div>`;
     }).join('');
     this.board.innerHTML = `<div style="font-size:12px;letter-spacing:0.08em;opacity:0.8;margin-bottom:3px">${this.player.finished ? 'FINISHED' : `LAP ${lap}/${this.laps}`} · P${myPos}/${field.length}</div>${rows}`;
