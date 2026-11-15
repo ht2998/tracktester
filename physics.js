@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 15;
+export const BUILD = 16;
 
 const G = 9.81;   // gravity, m/s²
 const RPM_PER_RADS = 60 / (2 * Math.PI);
@@ -356,6 +356,7 @@ export class CarPhysics {
     this.onFire = false;      // engine bay fire
     this.fireLevel = 0;       // 0-1, how big the flames are
     this.fireTime = 0;        // seconds since it caught
+    this.fireSpot = null;     // which wheel is burning (a brake fire), or null: the engine bay
     // --- Four-wheel state ---
     this.w4 = {
       omega: [0, 0, 0, 0],      // each wheel's spin, rad/s
@@ -413,12 +414,16 @@ export class CarPhysics {
     };
     if (zone === 'front') {
       const wasHoled = this.radiator < 0.75;
-      this.noseCrush = Math.min(0.32, this.noseCrush + Math.max(0, v - 3) * 0.022);
+      // (the nose crumples further the harder it's hit: a light knock dents
+      // the tip; 150 km/h into a wall takes the whole front of the car away)
+      this.noseCrush = Math.min(1.1, this.noseCrush + Math.max(0, v - 3) * 0.022 + Math.max(0, v - 15) * 0.02);
       const radBefore = this.radiator;
-      this.radiator = Math.max(0, this.radiator - Math.max(0, v - 3.5) / 14);
+      // (the radiator sits back behind the nose: a tap at walking pace, or
+      // a nudge at 20 km/h, doesn't reach it)
+      this.radiator = Math.max(0, this.radiator - Math.max(0, v - 7) / 13);
       // The cooling system is under pressure: a holed radiator doesn't just
       // seep, it bursts out in a pink spray (and steam) right away
-      if (this.radiator < radBefore && this.coolant > 0.05) {
+      if (radBefore - this.radiator > 0.05 && this.coolant > 0.05) {
         this.events.push({ type: 'coolantBurst', strength: clamp((radBefore - this.radiator) * 2, 0.3, 1) });
         this.coolant = Math.max(0, this.coolant - (radBefore - this.radiator) * 0.25);
       }
@@ -433,12 +438,38 @@ export class CarPhysics {
       }
       // Off-centre: the front wheel on that side gets knocked back too
       if (Math.abs(across) > 0.5 && v > 5) bend(wheelNear(true, across > 0), (v - 5) * 0.0025, across > 0 ? 1 : -1);
+      // A big one head on: the front suspension folds on both sides, and
+      // very big ones tear the front wheels off; the engine takes the hit too
+      if (v > 16) {
+        for (const left of [true, false]) {
+          const i = wheelNear(true, left);
+          this.suspDamage[i] = Math.min(1, this.suspDamage[i] + (v - 16) * 0.035);
+          this.wheelBend[i] = clamp(this.wheelBend[i] + (v - 16) * 0.0015 * (left ? -1 : 1), -0.06, 0.06);
+          if ((this.suspDamage[i] >= 1 || v > 30) && !this.tyres[i].detached) {
+            this.suspDamage[i] = 1; this.tyres[i].detached = true;
+            this.events.push({ type: 'wheelOff', wheel: i, torn: true });
+          }
+        }
+        if (v > 26) this.damageEngine((v - 26) * 0.06 * (0.6 + 0.8 * Math.random()));
+      }
       // the front wing takes it first (one side, or both if it's head on)
       const crushF = Math.max(0, v - 2.5) * 0.09;
       if (across > 0.15) crushWing('fl', crushF); else if (across < -0.15) crushWing('fr', crushF);
       else { crushWing('fl', crushF * 0.8); crushWing('fr', crushF * 0.8); }
     } else if (zone === 'rear') {
-      this.tailCrush = Math.min(0.25, this.tailCrush + Math.max(0, v - 3) * 0.018);
+      this.tailCrush = Math.min(0.8, this.tailCrush + Math.max(0, v - 3) * 0.018 + Math.max(0, v - 15) * 0.015);
+      // a big one backwards: the rear suspension folds, the gearbox and engine take it
+      if (v > 18) {
+        for (const left of [true, false]) {
+          const i = wheelNear(false, left);
+          this.suspDamage[i] = Math.min(1, this.suspDamage[i] + (v - 18) * 0.03);
+          if ((this.suspDamage[i] >= 1 || v > 32) && !this.tyres[i].detached) {
+            this.suspDamage[i] = 1; this.tyres[i].detached = true;
+            this.events.push({ type: 'wheelOff', wheel: i, torn: true });
+          }
+        }
+        if (v > 26) this.damageEngine((v - 26) * 0.04 * (0.5 + Math.random()));
+      }
       if (v > 7) this.fuelLeak = Math.min(0.6, this.fuelLeak + (v - 7) * 0.025);
       if (Math.abs(across) > 0.5 && v > 5) bend(wheelNear(false, across > 0), (v - 5) * 0.0025, across > 0 ? 1 : -1);
       crushWing('rear', Math.max(0, v - 2.5) * 0.08);
@@ -480,8 +511,27 @@ export class CarPhysics {
       const K = t + 273, A = AMBIENT_TEMP + 273;
       const glow = 0.6 * 5.67e-8 * 0.1 * (K * K * K * K - A * A * A * A);
       t -= (air * (t - AMBIENT_TEMP) + glow) * dt / cap;
-      this.brakeTemp[i] = Math.max(AMBIENT_TEMP, Math.min(1100, t));
+      this.brakeTemp[i] = Math.max(AMBIENT_TEMP, Math.min(Math.max(1100, d.fadeEnd + 150), t));
       if (this.tyres[i]) this.tyres[i].brakeTemp = this.brakeTemp[i];
+      // Cooked brakes catch fire: past their worst fade, the pads and fluid
+      // can go up (more likely the hotter they get, and when there's no air
+      // through them, stopped)
+      const over = (this.brakeTemp[i] - d.fadeEnd) / 150;
+      if (over > 0 && !this.onFire && !this.tyres[i].detached && Math.random() < clamp(over, 0, 1) * (v < 3 ? 0.35 : 0.15) * dt) {
+        this.catchFire(i);
+      }
+    }
+    // A brake fire burns while the brake stays hot; air through it at speed
+    // (or it cooling right down) puts it out. Left burning it cooks the tyre
+    // on that wheel, and after long enough spreads to the rest of the car.
+    if (this.onFire && this.fireSpot != null) {
+      const i = this.fireSpot, t = this.brakeTemp[i];
+      if (t < d.fadeStart || (v > 30 && t < d.fadeEnd)) { this.onFire = false; this.fireLevel = 0; this.fireSpot = null; }
+      else {
+        this.brakeHeat[i] += 60000 * this.fireLevel * dt;          // (it keeps itself hot)
+        if (this.fireTime > 7 && !this.tyres[i].blown) this.puncture(i, 0.5 * dt);
+        if (this.fireTime > 18) this.fireSpot = null;               // (it's caught the car)
+      }
     }
   }
 
@@ -728,11 +778,13 @@ export class CarPhysics {
     if (this.engineHealth <= 0) this.blowEngine();
   }
 
-  catchFire() {
+  // where: a wheel (a brake fire), or the engine bay (no wheel given)
+  catchFire(wheel = null) {
     if (this.onFire) return;
     this.onFire = true;
     this.fireTime = 0;
-    this.events.push({ type: 'fire' });
+    this.fireSpot = wheel;
+    this.events.push({ type: 'fire', wheel });
   }
 
   // --- Cooling: a holed radiator leaks coolant; with too little coolant the
@@ -777,8 +829,8 @@ export class CarPhysics {
       const fuelLeft = this.fuelLeak > 0 ? Math.min(1, this.fuel / 4) : 1;
       const dying = this.fireTime > 30 ? Math.max(0, 1 - (this.fireTime - 30) / 15) : 1;
       this.fireLevel = Math.min(1, this.fireTime / 2) * dying * (0.4 + 0.6 * fuelLeft);
-      this.damageEngine(0.07 * this.fireLevel * dt);
-      if (dying <= 0) { this.onFire = false; this.fireLevel = 0; }
+      if (this.fireSpot == null) this.damageEngine(0.07 * this.fireLevel * dt);   // (a brake fire burns at the wheel, not in the engine)
+      if (dying <= 0) { this.onFire = false; this.fireLevel = 0; this.fireSpot = null; }
     }
   }
 
