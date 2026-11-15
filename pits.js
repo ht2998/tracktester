@@ -1,12 +1,14 @@
 // =====================================================================
 // PIT STOPS (Sepang). The pit lane runs beside the start straight.
 //
-// Driving in: past the pit entry line the speed limiter holds you to
-// 60 km/h (come over the line faster and it's a speeding penalty: five
-// seconds standing still at your box before anyone touches the car). A
-// menu comes up: which tyres to fit, whether to refuel, which damaged
-// parts to repair (and which are too serious to fix). Near your box the
-// team takes over and guides the car onto its marks.
+// Driving in: past the pit entry line the driver is on the limiter at
+// 60 km/h and drives the car himself, down the lane and onto its marks,
+// and afterwards back out to the end of the exit road (come over the line
+// faster and it's a speeding penalty: five seconds standing still at your
+// box before anyone touches the car). The menu, GT7's way: first the
+// tyres (the crew wait at the box until you've picked), then any damage
+// (repair or leave each part), then the fuel last: it fills up unless you
+// say don't, and "Stop refuelling" ends it when you've enough.
 //
 // The stop: the front and rear jack men lift the car; at each wheel the
 // gun man spins the centre nut off, the off man pulls the old wheel away,
@@ -24,7 +26,7 @@
 // a smashed radiator): the team retire the car. DNF on the standings, and
 // they push it back into the garage.
 // =====================================================================
-export const BUILD = 3;
+export const BUILD = 4;
 
 import * as THREE from 'three';
 
@@ -361,22 +363,35 @@ export class PitStop {
   buildUI() {
     const css = document.createElement('style');
     css.textContent = `
-#pit-menu { position: fixed; left: 16px; bottom: 120px; z-index: 45; width: 290px; max-height: 62vh; overflow-y: auto; display: none;
-  padding: 12px 14px; border-radius: 12px; background: rgba(12, 15, 20, 0.86); color: #eef0f3; font: 13px system-ui, sans-serif; box-shadow: 0 8px 28px rgba(0,0,0,0.45); }
-#pit-menu h4 { margin: 0 0 6px; font-size: 11px; letter-spacing: 0.22em; color: #e5b53d; }
-#pit-menu .pm-sec { margin: 10px 0 4px; font-size: 10px; letter-spacing: 0.2em; color: #8d96a3; }
-#pit-menu .pm-chips { display: flex; flex-wrap: wrap; gap: 5px; }
-#pit-menu button { font: inherit; color: inherit; border: 1px solid rgba(255,255,255,0.16); background: rgba(255,255,255,0.05); border-radius: 8px; padding: 6px 9px; cursor: pointer; }
-#pit-menu button.on { background: #e5b53d; color: #15171a; border-color: #e5b53d; font-weight: 600; }
-#pit-menu .pm-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 0; }
-#pit-menu .pm-row.bad { color: #ff7a6e; }
-#pit-menu .pm-est { margin-top: 10px; font-size: 12px; color: #aab2bd; }
+#pit-menu { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 45; width: min(760px, calc(100vw - 24px)); max-height: 70vh; overflow-y: auto; display: none;
+  padding: 16px 18px 18px; border-radius: 16px; background: rgba(12, 15, 20, 0.9); color: #eef0f3; font: 15px system-ui, -apple-system, sans-serif; box-shadow: 0 10px 34px rgba(0,0,0,0.5); }
+#pit-menu .pm-step { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
+#pit-menu h4 { margin: 0; font-size: 13px; letter-spacing: 0.24em; color: #e5b53d; }
+#pit-menu .pm-crumbs { font-size: 12px; letter-spacing: 0.16em; color: #6f7883; }
+#pit-menu .pm-crumbs b { color: #eef0f3; }
+#pit-menu button { font: inherit; color: inherit; border: 1px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.06); border-radius: 12px; cursor: pointer;
+  min-height: 58px; padding: 10px 16px; font-size: 17px; font-weight: 600; -webkit-tap-highlight-color: transparent; }
+#pit-menu button:hover { border-color: rgba(255,255,255,0.4); }
+#pit-menu button.on { background: #e5b53d; color: #15171a; border-color: #e5b53d; }
+#pit-menu .pm-tyres { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 10px; }
+#pit-menu .pm-tyre { display: flex; flex-direction: column; align-items: center; gap: 6px; min-height: 104px; }
+#pit-menu .pm-tyre i { width: 38px; height: 38px; border-radius: 50%; border: 7px solid #222; box-shadow: inset 0 0 0 3px var(--c); display: block; }
+#pit-menu .pm-tyre span { font-size: 13px; font-weight: 500; color: #c9ced6; }
+#pit-menu .pm-wide { width: 100%; margin-top: 10px; }
+#pit-menu .pm-row { display: grid; grid-template-columns: 1fr 120px 120px; gap: 10px; align-items: center; padding: 6px 0; }
+#pit-menu .pm-row small { display: block; color: #8d96a3; font-size: 12px; font-weight: 400; }
+#pit-menu .pm-bad { color: #ff7a6e; font-weight: 600; padding: 6px 0; }
+#pit-menu .pm-gauge { height: 18px; border-radius: 9px; background: rgba(255,255,255,0.08); overflow: hidden; margin: 4px 0 6px; }
+#pit-menu .pm-gauge div { height: 100%; background: linear-gradient(90deg, #c98d1c, #e5b53d); }
+#pit-menu .pm-fuel { display: flex; justify-content: space-between; font-size: 14px; color: #c9ced6; font-variant-numeric: tabular-nums; }
+#pit-menu .pm-note { color: #8d96a3; font-size: 13px; margin-top: 8px; }
+body.pit-auto #touch > *:not(.t-menu):not(.t-sheet):not(.t-rotate) { visibility: hidden !important; }
 #pit-limiter { position: fixed; left: 50%; top: 12%; transform: translateX(-50%); z-index: 44; display: none; padding: 5px 12px; border-radius: 8px;
   background: rgba(20, 60, 140, 0.85); color: #fff; font: 700 13px system-ui, sans-serif; letter-spacing: 0.14em; pointer-events: none; }
 #pit-clock { position: fixed; left: 50%; top: 18%; transform: translateX(-50%); z-index: 44; display: none; padding: 8px 16px; border-radius: 10px;
   background: rgba(12, 15, 20, 0.82); color: #fff; font: 700 22px system-ui, sans-serif; font-variant-numeric: tabular-nums; pointer-events: none; text-align: center; }
 #pit-clock small { display: block; font-size: 11px; font-weight: 600; letter-spacing: 0.18em; color: #e5b53d; }
-@media (max-width: 760px) { #pit-menu { left: 8px; right: 8px; width: auto; bottom: auto; top: 70px; max-height: 46vh; } }`;
+@media (max-width: 760px), (max-height: 520px) { #pit-menu { bottom: 8px; max-height: 62vh; padding: 12px; } #pit-menu button { min-height: 50px; font-size: 16px; } #pit-menu .pm-row { grid-template-columns: 1fr 96px 96px; } }`;
     document.head.appendChild(css);
     this.menu = document.createElement('div'); this.menu.id = 'pit-menu';
     this.menu.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -407,37 +422,56 @@ export class PitStop {
   }
   badTyres() { return this.physics.tyres.map((t, i) => (t.blown || t.rim || t.pressure < 0.85 || t.leak > 0) && !t.detached ? i : -1).filter((i) => i >= 0); }
 
-  showMenu() {
-    const P = this.physics, dmg = this.damage();
-    const ch = this.choice;
+  // THE MENU: three steps, like GT7's. 1 the tyres, 2 the damage (only
+  // if there is any), 3 the fuel (live while it fills)
+  showMenu(step = this.step) {
+    this.step = step;
+    const P = this.physics, ch = this.choice, dmg = this.damage();
     for (const d of dmg) if (!d.serious && ch.repair[d.key] == null) ch.repair[d.key] = true;
-    const tyres = this.hooks.tyreChoices();
-    const fuelNeed = Math.max(0, P.spec.fuelCapacity - P.fuel);
-    const serious = dmg.filter((d) => d.serious);
-    let html = '<h4>PIT STOP</h4>';
-    if (serious.length) html += `<div class="pm-row bad"><b>Too serious to fix: the team will retire the car</b></div>` + serious.map((d) => `<div class="pm-row bad">${d.name}</div>`).join('');
-    html += '<div class="pm-sec">TYRES</div><div class="pm-chips">'
-      + `<button data-t="" class="${ch.tyres ? '' : 'on'}">No change</button>`
-      + tyres.map(([id, name]) => `<button data-t="${id}" class="${ch.tyres === id ? 'on' : ''}">${name}</button>`).join('') + '</div>';
-    const bad = this.badTyres();
-    if (bad.length && !ch.tyres) html += `<div class="pm-row" style="color:#aab2bd">Damaged tyres are replaced anyway</div>`;
-    html += `<div class="pm-sec">FUEL</div><div class="pm-chips"><button data-f="1" class="${ch.fuel ? 'on' : ''}">Fill up (+${fuelNeed.toFixed(0)} L)</button><button data-f="0" class="${ch.fuel ? '' : 'on'}">No fuel</button></div>`;
-    const fixable = dmg.filter((d) => !d.serious);
-    if (fixable.length) {
-      html += '<div class="pm-sec">REPAIRS</div>' + fixable.map((d) => `<div class="pm-row"><span>${d.name} · ${d.time} s</span><button data-r="${d.key}" class="${ch.repair[d.key] ? 'on' : ''}">${ch.repair[d.key] ? 'Fix' : 'Leave'}</button></div>`).join('');
+    const serious = dmg.filter((d) => d.serious), fixable = dmg.filter((d) => !d.serious);
+    const hasDamage = dmg.length > 0;
+    const crumbs = ['TYRES', ...(hasDamage ? ['DAMAGE'] : []), 'FUEL'].map((c) => (c.toLowerCase() === step ? `<b>${c}</b>` : c)).join(' · ');
+    let html = `<div class="pm-step"><h4>PIT STOP${this.penalty ? ` · ${PENALTY_S} s PENALTY` : ''}</h4><span class="pm-crumbs">${crumbs}</span></div>`;
+    if (step === 'tyres') {
+      const COL = { slick: '#e8483b', wet: '#3b8de8', road: '#d8d8d8', dirt: '#b8874a', snow: '#9fd0e8' };
+      html += '<div class="pm-tyres">' + this.hooks.tyreChoices().map(([id, name, kind]) =>
+        `<button class="pm-tyre" data-t="${id}"><i style="--c:${COL[kind] || '#e5b53d'}"></i>${id}<span>${name}</span></button>`).join('') + '</div>';
+      html += `<button class="pm-wide" data-t="">Don't change tyres</button>`;
+      if (this.badTyres().length) html += '<div class="pm-note">Damaged tyres are changed anyway.</div>';
+    } else if (step === 'damage') {
+      if (serious.length) {
+        html += '<div class="pm-bad">Too serious to fix: the team will retire the car</div>' + serious.map((d) => `<div class="pm-bad">${d.name}</div>`).join('');
+      } else {
+        html += fixable.map((d) => `<div class="pm-row"><span>${d.name}<small>${d.time} s to repair</small></span>`
+          + `<button data-r="${d.key}" data-v="1" class="${ch.repair[d.key] ? 'on' : ''}">Repair</button><button data-r="${d.key}" data-v="0" class="${ch.repair[d.key] ? '' : 'on'}">Leave</button></div>`).join('');
+        html += `<button class="pm-wide on" data-done="damage">Done</button>`;
+      }
+    } else if (step === 'fuel') {
+      const cap = P.spec.fuelCapacity;
+      html += `<div class="pm-fuel"><span>FUEL</span><span class="pm-litres">${P.fuel.toFixed(1)} / ${cap.toFixed(0)} L</span></div>`
+        + `<div class="pm-gauge"><div class="pm-level" style="width:${(100 * P.fuel / cap).toFixed(1)}%"></div></div>`;
+      if (!ch.fuel) html += '<div class="pm-note">No fuel this stop.</div>';
+      else if (this.fuelling) html += `<button class="pm-wide on" data-f="stop">Stop refuelling</button>`;
+      else if (this.flags?.fuelDone) html += '<div class="pm-note">Refuelled.</div>';
+      else html += `<button class="pm-wide" data-f="no">Don't refuel</button><div class="pm-note">It fills up at the box unless you say not to.</div>`;
     }
-    html += `<div class="pm-sec">STOP</div><div class="pm-chips"><button data-d="0" class="${ch.through ? '' : 'on'}">Stop at the box</button><button data-d="1" class="${ch.through ? 'on' : ''}">Drive through</button></div>`;
-    html += `<div class="pm-est">About ${this.estimate().toFixed(0)} s at the box${this.penalty ? ` (+${PENALTY_S} s penalty)` : ''}</div>`;
     this.menu.innerHTML = html;
     this.menu.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
-      if (b.dataset.t != null) ch.tyres = b.dataset.t || null;
-      if (b.dataset.f != null) ch.fuel = b.dataset.f === '1';
-      if (b.dataset.r != null) ch.repair[b.dataset.r] = !ch.repair[b.dataset.r];
-      if (b.dataset.d != null) ch.through = b.dataset.d === '1';
       b.blur();
-      this.showMenu();
+      if (b.dataset.t != null) { ch.tyres = b.dataset.t || null; this.tyresPicked = true; this.showMenu(hasDamage ? 'damage' : 'fuel'); return; }
+      if (b.dataset.r != null) { ch.repair[b.dataset.r] = b.dataset.v === '1'; this.showMenu(); return; }
+      if (b.dataset.done === 'damage') { this.damageDone = true; this.showMenu('fuel'); return; }
+      if (b.dataset.f === 'no' || b.dataset.f === 'stop') { this.stopFuel(); this.showMenu(); return; }
     }));
     this.menu.style.display = 'block';
+  }
+  get choicesDone() { return this.tyresPicked && (this.damageDone || !this.damage().some((d) => !d.serious)); }
+  // "Don't refuel" / "Stop refuelling": the refueller pulls out now
+  stopFuel() {
+    this.choice.fuel = false;
+    this.fuelStop = true;
+    if (this.fuelling) { this.fuelling = false; this.glugStop?.(); }
+    if (this.flags) this.flags.fuelDone = true;
   }
   estimate() {
     const P = this.physics, ch = this.choice, dmg = this.damage();
@@ -461,9 +495,13 @@ export class PitStop {
     this.penalty = false;
     this.lift.f = this.lift.r = this.liftWant.f = this.liftWant.r = 0;
     this.wheelGone.fill(false);
-    this.choice = { tyres: null, fuel: this.physics.fuel < this.physics.spec.fuelCapacity * 0.6, repair: {}, through: false };
+    this.choice = { tyres: null, fuel: true, repair: {} };
+    this.tyresPicked = this.damageDone = this.fuelStop = this.serviceStarted = false;
+    this.fuelling = false;
+    this.step = 'tyres';
     this.menu.style.display = 'none';
     this.limiterEl.style.display = 'none';
+    document.body.classList.remove('pit-auto');
     this.clockEl.style.display = 'none';
     this.hose.visible = false;
     for (const n of this.nuts) n.visible = false;
@@ -487,54 +525,70 @@ export class PitStop {
     return this.garage(1.6 + row * 1.4, -2.3 + col * 0.92);
   }
 
-  // ---- every frame, before the car moves: the limiter, the guidance ----
+  // ---- every frame, before the car moves: the limiter, the driving ----
   control(input, dt) {
     const P = this.physics, x = P.x, z = P.z, kmh = Math.abs(P.vx) * 3.6;
     const inLane = this.inLane(x, z);
     const limit = this.inLimit(x, z);
-    // in or out of the pit lane
-    if (this.phase === 'off' && inLane && Math.cos(P.heading) < 0) {
-      this.phase = 'approach';
-      this.penalty = false;
-      this.choice = { tyres: null, fuel: P.fuel < P.spec.fuelCapacity * 0.6, repair: {}, through: false };
-      this.showMenu();
+    // over the pit entry line: the menu comes up, the crew come out, and
+    // the driver takes it from here (going faster than the limit: a penalty)
+    if (this.phase === 'off' && limit && !this.wasLimit && Math.cos(P.heading) < 0) {
+      this.phase = 'in';
+      this.penalty = kmh > LIMIT_KMH + 3;
+      if (this.penalty) { this.hooks.toast?.(`PIT LANE SPEEDING: ${PENALTY_S} s PENALTY`); this.hooks.invalidLap?.(); }
+      this.choice = { tyres: null, fuel: true, repair: {} };
+      this.tyresPicked = this.damageDone = this.fuelStop = this.serviceStarted = false;
+      this.fuelling = false;
+      this.showMenu('tyres');
       this.crewOut();
     }
-    if (this.phase === 'approach' || this.phase === 'release' || this.phase === 'guided') {
-      // speeding over the line
-      if (!this.wasLimit && limit && kmh > LIMIT_KMH + 3 && this.phase === 'approach') {
-        this.penalty = true;
-        this.hooks.toast?.(`PIT LANE SPEEDING: ${PENALTY_S} s PENALTY`);
-        this.hooks.invalidLap?.();
-        if (this.menu.style.display !== 'none') this.showMenu();
-      }
-      if (!inLane && this.phase !== 'guided') { this.leave(); }
-    }
     this.wasLimit = limit;
+    // (pushed out of the lane some other way: hand back)
+    if ((this.phase === 'in' || this.phase === 'out') && !inLane) this.leave();
     this.limiterEl.style.display = limit && !this.holding ? 'block' : 'none';
+    document.body.classList.toggle('pit-auto', this.phase === 'in' || this.phase === 'out' || this.holding);
     if (limit && kmh > LIMIT_KMH) input.throttle = 0;   // (the limiter: the power cut, as the real ones do)
-    // near the box: the team guide the car in
-    if (this.phase === 'approach' && !this.choice.through && limit && z < this.box.z + 32 && z > this.box.z) this.phase = 'guided';
-    if (this.phase === 'approach' && z < this.box.z - 3) this.phase = 'release';   // (went past)
-    if (this.phase === 'guided') {
-      const B = this.box, dist = z - B.z;
-      const v = P.vx;
-      // (aiming at a point a few metres on down the working lane)
-      const fx = Math.sin(P.heading), fz = Math.cos(P.heading), lx = Math.cos(P.heading), lz = -Math.sin(P.heading);
-      const ax = B.x - x, az = -Math.max(2.5, Math.min(dist + 1, 8));
-      const alpha = Math.atan2(ax * lx + az * lz, ax * fx + az * fz);
-      const wb = (P.spec.cgToFront || 1.2) + (P.spec.cgToRear || 1.2);
-      const wheel = Math.atan(2 * wb * Math.sin(alpha) / Math.max(3, Math.hypot(ax, az)));
-      const lim = P.spec.maxSteer / (1 + Math.abs(v) / 14);
-      input.steer = Math.max(-1, Math.min(1, wheel / lim));
-      const want = Math.min(LIMIT_KMH / 3.6, Math.sqrt(2 * 3 * Math.max(0, dist - 0.15)));
-      input.throttle = Math.max(0, Math.min(0.45, (want - v) * 0.5));
-      input.brake = Math.max(0, Math.min(1, (v - want) * 0.6 + (dist < 0.6 ? 0.6 : 0)));
-      input.handbrake = false;
-      if (dist < 0.7 && Math.abs(v) < 1.5) this.arrive();
-    }
-    if (this.holding) { input.throttle = 0; input.brake = 1; input.steer = 0; }
+    if (this.phase === 'in' || this.phase === 'out') this.drive(input, dt);
+    if (this.holding) { input.throttle = 0; input.brake = 1; input.steer = 0; input.handbrake = false; }
     return this.holding;
+  }
+
+  // The driver on his own: down the fast lane, across into the box and
+  // onto his marks; then out, back across and up the exit road
+  drive(input, dt) {
+    const P = this.physics, B = this.box, x = P.x, z = P.z, v = P.vx;
+    const FAST = 15.4, PIT = this.pit;
+    const laneX = (zz) => {
+      if (this.phase === 'in') return zz > B.z + 28 ? FAST : zz > B.z + 10 ? FAST + (B.x - FAST) * (1 - (zz - B.z - 10) / 18) : B.x;
+      if (zz > B.z - 14) return B.x + (FAST - B.x) * Math.min(1, (B.z - zz) / 14);
+      if (zz > PIT.z0) return FAST;
+      return FAST + (9 - FAST) * Math.min(1, (PIT.z0 - zz) / (PIT.z0 - PIT.exitZ));   // (up the exit road, back to the track)
+    };
+    const look = 5 + Math.abs(v) * 0.35;
+    const az = -look, ax = laneX(z - look) - x;
+    const fx = Math.sin(P.heading), fz = Math.cos(P.heading), lx = Math.cos(P.heading), lz = -Math.sin(P.heading);
+    const alpha = Math.atan2(ax * lx + az * lz, ax * fx + az * fz);
+    const wb = (P.spec.cgToFront || 1.2) + (P.spec.cgToRear || 1.2);
+    const wheel = Math.atan(2 * wb * Math.sin(alpha) / Math.hypot(ax, az));
+    const lim = P.spec.maxSteer / (1 + Math.abs(v) / 14);
+    input.steer = Math.max(-1, Math.min(1, wheel / lim));
+    input.handbrake = false;
+    let want;
+    if (this.phase === 'in') {
+      const dist = z - B.z;
+      want = Math.min(LIMIT_KMH / 3.6 - 0.5, Math.sqrt(2 * 3 * Math.max(0, dist - 0.15)));
+      if (dist < 0.7 && Math.abs(v) < 1.5) { this.arrive(); return; }
+    } else {
+      want = z > PIT.z0 ? LIMIT_KMH / 3.6 - 0.5 : 22;
+      if (z < PIT.exitZ + 6) { this.leave(); return; }   // (back on the track: yours)
+    }
+    input.throttle = Math.max(0, Math.min(0.6, (want - v) * 0.5));
+    input.brake = Math.max(0, Math.min(1, (v - want) * 0.6 + (this.phase === 'in' && z - B.z < 0.6 ? 0.6 : 0)));
+    // (with a manual gearbox he changes gear himself too)
+    if (P.transmission === 'manual' && !P.shiftTimer) {
+      if (P.rpm > P.spec.redline * 0.85) P.shiftUp?.();
+      else if (P.gear > 1 && P.rpm < P.spec.idleRpm * 1.6) P.shiftDown?.();
+    }
   }
 
   // on the marks: what happens now
@@ -546,11 +600,22 @@ export class PitStop {
     this.from = { ...this.carPose };
     this.settle = 0;
     this.stopTime = 0;
-    this.menu.style.display = 'none';
     this.clockEl.style.display = 'block';
     if (P.transmission === 'manual' && P.gear > 1) P.gear = 1;
     const dmg = this.damage();
     this.serious = dmg.some((d) => d.serious);
+    this.flags = { fireOut: !P.onFire, served: !this.penalty, jackF: false, jackR: false, wheel: [null, null, null, null], suspDone: [true, true, true, true], jobsDone: false, fuelDone: false, dropped: false, go: false };
+    this.penaltyLeft = this.penalty ? PENALTY_S : 0;
+    this.wheelsOff = []; this.jobs = [];
+    // (the fire, or the team retiring the car, start now; the work waits
+    // until you've chosen your tyres and repairs)
+    this.stage = 'arrive';
+    this.scriptStop();
+    if (this.serious) this.showMenu('damage');
+  }
+  startService() {
+    const P = this.physics, dmg = this.damage();
+    this.serviceStarted = true;
     this.jobs = dmg.filter((d) => !d.serious && this.choice.repair[d.key]);
     // which wheels come off: a tyre change (all four), damaged tyres,
     // and any corner having its suspension fixed
@@ -559,16 +624,18 @@ export class PitStop {
     for (const i of this.badTyres()) wheels.add(i);
     for (const j of this.jobs) if (j.kind === 'susp') wheels.add(j.pi);
     this.wheelsOff = [...wheels];
-    this.flags = { fireOut: !P.onFire, served: !this.penalty, jackF: false, jackR: false, wheel: [null, null, null, null], suspDone: [true, true, true, true], jobsDone: false, fuelDone: !this.choice.fuel, dropped: false, go: false };
+    this.flags.fuelDone = !this.choice.fuel;
     for (const j of this.jobs) if (j.kind === 'susp') this.flags.suspDone[j.pi] = false;
-    this.penaltyLeft = this.penalty ? PENALTY_S : 0;
+    this.stage = 'service';
     this.scriptStop();
+    if (this.step !== 'fuel') this.showMenu('fuel');
   }
 
   leave() {
     this.phase = 'off';
     this.menu.style.display = 'none';
     this.limiterEl.style.display = 'none';
+    document.body.classList.remove('pit-auto');
     this.crewHome();
   }
 
@@ -630,7 +697,7 @@ export class PitStop {
     const facing = (lx, lz) => this.W(lx, lz, this.carPose);
     const Wc = (lx, lz) => this.W(lx, lz, this.carPose);
     // --- on fire: the nearest man jumps back, runs for the extinguisher ---
-    if (!F.fireOut) {
+    if (!F.fireOut && this.stage === 'arrive') {
       const p = this.spare1, eng = H.firePoint?.() || H.enginePoint;
       p.run([
         { pose: 'SHOCK' }, { go: [p.x + 1.4, p.z + 0.4], back: true }, { wait: 0.35 }, { pose: 'STAND' },
@@ -659,6 +726,7 @@ export class PitStop {
       this.wheelingT = -1;
       return;
     }
+    if (this.stage === 'arrive') return;   // (the work itself starts once you've chosen)
     // --- the jacks ---
     const needJacks = this.wheelsOff.length > 0 || this.jobs.some((j) => j.kind === 'wing' || j.kind === 'susp');
     if (!needJacks) { F.jackF = F.jackR = true; F.dropped = true; }
@@ -786,9 +854,9 @@ export class PitStop {
     if (this.choice.fuel) {
       const fp = this.fueller, filler = H.fillerPoint;
       fp.then([{ until: ready }, { go: Wc(0.95, filler[2] - 0.15) }, { face: facing(0, filler[2]) }, { pose: 'REFUEL' },
-        { fn: () => { this.fuelling = true; this.glug(); } },
-        { until: () => this.physics.fuel >= this.physics.spec.fuelCapacity - 0.05 },
-        { fn: () => { this.fuelling = false; F.fuelDone = true; } }, { pose: 'CARRY' }, { go: Wc(2.0, filler[2] - 0.6), back: true }]);
+        { fn: () => { if (!this.choice.fuel) { F.fuelDone = true; return; } this.fuelling = true; this.glug(); if (this.step === 'fuel') this.showMenu(); } },
+        { until: () => this.fuelStop || !this.choice.fuel || this.physics.fuel >= this.physics.spec.fuelCapacity - 0.05 },
+        { fn: () => { if (this.fuelling) this.glugStop?.(); this.fuelling = false; F.fuelDone = true; if (this.step === 'fuel') this.showMenu(); } }, { pose: 'CARRY' }, { go: Wc(2.0, filler[2] - 0.6), back: true }]);
     }
     if (mirrorWork.length) this.fueller.then([{ until: ready }, ...mirrorWork, { fn: () => { F.mirrorsDone = true; F.jobsDone = F.mechDone; } }]);
     // --- the lollipop: up when it's all done ---
@@ -802,14 +870,15 @@ export class PitStop {
   go() {
     this.flags.go = true;
     this.holding = false;
-    this.phase = 'release';
+    this.phase = 'out';             // (he drives it out himself)
+    this.menu.style.display = 'none';
     this.clockEl.innerHTML = `<small>PIT STOP</small>${this.stopTime.toFixed(1)} s`;
     setTimeout(() => { if (this.phase !== 'stopped') this.clockEl.style.display = 'none'; }, 2500);
     const P = this.physics;
     P.vx = P.vy = P.yawRate = 0;
     P.ground.synced = false;
     // everyone back once the car's gone
-    this.crew.forEach((p, k) => p.then([{ until: () => this.phase !== 'release' || Math.hypot(P.x - this.box.x, P.z - this.box.z) > 9 }, { pose: 'STAND' }, { go: this.idleSpot(k) }, { face: -Math.PI / 2 }, { fn: () => this.putAway(p) }]));
+    this.crew.forEach((p, k) => p.then([{ until: () => this.phase !== 'out' || Math.hypot(P.x - this.box.x, P.z - this.box.z) > 9 }, { pose: 'STAND' }, { go: this.idleSpot(k) }, { face: -Math.PI / 2 }, { fn: () => this.putAway(p) }]));
   }
 
   // ---- every frame: the crew, the car on its marks, the clock ----
@@ -829,12 +898,20 @@ export class PitStop {
         this.carPose.h = this.from.h + dh * this.settle;
         this.stopTime += dt;
         if (this.flags && !this.flags.go) {
-          this.clockEl.innerHTML = `<small>${!this.flags.fireOut ? 'FIRE!' : this.penaltyLeft > 0 ? 'PENALTY' : this.serious ? 'RETIRING' : 'PIT STOP'}</small>${this.stopTime.toFixed(1)} s`;
+          this.clockEl.innerHTML = `<small>${!this.flags.fireOut ? 'FIRE!' : this.penaltyLeft > 0 ? 'PENALTY' : this.serious ? 'RETIRING' : !this.serviceStarted ? 'CHOOSE YOUR TYRES' : 'PIT STOP'}</small>${this.stopTime.toFixed(1)} s`;
         }
         if (this.flags && this.flags.fireOut && this.penaltyLeft > 0) { this.penaltyLeft -= dt; if (this.penaltyLeft <= 0) this.flags.served = true; }
+        if (!this.serious && !this.serviceStarted && this.choicesDone) this.startService();
+        // (the fuel gauge, live)
+        if (this.step === 'fuel' && this.menu.style.display !== 'none') {
+          const cap = P.spec.fuelCapacity, l = this.menu.querySelector('.pm-litres'), g = this.menu.querySelector('.pm-level');
+          if (l) l.textContent = `${P.fuel.toFixed(1)} / ${cap.toFixed(0)} L`;
+          if (g) g.style.width = `${(100 * P.fuel / cap).toFixed(1)}%`;
+        }
         if (this.serious && this.flags.fireOut && this.wheelingT < 0) {
           this.wheelingT = 0; this.phase = 'wheeling';
           this.hooks.retire?.();
+          this.menu.style.display = 'none';
           this.clockEl.innerHTML = '<small>RETIRED</small>DNF';
         }
       }
@@ -1009,6 +1086,7 @@ export class PitStop {
     const ctx = this.sound.ctx, t = ctx.currentTime, secs = 1 + Math.max(0, this.physics.spec.fuelCapacity - this.physics.fuel) / this.fuelRate();
     const top = ctx.createBiquadFilter(); top.type = 'lowpass'; top.frequency.value = 3000;
     top.connect(o);
+    this.glugStop = () => { try { o.gain.setTargetAtTime(0, ctx.currentTime, 0.05); } catch (e) { /* gone */ } };
     // the pour
     const src = ctx.createBufferSource(); src.buffer = this.noiseBuf(); src.loop = true;
     const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 250;
