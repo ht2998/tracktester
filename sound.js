@@ -11,7 +11,16 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 19;
+export const BUILD = 20;
+
+// THE VOICED ENGINES (the V10's sound, made for each): bangs a turn, revs,
+// loudness matched to the approved preview, and how much of 3x the crank
+// is in the chord (the flat-plane V8: none, just its two octaves)
+const VOICES = {
+  v10: { fire: 5, red: 19200, idle: 4000, norm: 0.2023 },
+  v12: { fire: 6, red: 13500, idle: 3800, norm: 0.2065 },
+  v8f: { fire: 4, red: 19000, idle: 4000, norm: 0.1698, three: 0 },
+};
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -495,6 +504,7 @@ class V10Shaper extends AudioWorkletProcessor {
     this.RED = o.red || 19200;
     this.IDLE = o.idle || 4000;
     this.NORM = o.norm || 0.2023;
+    this.THREE = o.three ?? 0.12;     // (the touch of 3x the crank in the chord: none on a flat-plane V8, just its octaves)
     this.ph = 0;                       // crank turns
     this.lvl = 0;                      // running level (for the chord)
     this.ls = this.shelf(160, 9);
@@ -556,7 +566,7 @@ class V10Shaper extends AudioWorkletProcessor {
       const lvl = Math.sqrt(this.lvl) + 1e-6;
       const P = this.ph * 2 * Math.PI;
       for (let k = 0; k < 5; k++) this.drift[k] += (Math.random() - 0.5) * 0.0035;
-      let chord = 0.55 * Math.sin(P + this.drift[0]) + 0.6 * Math.sin(2 * P + this.drift[1]) + 0.45 * Math.sin(4 * P + this.drift[2]) + 0.12 * Math.sin(3 * P + this.drift[3]);
+      let chord = 0.55 * Math.sin(P + this.drift[0]) + 0.6 * Math.sin(2 * P + this.drift[1]) + 0.45 * Math.sin(4 * P + this.drift[2]) + this.THREE * Math.sin(3 * P + this.drift[3]);
       chord = Math.tanh(chord * 1.3);
       y += chord * lvl * 0.9 * (1 - 0.45 * hi);
       const top = Math.sin(this.FIRE * P + this.drift[4]) + 0.3 * Math.sin(2 * this.FIRE * P);   // (the main note: the V10's major third, the V12's fifth)
@@ -1365,7 +1375,6 @@ export class EngineSound {
   // so nobody who never fits it pays for it)
   ensureV10() {
     const kind = this.spec.voice;
-    const VOICES = { v10: { fire: 5, red: 19200, idle: 4000, norm: 0.2023 }, v12: { fire: 6, red: 13500, idle: 3800, norm: 0.2065 } };
     if (!this.workletReady || !VOICES[kind]) return;
     if (this.v10 && this.v10Kind === kind) return;
     const ctx = this.ctx;
@@ -1387,7 +1396,7 @@ export class EngineSound {
     this.v10Linger = ctx.createConvolver();
     this.v10Linger.buffer = ir;
     const lingerGain = ctx.createGain();
-    lingerGain.gain.value = 0.3;
+    lingerGain.gain.value = 0.15;   // (half what it was: less echo in the voice itself; the echo off walls is separate)
     this.v10Gain.connect(this.v10Linger).connect(lingerGain).connect(this.carBus);
   }
 
@@ -1397,7 +1406,7 @@ export class EngineSound {
     if (!this.ctx || !this.heavyGain) return;
     const t = this.ctx.currentTime;
     this.heavyGain.gain.setTargetAtTime(on ? 0.85 * (this.driverEar ? 1.35 : 1) : 0, t, 0.1);
-    const v10 = !on && (this.spec.voice === 'v10' || this.spec.voice === 'v12');
+    const v10 = !on && !!VOICES[this.spec.voice];
     if (v10) this.ensureV10();
     // (the engine's character: how hard it drives the warmth)
     const ch = this.spec.sound || {};
