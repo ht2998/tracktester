@@ -21,11 +21,20 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 70;
+export const BUILD = 71;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 61, date: '15 Nov 2026', title: 'GT7-style pit stops, the gunner\'s eyes, tracers',
+    items: [
+      ['The driver drives the pits', 'Over the pit entry line the driver takes it himself: down the lane on the limiter, onto his marks, and back out to the end of the exit road, where it\'s yours again', 'update'],
+      ['A new pit menu', 'It comes up once you\'re in the pit lane, in steps, with big buttons: first your tyres (the crew wait at the box until you pick), then any damage (Repair or Leave each part), then fuel last: it fills up unless you press Don\'t refuel, and Stop refuelling ends it when you\'ve enough', 'new'],
+      ['The gunner\'s eyes', 'The tank\'s crew view is now through the gunner\'s own eyes: at his sight while you aim (the full magnified view with its markings). Fire, and he turns his head to watch the commander reload, then snaps back to the sight the moment the breech slams shut', 'update'],
+      ['Tracer rounds', 'Every round from the main gun and the machine gun now burns as it flies: a white-hot streak in an orange glow, so you can follow your shots', 'update'],
+    ],
+  },
   {
     id: 60, date: '15 Nov 2026', title: 'Proper crashes, and brake fires',
     items: [
