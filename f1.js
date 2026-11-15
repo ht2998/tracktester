@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 15;
+export const BUILD = 16;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -196,6 +196,52 @@ function loft(sections0, round = 0.5, around = 24, steps = 4, smooth = true) {
   g.computeVertexNormals();
   return g;
 }
+// The same rounded-box sections as loft(), with the top cut open between
+// ±open(z) (the cockpit: where he sits). inset: a skin that much inside
+// (the tub's inner wall and floor); flip: facing inwards.
+function loftOpen(sections0, round, steps, open, inset = 0, flip = false) {
+  const sections = [];
+  for (let i = 0; i < sections0.length - 1; i++) {
+    const a = sections0[i], b = sections0[i + 1];
+    for (let k = 0; k < steps; k++) {
+      const t = k / steps;
+      sections.push({ z: a.z + (b.z - a.z) * t, w: a.w + (b.w - a.w) * t, h: a.h + (b.h - a.h) * t, y: a.y + (b.y - a.y) * t, top: (a.top ?? 1) + ((b.top ?? 1) - (a.top ?? 1)) * t });
+    }
+  }
+  sections.push(sections0[sections0.length - 1]);
+  const e = 2 / (1 + round * 3), N = 40;
+  const pt = (s, a) => {
+    const c = Math.cos(a), si = Math.sin(a);
+    const x = Math.sign(c) * Math.pow(Math.abs(c), e) * (s.w / 2 - inset);
+    const y = Math.sign(si) * Math.pow(Math.abs(si), e) * (s.h / 2 - inset);
+    const lean = y > 0 ? 1 - (1 - (s.top ?? 1)) * (y / (s.h / 2)) : 1;
+    return [x * lean, y + s.y + s.h / 2, s.z];
+  };
+  // (where each ring meets the opening: the angle at which it's open(z) out from the middle)
+  const edge = (s) => {
+    const ow = open(s.z);
+    let lo = Math.PI / 2, hi = Math.PI;
+    for (let i = 0; i < 24; i++) { const m = (lo + hi) / 2; if (-pt(s, m)[0] < ow) lo = m; else hi = m; }
+    return lo;
+  };
+  const pos = [], idx = [];
+  for (const sec of sections) {
+    const a1 = edge(sec), span = 3 * Math.PI - 2 * a1;
+    for (let j = 0; j < N; j++) pos.push(...pt(sec, a1 + span * j / (N - 1)));
+  }
+  for (let i = 0; i < sections.length - 1; i++) {
+    for (let j = 0; j < N - 1; j++) {
+      const a = i * N + j, b = i * N + j + 1, c = (i + 1) * N + j, d = (i + 1) * N + j + 1;
+      if (flip) idx.push(a, b, c, b, d, c); else idx.push(a, c, b, b, c, d);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  g.userData.edge = (z) => { const s = sections.reduce((b, x) => (Math.abs(x.z - z) < Math.abs(b.z - z) ? x : b)); return pt(s, edge(s)); };
+  return g;
+}
 function mergeAll(geos) {
   const pos = [], nor = [], idx = [];
   let base = 0;
@@ -251,6 +297,8 @@ export function buildF1Body(car, addPanel) {
   };
   // (flat shading: crisp edges between the flat panels, as the cars of the time had)
   MAT.blue.flatShading = MAT.yellow.flatShading = MAT.carbon.flatShading = true;
+  MAT.seat = new THREE.MeshStandardMaterial({ color: 0x24262c, roughness: 0.9 });   // (the seat and the cockpit's padded rim)
+  MAT.suit = new THREE.MeshStandardMaterial({ color: 0x1d2c6e, roughness: 0.8 });   // (the driver's overalls)
   const add = (geo, mat, shadow = true) => {
     const m = new THREE.Mesh(geo, mat); m.castShadow = shadow; m.receiveShadow = true; car.add(m);
     if (mat === MAT.blue || mat === MAT.yellow) addPanel(m);
@@ -266,18 +314,55 @@ export function buildF1Body(car, addPanel) {
     { z: 1.85, w: 0.36, h: 0.23, y: 0.09, top: 0.86 },
     { z: 1.35, w: 0.46, h: 0.32, y: 0.08, top: 0.84 },
     { z: 0.85, w: 0.56, h: 0.41, y: 0.075, top: 0.82 },
-    { z: 0.45, w: 0.64, h: 0.46, y: 0.07, top: 0.8 },
-    { z: 0.0, w: 0.68, h: 0.46, y: 0.07, top: 0.8 },
-    { z: -0.25, w: 0.68, h: 0.48, y: 0.07, top: 0.8 },
+    { z: 0.62, w: 0.606, h: 0.439, y: 0.072, top: 0.81 },
   ];
   add(loft(tub, BOXY, 24, 3, false), MAT.blue);
+  // the cockpit: the tub open on top where he sits, its inside in black,
+  // a moulded seat, his legs running forward under the scuttle
+  const pit = [
+    { z: 0.62, w: 0.606, h: 0.439, y: 0.072, top: 0.81 },
+    { z: 0.45, w: 0.64, h: 0.46, y: 0.07, top: 0.8 },
+    { z: 0.0, w: 0.68, h: 0.46, y: 0.07, top: 0.8 },
+    { z: -0.12, w: 0.68, h: 0.47, y: 0.07, top: 0.8 },
+  ];
+  const opening = (z) => (z > 0.35 ? 0.18 + (0.62 - z) / 0.27 * 0.04 : 0.22);
+  const shell = loftOpen(pit, BOXY, 3, opening);
+  add(shell, MAT.blue);
+  add(loftOpen(pit, BOXY, 3, opening, 0.025, true), MAT.carbon, false);
+  add(loft([{ z: -0.12, w: 0.68, h: 0.47, y: 0.07, top: 0.8 }, { z: -0.25, w: 0.68, h: 0.48, y: 0.07, top: 0.8 }], BOXY, 24, 1, false), MAT.blue);
+  // (the padded rim round the opening)
+  const rimZ = [0.62, 0.5, 0.35, 0.15, 0, -0.12];
+  for (const sx of [1, -1]) for (let i = 0; i < rimZ.length - 1; i++) {
+    const a = shell.userData.edge(rimZ[i]), b = shell.userData.edge(rimZ[i + 1]);
+    add(rod([sx * -a[0], a[1], a[2]], [sx * -b[0], b[1], b[2]], 0.022), MAT.seat, false);
+  }
+  for (const z of [0.62, -0.12]) { const a = shell.userData.edge(z); add(rod([a[0], a[1], z], [-a[0], a[1], z], 0.022), MAT.seat, false); }
+  // the seat: a moulded shell, low down, its back leaning well back
+  add(box(0.34, 0.05, 0.36, 0, 0.12, 0.1), MAT.seat, false);
+  add(box(0.36, 0.42, 0.05, 0, 0.32, -0.07, -0.32), MAT.seat, false);
+  for (const sx of [1, -1]) add(box(0.04, 0.16, 0.36, sx * 0.17, 0.2, 0.08), MAT.seat, false);
+  // his legs, forward and a little raised, under the scuttle (always there)
+  for (const sx of [1, -1]) {
+    add(rod([sx * 0.08, 0.2, 0.02], [sx * 0.09, 0.3, 0.55], 0.055), MAT.suit, false);
+    add(rod([sx * 0.09, 0.3, 0.55], [sx * 0.07, 0.22, 1.0], 0.045), MAT.suit, false);
+  }
+  // his body, arms and a wheel (the computer drivers' and the Garage's cars;
+  // the player's car has its own moving ones in the cockpit, so the game hides this)
+  const driver = new THREE.Group();
+  car.add(driver);
+  const dAdd = (geo, mat) => { const m = new THREE.Mesh(geo, mat); m.castShadow = false; driver.add(m); return m; };
+  dAdd(new THREE.CapsuleGeometry(0.15, 0.12, 4, 10).rotateZ(Math.PI / 2).scale(1, 0.7, 0.8).translate(0, 0.46, -0.02), MAT.suit);
+  for (const sx of [1, -1]) {
+    dAdd(rod([sx * 0.17, 0.49, 0], [sx * 0.15, 0.4, 0.22], 0.04), MAT.suit);
+    dAdd(rod([sx * 0.15, 0.4, 0.22], [sx * 0.12, 0.5, 0.4], 0.035), MAT.suit);
+  }
+  dAdd(new THREE.TorusGeometry(0.13, 0.016, 6, 20).rotateX(-0.45).translate(0, 0.52, 0.44), MAT.carbon);
   // a yellow nose tip and a yellow stripe along the top of the tub
   add(loft([
     { z: 2.52, w: 0.155, h: 0.085, y: 0.108, top: 0.9 }, { z: 2.25, w: 0.265, h: 0.145, y: 0.098, top: 0.88 }, { z: 1.95, w: 0.345, h: 0.215, y: 0.088, top: 0.87 },
   ], BOXY, 24, 3, false), MAT.yellow);
   add(box(0.16, 0.01, 1.25, 0, 0.462, 1.25, -0.11), MAT.yellow);
   // the cockpit opening (dark) with a squared-off rim, the little smoked screen
-  add(loft([{ z: 0.62, w: 0.36, h: 0.04, y: 0.52 }, { z: 0.35, w: 0.44, h: 0.05, y: 0.515 }, { z: -0.12, w: 0.44, h: 0.05, y: 0.515 }], 2, 24, 3, false), MAT.carbon);
   const screen = new THREE.CylinderGeometry(0.24, 0.24, 0.12, 8, 1, true, -0.9, 1.8).rotateX(-0.35).translate(0, 0.57, 0.48);
   add(screen, MAT.glass, false);
   // the driver: a helmet with a dark visor, his shoulders just below the rim
@@ -358,7 +443,7 @@ export function buildF1Body(car, addPanel) {
   add(box(0.7, 0.02, 0.15, 0, 0.42, -1.95, 0.15), MAT.carbon);                // the beam wing (stays)
   addTo(wings.rear, box(0.04, 0.4, 0.06, 0, 0.6, -1.95), MAT.carbon);         // its pillar
 
-  return { helmet: [helmet, visor], rainMat: MAT.rain, exhaustMat: MAT.exhaust, mats: MAT, wings, mirrors };
+  return { helmet: [helmet, visor], rainMat: MAT.rain, exhaustMat: MAT.exhaust, mats: MAT, wings, mirrors, driver };
 }
 
 // a plain F1 rim of the time: a shallow dish with six slim spokes and a
