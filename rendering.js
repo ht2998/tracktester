@@ -59,7 +59,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 49;
+const BUILD = 50;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -1952,6 +1952,7 @@ const radiatorWorld = new THREE.Vector3();
 // them. The grille, headlights and tail lights move with the metal
 // around them. (Car's own space: x = left, z = forward.)
 const dents = [];
+const fireWorld = new THREE.Vector3();   // (where the flames are: the engine bay, or a burning brake)
 const _off = new THREE.Vector3();
 function dentOffset(x, y, z, out) {
   out.set(0, 0, 0);
@@ -1965,7 +1966,7 @@ function dentOffset(x, y, z, out) {
     out.z += d.dz * d.depth * f * wrinkle;
   }
   const l = out.length();
-  if (l > 0.32) out.multiplyScalar(0.32 / l);                                 // metal only goes so far
+  if (l > 0.95) out.multiplyScalar(0.95 / l);                                 // metal only goes so far (a big crash pushes the front right in)
   return out;
 }
 const bodyOriginals = new Map();
@@ -2279,12 +2280,18 @@ function updateSmoke(dt) {
   coolantMist.update(dt);
   steam.emitFrom('radiator', radiatorWorld, coolantBurst > 0 ? 1 : physics.steam, carVelocity, dt);
   steam.update(dt);
-  flames.emitFrom('fire', engineBayWorld, fire, carVelocity, dt);
-  flameCore.emitFrom('fire', engineBayWorld, fire, carVelocity, dt);
+  // (a brake fire burns at its wheel; any other at the engine)
+  if (physics.fireSpot != null) {
+    const i = WHEELS.findIndex(([x, , , f]) => physicsWheel(x, f) === physics.fireSpot);
+    fireWorld.set(WHEELS[i][0] * 0.9, WHEEL_RADIUS, WHEELS[i][2]);
+    carModel.car.localToWorld(fireWorld);
+  } else fireWorld.copy(engineBayWorld);
+  flames.emitFrom('fire', fireWorld, fire, carVelocity, dt);
+  flameCore.emitFrom('fire', fireWorld, fire, carVelocity, dt);
   flames.update(dt);
   flameCore.update(dt);
   if (fireLight) {
-    fireLight.position.copy(engineBayWorld);
+    fireLight.position.copy(fireWorld);
     fireLight.position.y += 0.5;
     fireLight.intensity = fire > 0 ? fire * (4 + 2 * Math.sin(clock.elapsedTime * 23) + 1.5 * Math.random()) : 0;
   }
@@ -2446,12 +2453,19 @@ function collide(now) {
       physics.crashHit({ zone, speed: hitSpeed, along, across });
       // Dent the body where it struck (on the bodywork, not the wheel
       // that may have touched first), pushed in the way the wall pushed
+      // (the harder the hit, the deeper and wider: and a big one crumples
+      // the car further back in steps, like a real crumple zone folding up)
       if (hitSpeed > 3) {
-        const depth = Math.min(0.22, (hitSpeed - 3) * 0.016);
-        const radius = 0.2 + Math.min(0.25, hitSpeed * 0.01);
-        if (zone === 'front') dentBody(Math.max(-0.28, Math.min(0.28, across)), 0.4, 1.5, nl, nf, depth, radius);
-        else if (zone === 'rear') dentBody(Math.max(-0.7, Math.min(0.7, across)), 0.52, -1.5, nl, nf, depth * 0.9, radius);
-        else dentBody(zone === 'left' ? 0.45 : -0.45, 0.42, Math.max(-1.3, Math.min(1.45, along)), nl, nf, depth * 0.7, radius);
+        const depth = Math.min(0.55, (hitSpeed - 3) * 0.018);
+        const radius = 0.2 + Math.min(0.55, hitSpeed * 0.014);
+        const NOSE = IS_F1 ? 2.35 : 1.5, TAIL = IS_F1 ? -1.9 : -1.5;
+        const folds = hitSpeed > 28 ? 3 : hitSpeed > 16 ? 2 : 1;
+        for (let k = 0; k < folds; k++) {
+          const f = 1 - k * 0.3, back = k * (IS_F1 ? 0.6 : 0.45);
+          if (zone === 'front') dentBody(Math.max(-0.28, Math.min(0.28, across)) * f, 0.4, NOSE - back, nl, nf, depth * f, radius);
+          else if (zone === 'rear') dentBody(Math.max(-0.7, Math.min(0.7, across)) * f, 0.52, TAIL + back, nl, nf, depth * 0.9 * f, radius);
+          else if (k === 0) dentBody(zone === 'left' ? 0.45 : -0.45, 0.42, Math.max(-1.3, Math.min(1.45, along)), nl, nf, depth * 0.7, radius);
+        }
       }
     }
     // A proper hit: the barrier reacts (dents, squashes, cracks)
@@ -3496,6 +3510,7 @@ const pits = sepang ? (() => {
       len: { nose: Math.min(2.6, b.max.z), tail: Math.min(2.4, -b.min.z) },
       mats: { tyre: MAT.tyre, rim: carModel.rims.material },
       enginePoint: [ENGINE_BAY.x, ENGINE_BAY.y, ENGINE_BAY.z],
+      firePoint: () => { if (physics.fireSpot == null) return [ENGINE_BAY.x, ENGINE_BAY.y, ENGINE_BAY.z]; const i = WHEELS.findIndex(([x, , , f]) => physicsWheel(x, f) === physics.fireSpot); return [WHEELS[i][0] * 1.1, WHEEL_RADIUS, WHEELS[i][2]]; },
       fillerPoint: IS_F1 ? [0, 0.8, -0.4] : [-0.45, 0.72, -1.25],
       tyreChoices: () => Object.entries(TYRES).filter(([, t]) => (IS_F1 ? ['slick', 'wet'] : ['road', 'slick', 'wet']).includes(t.kind)).map(([id, t]) => [id, t.name]),
       fitTyre: (pi, id) => {
