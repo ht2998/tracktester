@@ -24,7 +24,7 @@
 // a smashed radiator): the team retire the car. DNF on the standings, and
 // they push it back into the garage.
 // =====================================================================
-export const BUILD = 2;
+export const BUILD = 3;
 
 import * as THREE from 'three';
 
@@ -631,7 +631,7 @@ export class PitStop {
     const Wc = (lx, lz) => this.W(lx, lz, this.carPose);
     // --- on fire: the nearest man jumps back, runs for the extinguisher ---
     if (!F.fireOut) {
-      const p = this.spare1, eng = H.enginePoint;
+      const p = this.spare1, eng = H.firePoint?.() || H.enginePoint;
       p.run([
         { pose: 'SHOCK' }, { go: [p.x + 1.4, p.z + 0.4], back: true }, { wait: 0.35 }, { pose: 'STAND' },
         { go: this.garage(0.4, -2.2), run: true }, { fn: () => { p.hold(this.extinguisher, 'hand'); this.extinguisher.position.set(0, -0.02, 0); this.extinguisher.rotation.set(Math.PI, 0, 0); } },
@@ -862,7 +862,7 @@ export class PitStop {
     }
     // the fire going out under the powder
     if (this.spraying) {
-      const H = this.hooks, eng = H.enginePoint;
+      const H = this.hooks, eng = H.firePoint?.() || H.enginePoint;
       const to = this.W3(eng[0], eng[1], eng[2], this.carPose);
       const from = new THREE.Vector3(); this.extinguisher.getWorldPosition(from); from.y += 0.5;
       this.spray(from, to, dt);
