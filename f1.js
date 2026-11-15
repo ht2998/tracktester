@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 13;
+export const BUILD = 14;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -283,11 +283,16 @@ export function buildF1Body(car, addPanel) {
   const visor = add(new THREE.SphereGeometry(0.137, 20, 10, -0.9 + Math.PI / 2, 1.8, 1.1, 0.5).scale(1, 1.05, 1.1).translate(0, 0.64, 0.08), MAT.visor);
   // (a blue and yellow helmet stripe)
   add(new THREE.TorusGeometry(0.135, 0.012, 6, 24, Math.PI).rotateY(Math.PI / 2).rotateZ(Math.PI / 2).scale(1, 1.05, 1.1).translate(0, 0.64, 0.08), MAT.yellow);
-  // mirrors: squared-off pods on stalks at the cockpit sides
+  // mirrors: squared-off pods on stalks at the cockpit sides (each pod
+  // can be knocked off, leaving its stalk; the pit crew fit a new one)
+  const mirrors = {};
   for (const s of [1, -1]) {
-    add(rod([s * 0.31, 0.5, 0.55], [s * 0.42, 0.6, 0.56], 0.01), MAT.carbon);
-    add(box(0.12, 0.07, 0.05, s * 0.45, 0.62, 0.56), MAT.blue);
-    add(new THREE.PlaneGeometry(0.105, 0.058).rotateY(Math.PI).translate(s * 0.45, 0.62, 0.534), MAT.visor);
+    const stalk = add(rod([s * 0.31, 0.5, 0.55], [s * 0.42, 0.6, 0.56], 0.01), MAT.carbon);
+    const pod = new THREE.Group();
+    car.add(pod);
+    pod.add(add(box(0.12, 0.07, 0.05, s * 0.45, 0.62, 0.56), MAT.blue));   // (add puts it on the car; the pod takes it from there)
+    pod.add(add(new THREE.PlaneGeometry(0.105, 0.058).rotateY(Math.PI).translate(s * 0.45, 0.62, 0.534), MAT.visor));
+    mirrors[s > 0 ? 'l' : 'r'] = { stalk, pod, at: [s * 0.45, 0.62, 0.56] };
   }
 
   // --- sidepods: long flat slabs with flat tops and square edges, big
@@ -351,7 +356,7 @@ export function buildF1Body(car, addPanel) {
   add(box(0.7, 0.02, 0.15, 0, 0.42, -1.95, 0.15), MAT.carbon);                // the beam wing (stays)
   addTo(wings.rear, box(0.04, 0.4, 0.06, 0, 0.6, -1.95), MAT.carbon);         // its pillar
 
-  return { helmet: [helmet, visor], rainMat: MAT.rain, exhaustMat: MAT.exhaust, mats: MAT, wings };
+  return { helmet: [helmet, visor], rainMat: MAT.rain, exhaustMat: MAT.exhaust, mats: MAT, wings, mirrors };
 }
 
 // a plain F1 rim of the time: a shallow dish with six slim spokes and a
