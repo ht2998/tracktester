@@ -21,11 +21,24 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 65;
+export const BUILD = 67;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 57, date: '15 Nov 2026', title: 'Pit stops',
+    items: [
+      ['The pit lane', 'At Sepang, turn into the pit lane after the last corner. Past the line the limiter holds you to 60 km/h; cross it faster and it\'s a 5 second penalty, served standing still at your box', 'new'],
+      ['Choose your stop', 'A menu comes up on the way in: which tyres to fit, fill up or not, which damage to repair (with how long each takes), or drive straight through. Near your box the team take over and guide you onto your marks', 'new'],
+      ['The crew', 'Jack men lift the front and back. At each wheel the gun man spins the nut off, one man pulls the old wheel away, another pushes the new one on, the nut goes back on and his hand goes up. The refueller tops you up from the churn. The lollipop goes up when it\'s all done: go', 'new'],
+      ['Repairs', 'A knocked-off mirror is ripped off and a new one bolted on (mirrors can now be knocked off the TT-88). A broken wing is unbolted and put down while a new one is held in place and bolted on. Bent suspension is fixed with the wheel off. A holed radiator is patched and topped up', 'new'],
+      ['Fire!', 'Come in burning and the nearest man jumps back, runs into the garage for the extinguisher and puts it out before anyone touches the car', 'new'],
+      ['Retired', 'A blown engine, a torn-off wheel, a split tank or a smashed radiator is too much: the team retire the car (DNF on the race standings) and push it back into the garage. Reset to start again', 'new'],
+      ['Pit sounds', 'The wheel guns, the click of the jacks, the extinguisher\'s smooth roar and the glug of fuel from the churn', 'new'],
+      ['Computer TT-88s', 'In the TT-88, the computer drivers drive TT-88s too, in their own colours, and no longer spin off: they feel for the grip in the fast corners', 'new'],
+    ],
+  },
   {
     id: 56, date: '14 Nov 2026', title: 'The Garage, and a V12',
     items: [
