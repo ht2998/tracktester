@@ -21,11 +21,18 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 67;
+export const BUILD = 68;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 58, date: '15 Nov 2026', title: 'A flat-plane V8',
+    items: [
+      ['2.4 V8 flat-plane', 'A new engine in the engine swap: a 2006 F1-style V8 revving to 19,000 rpm, with the V10\'s voice made for it: just the crank\'s two octaves. Seven gears, each change up landing a little higher', 'new'],
+      ['Less echo in the engines', 'The V8, V10 and V12 voices have half the echo built into their sound. The echo off walls and buildings is the same', 'update'],
+    ],
+  },
   {
     id: 57, date: '15 Nov 2026', title: 'Pit stops',
     items: [
