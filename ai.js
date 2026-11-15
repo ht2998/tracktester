@@ -23,7 +23,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 5;
+export const BUILD = 6;
 
 import * as THREE from 'three';
 import { CarPhysics, CATERHAM } from './physics.js';
@@ -505,7 +505,9 @@ export class AIField {
     const far = this.isMobile ? SKY.farMobile : SKY.far;
     const byDist = this.cars.map((c) => ({ c, d: Math.hypot(c.physics.x - camera.position.x, c.physics.z - camera.position.z) })).sort((a, b) => a.d - b.d);
     byDist.forEach(({ c, d }, k) => {
-      const want = (d < far && k < maxFull) || holding;
+      // (a little give either side of the line, so a car right on it doesn't
+      // flip between the two every frame and get stuck there)
+      const want = (d < (c.full ? far + 25 : far) && k < maxFull) || holding;
       if (want && !c.full) {
         // coming close: a real car again, where the line-follower had it
         this.placeOnLine(c, c.near, c.lateral, c.speed);
