@@ -21,11 +21,20 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 68;
+export const BUILD = 69;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 59, date: '15 Nov 2026', title: 'Pause on phones, and a proper cockpit',
+    items: [
+      ['Game paused', 'On a phone, opening the menu or the side panel now pauses the game: the screen dims and everything stops exactly where it is (your speed, your slide, the lot) until you tap Continue. Picking something from the menu carries on by itself. Switching away from the game pauses it too', 'new'],
+      ['Phone menu', 'Back on track is at the top of the menu now, and on a short screen the menu sits in two columns (and scrolls if it still doesn\'t fit)', 'fix'],
+      ['Computer cars', 'Fixed a computer car sometimes getting stuck dead still on the track, a long way from you, and being put back again and again', 'fix'],
+      ['TT-88 cockpit', 'The cockpit is open now: you sit down inside the tub on a moulded seat, with your legs running forward under the nose, a padded rim round the opening and the inside in black. The computer drivers\' cars have their drivers sitting in them too', 'update'],
+    ],
+  },
   {
     id: 58, date: '15 Nov 2026', title: 'A flat-plane V8',
     items: [
