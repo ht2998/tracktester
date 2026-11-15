@@ -59,7 +59,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 50;
+const BUILD = 51;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -2596,8 +2596,21 @@ const CAMERA_FOV = { chase: 50, close: 58, bonnet: 66, turret: 80, cockpit: 70, 
 // =====================================================================
 const GUN = { rounds: 34, reload: 0, RELOAD: 6.5, SPEED: 700 };
 const shells = [];
-const tracerGeo = new THREE.BoxGeometry(0.05, 0.05, 1.6);
-const tracerMat = new THREE.MeshBasicMaterial({ color: 0xffb35a });
+// TRACERS: every round burns as it flies, a white-hot core in a soft
+// orange glow, so you can follow where your shots go (day or night)
+const TRACER = {
+  core: new THREE.MeshBasicMaterial({ color: 0xfff0d0, toneMapped: false }),
+  glow: new THREE.MeshBasicMaterial({ color: 0xff7a24, transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
+  geo: {},
+};
+function makeTracer(len, core, glow) {
+  const key = `${len},${core},${glow}`;
+  const G = TRACER.geo[key] || (TRACER.geo[key] = { c: new THREE.BoxGeometry(core, core, len), g: new THREE.BoxGeometry(glow, glow, len * 1.15) });
+  const t = new THREE.Group();
+  t.add(new THREE.Mesh(G.c, TRACER.core), new THREE.Mesh(G.g, TRACER.glow));
+  t.children[1].renderOrder = 2;
+  return t;
+}
 const blastLight = new THREE.PointLight(0xffa64d, 0, 60, 2);
 scene.add(blastLight);
 const muzzleLight = new THREE.PointLight(0xffc27a, 0, 30, 2);
@@ -2632,7 +2645,7 @@ function fireGun() {
   GUN.reload = GUN.RELOAD;
   tank.muzzle(muzzlePos, muzzleDir);
   // the shell (with the tank's own speed added), and its tracer
-  const tracer = new THREE.Mesh(tracerGeo, tracerMat);
+  const tracer = makeTracer(3, 0.06, 0.26);   // (the big gun's: a long, fat streak)
   scene.add(tracer);
   shells.push({ p: muzzlePos.clone(), v: muzzleDir.clone().multiplyScalar(GUN.SPEED).add(carVelocity), t: 0, tracer });
   // the gun and hull kick back
@@ -2680,8 +2693,10 @@ function fireCoax() {
   coaxMuzzleDir.y += (Math.random() - 0.5) * 0.004;
   coaxMuzzleDir.z += (Math.random() - 0.5) * 0.004;
   coaxMuzzleDir.normalize();
-  let tracer = null;
-  if (COAX.n++ % 4 === 0) { tracer = new THREE.Mesh(bulletGeo, bulletMat); scene.add(tracer); }
+  // (every round a tracer now)
+  COAX.n++;
+  const tracer = makeTracer(2.2, 0.025, 0.12);
+  scene.add(tracer);
   bullets.push({ p: coaxMuzzlePos.clone(), v: coaxMuzzleDir.clone().multiplyScalar(COAX.SPEED).add(carVelocity), t: 0, tracer });
   muzzleLight.position.copy(coaxMuzzlePos);
   muzzleLight.intensity = Math.max(muzzleLight.intensity, 6);
@@ -2871,8 +2886,17 @@ sightBox.innerHTML = '<svg viewBox="0 0 160 90" style="position:absolute;inset:0
   + [1, 2, 3, 4].map((k) => `<line x1="${80 - k * 2}" y1="${49 + k * 6}" x2="${80 + k * 2}" y2="${49 + k * 6}"/>`).join('')
   + '</g><text x="4" y="86" font-size="5" fill="#ffb347" font-family="sans-serif">×8</text></svg>';
 document.body.appendChild(sightBox);
+// (the gunner's eyepiece: the sight's markings over the whole screen, with
+// the dark edge of the eyepiece round it, while he's at his sight)
+const eyepiece = document.createElement('div');
+eyepiece.style.cssText = 'position:fixed;inset:0;pointer-events:none;display:none;z-index:15;background:radial-gradient(circle at 50% 50%, transparent 0, transparent 40vmin, rgba(0,0,0,0.94) 47vmin)';
+eyepiece.innerHTML = sightBox.innerHTML.replace('style="position:absolute;inset:0;width:100%;height:100%"', 'preserveAspectRatio="xMidYMid meet" style="position:absolute;left:50%;top:50%;width:92vmin;height:52vmin;transform:translate(-50%,-50%)"');
+document.body.appendChild(eyepiece);
 function renderSightInset() {
-  const show = tankMode && cameraMode === 'turret';
+  const atSight = tankMode && cameraMode === 'turret' ? 1 - tank.gunnerLook : 0;
+  eyepiece.style.display = atSight > 0.05 ? 'block' : 'none';
+  eyepiece.style.opacity = Math.min(1, atSight * 1.4).toFixed(2);
+  const show = false;   // (the little picture-in-picture: not needed now the view itself is the sight)
   sightBox.style.display = show ? 'block' : 'none';
   if (!show) return;
   const r = sightBox.getBoundingClientRect();
@@ -3013,9 +3037,11 @@ function updateCamera(dt) {
     carModel.car.updateMatrixWorld();
     const mount = ON_CAR[cameraMode];
     if (tankMode && cameraMode === 'turret') {
-      // inside the turret, behind the gunner and the commander (turns with the turret)
-      tank.crewView(camera.position, camera.quaternion);
-      camera.quaternion.multiply(lookTurn.setFromEuler(lookEuler.set(look.pitch, look.yaw, 0)));
+      // the gunner's own eyes: at his sight while he aims (its narrow
+      // magnified view), turned to watch the commander while he reloads
+      const k = tank.gunnerView(camera.position, camera.quaternion, dt);
+      const fov = 9 + (62 - 9) * k;
+      if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
     } else if (tankMode && cameraMode === 'cockpit') {
       // the tank's driver, in his compartment (see DRIVER'S SEAT), able to look round
       tank.driverView(camera.position, camera.quaternion);
@@ -3512,7 +3538,7 @@ const pits = sepang ? (() => {
       enginePoint: [ENGINE_BAY.x, ENGINE_BAY.y, ENGINE_BAY.z],
       firePoint: () => { if (physics.fireSpot == null) return [ENGINE_BAY.x, ENGINE_BAY.y, ENGINE_BAY.z]; const i = WHEELS.findIndex(([x, , , f]) => physicsWheel(x, f) === physics.fireSpot); return [WHEELS[i][0] * 1.1, WHEEL_RADIUS, WHEELS[i][2]]; },
       fillerPoint: IS_F1 ? [0, 0.8, -0.4] : [-0.45, 0.72, -1.25],
-      tyreChoices: () => Object.entries(TYRES).filter(([, t]) => (IS_F1 ? ['slick', 'wet'] : ['road', 'slick', 'wet']).includes(t.kind)).map(([id, t]) => [id, t.name]),
+      tyreChoices: () => Object.entries(TYRES).filter(([, t]) => (IS_F1 ? ['slick', 'wet'] : ['road', 'slick', 'wet']).includes(t.kind)).map(([id, t]) => [id, t.name, t.kind]),
       fitTyre: (pi, id) => {
         if (id && id !== physics.tyreCompound) { physics.tyreCompound = id; tyreLooks.apply(id); }
         physics.tyres[pi] = { wear: 0, pressure: 1, leak: 0, blown: false, shred: 0, rim: false, heat: 0, rimWear: 0, detached: false, temp: AMBIENT_TEMP };
