@@ -18,7 +18,7 @@ import { groundAt } from './ground.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 12;
+export const BUILD = 13;
 
 // Where the driver's eye would be if you look out of the commander's hatch
 const SIGHT_TURN = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
@@ -999,6 +999,9 @@ export function buildScorpion() {
   // the loading drill, timed from the shot (seconds)
   const DRILL = { open: 0.75, ejectEnd: 1.3, reach: [1.4, 2.2], lift: [2.2, 3.3], ram: [3.3, 4.0], close: 4.05, back: [4.2, 5.0] };
   const drill = { t: 99, loaded: true, rounds: 34, slot: -1, cases: 0 };   // slot: which rack round this reload uses
+  let gLook = 0;                              // (the gunner's head: 0 at his sight, 1 turned to the commander)
+  const gvA = new THREE.Vector3(), gvB = new THREE.Vector3(), gvC = new THREE.Vector3(), gvUp = new THREE.Vector3();
+  const gqA = new THREE.Quaternion(), gqB = new THREE.Quaternion(), gqC = new THREE.Quaternion(), gm = new THREE.Matrix4();
   const ease = (x) => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
   const phase = (t, [a, b]) => ease((t - a) / (b - a));
   const POLES = { cr: new THREE.Vector3(-0.3, -1, 0.2), cl: new THREE.Vector3(0.4, -1, 0.2), gr: new THREE.Vector3(-0.5, -1, 0), gl: new THREE.Vector3(0.5, -1, 0) };
@@ -1164,6 +1167,29 @@ export function buildScorpion() {
       drill.rounds = roundsLeft;
       drill.slot = roundsLeft > 0 ? Math.min(4, roundsLeft) - 1 : -1;
     },
+    // THE GUNNER'S EYES (the crew view): pressed to his sight while he
+    // aims. When the gun goes off he turns his head to watch the commander
+    // load, and the moment the breech block slams shut he's straight back
+    // at the sight. Writes a camera's position and turn; returns how far
+    // round he's looking (0 = through the sight, 1 = at the commander).
+    gunnerView(posOut, quatOut, dt) {
+      group.updateMatrixWorld();
+      const want = !drill.loaded && drill.slot >= 0 && drill.t > 0.3 ? 1 : 0;
+      // (he turns to look in about half a second, and snaps back faster)
+      gLook += (want - gLook) * Math.min(1, dt * (want > gLook ? 4.5 : 11));
+      if (!want && gLook < 0.01) gLook = 0;
+      const k = gLook * gLook * (3 - 2 * gLook);
+      this.sight(gvA, gqA);                                         // at the eyepiece
+      gunner.head.getWorldPosition(gvB);                            // his eyes, sat back from it
+      crew.localToWorld(gvC.set(0.2, 1.32, tz - 0.62));             // between the breech and the commander
+      gm.lookAt(gvB, gvC, gvUp.set(0, 1, 0).applyQuaternion(turret.getWorldQuaternion(gqC)));
+      gqB.setFromRotationMatrix(gm);
+      posOut.lerpVectors(gvA, gvB, k);
+      quatOut.slerpQuaternions(gqA, gqB, k);
+      this.gunnerLook = k;
+      return k;
+    },
+    gunnerLook: 0,
     // The view from behind the gunner and commander in the turret (turns
     // with the turret). Writes a camera's position and turn.
     crewView(posOut, quatOut) {
@@ -1176,6 +1202,7 @@ export function buildScorpion() {
     // men; traverse / elevate: how hard the gunner is turning his handles (-1..1)
     setCrew(on, dt = 0, traverse = 0, elevate = 0) {
       crew.visible = gunInside.visible = on;
+      gunner.head.visible = !on;          // (it's his eyes you're looking out of)
       crewIn = on;
       lowerHullMesh.visible = !(driverIn || crewIn);
       crewLamp.intensity = on ? 1.6 : 0;
