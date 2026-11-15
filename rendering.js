@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { readControls, wasTapped } from './input.js';
-import { CarPhysics, CATERHAM, TRANSMISSIONS, TYRES } from './physics.js';
+import { CarPhysics, CATERHAM, TRANSMISSIONS, TYRES, AMBIENT_TEMP } from './physics.js';
 import { EngineSound } from './sound.js';
 import { TyreSmoke } from './smoke.js';
 import { Hud } from './hud.js';
@@ -35,6 +35,7 @@ import { buildScorpion, TANK_EYE, TankPhysics } from './tank.js';
 import * as tankFile from './tank.js';
 import { AIField, BUILD as AI_BUILD } from './ai.js';
 import { Garage, BUILD as GARAGE_BUILD } from './garage.js';
+import { PitStop, BUILD as PITS_BUILD } from './pits.js';
 import { buildF1Body, buildF1Cockpit, buildF1RimGeometry, F1_CAR, CATERHAM_CAR, ENGINES, withEngine, STOCK_ENGINE, BUILD as F1_BUILD } from './f1.js';
 import * as groundFile from './ground.js';
 import * as tyresFile from './tyres.js';
@@ -58,7 +59,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 47;
+const BUILD = 48;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -67,7 +68,7 @@ const updateScreen = startUpdates({
   'smoke.js': smokeFile.BUILD, 'hud.js': hudFile.BUILD, 'oil.js': oilFile.BUILD,
   'skids.js': skidsFile.BUILD, 'scenery.js': sceneryFile.BUILD, 'grass.js': grassFile.BUILD,
   'sky.js': skyFile.BUILD, 'debris.js': debrisFile.BUILD, 'touch.js': touchFile.BUILD,
-  'rain.js': rainFile.BUILD, 'effects.js': effectsFile.BUILD, 'cockpit.js': cockpitFile.BUILD, 'tyres.js': tyresFile.BUILD, 'sepang.js': sepangFile.BUILD, 'flora.js': floraFile.BUILD, 'racingline.js': racingLineFile.BUILD, 'ground.js': groundFile.BUILD, 'tank.js': tankFile.BUILD, 'ai.js': AI_BUILD, 'f1.js': F1_BUILD, 'garage.js': GARAGE_BUILD,
+  'rain.js': rainFile.BUILD, 'effects.js': effectsFile.BUILD, 'cockpit.js': cockpitFile.BUILD, 'tyres.js': tyresFile.BUILD, 'sepang.js': sepangFile.BUILD, 'flora.js': floraFile.BUILD, 'racingline.js': racingLineFile.BUILD, 'ground.js': groundFile.BUILD, 'tank.js': tankFile.BUILD, 'ai.js': AI_BUILD, 'f1.js': F1_BUILD, 'garage.js': GARAGE_BUILD, 'pits.js': PITS_BUILD,
 });
 
 // ---------------------------------------------------------------------
@@ -294,7 +295,7 @@ let racingLineOn = true;
 try { racingLineOn = localStorage.getItem('tracktester-racingline') !== 'off'; } catch (e) { /* storage blocked */ }
 racing?.setVisible(racingLineOn);
 // Lap and sector timing, and the track map in the corner
-const lapTimer = racing ? new LapTimer(racing, { onTrack: (x, z) => { const s = sepang.surfaceAt(x, z); return s === 'tarmac' || s === 'kerb'; } }) : null;
+const lapTimer = racing ? new LapTimer(racing, { onTrack: (x, z) => { const s = sepang.surfaceAt(x, z); return s === 'tarmac' || s === 'kerb' || !!pits?.inLane(x, z); } }) : null;   // (the pit lane counts as track)
 const trackMap = racing ? new TrackMap(racing, lapTimer.cuts) : null;
 // Lay the circuit, its barriers, buildings and the racing line onto the hills
 if (sepang) liftOntoGround([...scene.children].filter((o) => !beforeTrack.has(o)));
@@ -1393,6 +1394,15 @@ function updateWheels(steer, spin) {
     // strips flap. Once it's all gone, only the rim is left.
     const shrink = tyre.rim ? 0 : tyre.blown
       ? (1 - 0.25 * tyre.shred) * (1 + (Math.random() - 0.5) * 0.06) : 1;
+    // Off in a pit stop: the hub, disc and caliper stay; the wheel's in a mechanic's hands
+    if (pits?.wheelGone[physicsWheel(x, isFront)] && !tyre.detached) {
+      carModel.tyres.setMatrixAt(i, HIDDEN);
+      tyreLooks.setMatrixAt(i, HIDDEN);
+      carModel.rims.setMatrixAt(i, HIDDEN);
+      carModel.spokes.setMatrixAt(i * 2, HIDDEN);
+      carModel.spokes.setMatrixAt(i * 2 + 1, HIDDEN);
+      return;
+    }
     // Gone: the wheel has come off (it's rolling away on its own; see looseWheels)
     if (tyre.detached) {
       carModel.discs[i].visible = false;
@@ -3233,7 +3243,43 @@ function clearFlyingParts() {
   const F = carModel.car.userData.f1;
   for (const p of flyingParts) scene.remove(p.obj);
   flyingParts.length = 0;
-  if (F?.wings) for (const [k, g] of Object.entries(F.wings)) { if (g.parent !== carModel.car) { carModel.car.add(g); g.position.set(0, 0, 0); g.quaternion.identity(); } }
+  if (F?.wings) for (const [k, g] of Object.entries(F.wings)) { if (g.parent !== carModel.car) { carModel.car.add(g); g.position.set(0, 0, 0); g.quaternion.identity(); } g.visible = true; }
+  if (F?.mirrors) for (const s of ['l', 'r']) fitMirror(s);
+}
+// A mirror knocked off: the pod flies off, the bare stalk stays
+function snapMirror(side) {
+  const m = carModel.car.userData.f1?.mirrors?.[side];
+  if (!m || m.off) return;
+  m.off = true;
+  carModel.car.updateMatrixWorld();
+  scene.attach(m.pod);
+  const v = new THREE.Vector3().copy(carVelocity).multiplyScalar(0.6).add(new THREE.Vector3((Math.random() - 0.5) * 3, 2 + Math.random() * 2, (Math.random() - 0.5) * 3));
+  flyingParts.push({ obj: m.pod, v, w: new THREE.Vector3((Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20), rest: false });
+  engineSound.playClunk?.();
+}
+function fitMirror(side) {
+  const m = carModel.car.userData.f1?.mirrors?.[side];
+  if (!m) return;
+  const k = flyingParts.findIndex((p) => p.obj === m.pod);
+  if (k >= 0) flyingParts.splice(k, 1);
+  carModel.car.add(m.pod);
+  m.pod.position.set(0, 0, 0); m.pod.quaternion.identity(); m.pod.visible = true;
+  m.stalk.visible = true;
+  m.off = false;
+}
+// A new wing from the pit crew
+function fitWing(part) {
+  const F = carModel.car.userData.f1;
+  if (!F?.wings) return;
+  for (const k of part === 'front' ? ['fl', 'fr'] : ['rear']) {
+    const g = F.wings[k];
+    const i = flyingParts.findIndex((p) => p.obj === g);
+    if (i >= 0) flyingParts.splice(i, 1);
+    carModel.car.add(g);
+    g.position.set(0, 0, 0); g.quaternion.identity(); g.visible = true;
+    physics.wingDamage[k] = 0;
+  }
+  if (part === 'front') physics.aeroLoss.front = 0; else physics.aeroLoss.rear = 0;
 }
 
 // SCRATCH MARKS ON ANY BODY (the TT-88's, and anywhere on the Caterham the
@@ -3296,6 +3342,7 @@ let backToTrack = false;
 window.addEventListener('keydown', (e) => { if (e.code === 'KeyB' && !(e.target && e.target.tagName === 'INPUT')) backToTrack = true; });
 function returnToTrack() {
   let x, z, h;
+  if (pits?.holding) pits.reset();
   if (racing) {
     const pts = racing.pts;
     let best = 0, bd = Infinity;
@@ -3352,6 +3399,8 @@ function returnToTrack() {
 // Their settings are in the side panel.
 const aiField = racing ? new AIField(scene, {
   racing, track: sepang.line, start: sepang.start, colliders: COLLIDERS, isMobile, sound: engineSound,
+  // (they drive what you drive: TT-88s when you're in the TT-88, with its stock engine)
+  spec: IS_F1 ? withEngine(F1_CAR, STOCK_ENGINE.f1) : null,
   hooks: {
     surfaceGrip: (x, z) => physics.surfaceGrip(x, z), surfaceDrag: (x, z) => physics.surfaceDrag(x, z),
     groundHeight: groundAt, roadHeight: (x, z) => physics.roadHeight(x, z), wearScale: () => physics.wearScale(),
@@ -3381,6 +3430,48 @@ const garage = new Garage({
   },
 });
 let garageOnStart = 0;
+
+// PIT STOPS (pits.js): the pit lane at Sepang, the crew at your box
+const pits = sepang ? (() => {
+  // the car's length (nose and tail from its middle), measured standing still
+  const c = carModel.car, keepP = c.position.clone(), keepQ = c.quaternion.clone();
+  c.position.set(0, 0, 0); c.quaternion.identity(); c.updateMatrixWorld(true);
+  const b = new THREE.Box3().setFromObject(c);
+  c.position.copy(keepP); c.quaternion.copy(keepQ);
+  const wheels = [0, 1, 2, 3].map((pi) => {
+    const i = WHEELS.findIndex(([x, , , f]) => physicsWheel(x, f) === pi);
+    const [x, , z] = WHEELS[i];
+    return { x, z, r: WHEEL_RADIUS, w: WHEEL_WIDTH * WHEEL_WIDTHS[i] };
+  });
+  return new PitStop(scene, {
+    physics, groundAt, sound: engineSound, isMobile,
+    hooks: {
+      car: carModel.car, wheels, f1: carModel.car.userData.f1 || null,
+      len: { nose: Math.min(2.6, b.max.z), tail: Math.min(2.4, -b.min.z) },
+      mats: { tyre: MAT.tyre, rim: carModel.rims.material },
+      enginePoint: [ENGINE_BAY.x, ENGINE_BAY.y, ENGINE_BAY.z],
+      fillerPoint: IS_F1 ? [0, 0.8, -0.4] : [-0.45, 0.72, -1.25],
+      tyreChoices: () => Object.entries(TYRES).filter(([, t]) => (IS_F1 ? ['slick', 'wet'] : ['road', 'slick', 'wet']).includes(t.kind)).map(([id, t]) => [id, t.name]),
+      fitTyre: (pi, id) => {
+        if (id && id !== physics.tyreCompound) { physics.tyreCompound = id; tyreLooks.apply(id); }
+        physics.tyres[pi] = { wear: 0, pressure: 1, leak: 0, blown: false, shred: 0, rim: false, heat: 0, rimWear: 0, detached: false, temp: AMBIENT_TEMP };
+        physics.tyreSink[pi] = 0;
+      },
+      repairSusp: (pi) => { physics.suspDamage[pi] = 0; physics.wheelBend[pi] = 0; },
+      repairRadiator: () => { physics.radiator = 1; physics.coolant = 1; physics.dryTime = 0; physics.coolantTemp = Math.min(physics.coolantTemp, 0.5); },
+      repairWing: (part) => fitWing(part),
+      repairMirror: (side) => fitMirror(side),
+      extinguish: () => { physics.onFire = false; physics.fireLevel = 0; physics.fireTime = 0; },
+      invalidLap: () => { if (lapTimer) lapTimer.valid = false; },
+      retire: () => {
+        if (lapTimer) lapTimer.valid = false;
+        if (aiField?.player) aiField.player.dnf = true;
+        showToast('DNF: THE TEAM HAVE RETIRED THE CAR');
+      },
+      toast: (t) => showToast(t),
+    },
+  });
+})() : null;
 try { if (localStorage.getItem('tracktester-garage') === '1') { localStorage.removeItem('tracktester-garage'); garageOnStart = 1; } } catch (e) { /* storage blocked */ }
 function openGarage(opts) {
   if (garage.isOpen) return;
@@ -3418,6 +3509,7 @@ renderer.setAnimationLoop(() => {
   if (wasTapped('reset')) {
     repairAll();
     placeAtStart();
+    pits?.reset();
     if (tankMode) tankPhys.place(physics.x, physics.z, physics.heading);   // (the tank goes back too)
   }
   if (backToTrack) { backToTrack = false; returnToTrack(); }
@@ -3456,11 +3548,13 @@ renderer.setAnimationLoop(() => {
   const input = readControls();
   // (on the race grid: held on the brakes until the lights go out)
   if (aiField?.holdPlayer) { input.throttle = 0; input.brake = 1; }
+  // the pit lane: the limiter, the team guiding you in, the car held on its marks
+  const pitHold = pits && !tankMode ? pits.control(input, dt) : false;
   // Fast cars move in smaller steps, so they can't skip through a thin
   // barrier between one frame and the next
   const stepSpeed = Math.hypot(physics.vx, physics.vy);
   const steps = Math.min(6, Math.max(1, Math.ceil(stepSpeed * dt / 0.3)));
-  for (let k = 0; k < steps; k++) {
+  for (let k = 0; k < (pitHold ? 0 : steps); k++) {
     if (tankMode) {
       // the tank drives itself (tank.js); the rest of the game reads it
       // through the car's physics, and walls push it through that too
@@ -3473,7 +3567,8 @@ renderer.setAnimationLoop(() => {
       collide(clock.elapsedTime);
     }
   }
-  aiField?.update(dt, { player: physics, camera, playerMass: tankMode ? 8720 : 560, wetness: rain.wetness });
+  aiField?.update(dt, { player: physics, camera, playerMass: tankMode ? 8720 : physics.spec.mass, wetness: rain.wetness });
+  pits?.update(dt, camera);
   engineSound.setHorn(input.horn);
   // Brake lights: bright while braking, dim red with the lights on
   carModel.tailLens.emissiveIntensity = input.brake > 0.05 ? 2.2 : lightsMode ? 0.6 : 0;
@@ -3498,6 +3593,8 @@ renderer.setAnimationLoop(() => {
     }
     if (e.type === 'wheelOff') wheelOffPending.push({ i: e.wheel, torn: !!e.torn });
     if (e.type === 'wingOff') snapWing(e.part);
+    // a knock on the side can take a mirror off (the TT-88's)
+    if (e.type === 'crash' && IS_F1 && (e.zone === 'left' || e.zone === 'right') && e.speed > 4 && Math.random() < Math.min(0.8, (e.speed - 3) * 0.12)) snapMirror(e.zone === 'left' ? 'l' : 'r');
     if (e.type === 'coolantBurst') coolantBurst = Math.max(coolantBurst, 0.7 * e.strength);
     // landing hard on the bodywork (a rollover, a bad landing): a dent where it struck
     if (e.type === 'bodyHit' && e.speed > 4.5) {
@@ -3533,6 +3630,11 @@ renderer.setAnimationLoop(() => {
   } else {
     carModel.car.position.set(physics.x, GRD.y + bodyLean.heave, physics.z);
     carModel.car.rotation.set(bodyLean.pitch + slopeView.pitch, physics.heading, bodyLean.roll + slopeView.roll, 'YXZ');
+    // up on the pit crew's jacks
+    if (pits && (pits.lift.f > 0.001 || pits.lift.r > 0.001)) {
+      carModel.car.position.y += (pits.lift.f + pits.lift.r) / 2;
+      carModel.car.rotation.x -= (pits.lift.f - pits.lift.r) / (FRONT_AXLE - REAR_AXLE);
+    }
   }
   updateWheels(physics.steer, physics.wheelSpin);
   if (IS_F1) {
