@@ -59,7 +59,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 48;
+const BUILD = 49;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -1096,6 +1096,8 @@ if (IS_F1) cockpit.group.visible = false;   // (the TT-88 has its own cockpit:)
 // THE TT-88's COCKPIT (f1.js): the wheel, the lever on the right, the
 // driver's arms fighting the car, his head thrown about
 const f1Cockpit = IS_F1 ? buildF1Cockpit(carModel.car) : null;
+// (your TT-88's driver moves with the cockpit's own body and arms: the body's still one is for other cars)
+if (f1Cockpit && carModel.car.userData.f1?.driver) carModel.car.userData.f1.driver.visible = false;
 
 // SECRET: type F V 1 0 1 on the keyboard to swap the car for an FV101
 // Scorpion-inspired light tank (tank.js), and again to swap back.
@@ -3370,29 +3372,73 @@ function returnToTrack() {
     b.textContent = 'Back on track';
     b.addEventListener('pointerdown', (e) => { e.preventDefault(); backToTrack = true; });
     b.addEventListener('pointerup', () => { sheet.classList.remove('open'); });
-    sheet.appendChild(b);
+    sheet.prepend(b);   // (at the top, where you can reach it)
   }
 }
-// MENUS ON PHONES: the side panel and the phone menu sit in front of
-// everything, and what's behind them is hidden while they're open
+// MENUS ON PHONES: open the side panel or the phone menu and the game
+// pauses. Everything stops exactly where it is (the car keeps its speed,
+// its suspension, its slide, all of it, for when you carry on), the
+// screen dims, and the menu sits in front. Close the menu and "Game
+// paused" waits with a Continue button. Picking something from the phone
+// menu (Back on track, Reset car...) carries on by itself.
+// (In multiplayer, later: the others carry on; only you are frozen.)
+let gamePaused = false, pauseDraw = false;
+const pauseEl = document.createElement('div');
+pauseEl.id = 'pause-screen';
+pauseEl.innerHTML = '<div class="ps-box"><div class="ps-title">GAME PAUSED</div><button type="button" class="ps-go">Continue</button></div>';
+document.body.appendChild(pauseEl);
+function pauseGame() {
+  if (gamePaused || garage?.isOpen) return;
+  gamePaused = true;
+  document.body.classList.add('paused');
+  try { engineSound.ctx?.suspend(); } catch (e) { /* no sound yet */ }
+}
+function resumeGame(keepMenus = false) {
+  if (!gamePaused) return;
+  if (!keepMenus) {
+    const side = document.getElementById('sidepanel');
+    if (side?.classList.contains('open')) side.querySelector('.sp-handle')?.click();
+    document.querySelector('#touch .t-sheet')?.classList.remove('open');
+  }
+  gamePaused = false;
+  document.body.classList.remove('paused');
+  try { engineSound.ctx?.resume(); } catch (e) { /* no sound yet */ }
+  clock.getDelta();   // (no jump for the time spent paused)
+}
+pauseEl.querySelector('.ps-go').addEventListener('click', () => resumeGame());
+window.addEventListener('resize', () => { pauseDraw = true; });
+// (a phone put away or switched to another app: paused too)
+document.addEventListener('visibilitychange', () => { if (document.hidden && isMobile) pauseGame(); });
 {
   const css = document.createElement('style');
   css.textContent = `
     #sidepanel { z-index: 60; }
-    body.ui-panel > *:not(#sidepanel):not(canvas):not(style):not(script) { visibility: hidden !important; }
     body.ui-menu #touch { z-index: 60; }
-    body.ui-menu > *:not(#touch):not(canvas):not(style):not(script) { visibility: hidden !important; }
-    body.ui-menu #touch > *:not(.t-menu):not(.t-sheet) { visibility: hidden !important; }`;
+    body.ui-menu #touch > *:not(.t-menu):not(.t-sheet) { visibility: hidden !important; }
+    #pause-screen { position: fixed; inset: 0; z-index: 58; display: none; place-items: center; background: rgba(8, 10, 13, 0.62);
+      color: #f2efe6; font: 600 15px system-ui, -apple-system, sans-serif; text-align: center; }
+    body.paused #pause-screen { display: grid; }
+    #pause-screen .ps-title { font-size: 26px; letter-spacing: 0.2em; margin-bottom: 16px; }
+    #pause-screen .ps-go { font: inherit; font-size: 17px; padding: 12px 34px; border-radius: 12px; border: 0; background: #e5b53d; color: #15171a; cursor: pointer; }
+    body.paused #touch > *:not(.t-menu):not(.t-sheet):not(.t-rotate) { visibility: hidden !important; }
+    /* the phone menu: two columns on a short screen, and it scrolls if it still doesn't fit */
+    #touch .t-sheet { max-height: calc(100vh - 72px - env(safe-area-inset-top)); overflow-y: auto; overscroll-behavior: contain; }
+    #touch .t-sheet .t-btn { touch-action: pan-y; }
+    @media (max-height: 520px) { #touch .t-sheet.open { display: grid; grid-template-columns: repeat(2, 140px); } }`;
   document.head.appendChild(css);
   const watch = () => {
     const side = document.getElementById('sidepanel'), sheet = document.querySelector('#touch .t-sheet');
-    document.body.classList.toggle('ui-panel', !!side && side.classList.contains('open') && isMobile);
-    document.body.classList.toggle('ui-menu', !!sheet && sheet.classList.contains('open'));
+    const sideOpen = !!side && side.classList.contains('open'), menuOpen = !!sheet && sheet.classList.contains('open');
+    document.body.classList.toggle('ui-panel', sideOpen && isMobile);
+    document.body.classList.toggle('ui-menu', menuOpen);
+    if (isMobile && (sideOpen || menuOpen)) pauseGame();
   };
   if (typeof MutationObserver !== 'undefined') {
     const mo = new MutationObserver(watch);
     for (const el of [document.getElementById('sidepanel'), document.querySelector('#touch .t-sheet')]) if (el) mo.observe(el, { attributes: true, attributeFilter: ['class'] });
   }
+  // (something picked from the phone menu: carry on and do it)
+  document.querySelector('#touch .t-sheet')?.addEventListener('pointerup', (e) => { if (e.target.closest?.('button')) setTimeout(() => resumeGame(true), 0); });
 }
 
 // AI CARS (ai.js): other Caterhams to practise with or race, at Sepang.
@@ -3475,6 +3521,7 @@ const pits = sepang ? (() => {
 try { if (localStorage.getItem('tracktester-garage') === '1') { localStorage.removeItem('tracktester-garage'); garageOnStart = 1; } } catch (e) { /* storage blocked */ }
 function openGarage(opts) {
   if (garage.isOpen) return;
+  resumeGame(true);                            // (the garage keeps the track waiting itself)
   if (tankMode) enterCode('FV101');            // (out of the tank first)
   // the track's sounds stop: no tyres, wind, rain or other cars in here
   engineSound.setHiss?.(0);
@@ -3501,6 +3548,8 @@ function closeGarage() {
 renderer.setAnimationLoop(() => {
   if (!effectsLayered) layerEffects();
   const dt = Math.min(clock.getDelta(), 0.05);   // avoid huge jumps after a pause
+  // paused (a menu open on a phone): nothing moves; the last picture stays
+  if (gamePaused) { if (pauseDraw) { pauseDraw = false; renderer.render(scene, camera); } return; }
   // in the garage: the track waits, the studio is drawn instead
   if (garage.isOpen) { garage.frame(dt); return; }
   if (garageOnStart && ++garageOnStart > 3) { garageOnStart = 0; openGarage({ rev: true }); }
