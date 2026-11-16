@@ -21,11 +21,23 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 71;
+export const BUILD = 72;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 62, date: '15 Nov 2026', title: 'Calmer power, and wrecks that look it',
+    items: [
+      ['TT-88 starts facing the right way', 'Starting the game in the TT-88 left it in the middle of the track facing backwards (and missed setting up its engine sound, racing line and tyres): fixed', 'fix'],
+      ['Engine thrown out', 'Hit something hard enough (head on in the Caterham, backwards in the mid-engined TT-88) and the engine is torn out: a big black block tumbles down the road, burning for about half a minute', 'new'],
+      ['Wheel arches and arms', 'The Caterham\'s front wheel arches now steer and move with their wheels, bend with a crash-bent corner, and fly off when the wheel is torn away. Torn-off wheels leave their suspension arms dangling on the road instead of floating in the air', 'fix'],
+      ['TT-88 fire in the right place', 'The TT-88 burns and smokes from its engine behind the driver now, and steams from the radiators in its sidepods. Side hits are what hole its radiators; only a big front hit reaches them', 'fix'],
+      ['Computer cars', 'Fixed computer cars sometimes sitting dead still after a spin or a reset. A computer car too broken to drive is fixed and sent back out in practice, and retires (DNF) in a race', 'fix'],
+      ['Engines have weight', 'Each engine\'s flywheel and gears now have to spin up with the wheels, so when the tyres let go the revs climb two to three times slower, instead of flashing to the redline the moment you touch the throttle', 'fix'],
+      ['Throttle that suits the car', 'On the keyboard and the phone\'s pedal, the throttle squeezes on more gently in a very powerful car (up to about 0.8 s in the TT-88, a third of a second in the Caterham), so you can feel the rear tyres start to slip before it\'s wide open', 'update'],
+    ],
+  },
   {
     id: 61, date: '15 Nov 2026', title: 'GT7-style pit stops, the gunner\'s eyes, tracers',
     items: [
