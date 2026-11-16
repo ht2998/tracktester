@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 18;
+export const BUILD = 19;
 
 const G = 9.81;   // gravity, m/s²
 const RPM_PER_RADS = 60 / (2 * Math.PI);
@@ -403,6 +403,14 @@ export class CarPhysics {
   crashHit({ zone, speed, along = 0, across = 0 }) {
     if (!(speed > 2.5)) return;
     const v = speed;
+    // Damage switched off: only dents and scratches (the bodywork gives a
+    // little, but nothing breaks)
+    if (this.damageOff) {
+      if (zone === 'front') this.noseCrush = Math.min(0.3, this.noseCrush + Math.max(0, v - 3) * 0.015);
+      if (zone === 'rear') this.tailCrush = Math.min(0.3, this.tailCrush + Math.max(0, v - 3) * 0.012);
+      this.events.push({ type: 'crash', zone, speed: v });
+      return;
+    }
     const wheelNear = (front, left) => (front ? 0 : 2) + (left ? 0 : 1);
     const bend = (i, amount, dir) => {
       this.wheelBend[i] = clamp(this.wheelBend[i] + Math.min(0.03, amount) * dir, -0.06, 0.06);
@@ -761,7 +769,7 @@ export class CarPhysics {
       // (bottoming out on the floor after a jump only hurts if it's really hard)
       const floor = hitPt[1] < 0.2;
       // (a hard one on the floor cracks the sump under the engine: oil drips out)
-      if (floor && hardest > 4.5) {
+      if (floor && hardest > 4.5 && !this.damageOff) {
         if (this.sumpLeak === 0) this.events.push({ type: 'sumpCracked' });
         this.sumpLeak = Math.min(1, this.sumpLeak + (hardest - 4.5) / 5);
       }
@@ -804,6 +812,7 @@ export class CarPhysics {
   }
 
   damageEngine(amount) {
+    if (this.damageOff) return;
     if (this.engineBlown || !(amount > 0)) return;
     this.engineHealth = Math.max(0, this.engineHealth - amount);
     if (this.engineHealth <= 0) this.blowEngine();
@@ -811,6 +820,7 @@ export class CarPhysics {
 
   // where: a wheel (a brake fire), or the engine bay (no wheel given)
   catchFire(wheel = null) {
+    if (this.damageOff) return;
     if (this.onFire) return;
     this.onFire = true;
     this.fireTime = 0;
@@ -845,7 +855,7 @@ export class CarPhysics {
     const W = this.w4;
     if (W && speed > 3) {
       const dirt = (this.surfaceDrag(W.at[0], W.at[1]) + this.surfaceDrag(W.at[2], W.at[3])) / 2;
-      if (dirt > 0) {
+      if (dirt > 0 && !this.damageOff) {
         this.radiatorBlock = Math.min(1, this.radiatorBlock + dirt * Math.min(speed, 30) * 0.0033 * dt);
         this.filterClog = Math.min(1, this.filterClog + dirt * Math.min(speed, 30) * 0.0022 * dt);
       }
@@ -866,7 +876,7 @@ export class CarPhysics {
     // it starts to knock, a metallic tapping, losing power; then it seizes
     // and dies, about a minute in. Working it hard makes it all faster;
     // idling slows it down. Overheating also lets coolant into the oil.
-    if (!this.engineDead && this.coolant < 0.12) {
+    if (!this.engineDead && this.coolant < 0.12 && !this.damageOff) {
       this.dryTime += dt * (0.5 + 0.8 * effort);
     }
     this.oilSmoke = this.engineBlown ? 0 : clamp((this.dryTime - 24) / 14, 0, 1);
@@ -929,6 +939,7 @@ export class CarPhysics {
   // A sharp object went into this tyre: a slow puncture.
   // rate: share of the air lost per second at first (it slows as it empties)
   puncture(wheel, rate) {
+    if (this.damageOff) return;
     const t = this.tyres[wheel];
     if (!t || t.pressure <= 0 || t.blown) return;
     t.leak = Math.max(t.leak, rate);
@@ -950,6 +961,7 @@ export class CarPhysics {
 
   // A tyre bursts: all the air goes at once, and the rubber starts to shred
   blowout(wheel) {
+    if (this.damageOff) return;
     const t = this.tyres[wheel];
     if (!t || t.blown) return;
     t.blown = true;
@@ -1051,7 +1063,7 @@ export class CarPhysics {
       // 25% over ~33%, and double the redline destroys the engine outright.
       const overRatio = newRpm / s.redline;
       const damage = clamp((overRatio - 1.03) * 1.5, 0, 1);
-      if (!this.engineBlown) {
+      if (!this.engineBlown && !this.damageOff) {
         this.engineHealth = Math.max(0, this.engineHealth - damage);
         if (this.engineHealth <= 0) this.blowEngine();
       }
@@ -1062,6 +1074,7 @@ export class CarPhysics {
   // Health hits zero: something lets go inside. No more power until reset.
   // the engine torn out of the car in a huge crash: it's gone (and burning)
   knockEngineOut() {
+    if (this.damageOff) return;
     if (this.engineOut) return;
     this.engineOut = true;
     if (!this.engineBlown) this.blowEngine();
