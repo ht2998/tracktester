@@ -34,7 +34,7 @@ import { addCollider, canvasTexture } from './scenery.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 1;
+export const BUILD = 2;
 
 export const FLAG_NAMES = {
   green: 'GREEN FLAG', yellow: 'YELLOW FLAG', yellow2: 'DOUBLE YELLOW', red: 'RED FLAG', blue: 'BLUE FLAG',
@@ -72,6 +72,7 @@ export function buildTrackside(scene, { line, kerb, surfaceAt, colliders, corner
   const P = (i) => line[((i % m) + m) % m];
   const edgeOf = (p) => p.width / 2 + kerb;
   const group = new THREE.Group();
+  group.userData.noLift = true;   // (already built at the ground's height: the game mustn't lift it again)
   scene.add(group);
 
   // --- Finding clear spots beside the track ---
@@ -356,7 +357,7 @@ export function buildTrackside(scene, { line, kerb, surfaceAt, colliders, corner
 
   // --- Distance boards before the big stops: 300, 200, 100 ---
   const boardMats = {};
-  for (const d of [300, 200, 100]) {
+  for (const d of [300, 200]) {
     const tex = canvasTexture(64, 48, (g, w, h) => {
       g.fillStyle = '#1d4fa8'; g.fillRect(0, 0, w, h);
       g.strokeStyle = '#f4f4f0'; g.lineWidth = 3; g.strokeRect(3, 3, w - 6, h - 6);
@@ -367,11 +368,12 @@ export function buildTrackside(scene, { line, kerb, surfaceAt, colliders, corner
   }
   const boardGeo = new THREE.BoxGeometry(1.1, 0.8, 0.06);
   const boards = [];
+  // (the racing line's own boards already stand at 150, 100 and 50 m)
   for (const n of [1, 2, 4, 9, 14, 15]) {
     const c = byNumber(n);
     if (!c) continue;
     const side = -c.side;
-    for (const d of [300, 200, 100]) {
+    for (const d of [300, 200]) {
       const i = c.a - Math.round(d / 2);
       const p = P(i);
       // (not if that's inside the corner before)
