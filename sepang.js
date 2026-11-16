@@ -45,7 +45,7 @@ import { buildTrackside } from './trackside.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 11;
+export const BUILD = 12;
 
 // [x, z] in metres, in driving order (clockwise from the start/finish line)
 const OUTLINE = [[0.0,0.0],[-1.1,-301.1],[1.1,-314.8],[8.2,-326.7],[17.8,-334.5],[30.3,-338.2],[44.0,-337.7],[57.9,-331.6],[67.8,-319.1],[71.6,-303.0],[66.5,-284.9],[51.7,-251.7],[52.7,-240.1],[61.4,-229.8],[72.7,-225.7],[88.2,-227.7],[104.4,-236.7],[134.6,-257.7],[152.7,-266.2],[173.7,-271.1],[194.5,-272.6],[217.9,-270.7],[275.0,-260.6],[301.3,-249.4],[327.7,-232.9],[344.4,-217.1],[362.6,-193.4],[376.0,-169.0],[383.0,-143.9],[416.7,-3.4],[448.9,102.3],[473.0,173.2],[489.5,219.0],[494.5,234.8],[493.2,246.2],[486.2,255.5],[473.6,258.1],[366.4,268.9],[311.1,276.3],[243.7,287.6],[217.3,297.6],[198.1,309.6],[178.0,331.2],[164.1,353.1],[156.7,375.4],[154.0,397.6],[155.8,423.3],[163.8,450.0],[175.5,469.4],[211.0,508.3],[220.2,526.8],[227.5,555.2],[226.4,578.9],[221.5,601.9],[212.3,620.2],[197.7,636.0],[-46.0,819.4],[-57.2,819.6],[-69.5,814.0],[-143.2,773.8],[-149.6,762.9],[-151.5,750.5],[-147.8,566.0],[-154.4,391.9],[-162.4,296.1],[-169.0,286.6],[-180.8,282.8],[-194.9,289.7],[-237.2,354.2],[-253.1,367.8],[-275.7,376.4],[-298.8,379.9],[-331.2,376.5],[-358.1,370.0],[-384.2,361.8],[-416.9,343.1],[-449.7,316.3],[-456.9,302.5],[-458.0,289.7],[-454.3,275.6],[-446.0,264.8],[-257.0,67.5],[-250.5,53.2],[-247.9,34.3],[-251.5,13.2],[-284.6,-66.7],[-289.4,-87.7],[-290.8,-112.4],[-288.9,-133.7],[-278.6,-173.1],[-265.4,-199.4],[-250.1,-215.9],[-217.4,-237.1],[-193.6,-243.6],[-179.4,-243.8],[-164.3,-232.6],[-157.2,-210.8],[-69.8,636.8],[-60.2,649.6],[-40.9,660.0],[-23.8,656.8],[-6.9,642.9],[-1.1,618.2]];
@@ -548,17 +548,41 @@ export function buildSepang(scene, { isMobile = false, gravelMaps = null } = {})
   // --- The pit lane: alongside the start straight on the right (+x),
   // behind the pit wall, with the garages behind it ---
   const PIT = { x0: 13, x1: 24, z0: -215, z1: 175 };
-  const pitGeo = new THREE.PlaneGeometry(PIT.x1 - PIT.x0, PIT.z1 - PIT.z0, 4, 130);   // (in strips, so it follows the ground)
+  // (in 2 m squares, finer than the ground's own, so it follows every rise
+  // and dip of it and the grass never pokes through)
+  const pitGeo = new THREE.PlaneGeometry(PIT.x1 - PIT.x0, PIT.z1 - PIT.z0, 6, Math.ceil((PIT.z1 - PIT.z0) / 2));
   pitGeo.rotateX(-Math.PI / 2);
   const pit = add(pitGeo, trackMat);
   pit.position.set((PIT.x0 + PIT.x1) / 2, 0, (PIT.z0 + PIT.z1) / 2);
   for (let x = PIT.x0; x <= PIT.x1; x += 0.5) for (let z = PIT.z0; z <= PIT.z1; z += 0.5) paint(x, z, 1);
   // pit entry (from the last corner) and exit (towards turn 1): wedges of tarmac
   const wedge = (pts) => {
-    const shape = new THREE.Shape(pts.map(([x, z]) => new THREE.Vector2(x, -z)));
-    const g = new THREE.ShapeGeometry(shape);
-    g.rotateX(-Math.PI / 2);
-    g.translate(0, -0.003, 0);
+    // (a four-sided piece, made as a grid of ~2 m squares so it bends over
+    // the ground: as one flat piece only its corners followed the slope,
+    // and the grass showed through the middle of it)
+    const [a, b, c, d] = pts;
+    const len = Math.max(Math.hypot(d[0] - a[0], d[1] - a[1]), Math.hypot(c[0] - b[0], c[1] - b[1]));
+    const wid = Math.max(Math.hypot(b[0] - a[0], b[1] - a[1]), Math.hypot(c[0] - d[0], c[1] - d[1]));
+    const nu = Math.max(1, Math.ceil(wid / 2)), nv = Math.max(1, Math.ceil(len / 2));
+    const pos = [], uvs = [], idx = [];
+    for (let j = 0; j <= nv; j++) for (let i = 0; i <= nu; i++) {
+      const u = i / nu, v = j / nv;
+      const x = (a[0] + (b[0] - a[0]) * u) * (1 - v) + (d[0] + (c[0] - d[0]) * u) * v;
+      const z = (a[1] + (b[1] - a[1]) * u) * (1 - v) + (d[1] + (c[1] - d[1]) * u) * v;
+      pos.push(x, -0.003, z); uvs.push(x / 8, z / 8);
+    }
+    for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) {
+      const k = j * (nu + 1) + i;
+      idx.push(k, k + nu + 1, k + 1, k + 1, k + nu + 1, k + nu + 2);
+    }
+    // (facing up, whichever way round the corners were given)
+    const e1 = [pos[3] - pos[0], pos[5] - pos[2]], e2 = [pos[(nu + 1) * 3] - pos[0], pos[(nu + 1) * 3 + 2] - pos[2]];
+    if (e2[1] * e1[0] - e2[0] * e1[1] < 0) for (let k = 0; k < idx.length; k += 3) { const t = idx[k + 1]; idx[k + 1] = idx[k + 2]; idx[k + 2] = t; }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    g.setIndex(idx);
+    g.computeVertexNormals();
     add(g, wedgeMat);
     const xs = pts.map((p) => p[0]), zs = pts.map((p) => p[1]);
     for (let x = Math.min(...xs); x <= Math.max(...xs); x += 0.5) {
