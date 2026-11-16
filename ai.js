@@ -23,7 +23,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 6;
+export const BUILD = 7;
 
 import * as THREE from 'three';
 import { CarPhysics, CATERHAM } from './physics.js';
@@ -520,6 +520,14 @@ export class AIField {
       c.dist = d;
     });
     for (const c of this.cars) {
+      if (c.parked) { c.physics.vx = c.physics.vy = 0; continue; }   // (retired, taken away)
+      // (retired in a race: left where it stopped until you're well away, then recovered)
+      if (c.dnf && !c.parked && (c.retired = (c.retired || 0) + dt) > 8 && c.dist > 60) {
+        c.parked = true;
+        const k = this.cars.indexOf(c);
+        c.physics.x = 1e4 + k * 30; c.physics.z = 1e4; c.full = false;
+        continue;
+      }
       if (c.full) this.drive(c, dt, holding, wetness);
       else this.glide(c, dt);
       this.passLine(c, c.near);
@@ -601,7 +609,8 @@ export class AIField {
       const K = globalThis.__AIK || [0.9, 0.7, 3.5, 3, 0.05];   // (steering past 90%, or 3.5 m off his line: lift)
       const sat = Math.max(0, Math.abs(c.steer) - K[0]) / (1 - K[0]), wide = Math.max(0, Math.abs(offErr) - K[2]) / K[3];
       const ease = Math.min(1, sat * K[1] + wide);
-      if (ease > 0) target = Math.min(target, Math.max(0, v) * (1 - K[4] * ease));
+      // (only once he's going: at a standstill, after a spin or a reset, he must be able to pull away)
+      if (ease > 0 && v > 10) target = Math.min(target, Math.max(8, v * (1 - K[4] * ease)));
     }
     // don't drive into the car ahead: follow it, or pull out to pass
     c.pass = (c.pass || 0) * (1 - Math.min(1, dt * 0.5));
@@ -627,6 +636,11 @@ export class AIField {
     if (!holding && Math.abs(v) < 1.5) c.stuck += dt; else c.stuck = Math.max(0, c.stuck - dt);
     if (c.stuck > 5 && c.dist > 25 && !c.wrecked) {
       c.stuck = 0;
+      // too broken to drive (a wheel torn off, the engine gone): in a race
+      // he's out (DNF); in practice the car's fixed and sent back out
+      const broken = P.engineBlown || P.tyres.some((t) => t.detached) || P.suspDamage.some((d) => d >= 1);
+      if (broken && this.race) { c.wrecked = true; c.dnf = true; return; }
+      if (broken) this.repairCar(c);
       this.placeOnLine(c, c.near, 0, 0);
       return;
     }
@@ -753,6 +767,17 @@ export class AIField {
     return false;
   }
 
+  // fixed as new (practice: a broken car sent back out)
+  repairCar(c) {
+    const P = c.physics, keep = { tyres: P.tyreCompound, abs: P.assists.abs, tcs: P.assists.tcs };
+    P.reset();
+    P.setTransmission('auto');
+    if (keep.tyres) P.setTyres(keep.tyres);
+    P.assists.abs = keep.abs; P.assists.tcs = keep.tcs;
+    c.wrecked = false;
+    for (const w of c.model.wheels) w.steerer.visible = true;
+  }
+
   // A shell going off: every car near it is flung into the air, tumbling,
   // like a rag doll (harder the closer it was), and smashed; a car caught
   // close is wrecked and its driver gives up
@@ -849,7 +874,7 @@ export class AIField {
     if (!race || race.phase === 'grid') { this.board.style.display = 'none'; return; }
     const L = this.racing.length, pts = this.racing.pts;
     const progress = (t, near) => t.lap * L + ((pts[near].s - pts[this.startIndex].s + L) % L);
-    const field = this.cars.map((c) => ({ name: c.driver.name, colour: c.driver.colour, p: c.finished ? 1e9 - c.finishTime : progress(c, c.near), lap: c.lap, me: false }));
+    const field = this.cars.map((c) => ({ name: c.driver.name, colour: c.driver.colour, p: c.dnf ? -1e12 : c.finished ? 1e9 - c.finishTime : progress(c, c.near), lap: c.lap, me: false, dnf: !!c.dnf }));
     // (retired in the pits: DNF, at the bottom)
     field.push({ name: 'You', colour: 0xffd76a, p: this.player.dnf ? -1e12 : this.player.finished ? 1e9 - this.player.finishTime : progress(this.player, this.player.near), lap: this.player.lap, me: true, dnf: !!this.player.dnf });
     field.sort((a, b) => b.p - a.p);
