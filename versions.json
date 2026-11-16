@@ -3,12 +3,12 @@
   "files": {
     "cockpit.js": 13,
     "godrays.js": 1,
-    "scenery.js": 6,
-    "updates.js": 75,
+    "scenery.js": 7,
+    "updates.js": 76,
     "debris.js": 4,
     "effects.js": 4,
     "sky.js": 6,
-    "rendering.js": 55,
+    "rendering.js": 56,
     "rain.js": 4,
     "hud.js": 14,
     "physics.js": 19,
@@ -20,7 +20,7 @@
     "touch.js": 4,
     "skids.js": 4,
     "tyres.js": 2,
-    "sepang.js": 11,
+    "sepang.js": 12,
     "flora.js": 3,
     "racingline.js": 6,
     "ground.js": 1,
@@ -29,6 +29,6 @@
     "f1.js": 18,
     "garage.js": 1,
     "pits.js": 5,
-    "trackside.js": 1
+    "trackside.js": 2
   }
 }
