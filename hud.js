@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 13;
+export const BUILD = 14;
 
 const COLORS = {
   face: '#15181c',
@@ -720,7 +720,8 @@ function roundRect(g, x, y, w, h, r) {
 // ---------------------------------------------------------------------
 export class Hud {
   constructor({ redline, maxSpeed = 240, onTransmission, onAssist, onTyres, tyreOptions = {}, compact = false,
-                timeSpeeds = [60], onSky = {}, onWhatsNew = null, track = 'test', onTrack = null }) {
+                timeSpeeds = [60], onSky = {}, onWhatsNew = null, track = 'test', onTrack = null,
+                damageOn = true, onDamage = null }) {
     this.timeSpeeds = timeSpeeds;
     this.onSky = onSky;
     this.onTyres = onTyres;
@@ -849,6 +850,15 @@ export class Hud {
       return box;
     });
 
+    // Damage: on (crashes break things) or off (only scratches and dents)
+    const damageBox = document.createElement('div');
+    damageBox.className = 'tyre-box';
+    damageBox.innerHTML = `<label class="tw-check"><input type="checkbox" id="damage-toggle"> Damage</label>`
+      + `<span class="gb-note">Off: crashes only scratch and dent the car</span>`;
+    const damageInput = damageBox.querySelector('input');
+    damageInput.checked = damageOn;
+    damageInput.addEventListener('change', () => { onDamage?.(damageInput.checked); damageInput.blur(); });
+
     // Tyres: one dropdown (grouped by type) so the panel stays short
     const tyreHeading = document.createElement('div');
     tyreHeading.className = 'sp-heading';
@@ -963,7 +973,7 @@ export class Hud {
     newsBtn.textContent = "What's new";
     newsBtn.addEventListener('click', () => { newsBtn.blur(); onWhatsNew?.(); });
 
-    panel.append(trackHeading, trackBox, gearHeading, gearGroup, assistHeading, ...assistButtons, tyreHeading, tyreBox, skyHeading, skyBox, newsBtn);
+    panel.append(trackHeading, trackBox, gearHeading, gearGroup, assistHeading, ...assistButtons, damageBox, tyreHeading, tyreBox, skyHeading, skyBox, newsBtn);
     this.side.append(handle, panel);
     document.body.appendChild(this.side);
 
