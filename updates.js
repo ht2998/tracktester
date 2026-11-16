@@ -21,11 +21,24 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 72;
+export const BUILD = 73;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 63, date: '16 Nov 2026', title: 'More ways to hurt your engine',
+    items: [
+      ['Stalling', 'In a manual Caterham, stopping in 3rd or higher without holding the clutch (X) stalls the engine. Press I (or tap the button) to restart, in 1st. The TT-88 has anti-stall, like a real F1 car', 'new'],
+      ['Lugging', 'Flooring it at very low revs in a high gear makes the engine shudder and knock, and slowly wears it. Change down!', 'new'],
+      ['Cold engine', 'The engine starts cool and warms up over about a minute (a blue temperature lamp on the dash). Revving it hard while cold wears it', 'new'],
+      ['Limiter abuse', 'Sitting on the rev limiter for more than a few seconds slowly wears the valves', 'new'],
+      ['Needs air to cool', 'The radiator needs speed through it. Sitting still with the revs up slowly overheats the engine until the coolant boils away', 'new'],
+      ['Grass and gravel', 'Driving through grass and gravel packs the radiator (runs hotter) and clogs the air filter (less power). The pit crew can clean them out', 'new'],
+      ['Cracked sump', 'Landing a jump hard on the floor cracks the sump: oil drips out behind you until the pit crew fit a new one', 'new'],
+      ['Running on fumes', 'Flooring it on the last drops of fuel makes the engine run lean and burns the pistons', 'new'],
+    ],
+  },
   {
     id: 62, date: '15 Nov 2026', title: 'Calmer power, and wrecks that look it',
     items: [
