@@ -59,7 +59,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 52;
+const BUILD = 53;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -1194,6 +1194,31 @@ const toast = document.createElement('div');
 toast.style.cssText = 'position:fixed;left:50%;top:18%;transform:translateX(-50%);padding:10px 18px;border-radius:10px;background:rgba(20,24,16,0.85);color:#d8e2b8;font:700 18px system-ui,sans-serif;letter-spacing:0.08em;pointer-events:none;opacity:0;transition:opacity 0.4s;z-index:20';
 document.body.appendChild(toast);
 let toastTimer = null;
+// --- Stalled: a big button to turn the key (or press I) ---
+const stallBtn = document.createElement('button');
+stallBtn.id = 'stall-btn';
+stallBtn.addEventListener('pointerdown', (e) => { e.stopPropagation(); physics.restartEngine(); });
+document.body.append(stallBtn);
+{ const st = document.createElement('style');
+  st.textContent = `#stall-btn { position: fixed; left: 50%; top: 30%; transform: translateX(-50%); z-index: 40; display: none;
+    font: 600 16px system-ui, sans-serif; letter-spacing: 0.08em; padding: 14px 26px; border-radius: 12px; border: 0;
+    background: rgba(20, 22, 26, 0.85); color: #f2c14e; cursor: pointer; text-align: center; }
+    #stall-btn small { display: block; font-size: 12px; letter-spacing: 0.02em; color: #c9ccd2; margin-top: 4px; font-weight: 400; }`;
+  document.head.append(st); }
+let stallShown = '';
+let clogWarned = false;
+function updateStallButton() {
+  const touchy = matchMedia('(pointer: coarse)').matches;
+  const want = physics.stalled && !tankMode
+    ? (physics.cranking > 0 ? 'STARTING…' : `STALLED · ${touchy ? 'TAP' : 'PRESS I'} TO RESTART`)
+      + (physics.cranking > 0 ? '' : physics.gear >= 3 ? '<small>Shift down to 1st first, or it\'ll stall again</small>' : '')
+    : '';
+  if (want !== stallShown) { stallShown = want; stallBtn.innerHTML = want; stallBtn.style.display = want ? 'block' : 'none'; }
+  // (a one-off warning when the radiator's packed with grass)
+  if (!clogWarned && physics.radiatorBlock > 0.5) { clogWarned = true; showToast('RADIATOR CLOGGED: CLEAN IT OUT IN THE PITS'); }
+  if (physics.radiatorBlock < 0.1) clogWarned = false;
+}
+
 function showToast(text) {
   toast.textContent = text;
   toast.style.opacity = '1';
@@ -3683,6 +3708,8 @@ renderer.setAnimationLoop(() => {
   if (backToTrack) { backToTrack = false; returnToTrack(); }
 
   if (wasTapped('reverse')) physics.toggleReverse();
+  if (wasTapped('ignition')) physics.restartEngine();
+  updateStallButton();
   if (wasTapped('shiftUp')) physics.shiftUp();
   if (wasTapped('shiftDown')) physics.shiftDown();
   if (wasTapped('mute')) engineSound.setMuted(!engineSound.muted);
@@ -3756,6 +3783,9 @@ renderer.setAnimationLoop(() => {
       debrisPending = true;
     }
     if (e.type === 'engineOut') knockEngineOut();
+    if (e.type === 'stall') showToast('STALLED');
+    if (e.type === 'crank') engineSound.playCrank?.();
+    if (e.type === 'sumpCracked') showToast('SUMP CRACKED: LEAKING OIL');
     if (e.type === 'blowout') {
       engineSound.playBlowout();
       blowoutPending.push(e.wheel);
@@ -3938,6 +3968,7 @@ renderer.setAnimationLoop(() => {
         || physics.tyreSlip.rear > 0.35 || physics.tyreSlip.front > 0.5),
       handbrake: !!input.handbrake,
       coolant: physics.coolantTemp,
+      cold: !tankMode && !physics.engineDead && physics.oilTemp < 70,
     },
     speedKmh: physics.speedKmh,
     rpm: physics.rpm,
