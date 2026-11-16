@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 17;
+export const BUILD = 18;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -103,6 +103,7 @@ export const F1_CAR = {
   ...CATERHAM,
   name: 'TT-88',
   stockEngine: 'turboV6',
+  antiStall: true,          // (anti-stall: the clutch opens itself before the engine dies)
   radiatorSides: true,      // (its radiators are in the sidepods, not the nose)
   engineRear: true,         // (mid-engined: behind the driver)
   wings: true,                // (its wings can be crushed and snap off)
