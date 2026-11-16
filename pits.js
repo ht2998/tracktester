@@ -26,7 +26,7 @@
 // a smashed radiator): the team retire the car. DNF on the standings, and
 // they push it back into the garage.
 // =====================================================================
-export const BUILD = 4;
+export const BUILD = 5;
 
 import * as THREE from 'three';
 
@@ -408,6 +408,10 @@ body.pit-auto #touch > *:not(.t-menu):not(.t-sheet):not(.t-rotate) { visibility:
     if (P.fuelLeak > 0) out.push({ key: 'tank', name: 'Fuel tank split', serious: true });
     if (P.radiator < 0.5) out.push({ key: 'rad', name: 'Radiator smashed', serious: true });
     else if (P.radiator < 0.999) out.push({ key: 'rad', kind: 'rad', name: 'Radiator holed (patch, top up)', time: 6 });
+    if (P.sumpLeak > 0) out.push({ key: 'sump', kind: 'rad', name: 'Sump cracked (new sump, top up oil)', time: 8,
+      fix: () => { P.sumpLeak = 0; P.oilLevel = 1; } });
+    if (P.radiatorBlock > 0.15 || P.filterClog > 0.15) out.push({ key: 'clean', kind: 'rad', name: 'Radiator and air filter clogged (clean out)', time: 4,
+      fix: () => { P.radiatorBlock = 0; P.filterClog = 0; } });
     P.suspDamage.forEach((d, pi) => {
       if (d >= 1) out.push({ key: 'susp' + pi, name: `${corner[pi]} wheel torn off`, serious: true });
       else if (d > 0.03 || Math.abs(P.wheelBend[pi]) > 0.004) out.push({ key: 'susp' + pi, kind: 'susp', pi, name: `${corner[pi]} suspension bent`, time: Math.round(4 + 8 * d) });
@@ -802,7 +806,7 @@ body.pit-auto #touch > *:not(.t-menu):not(.t-sheet):not(.t-rotate) { visibility:
         work.push({ go: Wc(w.x + s * (w.w / 2 + 0.6), w.z + (front ? -0.9 : 0.9)) }, { face: facing(w.x, w.z) },
           { until: () => F.wheel[j.pi] === 'off' }, { pose: 'WORK', t: j.time }, { fn: () => { H.repairSusp(j.pi); F.suspDone[j.pi] = true; } }, { pose: 'STAND' });
       } else if (j.kind === 'rad') {
-        work.push({ go: Wc(1.1, 0.7) }, { face: facing(0.4, 0.7) }, { pose: 'BOLT', t: j.time }, { fn: () => H.repairRadiator() }, { pose: 'STAND' });
+        work.push({ go: Wc(1.1, 0.7) }, { face: facing(0.4, 0.7) }, { pose: 'BOLT', t: j.time }, { fn: () => (j.fix ? j.fix() : H.repairRadiator()) }, { pose: 'STAND' });
       } else if (j.kind === 'mirror') {
         // (the refueller does the mirrors, with a new one from the garage)
         const fp = this.fueller;
@@ -885,6 +889,8 @@ body.pit-auto #touch > *:not(.t-menu):not(.t-sheet):not(.t-rotate) { visibility:
   update(dt, camera) {
     const P = this.physics;
     const near = Math.hypot(P.x - this.box.x, P.z - this.box.z) < 260 || this.phase !== 'off';
+    P.noStall = this.phase !== 'off';   // (the crew don't let it stall while they're driving it)
+    if (this.phase !== 'off' && P.stalled) P.restartEngine();
     this.group.visible = near;
     this.camera = camera;
     if (!near) return;
