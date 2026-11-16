@@ -4,7 +4,7 @@
     "cockpit.js": 13,
     "godrays.js": 1,
     "scenery.js": 7,
-    "updates.js": 76,
+    "updates.js": 77,
     "debris.js": 4,
     "effects.js": 4,
     "sky.js": 6,
@@ -29,6 +29,6 @@
     "f1.js": 18,
     "garage.js": 1,
     "pits.js": 5,
-    "trackside.js": 2
+    "trackside.js": 3
   }
 }
