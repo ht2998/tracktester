@@ -23,7 +23,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 8;
+export const BUILD = 9;
 
 import * as THREE from 'three';
 import { CarPhysics, CATERHAM } from './physics.js';
@@ -431,7 +431,7 @@ export class AIField {
     for (let k = 0; k < this.count; k++) { const g = slot(k); const c = this.addCar(k, g.i, g.side, 0); c.lap = -1; }   // (behind the line: lap 1 starts as they cross it)
     const me = slot(this.count);
     this.onPlacePlayer?.(me.x, me.z, me.heading);
-    this.player = { lap: -1, s: 0, near: me.i, last: me.i, finished: false };
+    this.player = { lap: -1, s: 0, near: me.i, last: me.i, finished: false, gridX: me.x, gridZ: me.z, penalty: 0 };
     this.race = { t: 0, phase: 'grid', lightsOut: 3.2 + Math.random() * 1.4, done: false, order: [] };
     this.holdPlayer = true;
     this.banner.style.display = 'none';
@@ -490,7 +490,12 @@ export class AIField {
     if (race) {
       race.t += dt;
       if (race.phase === 'grid') {
-        const lit = Math.min(5, Math.floor(race.t / 0.6));
+        const lit = race.lit = Math.min(5, Math.floor(race.t / 0.6));
+        // Jump start: moving off your grid box before the lights go out.
+        // A 5 second time penalty (10 if you're well clear of it)
+        const moved = Math.hypot(player.x - this.player.gridX, player.z - this.player.gridZ);
+        const pen = moved > 8 ? 10 : moved > 0.8 ? 5 : 0;
+        if (pen > this.player.penalty) { this.player.penalty = pen; this.onPenalty?.(pen, 'JUMP START'); }
         this.lights.style.display = 'flex';
         [...this.lights.children].forEach((el, k) => { el.style.background = k < lit ? '#ff2a1a' : '#2a1414'; el.style.boxShadow = k < lit ? '0 0 12px #ff2a1a' : 'none'; });
         if (race.t >= race.lightsOut) {
@@ -869,6 +874,18 @@ export class AIField {
     }
   }
 
+  // Blue flag: a car a lap ahead of you, right behind you, about to lap you
+  blueFlagFor() {
+    const race = this.race;
+    if (!race || race.phase !== 'racing' || this.player.finished) return false;
+    const L = this.racing.length, pts = this.racing.pts;
+    const progress = (t, near) => t.lap * L + ((pts[near].s - pts[this.startIndex].s + L) % L);
+    const me = progress(this.player, this.player.near);
+    return this.cars.some((c) => !c.dnf && !c.parked && !c.finished && (progress(c, c.near) - me) > L - 120 && (progress(c, c.near) - me) < L);
+  }
+  // Add a time penalty (seconds) to yours
+  addPenalty(sec, why) { if (this.race && !this.player.finished) { this.player.penalty = (this.player.penalty || 0) + sec; this.onPenalty?.(sec, why); } }
+
   // positions, laps and gaps (race only), and the results at the end
   updateBoard(player) {
     const race = this.race;
@@ -877,14 +894,14 @@ export class AIField {
     const progress = (t, near) => t.lap * L + ((pts[near].s - pts[this.startIndex].s + L) % L);
     const field = this.cars.map((c) => ({ name: c.driver.name, colour: c.driver.colour, p: c.dnf ? -1e12 : c.finished ? 1e9 - c.finishTime : progress(c, c.near), lap: c.lap, me: false, dnf: !!c.dnf }));
     // (retired in the pits: DNF, at the bottom)
-    field.push({ name: 'You', colour: 0xffd76a, p: this.player.dnf ? -1e12 : this.player.finished ? 1e9 - this.player.finishTime : progress(this.player, this.player.near), lap: this.player.lap, me: true, dnf: !!this.player.dnf });
+    field.push({ name: this.player.penalty ? `You (+${this.player.penalty}s)` : 'You', colour: 0xffd76a, dsq: !!this.player.dsq, p: this.player.dnf ? -1e12 : this.player.finished ? 1e9 - this.player.finishTime : progress(this.player, this.player.near), lap: this.player.lap, me: true, dnf: !!this.player.dnf });
     field.sort((a, b) => b.p - a.p);
     const myPos = field.findIndex((f) => f.me) + 1;
     const lap = Math.min(this.laps, Math.max(1, this.player.lap + 1));
     // you finish when you've done the laps
     if (!this.player.finished && this.player.lap >= this.laps) {
       this.player.finished = true;
-      this.player.finishTime = race.t - race.start;
+      this.player.finishTime = race.t - race.start + (this.player.penalty || 0);   // (time penalties added on)
       race.done = true;
       this.banner.textContent = `FINISHED  P${myPos} of ${field.length}\n\n` + field.map((f, k) => `${String(k + 1).padStart(2)}.  ${f.name}`).join('\n');
       this.banner.style.display = 'block';
@@ -894,7 +911,7 @@ export class AIField {
     const lead = field[0].p;
     const hex = (c) => '#' + c.toString(16).padStart(6, '0');
     const rows = field.slice(0, 10).map((f, k) => {
-      const gap = f.dnf ? 'DNF' : k === 0 ? '' : f.p > 1e8 ? '' : `+${Math.max(0, (lead > 1e8 ? 0 : lead - f.p) / 45).toFixed(1)}`;
+      const gap = f.dsq ? 'DSQ' : f.dnf ? 'DNF' : k === 0 ? '' : f.p > 1e8 ? '' : `+${Math.max(0, (lead > 1e8 ? 0 : lead - f.p) / 45).toFixed(1)}`;
       return `<div style="display:flex;gap:6px;align-items:center;${f.me ? 'color:#ffd76a' : ''}"><span style="width:16px;text-align:right">${k + 1}</span><span style="width:8px;height:8px;border-radius:2px;background:${hex(f.colour)}"></span><span style="flex:1">${f.name}</span><span style="opacity:0.7">${gap}</span></div>`;
     }).join('');
     this.board.innerHTML = `<div style="font-size:12px;letter-spacing:0.08em;opacity:0.8;margin-bottom:3px">${this.player.finished ? 'FINISHED' : `LAP ${lap}/${this.laps}`} · P${myPos}/${field.length}</div>${rows}`;
