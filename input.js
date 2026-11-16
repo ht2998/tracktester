@@ -18,7 +18,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 3;
+export const BUILD = 5;
 
 const held = new Set();      // keys being held down right now
 const tapped = new Set();    // one-off presses waiting to be used
@@ -74,16 +74,40 @@ export function tap(name) {
   tapped.add(name);
 }
 
+// Keys (and the phone's pedal buttons) are on or off, but a foot isn't: the throttle
+// squeezes on over about a third of a second (instead of stamping it
+// straight to full, which spins the rear tyres out of every corner) and
+// comes off quickly; the brake comes on a little faster.
+let keyThrottleNow = 0, keyBrakeNow = 0, lastRead = 0;
+// (how long the throttle takes to squeeze full on: longer on a very
+// powerful car, so the tyres can be felt starting to slip before it's wide open)
+let throttleUp = 0.35;
+export function setThrottleFeel(powerToWeight) {
+  // bhp per tonne: the Caterham about 190 (a third of a second); the
+  // TT-88's 900 horsepower turbo over 1,500 (about 0.8 s)
+  throttleUp = 0.35 + 0.45 * Math.min(1, Math.max(0, (powerToWeight - 250) / 1100));
+}
+const ease = (now, target, upTime, downTime, dt) => {
+  const rate = dt / (target > now ? upTime : downTime);
+  return target > now ? Math.min(target, now + rate) : Math.max(target, now - rate);
+};
+
 // Called once per frame: returns the current driving controls
 // (keyboard and touch combined, so either works)
 export function readControls() {
+  const t = performance.now();
+  const dt = lastRead ? Math.min(0.1, (t - lastRead) / 1000) : 1 / 60;
+  lastRead = t;
   const left = held.has('KeyA') || held.has('ArrowLeft');
   const right = held.has('KeyD') || held.has('ArrowRight');
   const keyThrottle = held.has('KeyW') || held.has('ArrowUp') ? 1 : 0;
   const keyBrake = held.has('KeyS') || held.has('ArrowDown') ? 1 : 0;
   const keySteer = (left ? 1 : 0) - (right ? 1 : 0);   // +1 = left, -1 = right
-  controls.throttle = Math.max(keyThrottle, touch.throttle);
-  controls.brake = Math.max(keyBrake, touch.brake);
+  // (the phone's pedal buttons are on or off too, so they're eased the same way)
+  keyThrottleNow = ease(keyThrottleNow, Math.max(keyThrottle, touch.throttle), throttleUp, 0.08, dt);
+  keyBrakeNow = ease(keyBrakeNow, Math.max(keyBrake, touch.brake), 0.15, 0.06, dt);
+  controls.throttle = keyThrottleNow;
+  controls.brake = keyBrakeNow;
   controls.steer = keySteer !== 0 ? keySteer : touch.steer;
   controls.handbrake = held.has('Space') || touch.handbrake;
   controls.clutch = held.has('KeyX') || touch.clutch;
