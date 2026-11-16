@@ -59,7 +59,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 53;
+const BUILD = 54;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -292,6 +292,13 @@ if (sepang) setGround(sepang.heightAt);
 // menu) switches the line and the corner panel off and on.
 const racing = sepang ? new RacingLine(scene, { line: sepang.line, corners: sepang.cornerList || [], car: CATERHAM, isMobile }) : null;
 let racingLineOn = true;
+// Damage on (crashes break things) or off (only scratches and dents)
+let damageOn = true;
+try { damageOn = localStorage.getItem('tracktester-damage') !== 'off'; } catch (e) { /* storage blocked */ }
+function applyDamageSetting() {
+  physics.damageOff = !damageOn;
+  for (const c of aiField?.cars || []) c.physics.damageOff = !damageOn;   // (the computer cars too)
+}
 try { racingLineOn = localStorage.getItem('tracktester-racingline') !== 'off'; } catch (e) { /* storage blocked */ }
 racing?.setVisible(racingLineOn);
 // Lap and sector timing, and the track map in the corner
@@ -2598,6 +2605,13 @@ const hud = new Hud({
   redline: CATERHAM.redline,
   onTransmission: (name) => physics.setTransmission(name),
   onAssist: (name, on) => { physics.assists[name] = on; },
+  damageOn,
+  onDamage: (on) => {
+    damageOn = on;
+    applyDamageSetting();
+    try { localStorage.setItem('tracktester-damage', on ? 'on' : 'off'); } catch (e) { /* storage blocked */ }
+    showToast(on ? 'DAMAGE ON' : physics.engineDead || physics.radiator < 1 || physics.suspDamage.some((d) => d > 0) ? 'DAMAGE OFF: BACK ON TRACK TO FIX THE CAR' : 'DAMAGE OFF: ONLY SCRATCHES AND DENTS');
+  },
   onTyres: (id) => { physics.setTyres(id); tyreLooks.apply(id); },
   // Track picker: remember the choice and reload to build it
   track: TRACK,
@@ -3710,6 +3724,7 @@ renderer.setAnimationLoop(() => {
   if (wasTapped('reverse')) physics.toggleReverse();
   if (wasTapped('ignition')) physics.restartEngine();
   updateStallButton();
+  applyDamageSetting();   // (every frame, so computer cars that join later get it too)
   if (wasTapped('shiftUp')) physics.shiftUp();
   if (wasTapped('shiftDown')) physics.shiftDown();
   if (wasTapped('mute')) engineSound.setMuted(!engineSound.muted);
@@ -3793,7 +3808,7 @@ renderer.setAnimationLoop(() => {
     if (e.type === 'wheelOff') wheelOffPending.push({ i: e.wheel, torn: !!e.torn });
     if (e.type === 'wingOff') snapWing(e.part);
     // a knock on the side can take a mirror off (the TT-88's)
-    if (e.type === 'crash' && IS_F1 && (e.zone === 'left' || e.zone === 'right') && e.speed > 4 && Math.random() < Math.min(0.8, (e.speed - 3) * 0.12)) snapMirror(e.zone === 'left' ? 'l' : 'r');
+    if (e.type === 'crash' && IS_F1 && !physics.damageOff && (e.zone === 'left' || e.zone === 'right') && e.speed > 4 && Math.random() < Math.min(0.8, (e.speed - 3) * 0.12)) snapMirror(e.zone === 'left' ? 'l' : 'r');
     if (e.type === 'coolantBurst') coolantBurst = Math.max(coolantBurst, 0.7 * e.strength);
     // landing hard on the bodywork (a rollover, a bad landing): a dent where it struck
     if (e.type === 'bodyHit' && e.speed > 4.5) {
