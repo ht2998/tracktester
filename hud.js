@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 12;
+export const BUILD = 13;
 
 const COLORS = {
   face: '#15181c',
@@ -1111,7 +1111,7 @@ export class Hud {
     //   TCS:       flashes while it's cutting power; steady (with OFF) if switched off
     //   skid:      flashes while the car is sliding sideways
     //   handbrake: red while it's pulled
-    //   engine temperature: amber when hot, flashing red when boiling
+    //   engine temperature: blue while cold, amber when hot, flashing red when boiling
     {
       const w = warnings;
       const flash = Math.floor(time * 6) % 2 === 0;
@@ -1124,6 +1124,7 @@ export class Hud {
       if (w.handbrake) lamps.push((x) => drawHandbrakeLamp(sg, x, ly, lw, COLORS.redline));
       if (w.coolant > 0.95) { if (flash) lamps.push((x) => drawCoolantLamp(sg, x, ly, lw, COLORS.redline)); else lamps.push(null); }
       else if (w.coolant > 0.8) lamps.push((x) => drawCoolantLamp(sg, x, ly, lw, COLORS.ledAmber));
+      else if (w.cold) lamps.push((x) => drawCoolantLamp(sg, x, ly, lw, '#4aa8ff'));   // blue: still warming up, go easy
       const lw = sR * 0.3, ly = sR + sR * 0.22, gap = sR * 0.34;
       lamps.forEach((draw, k) => draw?.(sR + (k - (lamps.length - 1) / 2) * gap));
     }
