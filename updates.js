@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 73;
+export const BUILD = 74;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 64, date: '16 Nov 2026', title: 'Damage switch',
+    items: [
+      ['Damage on or off', 'A new Damage switch in the side panel (under the assists). Off: crashes only scratch and dent the car. Nothing breaks, leaks, catches fire or falls off, and the computer cars get the same. Your choice is remembered', 'new'],
+    ],
+  },
   {
     id: 63, date: '16 Nov 2026', title: 'More ways to hurt your engine',
     items: [
