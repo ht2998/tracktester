@@ -21,11 +21,20 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 74;
+export const BUILD = 75;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 65, date: '16 Nov 2026', title: 'Sepang gets its trackside',
+    items: [
+      ['Marshal posts and flags', 'Marshals all round Sepang, with flags and LED light panels. Yellow (car stopped off the track), double yellow (stopped on it), green (all clear), red (a car or its engine burning on the track), blue (a faster car about to lap you), white (slow car ahead), red and yellow stripes (oil on the track). The flag that applies to you shows at the top of the screen', 'new'],
+      ['Your own flags', 'Meatball: your car is leaking or broken, pit within a lap or you get the black flag (disqualified, DSQ on the standings). Track limits: three times off and you get the black and white flag, more and it costs 5 seconds. Chequered at the finish', 'new'],
+      ['Start lights and jump starts', 'A start gantry over the line: five red lights, then lights out. On the grid, hold X (or the clutch button) and press the throttle to rev, and let go of the clutch when the lights go out. Move before that and it\'s a jump start: 5 seconds added to your race time (10 if you go well clear of your grid box)', 'new'],
+      ['Watchtowers, TV cameras and more', 'Watchtowers at the big corners, TV camera towers (operators under umbrellas) outside the big stops and on the straights, low cameras at the hairpins, 300/200/100 boards before the braking zones, and advertising boards along the straights', 'new'],
+    ],
+  },
   {
     id: 64, date: '16 Nov 2026', title: 'Damage switch',
     items: [
