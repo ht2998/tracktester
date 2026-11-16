@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { readControls, wasTapped } from './input.js';
+import { readControls, wasTapped, setThrottleFeel } from './input.js';
 import { CarPhysics, CATERHAM, TRANSMISSIONS, TYRES, AMBIENT_TEMP } from './physics.js';
 import { EngineSound } from './sound.js';
 import { TyreSmoke } from './smoke.js';
@@ -59,7 +59,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 51;
+const BUILD = 52;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -832,6 +832,7 @@ function buildCar() {
   const car = new THREE.Group();
 
   let crush, headLens, beam, tailLens;
+  let cycleWings = [];
   if (IS_F1) {
     // THE TT-88's body (f1.js): every painted panel can be dented
     const panels = [];
@@ -916,8 +917,9 @@ function buildCar() {
     // --- Front cycle wings (curved fenders over the front wheels) ---
     const cycleWing = new THREE.CylinderGeometry(0.36, 0.36, 0.24, 20, 1, true, 0.25, 2.3);
     cycleWing.rotateZ(Math.PI / 2);
-    car.add(part(cycleWing, fenderMat, -TRACK_HALF, WHEEL_RADIUS, FRONT_AXLE));
-    car.add(part(cycleWing, fenderMat, TRACK_HALF, WHEEL_RADIUS, FRONT_AXLE));
+    // (they're bolted to the front uprights: they steer, rise and fall with the
+    // wheels, bend with a crash-bent corner and go with a torn-off wheel)
+    cycleWings = [TRACK_HALF, -TRACK_HALF].map((x) => { const m = part(cycleWing, fenderMat, x, WHEEL_RADIUS, FRONT_AXLE); car.add(m); m.castShadow = true; return m; });
 
     // --- Headlights: round lamps, each a chrome bowl at the back, a domed
     // glass front over a silver reflector, and a chrome rim where they meet ---
@@ -1086,7 +1088,7 @@ function buildCar() {
   calipers.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   car.add(calipers);
 
-  return { car, tyres, rims, spokes, discs, calipers, headLens, beam, tailLens, crush, linkage };
+  return { car, tyres, rims, spokes, discs, calipers, headLens, beam, tailLens, crush, linkage, cycleWings };
 }
 
 const carModel = buildCar();
@@ -1352,9 +1354,16 @@ const linkQ = new THREE.Quaternion(), linkS = new THREE.Vector3(), linkM = new T
 function placeLinkEnd(out, p, m, w, steersWith, steer) {
   out.fromArray(p);
   const tyre = physics.tyres[w];
-  // a wheel that's come off leaves its links hanging down at full droop
-  const lift = tyre.detached ? -0.08 : wheelLift[w];
-  out.y += lift * m;
+  // a wheel that's come off leaves its broken arms dangling, their outer
+  // ends down on the road; a crash-bent corner drags them in and down
+  // with the wheel
+  if (tyre.detached) {
+    if (m > 0) { out.y += (0.03 - out.y) * m; out.x -= Math.sign(out.x) * 0.12 * m; }
+    return out;
+  }
+  out.y += wheelLift[w] * m;
+  const sd = physics.suspDamage[w];
+  if (sd > 0 && m > 0) { out.x -= (w % 2 === 0 ? 1 : -1) * 0.05 * sd * m; out.y -= 0.03 * sd * m; }
   if (steersWith && m > 0 && !tyre.detached) {
     // swing round the kingpin (the upright's line) with the steering
     const px = Math.sign(p[0]) * 0.55, pz = FRONT_AXLE;
@@ -1383,6 +1392,21 @@ function updateLinks(list, mesh, steer) {
 
 function updateWheels(steer, spin) {
   const L = carModel.linkage;
+  // the Caterham's cycle wings, on the front uprights
+  carModel.cycleWings?.forEach((cw, k) => {
+    const pi = k;                                   // (0: front left, 1: front right)
+    if (cw.parent !== carModel.car) return;         // (gone: flying off, or lying on the track)
+    if (physics.tyres[pi].detached) {
+      // torn off with its wheel: it flies off too
+      carModel.car.updateMatrixWorld();
+      scene.attach(cw);
+      flyingParts.push({ obj: cw, v: new THREE.Vector3().copy(carVelocity).multiplyScalar(0.7).add(new THREE.Vector3((Math.random() - 0.5) * 4, 2.5, (Math.random() - 0.5) * 4)), w: new THREE.Vector3((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14), rest: false });
+      return;
+    }
+    const sd = physics.suspDamage[pi], x = k === 0 ? TRACK_HALF : -TRACK_HALF;
+    cw.position.set(x - Math.sign(x) * 0.05 * sd, WHEEL_RADIUS + wheelLift[pi] - 0.03 * sd, FRONT_AXLE);
+    cw.rotation.set(0, steer + (physics.wheelBend ? physics.wheelBend[pi] * 3 : 0), -Math.sign(x) * sd * 0.28);
+  });
   updateLinks(L.arms, L.armMesh, steer);
   updateLinks(L.dampers, L.damperMesh, steer);
   WHEELS.forEach(([x, y, z, isFront], i) => {
@@ -1942,7 +1966,7 @@ coolantMist.setViewport(renderer.domElement.height, camera.fov);
 let coolantBurst = 0;      // seconds of spray left
 const fireLight = isMobile ? null : new THREE.PointLight(0xff7a2a, 0, 10, 2);
 if (fireLight) scene.add(fireLight);
-const RADIATOR = new THREE.Vector3(0, 0.42, 1.5);
+const RADIATOR = IS_F1 ? new THREE.Vector3(0.52, 0.3, 0.5) : new THREE.Vector3(0, 0.42, 1.5);   // (the TT-88's radiators: in the sidepods, steam from the left one's mouth)
 const radiatorWorld = new THREE.Vector3();
 
 // --- DENTS: each hit pushes the body in around where it struck, deepest
@@ -2137,7 +2161,7 @@ const looseWheels = [0, 1, 2, 3].map(() => new LooseWheel(scene, {
   rimMat: carModel.rims.material, spokeMat: carModel.spokes.material,
   radius: WHEEL_RADIUS * 0.66,
 }));
-const ENGINE_BAY = new THREE.Vector3(0, 0.62, 0.95);
+const ENGINE_BAY = IS_F1 ? new THREE.Vector3(0, 0.55, -0.85) : new THREE.Vector3(0, 0.62, 0.95);   // (the TT-88's engine sits behind the driver)
 
 // Sparks and flying metal when the engine blows
 const debris = new EngineDebris(scene, { maxSparks: isMobile ? 140 : 220, chunkCount: isMobile ? 8 : 12 });
@@ -2270,7 +2294,7 @@ function updateSmoke(dt) {
   engineSmoke.update(dt);
   dieselSmoke.update(dt);
   // Steam from the radiator, flames from the engine bay
-  radiatorWorld.set(RADIATOR.x, RADIATOR.y, RADIATOR.z - physics.noseCrush);
+  radiatorWorld.set(RADIATOR.x, RADIATOR.y, RADIATOR.z - (IS_F1 ? Math.max(0, physics.noseCrush - 1.5) : physics.noseCrush));
   carModel.car.localToWorld(radiatorWorld);
   // the pressurised coolant bursting out: a pink spray with a cloud of steam
   if (coolantBurst > 0) {
@@ -2288,6 +2312,7 @@ function updateSmoke(dt) {
   } else fireWorld.copy(engineBayWorld);
   flames.emitFrom('fire', fireWorld, fire, carVelocity, dt);
   flameCore.emitFrom('fire', fireWorld, fire, carVelocity, dt);
+  updateEngineBlock(dt);
   flames.update(dt);
   flameCore.update(dt);
   if (fireLight) {
@@ -3175,6 +3200,8 @@ function setCar(kind, engine) {
   physics.x = x; physics.z = z; physics.heading = h;
   engineSound.setSpec?.(physics.spec);
   racing?.setCar(physics.spec);          // (the racing line's speeds and braking points for this car and engine)
+  // (the keyboard / phone throttle squeezes on slower in a very powerful car)
+  { let w = 0; for (const [r, nm] of physics.spec.torqueCurve) w = Math.max(w, nm * r * Math.PI / 30); setThrottleFeel(w / 745.7 / (physics.spec.mass / 1000)); }
   // (the TT-88 runs on racing slicks: if road tyres were fitted, it gets Racing Mediums)
   if (IS_F1 && TYRES[physics.tyreCompound]?.kind === 'road') { physics.setTyres('RM'); tyreLooks.apply('RM'); }
   try { localStorage.setItem('tracktester-car', JSON.stringify({ kind: carKind, engine: engineKey })); } catch (e) { /* storage blocked */ }
@@ -3202,10 +3229,6 @@ let carPicker = null;
     panel.insertBefore(heading, box);
   }
 }
-try {
-  const saved = JSON.parse(localStorage.getItem('tracktester-car') || 'null');
-  if (IS_F1 || (saved && saved.engine && saved.engine !== STOCK_ENGINE.caterham)) { setCar(CAR_KIND, saved?.engine); placeAtStart(); }
-} catch (e) { /* storage blocked */ }
 
 // THE TT-88's FLOOR SCRAPING: it runs a few centimetres off the road on
 // stiff springs, so over bumps and kerbs, under hard braking and squashed
@@ -3280,6 +3303,45 @@ function updateFlyingParts(dt) {
     }
   }
 }
+// THE ENGINE TORN OUT in a huge crash: a big black block thrown out of the
+// engine bay, tumbling down the road, on fire
+let engineBlock = null, engineBlockFire = 0;
+const engineBlockWorld = new THREE.Vector3(), ZERO_V = new THREE.Vector3();
+function knockEngineOut() {
+  if (!engineBlock) {
+    const g = new THREE.Group();
+    const iron = new THREE.MeshStandardMaterial({ color: 0x1a1b1e, roughness: 0.55, metalness: 0.6 });
+    const alloy = new THREE.MeshStandardMaterial({ color: 0x3a3c40, roughness: 0.4, metalness: 0.7 });
+    const W = IS_F1 ? 0.55 : 0.5, H = 0.42, L = IS_F1 ? 0.6 : 0.62;
+    const add = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; g.add(m); return m; };
+    add(new THREE.BoxGeometry(W, H * 0.62, L), iron, 0, H * 0.31, 0);                        // the block
+    add(new THREE.BoxGeometry(W * 0.62, H * 0.3, L * 0.95), alloy, 0, H * 0.77, 0);           // the head and cam cover
+    add(new THREE.BoxGeometry(W * 0.9, H * 0.18, L * 0.7), iron, 0, -0.01, 0);                // the sump
+    for (let k = 0; k < 4; k++) add(new THREE.CylinderGeometry(0.03, 0.03, 0.3, 8).rotateZ(Math.PI / 2), alloy, W * 0.62, H * 0.55, -L * 0.36 + k * L * 0.24);   // torn-off manifold pipes
+    add(new THREE.CylinderGeometry(0.11, 0.11, 0.06, 18).rotateX(Math.PI / 2), alloy, 0, H * 0.3, -L * 0.53);   // the flywheel end
+    engineBlock = g;
+  }
+  engineBayWorld.copy(ENGINE_BAY);
+  carModel.car.localToWorld(engineBayWorld);
+  engineBlock.position.copy(engineBayWorld);
+  engineBlock.quaternion.copy(carModel.car.quaternion);
+  scene.add(engineBlock);
+  const v = new THREE.Vector3().copy(carVelocity).multiplyScalar(0.75).add(new THREE.Vector3((Math.random() - 0.5) * 3, 3 + Math.random() * 2, (Math.random() - 0.5) * 3));
+  flyingParts.push({ obj: engineBlock, v, w: new THREE.Vector3((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6), rest: false });
+  engineBlockFire = 1;
+  engineSound.playClunk?.();
+  debrisPending = true;
+}
+function updateEngineBlock(dt) {
+  if (!engineBlock || !engineBlockFire || !engineBlock.parent) { engineBlockFire = 0; return; }
+  // it burns for about half a minute, then dies down to smoke
+  engineBlockFire = Math.max(0, engineBlockFire - dt / 32);
+  engineBlockWorld.copy(engineBlock.position); engineBlockWorld.y += 0.35;
+  const f = Math.min(1, engineBlockFire * 1.6);
+  flames.emitFrom('engineOut', engineBlockWorld, f, ZERO_V, dt);
+  flameCore.emitFrom('engineOut', engineBlockWorld, f * 0.9, ZERO_V, dt);
+  engineSmoke.emitFrom('engineOut', engineBlockWorld, Math.max(0.4, f), ZERO_V, dt);
+}
 function clearFlyingParts() {
   // (a fresh car: its wings back on)
   const F = carModel.car.userData.f1;
@@ -3287,6 +3349,13 @@ function clearFlyingParts() {
   flyingParts.length = 0;
   if (F?.wings) for (const [k, g] of Object.entries(F.wings)) { if (g.parent !== carModel.car) { carModel.car.add(g); g.position.set(0, 0, 0); g.quaternion.identity(); } g.visible = true; }
   if (F?.mirrors) for (const s of ['l', 'r']) fitMirror(s);
+  // the cycle wings back on their uprights
+  carModel.cycleWings?.forEach((cw) => {
+    const i = flyingParts.findIndex((p) => p.obj === cw);
+    if (i >= 0) flyingParts.splice(i, 1);
+    if (cw.parent !== carModel.car) carModel.car.add(cw);
+    cw.quaternion.identity();
+  });
 }
 // A mirror knocked off: the pod flies off, the bare stalk stays
 function snapMirror(side) {
@@ -3502,6 +3571,15 @@ const aiField = racing ? new AIField(scene, {
   },
 }) : null;
 
+// The car you were in last time, with its engine (done here, once
+// everything it sets up exists: run earlier it failed part way and left
+// the TT-88 in the middle of the track facing backwards)
+{
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem('tracktester-car') || 'null'); } catch (e) { /* storage blocked */ }
+  if (IS_F1 || (saved && saved.engine && saved.engine !== STOCK_ENGINE.caterham)) { setCar(CAR_KIND, saved?.engine); placeAtStart(); }
+}
+
 // THE GARAGE (garage.js): a studio away from the track with your car on a
 // turntable, its figures, and the collection to pick another from
 const garage = new Garage({
@@ -3677,6 +3755,7 @@ renderer.setAnimationLoop(() => {
       engineSound.playClunk();
       debrisPending = true;
     }
+    if (e.type === 'engineOut') knockEngineOut();
     if (e.type === 'blowout') {
       engineSound.playBlowout();
       blowoutPending.push(e.wheel);
