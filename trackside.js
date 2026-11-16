@@ -34,7 +34,7 @@ import { addCollider, canvasTexture } from './scenery.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 2;
+export const BUILD = 3;
 
 export const FLAG_NAMES = {
   green: 'GREEN FLAG', yellow: 'YELLOW FLAG', yellow2: 'DOUBLE YELLOW', red: 'RED FLAG', blue: 'BLUE FLAG',
@@ -350,7 +350,8 @@ export function buildTrackside(scene, { line, kerb, surfaceAt, colliders, corner
     const g = parts.get('umbrella').geo;
     const mesh = new THREE.InstancedMesh(g, new THREE.MeshStandardMaterial({ roughness: 0.8, side: THREE.DoubleSide }), umbrellas.length);
     const mm = new THREE.Matrix4(), col = new THREE.Color();
-    umbrellas.forEach(([x, y, z, c], k) => { mesh.setMatrixAt(k, mm.makeTranslation(x, y, z)); mesh.setColorAt?.(k, col.setHex(c)); });
+    const at = new THREE.Vector3(), still = new THREE.Quaternion(), one = new THREE.Vector3(1, 1, 1);
+    umbrellas.forEach(([x, y, z, c], k) => { mesh.setMatrixAt(k, mm.compose(at.set(x, y, z), still, one)); mesh.setColorAt?.(k, col.setHex(c)); });
     mesh.castShadow = true;
     group.add(mesh);
   }
