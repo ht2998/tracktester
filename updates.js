@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 76;
+export const BUILD = 77;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
@@ -30,7 +30,7 @@ export const UPDATES = [
     id: 66, date: '16 Nov 2026', title: 'Pit lane and garages sit properly on the ground',
     items: [
       ['No more grass in the pits', 'The pit entry and exit ramps, the pit lane and the garage floors now follow every rise and dip of Sepang\'s ground, so the grass no longer pokes through them. The grass is also drawn just behind everything laid on it, so it stops flickering through the track and run-offs from far away', 'fix'],
-      ['Trackside at the right height', 'The marshal posts, cameras, boards and start gantry were being lifted onto the hills twice, so they floated on the higher parts of the circuit: fixed', 'fix'],
+      ['Trackside at the right height', 'The marshal posts, cameras, boards and start gantry were being lifted onto the hills twice, so they floated (the start gantry about 6 m up in the air): fixed, they all stand on the ground now', 'fix'],
       ['Distance boards', 'The new trackside boards are now just 300 and 200 m, so they don\'t double up with the 150/100/50 m boards already there', 'fix'],
     ],
   },
