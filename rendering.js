@@ -23,6 +23,7 @@ import { startUpdates, BUILD as UPDATES_BUILD } from './updates.js';
 import { GodRays, BUILD as GODRAYS_BUILD } from './godrays.js';
 import { RainSystem } from './rain.js';
 import { buildSepang } from './sepang.js';
+import { paintFlag, FLAG_NAMES } from './trackside.js';
 import * as sepangFile from './sepang.js';
 import { buildFlora } from './flora.js';
 import { RacingLine, LapTimer, TrackMap } from './racingline.js';
@@ -59,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 54;
+const BUILD = 55;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -1201,6 +1202,105 @@ const toast = document.createElement('div');
 toast.style.cssText = 'position:fixed;left:50%;top:18%;transform:translateX(-50%);padding:10px 18px;border-radius:10px;background:rgba(20,24,16,0.85);color:#d8e2b8;font:700 18px system-ui,sans-serif;letter-spacing:0.08em;pointer-events:none;opacity:0;transition:opacity 0.4s;z-index:20';
 document.body.appendChild(toast);
 let toastTimer = null;
+// --- TRACKSIDE (trackside.js): the start lights, and the flags. Works out
+// what's happening on the track for the marshals, and shows the flag that
+// applies to you on screen ---
+const trackside = sepang?.trackside || null;
+const flagBox = document.createElement('div');
+flagBox.id = 'flag-box';
+flagBox.innerHTML = '<canvas width="64" height="44"></canvas><span></span>';
+document.body.append(flagBox);
+{ const st = document.createElement('style');
+  st.textContent = `#flag-box { position: fixed; left: 50%; top: 64px; transform: translateX(-50%); z-index: 30; display: none; align-items: center; gap: 8px;
+    background: rgba(14, 16, 19, 0.8); color: #f2f2ee; padding: 6px 12px 6px 6px; border-radius: 10px; font: 600 13px system-ui, sans-serif; letter-spacing: 0.08em; pointer-events: none; }
+    #flag-box canvas { width: 40px; height: 28px; border-radius: 3px; }`;
+  document.head.append(st); }
+const flagCanvas = flagBox.querySelector('canvas'), flagText = flagBox.querySelector('span');
+const FLAG_TOASTS = {
+  yellow: 'YELLOW FLAG: SLOW DOWN, NO OVERTAKING', yellow2: 'DOUBLE YELLOW: CAR STOPPED ON TRACK. BE READY TO STOP',
+  red: 'RED FLAG: SESSION STOPPED. BACK TO THE PITS SLOWLY', blue: 'BLUE FLAG: LET THE FASTER CAR THROUGH',
+  white: 'WHITE FLAG: SLOW CAR AHEAD', oil: 'SLIPPERY TRACK: OIL AHEAD', bw: 'BLACK AND WHITE FLAG: TRACK LIMITS WARNING',
+  meatball: 'MEATBALL FLAG: YOUR CAR IS DAMAGED. PIT THIS LAP', black: 'BLACK FLAG: DISQUALIFIED', chequered: 'CHEQUERED FLAG',
+};
+let shownFlag = null, playerStopped = 0;
+const flagState = { race: null, strikes: 0, wasOff: false, bwTime: 0, meatLap: null, pitted: false };
+const onTrackHere = (x, z) => { const s = sepang.surfaceAt(x, z); return s === 'tarmac' || s === 'kerb'; };
+function updateTrackside(dt) {
+  if (!trackside) return;
+  const race = aiField?.race;
+  // the start lights: counting down on the grid, off for the race, green when the track's open
+  if (race && race.phase === 'grid') trackside.setStartLights(race.lit || 0, 'grid');
+  else trackside.setStartLights(0, race ? 'off' : 'open');
+  if (race !== flagState.race) Object.assign(flagState, { race, strikes: 0, bwTime: 0, meatLap: null, pitted: false, hinted: false });
+  if (race && race.phase === 'grid' && !flagState.hinted) {
+    flagState.hinted = true;
+    showToast(touchMode ? 'HOLD THE CLUTCH TO REV. LET GO WHEN THE LIGHTS GO OUT' : 'HOLD X (CLUTCH) TO REV. LET GO WHEN THE LIGHTS GO OUT');
+  }
+  // --- what's happening out there ---
+  const cars = [];
+  const inPits = pits && (pits.phase !== 'off' || pits.inLane?.(physics.x, physics.z));
+  const speed = Math.hypot(physics.vx, physics.vy);
+  playerStopped = speed < 1.5 ? playerStopped + dt : 0;
+  if (!tankMode && !inPits && !(race && race.phase === 'grid')) {
+    const broken = physics.engineDead || physics.tyres.some((t) => t.detached) || physics.onFire;
+    const on = onTrackHere(physics.x, physics.z);
+    const hazard = playerStopped > 1 && (broken || playerStopped > 12) ? (on ? 2 : 1) : 0;
+    const slow = on && speed > 1.5 && speed < 12 && (physics.tyres.some((t) => t.detached || t.rim) || physics.engineHealth < 0.3);
+    cars.push({ x: physics.x, z: physics.z, v: speed, hazard, slow });
+  }
+  for (const c of aiField?.cars || []) {
+    if (c.parked) continue;
+    if (c.dnf || c.wrecked) cars.push({ x: c.physics.x, z: c.physics.z, v: 0, hazard: onTrackHere(c.physics.x, c.physics.z) ? 2 : 1 });
+  }
+  // red: a car burning on the track, or the burning engine block lying on it
+  const red = (!tankMode && physics.onFire && playerStopped > 1 && onTrackHere(physics.x, physics.z))
+    || (engineBlockFire > 0 && engineBlock && onTrackHere(engineBlock.position.x, engineBlock.position.z));
+  // --- your own flags ---
+  let mine = null;
+  if (race && race.phase === 'racing' && !tankMode) {
+    // track limits: each time you're off the track for long enough to lose the lap is a strike.
+    // 3 strikes: the black and white flag; every 2 after that: 5 seconds
+    const off = (lapTimer?.offFor || 0) > 0.5;
+    if (off && !flagState.wasOff) {
+      flagState.strikes++;
+      if (flagState.strikes === 3) flagState.bwTime = 8;
+      if (flagState.strikes >= 5 && flagState.strikes % 2 === 1) aiField.addPenalty(5, 'TRACK LIMITS');
+    }
+    flagState.wasOff = off;
+    flagState.bwTime = Math.max(0, flagState.bwTime - dt);
+    // the meatball: leaking, or bits hanging off. Pit within a lap, or you're out
+    const damaged = damageOn && !physics.engineDead && (physics.leakingOil || (physics.radiator < 1 && physics.coolant > 0.02)
+      || physics.fuelLeak > 0 || physics.sumpLeak > 0 || Object.values(physics.wingDamage).some((w) => w >= 1));
+    if (damaged && flagState.meatLap == null) { flagState.meatLap = aiField.player.lap; flagState.pitted = false; }
+    if (!damaged) flagState.meatLap = null;
+    if (pits && pits.phase !== 'off') flagState.pitted = true;
+    if (flagState.meatLap != null && !flagState.pitted && aiField.player.lap >= flagState.meatLap + 2 && !aiField.player.dsq) {
+      aiField.player.dsq = aiField.player.dnf = true;
+      if (lapTimer) lapTimer.valid = false;
+    }
+    mine = aiField.player.dsq ? 'black' : flagState.meatLap != null && !flagState.pitted ? 'meatball'
+      : flagState.bwTime > 0 ? 'bw' : aiField.blueFlagFor() ? 'blue' : null;
+  }
+  const chequered = !!race && (aiField.player.finished || aiField.cars.some((c) => c.finished));
+  const res = trackside.update(dt, {
+    cars, red, chequered,
+    slippery: (x, z) => oil.gripAt(x, z) < 0.9 || coolant.gripAt(x, z) < 0.9,
+    player: { x: physics.x, z: physics.z, flag: mine },
+  }, camera);
+  // on screen: the flag that applies to you right now
+  const f = tankMode ? null : res.flag;
+  if (f !== shownFlag) {
+    shownFlag = f;
+    flagBox.style.display = f ? 'flex' : 'none';
+    if (f) {
+      const g = flagCanvas.getContext('2d');
+      paintFlag(g, flagCanvas.width, flagCanvas.height, f);
+      flagText.textContent = FLAG_NAMES[f];
+      if (FLAG_TOASTS[f] && f !== 'green') showToast(FLAG_TOASTS[f]);
+    }
+  }
+}
+
 // --- Stalled: a big button to turn the key (or press I) ---
 const stallBtn = document.createElement('button');
 stallBtn.id = 'stall-btn';
@@ -3599,6 +3699,8 @@ const aiField = racing ? new AIField(scene, {
     surfaceGrip: (x, z) => physics.surfaceGrip(x, z), surfaceDrag: (x, z) => physics.surfaceDrag(x, z),
     groundHeight: groundAt, roadHeight: (x, z) => physics.roadHeight(x, z), wearScale: () => physics.wearScale(),
   },
+  // a time penalty (a jump start, track limits)
+  onPenalty: (sec, why) => showToast(`${why}: ${sec} SECOND TIME PENALTY`),
   // the race grid: you go to the back of it, stopped and straightened up
   onPlacePlayer: (x, z, heading) => {
     physics.x = x; physics.z = z; physics.heading = heading;
@@ -3756,8 +3858,10 @@ renderer.setAnimationLoop(() => {
   }
 
   const input = readControls();
-  // (on the race grid: held on the brakes until the lights go out)
-  if (aiField?.holdPlayer) { input.throttle = 0; input.brake = 1; }
+  // (on the race grid: held on the brakes until the lights go out. Hold
+  // the clutch (X) and you can rev it up ready; touch the throttle without
+  // it and the brakes let go: that's a jump start)
+  if (aiField?.holdPlayer && !(input.throttle > 0.05 && !input.clutch)) input.brake = 1;
   // the pit lane: the limiter, the team guiding you in, the car held on its marks
   const pitHold = pits && !tankMode ? pits.control(input, dt) : false;
   // Fast cars move in smaller steps, so they can't skip through a thin
@@ -3778,6 +3882,7 @@ renderer.setAnimationLoop(() => {
     }
   }
   aiField?.update(dt, { player: physics, camera, playerMass: tankMode ? 8720 : physics.spec.mass, wetness: rain.wetness });
+  updateTrackside(dt);
   pits?.update(dt, camera);
   engineSound.setHorn(input.horn);
   // Brake lights: bright while braking, dim red with the lights on
