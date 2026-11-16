@@ -22,7 +22,7 @@ import { groundAt } from './ground.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 6;
+export const BUILD = 7;
 
 const m4 = new THREE.Matrix4();
 const q = new THREE.Quaternion();
@@ -164,7 +164,7 @@ function buildGarages(scene, x, z0, z1, depth = 10, height = 5) {
   ROOFS.push({ minX: x - 2, maxX: x + depth, minZ: z0 - 0.3, maxZ: z1 + 0.3, height });
   // Floor: smooth grey epoxy with a yellow line across each doorway
   const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(depth - 0.3, len - 0.3),
+    new THREE.PlaneGeometry(depth - 0.3, len - 0.3, Math.ceil(depth / 2), Math.ceil(len / 2)),   // (2 m squares: it bends over the ground with the rest)
     new THREE.MeshStandardMaterial({ color: 0x8d9196, roughness: 0.35, metalness: 0.05 })
   );
   floor.rotation.x = -Math.PI / 2;
