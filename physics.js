@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 17;
+export const BUILD = 18;
 
 const G = 9.81;   // gravity, m/s²
 const RPM_PER_RADS = 60 / (2 * Math.PI);
@@ -358,6 +358,17 @@ export class CarPhysics {
     this.fireTime = 0;        // seconds since it caught
     this.fireSpot = null;     // which wheel is burning (a brake fire), or null: the engine bay
     this.engineOut = false;   // torn out of the car in a huge crash
+    // --- More ways to hurt the engine ---
+    this.stalled = false;     // stalled (a manual, revs dragged too low): press I to restart
+    this.stallTimer = 0;
+    this.cranking = 0;        // seconds left of the starter turning it over
+    this.lugging = 0;         // 0-1: flooring it at very low revs in a high gear (it shudders and knocks)
+    this.limiterTime = 0;     // seconds spent bouncing off the limiter (long spells wear the valves)
+    this.oilTemp = 55;        // engine oil, °C: starts cool, ~95-110 when warm. Revving hard cold wears it
+    this.sumpLeak = 0;        // a cracked sump (a hard landing on the floor): oil drips out
+    this.radiatorBlock = 0;   // 0-1: grass and gravel packed into the radiator (cools less)
+    this.filterClog = 0;      // 0-1: the air filter clogged with dust (less power)
+    this.lean = false;        // running lean on the last of the fuel (burns the pistons)
     // --- Four-wheel state ---
     this.w4 = {
       omega: [0, 0, 0, 0],      // each wheel's spin, rad/s
@@ -749,6 +760,11 @@ export class CarPhysics {
       const zone = hitPt[2] > 1.0 ? 'front' : hitPt[2] < -1.0 ? 'rear' : hitPt[0] > 0 ? 'left' : 'right';
       // (bottoming out on the floor after a jump only hurts if it's really hard)
       const floor = hitPt[1] < 0.2;
+      // (a hard one on the floor cracks the sump under the engine: oil drips out)
+      if (floor && hardest > 4.5) {
+        if (this.sumpLeak === 0) this.events.push({ type: 'sumpCracked' });
+        this.sumpLeak = Math.min(1, this.sumpLeak + (hardest - 4.5) / 5);
+      }
       if (!floor || hardest > 7) this.crashHit({ zone, speed: hardest * (floor ? 0.45 : 0.8), along: hitPt[2], across: hitPt[0] });
       if (!floor) this.events.push({ type: 'bodyHit', zone, speed: hardest, local: hitPt });
     }
@@ -810,10 +826,40 @@ export class CarPhysics {
     if (this.radiator < 1 && this.coolant > 0) {
       this.coolant = Math.max(0, this.coolant - (1 - this.radiator) * 0.035 * dt);
     }
-    const cooling = (0.35 + 0.65 * this.radiator) * clamp(this.coolant / 0.5, 0, 1);
+    // Air through the radiator: it needs speed. The electric fan helps once
+    // it's warm, but sitting still with the revs up (or a radiator packed
+    // with grass) still cooks it slowly.
+    const speed = Math.abs(this.vx);
+    const airflow = Math.max(clamp(speed / 22, 0, 1), this.coolantTemp > 0.6 ? 0.25 : 0);
+    const cooling = (0.35 + 0.65 * this.radiator) * clamp(this.coolant / 0.5, 0, 1)
+      * (0.3 + 0.7 * airflow) * (1 - 0.55 * this.radiatorBlock);
     const target = this.engineDead ? 0.25
       : 0.42 + 0.1 * effort + (1 - cooling) * (0.25 + 0.75 * effort);
     this.coolantTemp += (target - this.coolantTemp) * Math.min(1, (target > this.coolantTemp ? 0.07 : 0.03) * dt);
+    // boiling: the coolant boils off out of the overflow
+    if (this.coolantTemp > 0.95 && this.coolant > 0) this.coolant = Math.max(0, this.coolant - (this.coolantTemp - 0.95) * 0.3 * dt);
+    // Oil temperature: warms up with work (about a minute of driving)
+    const oilTarget = this.engineDead ? 30 : 88 + 22 * effort + 30 * Math.max(0, this.coolantTemp - 0.8);
+    this.oilTemp += (oilTarget - this.oilTemp) * Math.min(1, 0.025 * dt);
+    // Grass, gravel and dirt thrown into the radiator and the air intake
+    const W = this.w4;
+    if (W && speed > 3) {
+      const dirt = (this.surfaceDrag(W.at[0], W.at[1]) + this.surfaceDrag(W.at[2], W.at[3])) / 2;
+      if (dirt > 0) {
+        this.radiatorBlock = Math.min(1, this.radiatorBlock + dirt * Math.min(speed, 30) * 0.0033 * dt);
+        this.filterClog = Math.min(1, this.filterClog + dirt * Math.min(speed, 30) * 0.0022 * dt);
+      }
+    }
+    // Slow wear, for the player's car (the computer drivers look after theirs)
+    if (!this.isAI && !this.engineDead) {
+      let wear = 0;
+      const rev = this.rpm / this.spec.redline;
+      if (this.limiterTime > 5) wear += 0.0015;                                     // valves bouncing on the limiter
+      if (this.oilTemp < 75 && rev > 0.8) wear += 0.002 * (75 - this.oilTemp) / 20;  // thrashing it cold
+      wear += 0.0025 * this.lugging;                                                // lugging: hammering the bearings
+      if (this.lean) wear += 0.006 * this.throttleAmount * (1 - this.fuel / this.spec.fuelReserve);   // lean: burning the pistons
+      if (wear > 0 && this.engineHealth > 0) this.damageEngine(wear * dt);
+    }
     // --- Running dry: with the coolant gone the engine cooks. The oil
     // thins and burns (black smoke pours out, starting about half a minute
     // in), the fuel goes off by itself before the spark (pre-ignition) and
@@ -1030,7 +1076,7 @@ export class CarPhysics {
 
   // Leaking oil once the engine is badly damaged
   get leakingOil() {
-    return this.engineHealth < 0.1 && this.oilLevel > 0;
+    return (this.engineHealth < 0.1 || this.sumpLeak > 0) && this.oilLevel > 0;
   }
 
   // --- Oil: drains while leaking; running low starves and wrecks the engine ---
@@ -1040,7 +1086,9 @@ export class CarPhysics {
     if (this.leakingOil) {
       // A cracked engine drips; a blown one pours
       // (slower as it runs low: less oil, less pressure pushing it out)
-      const drain = (this.engineBlown ? s.oilPourRate : s.oilLeakRate) * (0.3 + 0.7 * Math.min(1, this.oilLevel / 0.25));
+      // (a cracked sump drips at its own rate, as bad as the crack)
+      const rate = this.engineBlown ? s.oilPourRate : this.engineHealth < 0.1 ? s.oilLeakRate : 0;
+      const drain = Math.max(rate, s.oilLeakRate * 1.6 * this.sumpLeak) * (0.3 + 0.7 * Math.min(1, this.oilLevel / 0.25));
       this.oilLevel = Math.max(0, this.oilLevel - drain * dt);
     }
     if (this.engineBlown) {
@@ -1051,7 +1099,7 @@ export class CarPhysics {
     // harder the engine is worked, the faster it destroys itself. At 0% it's
     // a ticking time bomb: you can hear the rods knocking.
     const starvation = clamp((0.3 - this.oilLevel) / 0.3, 0, 1);
-    this.knock = Math.max(starvation, this.overheatKnock);      // (or the knock of an overheated engine)
+    this.knock = Math.max(starvation, this.overheatKnock, this.lugging * 0.6);      // (or the knock of an overheated or lugging engine)
     if (starvation > 0) {
       const effort = 0.2 + 0.8 * clamp(this.rpm / s.redline, 0, 1);
       this.engineHealth -= starvation * effort * s.starvationDamage * dt;
@@ -1061,7 +1109,15 @@ export class CarPhysics {
 
   // The engine isn't running: blown up, or out of fuel
   get engineDead() {
-    return this.engineBlown || this.fuel <= 0;
+    return this.engineBlown || this.fuel <= 0 || this.stalled;
+  }
+
+  // Turn the key: the starter turns it over for a moment, then it fires
+  restartEngine() {
+    if (!this.stalled || this.cranking > 0 || this.engineBlown || this.fuel <= 0) return false;
+    this.cranking = 0.7;
+    this.events.push({ type: 'crank' });
+    return true;
   }
 
   get fuelLevel() {
@@ -1332,6 +1388,25 @@ export class CarPhysics {
     }
     this.clutchWasIn = clutchIn;
     this.clutchIn = clutchIn;
+    // --- Stalling (manual only): in 3rd or above, nearly stopped with the
+    // clutch out, the wheels drag the revs down until the engine dies.
+    // (1st and 2nd slip the clutch for you; the TT-88 has anti-stall.)
+    if (!this.stalled && !dead && this.transmission === 'manual' && !s.antiStall && !this.noStall
+        && this.gear >= 3 && !clutchIn && this.shiftTimer <= 0 && coupledRpm < s.idleRpm * 0.55) {
+      this.stallTimer += h;
+      if (this.stallTimer > 0.35) { this.stalled = true; this.stallTimer = 0; this.events.push({ type: 'stall' }); }
+    } else this.stallTimer = 0;
+    // the starter: turns it over at a few hundred rpm, then it catches
+    if (this.cranking > 0) {
+      this.cranking -= h;
+      this.rpm += (260 - this.rpm) * Math.min(1, 12 * h);
+      if (this.cranking <= 0) { this.cranking = 0; this.stalled = false; this.rpm = s.idleRpm * 1.4; this.events.push({ type: 'started' }); }
+    }
+    // Lugging: flat out at very low revs in a high gear, the clutch fully in
+    // (the engine shudders and knocks, and it hurts the bearings)
+    const lugRpm = Math.max(s.idleRpm * 1.7, s.redline * 0.24);
+    this.lugging = !dead && !clutchIn && !clutchSlipping && this.gear >= 2 && this.shiftTimer <= 0 && throttle > 0.6 && coupledRpm < lugRpm
+      ? clamp((lugRpm - coupledRpm) / (lugRpm - s.idleRpm * 0.55), 0, 1) * throttle : 0;
     // How far down the driver's left foot has the clutch pedal (for the
     // cockpit): all the way with X, a quick dip for each manual gear change,
     // and easing up as the clutch bites when pulling away
@@ -1360,9 +1435,10 @@ export class CarPhysics {
     this.limiterClock = (this.limiterClock + h) % 0.08;
     this.limiterCut = atLimit && this.limiterClock < 0.04;   // 40 ms cut, 40 ms fire
     this.onLimiter = atLimit;
+    this.limiterTime = atLimit ? this.limiterTime + h : Math.max(0, this.limiterTime - h * 2);
     if (atLimit) targetRpm = this.limiterCut ? s.redline - 220 : s.redline;
     targetRpm = Math.min(targetRpm, s.redline + 1900);
-    this.rpm += (targetRpm - this.rpm) * Math.min(1, (atLimit ? 45 : 18) * h);
+    if (!(this.cranking > 0)) this.rpm += (targetRpm - this.rpm) * Math.min(1, (atLimit ? 45 : 18) * h);
     // Shown in red on the dash: on the limiter, or over-revved by a bad downshift
     this.limiter = atLimit || this.rpm > s.redline + 50;
 
@@ -1403,6 +1479,8 @@ export class CarPhysics {
     }
     // Last drops of fuel: the engine sputters, cutting out now and then
     this.misfiring = !dead && (this.fuel < s.fuelReserve || this.overheatKnock > 0.3);
+    this.lean = !dead && this.fuel < s.fuelReserve && throttle > 0.5;
+    engineTorque *= engineTorque > 0 ? 1 - 0.15 * this.filterClog : 1;   // a clogged air filter: breathing through a sock
     if (!dead && this.overheatKnock > 0) engineTorque *= 1 - 0.45 * this.overheatKnock;   // knocking: losing power
     if (this.misfiring && Math.random() < 0.5 * (1 - this.fuel / s.fuelReserve)) engineTorque = Math.min(engineTorque, 0);
     if (dead) engineTorque = 0;
