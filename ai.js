@@ -23,7 +23,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 7;
+export const BUILD = 8;
 
 import * as THREE from 'three';
 import { CarPhysics, CATERHAM } from './physics.js';
@@ -369,6 +369,7 @@ export class AIField {
     this.scene.add(model.car);
     const physics = new CarPhysics(this.spec);
     physics.setTransmission('auto');
+    physics.isAI = true;                                    // (no slow engine wear for the computer drivers)
     physics.assists.abs = Math.random() < 0.3 ? 3 : 5;     // (some drivers lock up more)
     physics.assists.tcs = Math.random() < 0.35 ? 2 : 4;    // (and some spin the wheels more out of corners)
     // (the TT-88 on racing slicks, and every driver keeps its traction
