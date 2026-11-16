@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 16;
+export const BUILD = 17;
 
 const G = 9.81;   // gravity, m/s²
 const RPM_PER_RADS = 60 / (2 * Math.PI);
@@ -357,6 +357,7 @@ export class CarPhysics {
     this.fireLevel = 0;       // 0-1, how big the flames are
     this.fireTime = 0;        // seconds since it caught
     this.fireSpot = null;     // which wheel is burning (a brake fire), or null: the engine bay
+    this.engineOut = false;   // torn out of the car in a huge crash
     // --- Four-wheel state ---
     this.w4 = {
       omega: [0, 0, 0, 0],      // each wheel's spin, rad/s
@@ -420,7 +421,8 @@ export class CarPhysics {
       const radBefore = this.radiator;
       // (the radiator sits back behind the nose: a tap at walking pace, or
       // a nudge at 20 km/h, doesn't reach it)
-      this.radiator = Math.max(0, this.radiator - Math.max(0, v - 7) / 13);
+      // (the TT-88's are in its sidepods: only a big hit crumples that far back)
+      this.radiator = Math.max(0, this.radiator - Math.max(0, v - (this.spec.radiatorSides ? 16 : 7)) / 13);
       // The cooling system is under pressure: a holed radiator doesn't just
       // seep, it bursts out in a pink spray (and steam) right away
       if (radBefore - this.radiator > 0.05 && this.coolant > 0.05) {
@@ -452,6 +454,8 @@ export class CarPhysics {
         }
         if (v > 26) this.damageEngine((v - 26) * 0.06 * (0.6 + 0.8 * Math.random()));
       }
+      // a front-engined car hit that hard: the engine's torn off its mounts and thrown out
+      if (!this.spec.engineRear && v > 33) this.knockEngineOut();
       // the front wing takes it first (one side, or both if it's head on)
       const crushF = Math.max(0, v - 2.5) * 0.09;
       if (across > 0.15) crushWing('fl', crushF); else if (across < -0.15) crushWing('fr', crushF);
@@ -470,6 +474,8 @@ export class CarPhysics {
         }
         if (v > 26) this.damageEngine((v - 26) * 0.04 * (0.5 + Math.random()));
       }
+      // (a mid-engined car, the TT-88: its engine is behind the driver)
+      if (this.spec.engineRear && v > 28) this.knockEngineOut();
       if (v > 7) this.fuelLeak = Math.min(0.6, this.fuelLeak + (v - 7) * 0.025);
       if (Math.abs(across) > 0.5 && v > 5) bend(wheelNear(false, across > 0), (v - 5) * 0.0025, across > 0 ? 1 : -1);
       crushWing('rear', Math.max(0, v - 2.5) * 0.08);
@@ -478,6 +484,15 @@ export class CarPhysics {
       const front = along > -0.2;
       const i = wheelNear(front, left);
       bend(i, (v - 2.5) * 0.004, left ? -1 : 1);       // pushed in towards the car
+      // (a car with its radiators in the sidepods: a side hit holes one)
+      if (this.spec.radiatorSides && v > 7) {
+        const radBefore = this.radiator;
+        this.radiator = Math.max(0, this.radiator - (v - 7) / 15);
+        if (radBefore - this.radiator > 0.05 && this.coolant > 0.05) {
+          this.events.push({ type: 'coolantBurst', strength: clamp((radBefore - this.radiator) * 2, 0.3, 1) });
+          this.coolant = Math.max(0, this.coolant - (radBefore - this.radiator) * 0.25);
+        }
+      }
       if (front && along > 1.2) crushWing(left ? 'fl' : 'fr', Math.max(0, v - 4) * 0.07);
       if (v > 8) this.puncture(i, 0.04 * (v - 8));
     }
@@ -999,6 +1014,14 @@ export class CarPhysics {
   }
 
   // Health hits zero: something lets go inside. No more power until reset.
+  // the engine torn out of the car in a huge crash: it's gone (and burning)
+  knockEngineOut() {
+    if (this.engineOut) return;
+    this.engineOut = true;
+    if (!this.engineBlown) this.blowEngine();
+    this.events.push({ type: 'engineOut' });
+  }
+
   blowEngine() {
     this.engineHealth = 0;
     this.engineBlown = true;
@@ -1563,7 +1586,13 @@ export class CarPhysics {
           const lock = clamp(s.lsdRate * (W4.omega[2] - W4.omega[3]), -(s.lsdPreload + s.lsdRamp * Math.abs(driveTorque)), s.lsdPreload + s.lsdRamp * Math.abs(driveTorque));
           drive = driveTorque / 2 + (i === 2 ? -lock : lock);
         }
-        const inertia = i < 2 ? s.wheelInertiaFront : s.wheelInertiaRear;
+        // (the driven wheels also have to spin the engine up: its flywheel and
+        // gears, felt at the wheels times the gearing squared. In first and
+        // second that's many times the wheels' own weight, which is why a
+        // real engine can't flash to the redline the instant the tyres let go.
+        // Not while the clutch is out or a gear's changing.)
+        const coupled = i >= 2 && !this.clutchIn && !clutchSlipping && this.shiftTimer <= 0 && this.gear !== 0;
+        const inertia = i < 2 ? s.wheelInertiaFront : s.wheelInertiaRear + (coupled ? 0.5 * (s.engineInertia ?? 0.12) * ratio * ratio : 0);
         // (worked out 'implicitly': the road pushes back on the wheel the
         // faster it spins, so this stays steady even at walking pace)
         const grab = gone ? 0 : Fmax * (blendC * Bn) * R / (shape.kappa * ref);
