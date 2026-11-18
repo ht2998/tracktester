@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 19;
+export const BUILD = 20;
 
 const G = 9.81;   // gravity, m/s²
 const RPM_PER_RADS = 60 / (2 * Math.PI);
@@ -358,6 +358,7 @@ export class CarPhysics {
     this.fireTime = 0;        // seconds since it caught
     this.fireSpot = null;     // which wheel is burning (a brake fire), or null: the engine bay
     this.engineOut = false;   // torn out of the car in a huge crash
+    this.wrecked = false;     // blown up: wheels gone, engine out, a burnt shell
     // --- More ways to hurt the engine ---
     this.stalled = false;     // stalled (a manual, revs dragged too low): press I to restart
     this.stallTimer = 0;
@@ -1073,6 +1074,23 @@ export class CarPhysics {
 
   // Health hits zero: something lets go inside. No more power until reset.
   // the engine torn out of the car in a huge crash: it's gone (and burning)
+  // THE CAR GOES UP (after a long fire, or a dead stop from 150+): every
+  // wheel torn off, the engine thrown out, the fuel gone. A burnt shell.
+  explode() {
+    if (this.damageOff || this.wrecked) return false;
+    this.wrecked = true;
+    for (let i = 0; i < 4; i++) {
+      if (this.tyres[i].detached) continue;
+      this.suspDamage[i] = 1; this.tyres[i].detached = true;
+      this.events.push({ type: 'wheelOff', wheel: i, torn: true });
+    }
+    if (!this.engineOut) this.knockEngineOut();
+    this.fuel = 0; this.fuelLeak = 0;
+    this.onFire = false; this.fireSpot = null;
+    this.events.push({ type: 'exploded' });
+    return true;
+  }
+
   knockEngineOut() {
     if (this.damageOff) return;
     if (this.engineOut) return;

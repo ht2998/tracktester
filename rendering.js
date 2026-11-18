@@ -23,7 +23,7 @@ import { startUpdates, BUILD as UPDATES_BUILD } from './updates.js';
 import { GodRays, BUILD as GODRAYS_BUILD } from './godrays.js';
 import { RainSystem } from './rain.js';
 import { buildSepang } from './sepang.js';
-import { paintFlag, FLAG_NAMES } from './trackside.js';
+import { paintFlag, FLAG_NAMES, BUILD as TRACKSIDE_BUILD } from './trackside.js';
 import * as sepangFile from './sepang.js';
 import { buildFlora } from './flora.js';
 import { RacingLine, LapTimer, TrackMap } from './racingline.js';
@@ -59,7 +59,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 57;
+const BUILD = 59;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -68,7 +68,7 @@ const updateScreen = startUpdates({
   'smoke.js': smokeFile.BUILD, 'hud.js': hudFile.BUILD, 'oil.js': oilFile.BUILD,
   'skids.js': skidsFile.BUILD, 'scenery.js': sceneryFile.BUILD, 'grass.js': grassFile.BUILD,
   'sky.js': skyFile.BUILD, 'debris.js': debrisFile.BUILD, 'touch.js': touchFile.BUILD,
-  'rain.js': rainFile.BUILD, 'effects.js': effectsFile.BUILD, 'cockpit.js': cockpitFile.BUILD, 'tyres.js': tyresFile.BUILD, 'sepang.js': sepangFile.BUILD, 'flora.js': floraFile.BUILD, 'racingline.js': racingLineFile.BUILD, 'ground.js': groundFile.BUILD, 'assets.js': packFile.BUILD, 'ai.js': AI_BUILD, 'f1.js': F1_BUILD, 'garage.js': GARAGE_BUILD, 'pits.js': PITS_BUILD,
+  'rain.js': rainFile.BUILD, 'effects.js': effectsFile.BUILD, 'cockpit.js': cockpitFile.BUILD, 'tyres.js': tyresFile.BUILD, 'sepang.js': sepangFile.BUILD, 'flora.js': floraFile.BUILD, 'racingline.js': racingLineFile.BUILD, 'ground.js': groundFile.BUILD, 'assets.js': packFile.BUILD, 'ai.js': AI_BUILD, 'f1.js': F1_BUILD, 'garage.js': GARAGE_BUILD, 'pits.js': PITS_BUILD, 'trackside.js': TRACKSIDE_BUILD,
 });
 
 // ---------------------------------------------------------------------
@@ -1201,6 +1201,7 @@ function aimPoint() {
 }
 let heavyPhys = null;
 let heavyMode = false;
+let teleportGrace = 0;     // (just moved by the game, not driven: no crash counts for a moment)
 let typedKeys = '';
 const toast = document.createElement('div');
 toast.style.cssText = 'position:fixed;left:50%;top:18%;transform:translateX(-50%);padding:10px 18px;border-radius:10px;background:rgba(20,24,16,0.85);color:#d8e2b8;font:700 18px system-ui,sans-serif;letter-spacing:0.08em;pointer-events:none;opacity:0;transition:opacity 0.4s;z-index:20';
@@ -1372,6 +1373,7 @@ function enterCode(code) {
     carModel.car.visible = !heavyMode;
     renderer.domElement.style.cursor = heavyMode ? 'crosshair' : '';
     hud.showEngines?.(!heavyMode);
+    backToCarBtn.style.display = heavyMode ? 'block' : 'none';
     heavy.group.visible = heavyMode;
     showToast(heavyMode ? packed.NAME.toUpperCase() : 'BACK IN THE CAR');
     return true;
@@ -1421,6 +1423,13 @@ async function openPack(run) {
     return false;
   }
 }
+// (only while you're in the other vehicle: a plain way back to the car)
+const backToCarBtn = document.createElement('button');
+backToCarBtn.type = 'button';
+backToCarBtn.textContent = 'Back to the car';
+backToCarBtn.style.cssText = 'position:fixed;left:12px;top:50%;transform:translateY(-50%);z-index:21;display:none;padding:9px 14px;border-radius:9px;border:0;font:600 14px system-ui,sans-serif;color:#f0ecd8;background:rgba(51,54,44,0.88);cursor:pointer';
+backToCarBtn.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (heavyMode) enterCode('SWAP'); });
+document.body.appendChild(backToCarBtn);
 const DIALS = () => ({ t: hud.tyreBars?.canvas, r: hud.tach?.canvas, s: hud.speedo?.canvas, f: hud.fuelGauge?.canvas, o: hud.oilGauge?.canvas });
 function hookDials() {
   for (const [letter, el] of Object.entries(DIALS())) {
@@ -1867,6 +1876,7 @@ const physics = new CarPhysics();
 tyreLooks.apply(physics.tyreCompound);
 // Where the car starts (and goes back to on reset): at Sepang, on the start straight
 function placeAtStart() {
+  teleportGrace = 0.6;
   if (!sepang) return;
   physics.x = sepang.start.x;
   physics.z = sepang.start.z;
@@ -2468,6 +2478,7 @@ function updateSmoke(dt) {
   flames.emitFrom('fire', fireWorld, fire, carVelocity, dt);
   flameCore.emitFrom('fire', fireWorld, fire, carVelocity, dt);
   updateEngineBlock(dt);
+  updateExplosion(dt);
   flames.update(dt);
   flameCore.update(dt);
   if (fireLight) {
@@ -2603,11 +2614,14 @@ function vehicleGroundY() {
   return physics.air ? physics.pose.y : physics.ground.y;
 }
 
+let hardestHit = 0;
 function collide(now) {
   if (physics.air && physics.airHeight > 0.9) return;   // flying over the barriers
+  const speedBefore = Math.hypot(physics.vx, physics.vy);
+  hardestHit = 0;
   for (let iter = 0; iter < 4; iter++) {
     const k = findContact();
-    if (!k) return;
+    if (!k) break;
     physics.x += k.nx * k.depth;
     physics.z += k.nz * k.depth;
     const h = physics.heading;
@@ -2628,6 +2642,7 @@ function collide(now) {
     const zone = nf < -0.6 ? 'front' : nf > 0.6 ? 'rear' : nl > 0 ? 'right' : 'left';
     const along = rx * fx + rz * fz, across = rx * lx + rz * lz;
     const hitSpeed = -vn * (CRASH_SOFT[k.c.kind] ?? 1);
+    hardestHit = Math.max(hardestHit, hitSpeed);
     if (hitSpeed > 2.5 && now - lastCrashAt > 0.3 && !heavyMode) {   // (the heavy barely notices)
       lastCrashAt = now;
       physics.crashHit({ zone, speed: hitSpeed, along, across });
@@ -2683,6 +2698,11 @@ function collide(now) {
     physics.vy = vx * lx + vz * lz;
     physics.yawRate = w;
   }
+  // Stopped dead from 150 km/h or more by something solid (not a scrape,
+  // and never the game moving the car): it goes up
+  const speedAfter = Math.hypot(physics.vx, physics.vy);
+  if (speedBefore >= 150 / 3.6 && hardestHit >= 0.6 * speedBefore && speedAfter < speedBefore * 0.25
+      && teleportGrace <= 0 && !heavyMode) physics.explode();
 }
 
 // ---------------------------------------------------------------------
@@ -3331,6 +3351,7 @@ function repairAll() {
   mudClumps.clear();
   clearDents();
   clearScratchDecals();
+  clearExplosion();
   clearFlyingParts();
 }
 // THE CARS: the Caterham and the TT-88 (f1.js), and the engine in it (the
@@ -3435,6 +3456,7 @@ function scrapeFloor(dt) {
 // flies off, tumbling, then skids to a stop on the track; the car loses
 // that end's downforce (physics)
 const flyingParts = [];
+let raceControl = null;      // (race control: safety car, recovery, flags; set up with the trackside)
 function snapWing(part) {
   const F = carModel.car.userData.f1;
   const g = F?.wings?.[part];
@@ -3512,6 +3534,98 @@ function updateEngineBlock(dt) {
   flames.emitFrom('engineOut', engineBlockWorld, f, ZERO_V, dt);
   flameCore.emitFrom('engineOut', engineBlockWorld, f * 0.9, ZERO_V, dt);
   engineSmoke.emitFrom('engineOut', engineBlockWorld, Math.max(0.4, f), ZERO_V, dt);
+}
+// THE CAR GOES UP: on fire for more than 45 seconds (a warning at 35), or
+// stopped dead from 150 km/h or more against something solid. A fireball,
+// the panels and wheels blown off, the engine thrown out, and a burnt-out
+// shell left smouldering. Never from the game moving the car itself (a
+// reset, Back on track, the grid, the pits, the garage): only real hits.
+let fireTime = 0, fireWarned = false, exploded = false;
+let boom = null;                      // the fireball, while it lasts
+let wreckBurn = 0, wreckSmoulder = 0;
+const charredMat = new THREE.MeshStandardMaterial({ color: 0x1a1816, roughness: 1, metalness: 0.15 });
+const charredFrom = new Map();        // each part's own material, for the repair
+const wreckWorld = new THREE.Vector3(), UP_V = new THREE.Vector3(0, 3, 0);
+function explodeCar() {
+  if (exploded) return;
+  exploded = true;
+  carModel.car.updateMatrixWorld();
+  const at = carModel.car.getWorldPosition(new THREE.Vector3());
+  // panels blown off: pieces of the bodywork, tumbling away in every direction
+  const bodyMats = [];
+  carModel.car.traverse((o) => { if (o.isMesh && !o.isInstancedMesh && o.material?.color) bodyMats.push(o.material); });
+  for (let k = 0; k < 9; k++) {
+    const piece = new THREE.Mesh(new THREE.BoxGeometry(0.35 + Math.random() * 0.6, 0.025, 0.25 + Math.random() * 0.5),
+      k % 3 === 2 ? charredMat : bodyMats[Math.floor(Math.random() * bodyMats.length)] || charredMat);
+    piece.castShadow = true;
+    piece.position.copy(at).add(new THREE.Vector3((Math.random() - 0.5) * 1.2, 0.5 + Math.random() * 0.4, (Math.random() - 0.5) * 2));
+    scene.add(piece);
+    const dir = new THREE.Vector3(Math.random() - 0.5, 0, Math.random() - 0.5).normalize();
+    const v = new THREE.Vector3().copy(carVelocity).multiplyScalar(0.3).addScaledVector(dir, 6 + Math.random() * 9);
+    v.y = 6 + Math.random() * 9;
+    flyingParts.push({ obj: piece, v, w: new THREE.Vector3((Math.random() - 0.5) * 24, (Math.random() - 0.5) * 24, (Math.random() - 0.5) * 24), rest: false, boom: true });
+  }
+  // the TT-88's wings and mirrors, the Caterham's wheel arches: all off
+  for (const part of ['fl', 'fr', 'rear']) snapWing(part);
+  for (const side of ['l', 'r']) snapMirror?.(side);
+  carModel.cycleWings?.forEach((cw) => {
+    if (cw.parent !== carModel.car) return;
+    scene.attach(cw);
+    flyingParts.push({ obj: cw, v: new THREE.Vector3((Math.random() - 0.5) * 10, 7 + Math.random() * 5, (Math.random() - 0.5) * 10), w: new THREE.Vector3((Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20), rest: false });
+  });
+  // what's left: burnt black
+  carModel.car.traverse((o) => { if (o.isMesh && !o.isInstancedMesh && !charredFrom.has(o)) { charredFrom.set(o, o.material); o.material = charredMat; } });
+  // the fireball
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 12), new THREE.MeshBasicMaterial({ color: 0xffa040, transparent: true, opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending }));
+  ball.position.copy(at).add(new THREE.Vector3(0, 0.8, 0));
+  const light = new THREE.PointLight(0xff8a30, 0, 60, 1.6);
+  light.position.copy(ball.position);
+  scene.add(ball, light);
+  boom = { ball, light, t: 0 };
+  wreckBurn = 1; wreckSmoulder = 1;
+  shake = Math.max(shake, 0.6);
+  engineSound.playExplosion(camera.position.distanceTo(at));
+  aiField?.blast?.(at, 6);
+  showToast('THE CAR\'S GONE UP');
+  // in a race: out of it, and the session's stopped
+  if (aiField?.race && aiField.race.phase === 'racing') { aiField.player.dnf = true; raceControl?.bigIncident?.('fire', at); }
+}
+function updateExplosion(dt) {
+  teleportGrace = Math.max(0, teleportGrace - dt);
+  // on fire too long: it goes up
+  if (physics.onFire && !heavyMode && !physics.damageOff && !exploded) {
+    fireTime += dt;
+    if (fireTime > 35 && !fireWarned) { fireWarned = true; showToast('FIRE SPREADING: GET OUT'); }
+    if (fireTime > 45) physics.explode();
+  } else if (!physics.onFire) { fireTime = Math.max(0, fireTime - dt * 2); if (fireTime < 30) fireWarned = false; }
+  if (boom) {
+    boom.t += dt;
+    const k = boom.t / 0.9;
+    boom.ball.scale.setScalar(0.6 + 6.5 * Math.min(1, k * 1.6));
+    boom.ball.material.opacity = Math.max(0, 0.95 * (1 - k));
+    boom.ball.material.color.setHSL(0.08 - 0.05 * Math.min(1, k), 1, 0.55 - 0.25 * Math.min(1, k));
+    boom.light.intensity = Math.max(0, 2600 * (1 - k * 1.3));
+    boom.ball.position.y += dt * 2.5;
+    flames.emitFrom('boom', boom.ball.position, Math.max(0, 1 - k), UP_V, dt);
+    flameCore.emitFrom('boom', boom.ball.position, Math.max(0, 1 - k), UP_V, dt);
+    if (k >= 1) { scene.remove(boom.ball, boom.light); boom.ball.geometry.dispose(); boom.ball.material.dispose(); boom = null; }
+  }
+  if (exploded && (wreckBurn > 0 || wreckSmoulder > 0)) {
+    // the shell burns for about 25 seconds, then smoulders for a minute
+    wreckBurn = Math.max(0, wreckBurn - dt / 25);
+    wreckSmoulder = Math.max(0, wreckSmoulder - dt / 85);
+    carModel.car.getWorldPosition(wreckWorld); wreckWorld.y += 0.5;
+    if (wreckBurn > 0) { flames.emitFrom('wreck', wreckWorld, Math.min(1, wreckBurn * 1.4), ZERO_V, dt); flameCore.emitFrom('wreck', wreckWorld, wreckBurn, ZERO_V, dt); }
+    engineSmoke.emitFrom('wreck', wreckWorld, Math.max(0.25, wreckSmoulder), ZERO_V, dt);
+  }
+}
+function clearExplosion() {
+  for (const [o, m] of charredFrom) o.material = m;
+  charredFrom.clear();
+  for (let i = flyingParts.length - 1; i >= 0; i--) if (flyingParts[i].boom) { scene.remove(flyingParts[i].obj); flyingParts[i].obj.geometry?.dispose(); flyingParts.splice(i, 1); }
+  if (boom) { scene.remove(boom.ball, boom.light); boom = null; }
+  exploded = false; fireTime = 0; fireWarned = false; wreckBurn = wreckSmoulder = 0;
+  teleportGrace = 0.6;     // (the car's just been moved by the game: not a crash)
 }
 function clearFlyingParts() {
   // (a fresh car: its wings back on)
@@ -3623,6 +3737,7 @@ function clearScratchDecals() { for (const m of scratchDecals) carModel.car.remo
 let backToTrack = false;
 window.addEventListener('keydown', (e) => { if (e.code === 'KeyB' && !(e.target && e.target.tagName === 'INPUT')) backToTrack = true; });
 function returnToTrack() {
+  teleportGrace = 0.6;     // (the game moving the car: never a crash)
   let x, z, h;
   if (pits?.holding) pits.reset();
   if (racing) {
@@ -3735,6 +3850,7 @@ const aiField = racing ? new AIField(scene, {
   onPenalty: (sec, why) => showToast(`${why}: ${sec} SECOND TIME PENALTY`),
   // the race grid: you go to the back of it, stopped and straightened up
   onPlacePlayer: (x, z, heading) => {
+    teleportGrace = 0.6;
     physics.x = x; physics.z = z; physics.heading = heading;
     physics.vx = physics.vy = physics.yawRate = 0;
     physics.steer = 0;
@@ -3935,6 +4051,7 @@ renderer.setAnimationLoop(() => {
       debrisPending = true;
     }
     if (e.type === 'engineOut') knockEngineOut();
+    if (e.type === 'exploded') explodeCar();
     if (e.type === 'stall') showToast('STALLED');
     if (e.type === 'crank') engineSound.playCrank?.();
     if (e.type === 'sumpCracked') showToast('SUMP CRACKED: LEAKING OIL');

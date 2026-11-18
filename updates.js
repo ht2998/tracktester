@@ -21,11 +21,19 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 79;
+export const BUILD = 80;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 68, date: '18 Nov 2026', title: 'Up in flames',
+    items: [
+      ['The car can go up', 'Leave it burning for more than 45 seconds (you get a warning at 35) and the fuel goes up: a fireball, the panels and wheels blown off, the engine thrown out, and a burnt-out shell left smouldering. In a race, that\'s a DNF', 'fire'],
+      ['Or stop it dead', 'Hit something solid hard enough to stop dead from 150 km/h or more and it goes up straight away. Scrapes and glancing hits don\'t count, and neither does Reset or Back on track', 'fire'],
+      ['Only with damage on', 'With the Damage switch off, nothing catches fire, so nothing goes up', 'update'],
+    ],
+  },
   {
     id: 67, date: '18 Nov 2026', title: 'Engine swap in the side panel',
     items: [
