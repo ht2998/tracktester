@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 20;
+export const BUILD = 21;
 
 const G = 9.81;   // gravity, m/s²
 const RPM_PER_RADS = 60 / (2 * Math.PI);
@@ -342,6 +342,7 @@ export class CarPhysics {
     this.coolant = 1;         // coolant left in the system (leaks from a holed radiator)
     this.coolantTemp = 0.45;  // engine temperature gauge: ~0.45 normal, 1 = boiling
     this.fuelLeak = 0;        // litres per second leaking from a split tank (rear hits)
+    this.fires = [];          // crash fires besides the engine bay's: { kind: 'fuel' | 'oil', at: [x, y, z] (car's frame), level, t }
     this.wheelBend = [0, 0, 0, 0];   // each wheel knocked out of line, radians (+ = toe out to the left)
     this.suspDamage = [0, 0, 0, 0];  // each corner's suspension, bent (0) to torn off (1): the wheel leans, grips less, and at 1 comes off
     this.wingDamage = { fl: 0, fr: 0, rear: 0 };   // a car with wings (the TT-88): each crushed (0) to snapped off (1)
@@ -516,10 +517,26 @@ export class CarPhysics {
       if (front && along > 1.2) crushWing(left ? 'fl' : 'fr', Math.max(0, v - 4) * 0.07);
       if (v > 8) this.puncture(i, 0.04 * (v - 8));
     }
-    // Fire: a big hit on a badly damaged engine, or with fuel spilling out
-    const fireChance = (this.engineHealth < 0.35 && v > 8 ? 0.35 : 0)
-      + (this.fuelLeak > 0 && v > 10 ? 0.3 : 0) + (v > 25 ? 0.25 : 0);
-    if (!this.onFire && Math.random() < fireChance) this.catchFire();
+    // Fire: only some crashes, and where the hit was. A hard hit at the
+    // engine's end can light the engine bay; a hard hit at the back, or a
+    // split fuel cell, the fuel (the big one); a hard side hit, oil on hot parts
+    // (small, and often goes out by itself). The harder, the likelier and bigger.
+    if (!this.damageOff) {
+      const engineEnd = this.spec.engineRear ? zone === 'rear' : zone === 'front';
+      const engineChance = (engineEnd ? clamp((v - 20) / 25, 0, 1) * 0.45 : 0) + (this.engineHealth < 0.35 && v > 12 ? 0.2 : 0);
+      if (!this.onFire && Math.random() < engineChance) this.catchFire();
+      const cellZ = this.spec.engineRear ? -0.45 : -1.15;
+      const fuelChance = (zone === 'rear' ? clamp((v - 18) / 22, 0, 1) * 0.4 : 0) + (this.fuelLeak > 0 && v > 16 ? 0.12 : 0);
+      if (!this.fires.some((f) => f.kind === 'fuel') && Math.random() < fuelChance) {
+        this.fires.push({ kind: 'fuel', at: [0, 0.45, cellZ], level: 0, size: clamp(0.6 + (v - 14) / 25, 0.6, 1.3), t: 0 });
+        this.events.push({ type: 'fire', kind: 'fuel' });
+      }
+      const side = zone === 'left' || zone === 'right';
+      if (side && this.fires.length < 3 && Math.random() < clamp((v - 20) / 30, 0, 1) * 0.5) {
+        this.fires.push({ kind: 'oil', at: [(zone === 'left' ? 1 : -1) * 0.4, 0.4, this.spec.engineRear ? -0.9 : 0.9], level: 0, size: 0.35 + Math.random() * 0.25, t: 0 });
+        this.events.push({ type: 'fire', kind: 'oil' });
+      }
+    }
     this.events.push({ type: 'crash', zone, speed: v });
   }
 
@@ -819,6 +836,11 @@ export class CarPhysics {
     if (this.engineHealth <= 0) this.blowEngine();
   }
 
+  // anything burning: the engine bay, a brake, or a crash fire
+  get burning() { return this.onFire || this.fires.length > 0; }
+  // all of it out (the marshals, the pit crew)
+  putOut() { this.onFire = false; this.fireLevel = 0; this.fireSpot = null; this.fireTime = 0; this.fires = []; }
+
   // where: a wheel (a brake fire), or the engine bay (no wheel given)
   catchFire(wheel = null) {
     if (this.damageOff) return;
@@ -896,6 +918,20 @@ export class CarPhysics {
     }
     // Fire: grows quickly, eats the engine, then burns itself out once
     // there's nothing much left to burn
+    // the crash fires: grow, then burn on what feeds them (a fuel fire while
+    // there's fuel spilling; an oil fire dies down by itself in 10-20 s)
+    for (const f of this.fires) {
+      f.t += dt;
+      const fuelLeft = Math.min(1, this.fuel / 6);
+      const life = f.kind === 'fuel' ? 25 + 50 * fuelLeft : 10 + 10 * f.size;
+      const dying = f.t > life ? Math.max(0, 1 - (f.t - life) / 8) : 1;
+      f.level = Math.min(1, f.t / (f.kind === 'fuel' ? 0.8 : 2)) * f.size * dying;
+      if (f.kind === 'fuel') this.fuel = Math.max(0, this.fuel - 0.08 * f.level * dt);
+      // (a big fuel fire spreads to the engine bay after a while)
+      if (f.kind === 'fuel' && f.t > 12 && f.level > 0.6 && !this.onFire && Math.random() < 0.05 * dt) this.catchFire();
+      f.dead = dying <= 0;
+    }
+    if (this.fires.some((f) => f.dead)) this.fires = this.fires.filter((f) => !f.dead);
     if (this.onFire) {
       this.fireTime += dt;
       const fuelLeft = this.fuelLeak > 0 ? Math.min(1, this.fuel / 4) : 1;
@@ -1086,7 +1122,7 @@ export class CarPhysics {
     }
     if (!this.engineOut) this.knockEngineOut();
     this.fuel = 0; this.fuelLeak = 0;
-    this.onFire = false; this.fireSpot = null;
+    this.onFire = false; this.fireSpot = null; this.fires = [];
     this.events.push({ type: 'exploded' });
     return true;
   }
@@ -1186,6 +1222,10 @@ export class CarPhysics {
 
   // Advance the simulation by dt seconds, in small steps for stability
   update(controls, dt) {
+    // (in the air or tumbling: anything that pushed the car since last time,
+    // a wall, a barrier, another car, is passed on to the free body first,
+    // or it carries on at its old speed, straight through)
+    if (this.air) this.airSyncIn();
     if (!(dt > 0)) return;   // skip zero-length frames (the very first one can be 0)
     const steps = Math.max(1, Math.ceil(dt / (1 / 120)));
     const h = dt / steps;

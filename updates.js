@@ -21,11 +21,25 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 81;
+export const BUILD = 82;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 70, date: '18 Nov 2026', title: 'Big crashes',
+    items: [
+      ['Fires that match the crash', 'Not every crash lights the engine any more. Most don\'t catch fire at all. A hard hit at the engine\'s end can light the engine bay, a big hit at the back can split the fuel cell and start a fuel fire (the big one, with thick black smoke), and a hard side hit can put oil on hot parts for a small fire. The harder the hit, the likelier and the bigger', 'fire'],
+      ['The driver gets out', 'Stopped in a burning car, the driver unclips, climbs out and runs well clear of it, then turns to watch. The ambulance comes for him and takes him to the medical centre', 'new'],
+      ['Broken in two', 'Stop dead from 180 km/h or more and the car splits in two inside a huge fireball, the back half thrown on down the road, both halves burning', 'fire'],
+      ['Nothing out of thin air', 'The safety car and the ambulance wait in the pit lane at the exit end and drive out of the exit road, then come back in through the entry and park. The cranes are parked at the recovery points round the lap and drive back there. Marshals come out from behind their huts', 'update'],
+      ['The ambulance', 'Out for any big crash, not just a fire: it pulls up beside the car and waits, then carries on round to the pits', 'new'],
+      ['Barrier damage', 'Hit the armco, a tyre wall or a fence hard and a repair crew comes out to fix it. In a race that brings the safety car, or a red flag if it\'s badly wrecked', 'new'],
+      ['Panicked marshals', 'Fire marshals sprint out hunched over, looking about, with the extinguisher held across the body like a rifle', 'update'],
+      ['No more clipping through walls', 'A dented car could drive straight through tyre walls and barriers, even slowly. Fixed: whatever\'s dented, walls are solid', 'fix'],
+      ['A calmer cockpit', 'No more earthquake shaking, and the driver doesn\'t fight the wheel when the car\'s stopped or crashed. The TT-88\'s driver now looks like the Caterham\'s: red suit, black gloves', 'fix'],
+    ],
+  },
   {
     id: 69, date: '18 Nov 2026', title: 'Race control',
     items: [

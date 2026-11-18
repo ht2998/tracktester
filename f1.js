@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 20;
+export const BUILD = 21;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -665,8 +665,9 @@ export function buildF1Cockpit(car) {
   const M = {
     carbon: new THREE.MeshStandardMaterial({ color: 0x15161a, roughness: 0.45, metalness: 0.3 }),
     pad: new THREE.MeshStandardMaterial({ color: 0x23252b, roughness: 0.95 }),
-    suit: new THREE.MeshStandardMaterial({ color: 0x1d2c6e, roughness: 0.8 }),
-    glove: new THREE.MeshStandardMaterial({ color: 0xd8d4c8, roughness: 0.7 }),
+    // (dressed as the Caterham's driver: red race suit, black gloves)
+    suit: new THREE.MeshStandardMaterial({ color: 0xc81d25, roughness: 0.85 }),
+    glove: new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.7 }),
     grip: new THREE.MeshStandardMaterial({ color: 0x18181a, roughness: 0.9 }),
     steel: new THREE.MeshStandardMaterial({ color: 0x9a9da3, roughness: 0.3, metalness: 0.9 }),
     knob: new THREE.MeshStandardMaterial({ color: 0xf0d81e, roughness: 0.3, metalness: 0.2 }),
@@ -721,12 +722,21 @@ export function buildF1Cockpit(car) {
   const knob = add(new THREE.SphereGeometry(0.022, 12, 10).translate(0, 0.145, 0), M.knob, lever);
   add(box(0.05, 0.02, 0.1, -0.2, 0.42, 0.3), M.carbon);              // its gate
   // the driver: shoulders and chest just under the rim, arms to the wheel
-  add(new THREE.CapsuleGeometry(0.15, 0.12, 6, 12).rotateZ(Math.PI / 2).scale(1, 0.7, 0.8).translate(0, 0.48, -0.02), M.suit);
-  const arms = [0, 1].map(() => ({
-    upper: add(new THREE.CapsuleGeometry(0.04, 0.26, 6, 10), M.suit),
-    fore: add(new THREE.CapsuleGeometry(0.035, 0.25, 6, 10), M.suit),
-    hand: add(new THREE.SphereGeometry(0.035, 12, 10).scale(1, 0.85, 1.3), M.glove),
-  }));
+  const chest = add(new THREE.CapsuleGeometry(0.15, 0.12, 6, 12).rotateZ(Math.PI / 2).scale(1, 0.7, 0.8).translate(0, 0.48, -0.02), M.suit);
+  // arms like the Caterham driver's: rounded, with elbows, gloved hands with a thumb and a cuff
+  const arms = [0, 1].map((side) => {
+    const hand = new THREE.Group(); group.add(hand);
+    add(new THREE.SphereGeometry(0.036, 16, 12).scale(1, 0.75, 1.35), M.glove, hand);
+    const thumb = add(new THREE.CapsuleGeometry(0.012, 0.03, 4, 10), M.glove, hand);
+    thumb.position.set((side ? 1 : -1) * 0.03, 0.01, 0.01); thumb.rotation.z = (side ? -1 : 1) * 0.9;
+    add(new THREE.CylinderGeometry(0.036, 0.04, 0.03, 14).translate(0, -0.035, 0), M.glove, hand);
+    return {
+      upper: add(new THREE.CapsuleGeometry(0.046, 0.24, 6, 12), M.suit),
+      fore: add(new THREE.CapsuleGeometry(0.039, 0.23, 6, 12), M.suit),
+      elbow: add(new THREE.SphereGeometry(0.043, 14, 10), M.suit),
+      hand,
+    };
+  });
   const SH = [new THREE.Vector3(-0.17, 0.5, 0), new THREE.Vector3(0.17, 0.5, 0)];   // right, left shoulder
   const V = { a: new THREE.Vector3(), d: new THREE.Vector3(), e: new THREE.Vector3(), p: new THREE.Vector3(), up: new THREE.Vector3(0, 1, 0), dir: new THREE.Vector3() };
   const seg = (m, a, b, len) => { V.dir.subVectors(b, a); const l = V.dir.length(); m.position.addVectors(a, b).multiplyScalar(0.5); m.quaternion.setFromUnitVectors(V.up, V.dir.divideScalar(l || 1)); m.scale.set(1, l / len, 1); };
@@ -741,29 +751,41 @@ export function buildF1Cockpit(car) {
     const elbow = V.e.copy(sh).addScaledVector(V.dir, along).addScaledVector(V.p, lift).clone();
     const hand = sh.clone().add(V.d);
     seg(arms[i].upper, sh, elbow, U); seg(arms[i].fore, elbow, hand, F);
+    arms[i].elbow.position.copy(elbow);
     arms[i].hand.position.copy(hand);
+    arms[i].hand.quaternion.copy(arms[i].fore.quaternion);
   };
   const POLE = [new THREE.Vector3(-1, -0.6, -0.3), new THREE.Vector3(1, -0.6, -0.3)];
   const head = new THREE.Vector3();
-  let t = 0, shift = 1, shiftDir = 0, fight = 0, panelClock = 0, wheelAngle = 0;
+  let t = 0, shift = 1, shiftDir = 0, fight = 0, panelClock = 0, wheelAngle = 0, bumpS = 0;
+  const headV = new THREE.Vector3(), headAim = new THREE.Vector3();
   const gripPt = new THREE.Vector3(), knobPt = new THREE.Vector3();
   return {
     group,
+    driverParts: [chest, ...arms.flatMap((a) => [a.upper, a.fore, a.elbow, a.hand])],   // (him, without the wheel: for climbing out)
     head,                                          // how far his head is thrown about (car's frame): add to the eye
     // a gear change: his right hand goes to the lever
     onShift(direction) { shift = 0; shiftDir = direction > 0 ? 1 : -1; },
     update(dt, { steer = 0, maxSteer = 0.36, speed = 0, slip = 0, bump = 0, gear = 'N', rpm = 0, redline = 12500, kmh = 0 }) {
       t += dt;
-      // how hard he's fighting it: the speed, how much it's sliding, the bumps
-      const want = Math.min(1, Math.abs(speed) / 70) * 0.5 + Math.min(1, Math.abs(slip) / 3) * 0.8 + Math.min(1, bump * 25) * 0.6 + (Math.abs(speed) > 2 ? 0.15 : 0);
+      // how hard he's fighting it: the speed, how much it's sliding, the bumps.
+      // Only while it's moving: stopped (or wrecked and still), his hands just rest on the wheel
+      const moving = Math.min(1, Math.max(0, Math.abs(speed) - 1) / 8);
+      const want = (Math.min(1, Math.abs(speed) / 70) * 0.5 + Math.min(1, Math.abs(slip) / 3) * 0.8 + Math.min(1, bump * 25) * 0.6 + 0.15) * moving;
       fight += (want - fight) * Math.min(1, dt * 4);
-      const jitter = fight * (Math.sin(t * 11.3) * 0.05 + Math.sin(t * 17.9 + 1) * 0.035 + Math.sin(t * 5.1 + 2) * 0.06 + (Math.random() - 0.5) * 0.05);
+      const jitter = fight * (Math.sin(t * 11.3) * 0.05 + Math.sin(t * 17.9 + 1) * 0.035 + Math.sin(t * 5.1 + 2) * 0.06);
       // the wheel: his steering (about a quarter turn either way at full lock) and the fight
       const target = (steer / maxSteer) * (Math.PI * 0.5) + jitter + slip * 0.04;
       wheelAngle += (target - wheelAngle) * Math.min(1, dt * 25);
       wheel.rotation.z = -wheelAngle;
-      // his head thrown about with it
-      head.set(fight * 0.012 * Math.sin(t * 9.7) + bump * 0.2 * (Math.random() - 0.5), fight * 0.01 * Math.sin(t * 13.1 + 0.5) + bump * 0.3 * (Math.random() - 0.5), 0);
+      // his head moved about with it: on a neck with some weight to it (a
+      // spring, not a jolt every frame), a few millimetres, and nothing at all stopped
+      bumpS += (Math.min(0.4, bump) * moving - bumpS) * Math.min(1, dt * 5);
+      headAim.set(fight * 0.006 * Math.sin(t * 9.7) + bumpS * 0.02 * Math.sin(t * 21.3),
+        fight * 0.005 * Math.sin(t * 13.1 + 0.5) + bumpS * 0.035 * Math.sin(t * 17.7 + 1), 0);
+      headV.addScaledVector(headAim.sub(head), Math.min(1, dt * 60)).multiplyScalar(Math.exp(-dt * 14));
+      head.addScaledVector(headV, Math.min(1, dt * 30));
+      { const l = head.length(); if (l > 0.02) head.multiplyScalar(0.02 / l); }
       // hands on the grips (the right one away to the lever during a change)
       group.updateMatrixWorld(true);
       for (let i = 0; i < 2; i++) {

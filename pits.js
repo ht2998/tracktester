@@ -26,7 +26,7 @@
 // a smashed radiator): the team retire the car. DNF on the standings, and
 // they push it back into the garage.
 // =====================================================================
-export const BUILD = 6;
+export const BUILD = 7;
 
 import * as THREE from 'three';
 
@@ -57,6 +57,10 @@ export const POSES = {
   REFUEL: { shL: 1.95, shR: 1.3, elL: 0.9, elR: 1.25, lean: 0.05 },
   RIP: { lean: -0.25, shR: 1.4, elR: 0.6, shL: 0.6, elL: 0.3, thR: 0.4, knR: 0.3 },
   BOLT: { lean: 0.3, shR: 1.5, elR: 0.6, shL: 1.2, elL: 0.6, work: 1 },
+  // an extinguisher held across the body like a rifle: one hand on the
+  // handle and trigger, the other under the can
+  RIFLE: { lean: 0.2, shL: 0.75, shR: 0.55, elL: 1.25, elR: 1.45, outL: -0.25, outR: -0.35 },
+  SPRAY_RIFLE: { lean: 0.3, shL: 0.95, shR: 0.75, elL: 1.05, elR: 1.25, outL: -0.25, outR: -0.35, thL: 0.45, knL: 0.35, thR: -0.1, drop: 0.08 },
 };
 const KEYS = ['drop', 'lean', 'shL', 'shR', 'elL', 'elR', 'outL', 'outR', 'thL', 'thR', 'knL', 'knR', 'work'];
 
@@ -125,7 +129,8 @@ export class Person {
       }
       if (a.go) {
         const [tx, tz] = a.go, dx = tx - this.x, dz = tz - this.z, d = Math.hypot(dx, dz);
-        const v = a.run ? 4.6 : a.back ? 1.1 : 1.6;
+        const v = a.panic ? 5.4 : a.run ? 4.6 : a.back ? 1.1 : 1.6;
+        this.panic = !!a.panic;
         if (d < 0.04) { this.x = tx; this.z = tz; this.queue.shift(); continue; }
         const step = Math.min(d, v * dt);
         this.x += dx / d * step; this.z += dz / d * step;
@@ -144,7 +149,8 @@ export class Person {
     this.phase += dt * (speed > 3 ? 11 : 7.5) * (this.back ? -1 : 1);
     const sw = Math.sin(this.phase) * this.moving * (speed > 3 ? 0.75 : 0.42);
     const p = this.p, carrying = this.held.length > 0;
-    const runLean = speed > 3 ? 0.25 : 0;
+    if (!speed) this.panic = false;
+    const runLean = speed > 3 ? (this.panic ? 0.42 : 0.25) : 0;
     this.hips.position.y = 0.95 - p.drop * (1 - this.moving) + Math.abs(Math.cos(this.phase)) * 0.03 * this.moving;
     this.torso.rotation.x = p.lean * (1 - this.moving * 0.5) + runLean;
     const wob = p.work ? Math.sin(this.t * 22) * 0.12 * p.work : 0;
@@ -159,6 +165,8 @@ export class Person {
     this.knR.rotation.x = p.knR * legK + Math.max(0, Math.sin(this.phase)) * 0.9 * this.moving;
     this.root.position.set(this.x, groundAt(this.x, this.z), this.z);
     this.root.rotation.y = this.face;
+    // (in a panic: hunched, the body twisting with each stride, looking about)
+    this.torso.rotation.y = this.panic ? Math.sin(this.phase) * 0.22 + Math.sin(this.t * 3.1) * 0.12 : 0;
   }
 }
 
@@ -614,7 +622,7 @@ body.pit-auto #touch > *:not(.t-menu):not(.t-sheet):not(.t-rotate) { visibility:
     if (P.transmission === 'manual' && P.gear > 1) P.gear = 1;
     const dmg = this.damage();
     this.serious = dmg.some((d) => d.serious);
-    this.flags = { fireOut: !P.onFire, served: !this.penalty, jackF: false, jackR: false, wheel: [null, null, null, null], suspDone: [true, true, true, true], jobsDone: false, fuelDone: false, dropped: false, go: false };
+    this.flags = { fireOut: !(P.burning ?? P.onFire), served: !this.penalty, jackF: false, jackR: false, wheel: [null, null, null, null], suspDone: [true, true, true, true], jobsDone: false, fuelDone: false, dropped: false, go: false };
     this.penaltyLeft = this.penalty ? PENALTY_S : 0;
     this.wheelsOff = []; this.jobs = [];
     // (the fire, or the team retiring the car, start now; the work waits

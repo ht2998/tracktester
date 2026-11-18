@@ -17,6 +17,12 @@
 //   - Fire marshals: run from the nearest post with extinguishers to a
 //     burning car, wreck or engine block, put it out, and walk back.
 //   - Sweepers: bits of car left lying on the track get picked up.
+//   - Nothing pops up out of thin air: the safety car and the ambulance
+//     wait in the pit lane at the exit end and drive out and back; the
+//     cranes are parked at recovery points (turns 1, 4, 9 and 15) and go
+//     back there; marshals come out from behind their huts.
+//   - A barrier badly hit: a safety car (or a red flag if it's wrecked),
+//     and a repair crew from the nearest post fixing it.
 //   - The rules: overtaking under yellow or the safety car, speeding under
 //     the VSC or double yellows, ignoring blue flags: time penalties.
 // The game (rendering.js) tells it what's happening every frame; the
@@ -28,7 +34,7 @@ import { Person, makeExtinguisher } from './pits.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 1;
+export const BUILD = 2;
 
 const std = (color, rough = 0.6, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: rough, ...extra });
 const boxAt = (w, h, d, x = 0, y = 0, z = 0) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
@@ -137,13 +143,14 @@ export class RaceControl {
   // groundAt(x, z), isMobile, pit (the pit lane's layout), hooks:
   //   toast(text), penalty(sec, why), extinguish(kind) ('car' | 'wreck' |
   //   'block'), removeDebris(obj), recoverPlayer(), playerModel()
-  constructor(scene, { line, trackside, aiField, groundAt, hooks = {}, isMobile = false, pit }) {
+  constructor(scene, { line, trackside, aiField, groundAt, hooks = {}, isMobile = false, pit, corners = [] }) {
     this.scene = scene; this.line = line; this.m = line.length; this.trackside = trackside;
     this.ai = aiField; this.groundAt = groundAt; this.hooks = hooks; this.isMobile = isMobile; this.pit = pit;
     this.phase = 'green';            // green | vsc | sc | red
     this.t = 0;
     this.phaseT = 0;
     this.crane = null; this.ambulance = null; this.sc = null;
+    this.repairs = [];               // barriers being fixed
     this.runners = [];               // fire marshals and sweepers out on the track
     this.jobs = new Set();           // what's being dealt with (so nothing's done twice)
     this.penaltyState = { overtakeOrder: null, vscOver: 0, vscWarn: 0, blueT: 0, blueCalm: 0, dyOver: 0 };
@@ -168,7 +175,48 @@ export class RaceControl {
     this.sectorOfPt = new Int16Array(pts.length);
     for (let k = 0; k < pts.length; k++) { const i = trackside.nearestLine(pts[k].x, pts[k].z, 60); this.sectorOfPt[k] = i >= 0 ? trackside.sectorOf(i) : 0; }
     aiField.rules = this;            // (ai.js asks rules: cap(), noPass(), moveOver())
+    // ---- the vehicles, parked and waiting ----
+    // the safety car and the ambulance: in the pit lane, at the exit end,
+    // in front of the last garages, facing the way out
+    this.parkSC = { x: pit.garageX - 3.2, z: pit.z0 + 22 };
+    this.parkAmb = { x: pit.garageX - 3.2, z: pit.z0 + 32 };
+    this.sc = { ...buildSafetyCar(), x: this.parkSC.x, z: this.parkSC.z, heading: Math.PI, v: 0, i: 0, lat: 0, state: 'parked', mode: 'free', route: [] };
+    this.ambulance = { ...buildAmbulance(), x: this.parkAmb.x, z: this.parkAmb.z, heading: Math.PI, v: 0, i: 0, lat: 2.5, state: 'parked', mode: 'free', route: [] };
+    for (const v of [this.sc, this.ambulance]) { scene.add(v.group); this.place(v); v.flash(0, false); }
+    // the cranes: one at each recovery point, beside the marshal post there
+    this.cranes = [];
+    const want = [0, 3, 8, 14].map((k) => corners[Math.min(k, corners.length - 1)]).filter(Boolean);
+    const used = new Set();
+    const circ = (a, b) => Math.abs(((a - b) % this.m + this.m * 1.5) % this.m - this.m / 2);
+    const spots = [];
+    for (const cn of want) {
+      const apex = cn.apex ?? cn.a;
+      let best = null, bd = Infinity;
+      for (const p of trackside.posts) {
+        if (used.has(p) || p.i == null) continue;
+        const d = circ(p.i, apex);
+        if (d < bd) { bd = d; best = p; }
+      }
+      if (best) { used.add(best); spots.push(best); }
+    }
+    // (and more round the lap, so one's never too far away: no post more
+    // than ~500 m from a crane, ~700 m on a phone)
+    const reach = (isMobile ? 700 : 500) / 2;
+    for (const p of trackside.posts) {
+      if (p.i == null || used.has(p) || p.i === 0) continue;
+      if (spots.every((q) => circ(q.i, p.i) > reach)) { used.add(p); spots.push(p); }
+    }
+    for (const best of spots) {
+      const lp = line[best.i], ax = best.x - lp.x, az = best.z - lp.z, ad = Math.hypot(ax, az) || 1;
+      const tx = Math.sin(lp.heading), tz = Math.cos(lp.heading);
+      const park = { x: best.x + tx * 6 + ax / ad * 1.5, z: best.z + tz * 6 + az / ad * 1.5 };
+      const c = { ...buildCrane(), x: park.x, z: park.z, heading: Math.atan2(-ax, -az), park, parkHeading: Math.atan2(-ax, -az), state: 'parked', t: 0, lift: 0, post: best };
+      c.setDrop(0.6);
+      scene.add(c.group); this.place(c); c.flash(0, false);
+      this.cranes.push(c);
+    }
   }
+  get busySC() { return this.sc && this.sc.state !== 'parked'; }
 
   // ---- for the computer drivers ----
   // the fastest he may go at racing-line point i (Infinity: as fast as he likes)
@@ -178,7 +226,7 @@ export class RaceControl {
     let cap = Infinity;
     if (this.phase === 'red') cap = 20;
     if (this.phase === 'vsc') cap = plan * 0.62;
-    if (this.phase === 'sc' && this.sc) {
+    if (this.phase === 'sc' && (this.sc.state === 'out' || this.sc.state === 'lastLap')) {
       // behind the safety car: hold station behind it
       const gap = this.gapAhead(c.physics.x, c.physics.z, c.near, this.sc.x, this.sc.z);
       if (gap >= 0 && gap < 120) cap = Math.min(cap, Math.max(6, this.sc.v + (gap - 18) * 0.45));
@@ -239,19 +287,44 @@ export class RaceControl {
     obj.group.rotation.y = p.heading;
     obj.x = x; obj.z = z;
   }
+  // the way out: down the lane, out of the exit road, onto the track
+  exitRoute() { const P = this.pit; return [[P.laneX + 1, P.z0 + 8], [P.laneX, P.z0 - 10], [P.laneX - 1, P.exitZ + 15]]; }
+  // the way back in: the entry road, the lane, then the parking spot
+  entryRoute(park) { const P = this.pit; return [[P.laneX - 1, P.entryZ - 15], [P.laneX, P.z1 - 5], [P.laneX, park.z + 14], [park.x, park.z + 4], [park.x, park.z]]; }
   sendSafetyCar() {
-    if (this.sc) return;
-    const sc = this.sc = { ...buildSafetyCar(), i: this.exitI, lat: 0, v: 0, x: 0, z: 0, state: 'out', laps: 0 };
-    this.scene.add(sc.group);
-    this.placeOnLine(sc, sc.i, 0);
+    const sc = this.sc;
+    if (sc.state !== 'parked') return;
+    sc.state = 'leaving'; sc.mode = 'free'; sc.route = this.exitRoute(); sc.v = 0; sc.lat = 0;
   }
   sendAmbulance(at) {
-    if (this.ambulance || !at) return;
+    const a = this.ambulance;
+    if (!at || a.state !== 'parked') return;
     const target = this.trackside.nearestLine(at.x, at.z, 80);
     if (target < 0) return;
-    const a = this.ambulance = { ...buildAmbulance(), i: this.exitI, lat: 2.5, v: 0, x: 0, z: 0, target, state: 'out', wait: 0 };
-    this.scene.add(a.group);
-    this.placeOnLine(a, a.i, a.lat);
+    // (pulls up on the side of the track the car's on)
+    const p = this.line[target], side = ((at.x - p.x) * p.lx + (at.z - p.z) * p.lz) >= 0 ? 1 : -1;
+    a.target = target; a.side = side; a.at = { x: at.x, z: at.z };
+    a.state = 'leaving'; a.mode = 'free'; a.route = this.exitRoute(); a.v = 0; a.lat = 0; a.wait = 0;
+  }
+  // the medical car for any big crash (no red flag by itself)
+  medical(at) { this.sendAmbulance(at); }
+  // off the road (in the pit lane and its roads): drive through a list of points
+  followRoute(v, dt, speed) {
+    if (!v.route.length) return true;
+    const [tx, tz] = v.route[0], last = v.route.length === 1;
+    v.v += Math.max(-6 * dt, Math.min(3 * dt, speed - v.v));
+    if (last) v.v = Math.min(v.v, 1 + Math.hypot(tx - v.x, tz - v.z) * 0.8);
+    if (this.steerTo(v, tx, tz, Math.max(1, v.v), dt, last ? 0 : 2.5, 2.2)) { v.route.shift(); if (last) { v.v = 0; return true; } }
+    return false;
+  }
+  // from the end of the exit road onto the track itself
+  joinTrack(v, lat) {
+    v.mode = 'line'; v.i = this.trackside.nearestLine(v.x, v.z, 80); if (v.i < 0) v.i = this.exitI;
+    v.lat = lat;
+  }
+  // off the track at the entry, then down the lane home
+  headHome(v, park) {
+    v.mode = 'free'; v.route = this.entryRoute(park); v.heading = v.group.rotation.y;
   }
   // a vehicle driving round: speed by the corners, stop at a point
   drive(veh, dt, vWant, stopAt = null) {
@@ -283,8 +356,8 @@ export class RaceControl {
     // stopped on the track: the safety car; off it: the VSC
     if (racing) {
       if (this.phase === 'red') {
-        if (this.phaseT > 20 && !needs.onTrackWreck && !this.crane) this.restart();
-      } else if (needs.onTrackWreck || needs.fireOnTrack) this.setPhase('sc');
+        if (this.phaseT > 20 && !needs.onTrackWreck && !this.crane && !this.repairs.length) this.restart();
+      } else if (needs.onTrackWreck || needs.fireOnTrack || this.repairs.some((r) => !r.done)) this.setPhase('sc');
       else if (needs.offTrackWreck) { if (this.phase === 'green') this.setPhase('vsc'); }
       else if (this.phase === 'vsc' && this.phaseT > 4 && !this.crane) this.setPhase('green');
     }
@@ -292,16 +365,19 @@ export class RaceControl {
     // a VSC or a red flag in a race; any time in practice)
     const craneOK = !racing || this.phase !== 'green';
     if (!this.crane && craneOK && needs.wrecks.length) this.sendCrane(needs.wrecks[0]);
-    if (this.crane) this.updateCrane(dt, S);
-    if (this.sc) this.updateSafetyCar(dt, needs);
-    if (this.ambulance) this.updateAmbulance(dt);
+    if (this.crane) this.updateCrane(dt, S, this.crane);
+    if (this.phase === 'sc' && this.sc.state === 'parked') this.sendSafetyCar();
+    this.updateSafetyCar(dt, needs);
+    this.updateAmbulance(dt);
+    for (const c of this.cranes) if (c !== this.crane && c.state !== 'parked') this.updateCrane(dt, S, c);
+    this.updateRepairs(dt);
     // fire marshals and sweepers
     for (const f of needs.fires) if (!this.jobs.has(f.key)) this.sendFireMarshals(f);
     if (needs.debris.length && !this.runners.some((r) => r.job === 'sweep')) this.sendSweeper(needs.debris[0]);
     for (const r of this.runners) r.person.update(dt, this.groundAt);
     this.runners = this.runners.filter((r) => { if (r.done) { this.scene.remove(r.person.root); return false; } return true; });
     // nothing solid gets driven through
-    this.bump(S.physics, [this.crane, this.ambulance, this.sc].filter(Boolean));
+    this.bump(S.physics, [...this.cranes, this.ambulance, this.sc].filter(Boolean));
     // your penalties
     if (racing) this.judge(dt, S);
   }
@@ -346,70 +422,88 @@ export class RaceControl {
 
   // ---- the safety car ----
   updateSafetyCar(dt, needs) {
-    const sc = this.sc, clear = !needs.onTrackWreck && !needs.fireOnTrack && !this.crane;
-    sc.flash(this.t, sc.state !== 'in');
+    const sc = this.sc, clear = !needs.onTrackWreck && !needs.fireOnTrack && !this.crane && !this.repairs.some((r) => !r.done);
+    if (sc.state === 'parked') return;
+    sc.flash(this.t, sc.state !== 'home');
     sc.green(sc.state === 'out' && this.phaseT < 6);       // (the cars ahead of it may pass for a moment, to join the back)
-    if (sc.state === 'out') {
+    if (sc.state === 'leaving') {
+      // down the pit lane (at the limit) and out of the exit road
+      if (this.followRoute(sc, dt, sc.route.length > 1 ? 16 : 24)) { this.joinTrack(sc, 0); sc.state = 'out'; }
+    } else if (sc.state === 'out') {
       this.drive(sc, dt, 34);
       if (clear && this.phaseT > 15) { sc.state = 'lastLap'; this.hooks.toast?.('SAFETY CAR IN THIS LAP'); }
     } else if (sc.state === 'lastLap') {
       // into the pit lane at the entry
       this.drive(sc, dt, 34);
       const left = ((this.entryI - sc.i) % this.m + this.m) % this.m;
-      if (left < 6) { sc.state = 'in'; this.setPhase('green'); }
-    } else {
-      // peeling off down the pit lane, then gone
-      sc.lat = Math.min(sc.lat + dt * 3, 16);
-      this.drive(sc, dt, 20);
-      if (sc.lat >= 16) { this.scene.remove(sc.group); this.sc = null; }
+      if (left < 6) { sc.state = 'home'; this.setPhase('green'); this.headHome(sc, this.parkSC); }
+    } else if (sc.state === 'home') {
+      // in at the entry, down the lane, and parked back where it was
+      if (this.followRoute(sc, dt, 16)) { sc.state = 'parked'; sc.heading = Math.PI; this.place(sc); sc.flash(0, false); sc.green(false); }
     }
   }
 
   // ---- the ambulance ----
   updateAmbulance(dt) {
     const a = this.ambulance;
-    a.flash(this.t, true);
-    if (a.state === 'out') { if (this.drive(a, dt, 30, a.target)) { a.state = 'wait'; a.wait = 0; } }
-    else if (a.state === 'wait') { a.wait += dt; if (a.wait > 12) a.state = 'away'; }
-    else {
+    if (a.state === 'parked') return;
+    a.flash(this.t, a.state !== 'home');
+    if (a.state === 'leaving') { if (this.followRoute(a, dt, a.route.length > 1 ? 16 : 22)) { this.joinTrack(a, 2.5 * a.side); a.state = 'out'; } }
+    else if (a.state === 'out') { a.lat += (4.5 * a.side - a.lat) * Math.min(1, dt * 0.5); if (this.drive(a, dt, 40, a.target)) { a.state = 'wait'; a.wait = 0; } }
+    else if (a.state === 'wait') { a.wait += dt; if (a.wait > (this.hooks.driverWaiting?.() ? 25 : 14)) { a.state = 'away'; this.hooks.medicsDone?.(); } }
+    else if (a.state === 'away') {
+      // on round to the pit entry, then in
+      a.lat += (0 - a.lat) * Math.min(1, dt * 0.5);
       this.drive(a, dt, 30);
-      const fromTarget = ((a.i - a.target) % this.m + this.m) % this.m;
-      if (fromTarget > 250) { this.scene.remove(a.group); this.ambulance = null; }
+      const left = ((this.entryI - a.i) % this.m + this.m) % this.m;
+      if (left < 6) { a.state = 'home'; this.headHome(a, this.parkAmb); }
+    } else if (a.state === 'home') {
+      if (this.followRoute(a, dt, 16)) { a.state = 'parked'; a.heading = Math.PI; this.place(a); a.flash(0, false); }
     }
   }
 
   // ---- the recovery crane ----
   sendCrane(w) {
-    // it comes from behind the barrier: the nearest marshal post
-    const posts = this.trackside.posts;
-    let best = posts[0], bd = Infinity;
-    for (const p of posts) { const d = (p.x - w.x) ** 2 + (p.z - w.z) ** 2; if (d < bd) { bd = d; best = p; } }
-    const c = this.crane = { ...buildCrane(), w, home: { x: best.x, z: best.z }, x: best.x, z: best.z, heading: 0, state: 'go', t: 0, lift: 0 };
-    c.setDrop(0.6);
-    this.scene.add(c.group);
-    this.place(c);
+    // the nearest crane that's free, from its recovery point
+    let best = null, bd = Infinity;
+    for (const c of this.cranes) { if (c.state !== 'parked') continue; const d = (c.x - w.x) ** 2 + (c.z - w.z) ** 2; if (d < bd) { bd = d; best = c; } }
+    if (!best) return;
+    const c = this.crane = best;
+    // it puts the wreck down off the road, just past its own spot
+    const lp = this.line[c.post.i], tx = Math.sin(lp.heading), tz = Math.cos(lp.heading);
+    // it puts the wreck down behind the barrier, at the nearest marshal post to it
+    const post = this.nearestPost(w.x, w.z) || c.post;
+    const pl = this.line[post.i ?? 0] || lp, ax = post.x - pl.x, az = post.z - pl.z, ad = Math.hypot(ax, az) || 1;
+    const ptx = Math.sin(pl.heading || 0), ptz = Math.cos(pl.heading || 0);
+    Object.assign(c, { w, home: { x: post.x + ptx * 6 + ax / ad * 2, z: post.z + ptz * 6 + az / ad * 2 }, state: 'go', t: 0, lift: 0, offset: null });
     this.hooks.toast?.(w.kind === 'player' ? 'RECOVERY CRANE ON ITS WAY' : null);
   }
   place(v) { v.group.position.set(v.x, this.groundAt(v.x, v.z), v.z); v.group.rotation.y = v.heading; }
-  steerTo(v, tx, tz, speed, dt, stopShort = 0) {
+  steerTo(v, tx, tz, speed, dt, stopShort = 0, turn = 0.9) {
     const dx = tx - v.x, dz = tz - v.z, d = Math.hypot(dx, dz);
     if (d <= stopShort + 0.2) return true;
     const want = Math.atan2(dx, dz);
     let df = want - v.heading; df = Math.atan2(Math.sin(df), Math.cos(df));
-    v.heading += Math.max(-dt * 0.9, Math.min(dt * 0.9, df));
+    v.heading += Math.max(-dt * turn, Math.min(dt * turn, df));
     const step = Math.min(d - stopShort, speed * dt * Math.max(0.2, Math.cos(df)));
     v.x += Math.sin(v.heading) * step; v.z += Math.cos(v.heading) * step;
     this.place(v);
     return false;
   }
-  updateCrane(dt, S) {
-    const c = this.crane, w = c.w;
-    c.flash(this.t, true);
+  updateCrane(dt, S, c) {
+    const w = c.w;
+    c.flash(this.t, c.state !== 'parked');
     c.t += dt;
+    if (c.state === 'back') {
+      // boom down, and back to its spot
+      c.turntable.rotation.y *= 1 - Math.min(1, dt * 1.5); c.boom.rotation.x *= 1 - Math.min(1, dt * 1.5); c.setDrop(0.6);
+      if (this.steerTo(c, c.park.x, c.park.z, Math.min(11, 1 + Math.hypot(c.park.x - c.x, c.park.z - c.z) * 0.3), dt, 0.3, 1.4)) { c.state = 'parked'; c.flash(0, false); c.heading = c.parkHeading; c.turntable.rotation.y = 0; c.boom.rotation.x = 0; this.place(c); }
+      return;
+    }
     const obj = w.obj;
     if (c.state === 'go') {
       // drive up beside it (nose to it, 3.5 m short)
-      if (this.steerTo(c, w.x, w.z, 4.5, dt, 3.6)) { c.state = 'reach'; c.t = 0; }
+      if (this.steerTo(c, w.x, w.z, Math.min(11, 2 + Math.hypot(w.x - c.x, w.z - c.z) * 0.3), dt, 3.6, 1.4)) { c.state = 'reach'; c.t = 0; }
     } else if (c.state === 'reach') {
       // swing the boom over it, lower the hook
       const local = c.group.worldToLocal(new THREE.Vector3(w.x, c.group.position.y, w.z));
@@ -424,7 +518,7 @@ export class RaceControl {
       c.lift = 1.6 * Math.min(1, c.t / 3);
       if (c.t > 3.2) { c.state = 'carry'; c.t = 0; }
     } else if (c.state === 'carry') {
-      if (this.steerTo(c, c.home.x, c.home.z, 3.5, dt, 1)) { c.state = 'drop'; c.t = 0; }
+      if (this.steerTo(c, c.home.x, c.home.z, Math.min(5, 1.5 + c.t), dt, 1, 1.2)) { c.state = 'drop'; c.t = 0; }
     } else if (c.state === 'drop') {
       c.lift = Math.max(0, 1.6 - c.t);
       if (c.t > 1.6) {
@@ -432,7 +526,8 @@ export class RaceControl {
         if (w.kind === 'player') this.hooks.recoverPlayer?.();
         else if (w.kind === 'ai') { w.car.recovered = true; w.car.parked = true; const k = this.ai.cars.indexOf(w.car); w.car.physics.x = 1e4 + k * 30; w.car.physics.z = 1e4; w.car.full = false; }
         else if (w.kind === 'block') this.hooks.removeBlock?.();
-        this.scene.remove(c.group); this.crane = null;
+        c.state = 'back'; c.t = 0; c.lift = 0; c.w = null;
+        if (this.crane === c) this.crane = null;
         return;
       }
     }
@@ -455,11 +550,19 @@ export class RaceControl {
     for (const p of this.trackside.posts) { const d = (p.x - x) ** 2 + (p.z - z) ** 2; if (d < bd) { bd = d; best = p; } }
     return best;
   }
+  // a marshal comes out from behind his hut (and goes back behind it when done)
+  hutPath(post) {
+    const lp = this.line[post.i ?? 0] || { x: post.x - 5, z: post.z, heading: 0 };
+    const ax = post.x - lp.x, az = post.z - lp.z, ad = Math.hypot(ax, az) || 1;
+    const tx = Math.sin(lp.heading ?? 0), tz = Math.cos(lp.heading ?? 0), side = Math.random() < 0.5 ? 1 : -1;
+    return { behind: [post.x + ax / ad * 2.2, post.z + az / ad * 2.2], corner: [post.x + tx * 2 * side + ax / ad * 0.4, post.z + tz * 2 * side + az / ad * 0.4] };
+  }
   newRunner(post, job) {
     const person = new Person(this.mats, 0);
-    person.place(post.x + (Math.random() - 0.5) * 2, post.z + (Math.random() - 0.5) * 2, 0);
+    const h = this.hutPath(post);
+    person.place(h.behind[0] + (Math.random() - 0.5), h.behind[1] + (Math.random() - 0.5), 0);
     this.scene.add(person.root);
-    const r = { person, job, done: false };
+    const r = { person, job, done: false, hut: h };
     this.runners.push(r);
     return r;
   }
@@ -470,20 +573,26 @@ export class RaceControl {
     for (let k = 0; k < 2; k++) {
       const r = this.newRunner(post, 'fire');
       const ext = makeExtinguisher(this.mats);
-      r.person.hold(ext, 'hand');
+      // held across the body like a rifle: one hand on the handle, the other under the can
+      ext.rotation.x = Math.PI / 2 - 0.25; ext.position.set(0, -0.05, -0.2);
+      r.person.hold(ext, 'front');
       const a = (k ? 1 : -1) * 0.9 + Math.atan2(post.x - f.x, post.z - f.z);
       const sx = f.x + Math.sin(a) * 2.6, sz = f.z + Math.cos(a) * 2.6;
       r.person.run([
         { wait: k * 0.4 },
-        { go: [sx, sz], run: true },
+        { pose: 'RIFLE' },
+        { go: r.hut.corner, run: true, panic: true },
+        { go: [sx, sz], run: true, panic: true },
         { face: [f.x, f.z] },
-        { pose: 'SPRAY' },
+        { pose: 'SPRAY_RIFLE' },
         { fn: () => { r.spraying = true; } },
         { wait: 4.5 },
         { fn: () => { r.spraying = false; if (k === 0) { this.hooks.extinguish?.(f.kind); setTimeout(() => this.jobs.delete(f.key), 8000); } } },
         { pose: 'STAND' },
         { wait: 2 },
-        { go: [post.x, post.z] },
+        { pose: 'RIFLE' },
+        { go: r.hut.corner },
+        { go: r.hut.behind },
         { fn: () => { r.done = true; } },
       ]);
       r.sprayAt = () => (r.spraying ? { x: sx, z: sz, tx: f.x, tz: f.z } : null);
@@ -496,13 +605,60 @@ export class RaceControl {
     const r = this.newRunner(post, 'sweep');
     const at = [d.obj.position.x, d.obj.position.z];
     r.person.run([
+      { go: r.hut.corner, run: true },
       { go: at, run: true },
       { pose: 'REACH', t: 0.6 },
       { fn: () => { this.hooks.removeDebris?.(d); } },
       { pose: 'CARRY' },
-      { go: [post.x, post.z] },
+      { go: r.hut.corner },
+      { go: r.hut.behind },
       { fn: () => { r.done = true; } },
     ]);
+  }
+  // ---- a barrier hit hard: called by the game with the speed into it ----
+  barrierHit(at, v, kind) {
+    if (v < 18 || !at) return;
+    // (one repair per stretch of barrier)
+    if (this.repairs.some((r) => Math.hypot(r.x - at.x, r.z - at.z) < 12)) return;
+    const severe = v >= 28;
+    const rep = { x: at.x, z: at.z, kind, done: false, t: 0, need: severe ? 40 : 22, crew: [] };
+    this.repairs.push(rep);
+    const race = this.ai.race, racing = race && race.phase === 'racing';
+    if (racing) {
+      if (severe) { this.setPhase('red'); this.hooks.toast?.(kind === 'tyres' ? 'RED FLAG: THE TYRE WALL NEEDS REBUILDING' : 'RED FLAG: BARRIER REPAIRS'); }
+      else if (this.phase === 'green') this.setPhase('sc');
+    } else this.hooks.toast?.('BARRIER DAMAGED: REPAIR CREW ON ITS WAY');
+    // the crew: three from the nearest post, to work along the damaged bit
+    const post = this.nearestPost(at.x, at.z);
+    if (!post) return;
+    const i = this.trackside.nearestLine(at.x, at.z, 40), lp = this.line[Math.max(0, i)];
+    const tx = Math.sin(lp?.heading || 0), tz = Math.cos(lp?.heading || 0);
+    for (let k = 0; k < 3; k++) {
+      const r = this.newRunner(post, 'repair');
+      const off = (k - 1) * 1.6;
+      r.person.run([
+        { wait: k * 0.5 },
+        { go: r.hut.corner, run: true },
+        { go: [at.x + tx * off, at.z + tz * off], run: true },
+        { face: [at.x + tx * off + (lp ? lp.x - at.x : 0), at.z + tz * off + (lp ? lp.z - at.z : 0)] },
+        { pose: k === 1 ? 'BOLT' : 'WORK' },
+        { until: () => rep.done },
+        { pose: 'STAND' },
+        { go: r.hut.corner },
+        { go: r.hut.behind },
+        { fn: () => { r.done = true; } },
+      ]);
+      rep.crew.push(r);
+    }
+  }
+  updateRepairs(dt) {
+    for (const rep of this.repairs) {
+      if (rep.done) continue;
+      // (they start once they're all there)
+      if (rep.crew.every((r) => r.person.want === 'WORK' || r.person.want === 'BOLT' || r.done)) rep.t += dt;
+      if (rep.t > rep.need) { rep.done = true; this.hooks.barrierFixed?.(rep); this.hooks.toast?.('BARRIER REPAIRED'); }
+    }
+    this.repairs = this.repairs.filter((r) => !r.done || r.crew.some((c) => !c.done));
   }
   // white extinguisher clouds, for the game to draw (where, and at what)
   sprays() { const out = []; for (const r of this.runners) { const s = r.sprayAt?.(); if (s) out.push(s); } return out; }
@@ -530,8 +686,11 @@ export class RaceControl {
   // ---- the red flag: everyone back, then a standing restart in the order they were ----
   restart() {
     this.setPhase('green');
-    if (this.sc) { this.scene.remove(this.sc.group); this.sc = null; }
-    if (this.ambulance) { this.scene.remove(this.ambulance.group); this.ambulance = null; }
+    // (the safety car and the ambulance, back in the pit lane)
+    for (const [v, park] of [[this.sc, this.parkSC], [this.ambulance, this.parkAmb]]) {
+      v.state = 'parked'; v.mode = 'free'; v.route = []; v.v = 0; v.x = park.x; v.z = park.z; v.heading = Math.PI; this.place(v); v.flash(0, false);
+    }
+    this.sc.green(false);
     this.ai.restartFromGrid?.();
     this.hooks.toast?.('RESTART: BACK ON THE GRID');
   }

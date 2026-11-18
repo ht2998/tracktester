@@ -35,7 +35,7 @@ import { setGround, groundAt, lieOnGround } from './ground.js';
 import * as packFile from './assets.js';
 import { AIField, BUILD as AI_BUILD } from './ai.js';
 import { Garage, BUILD as GARAGE_BUILD } from './garage.js';
-import { PitStop, SEPANG_PIT, BUILD as PITS_BUILD } from './pits.js';
+import { PitStop, SEPANG_PIT, Person as PersonFigure, BUILD as PITS_BUILD } from './pits.js';
 import { RaceControl, BUILD as RACECONTROL_BUILD } from './racecontrol.js';
 import { buildF1Body, buildF1Cockpit, buildF1RimGeometry, F1_CAR, CATERHAM_CAR, ENGINES, withEngine, STOCK_ENGINE, BUILD as F1_BUILD } from './f1.js';
 import * as groundFile from './ground.js';
@@ -60,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 61;
+const BUILD = 62;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -1250,7 +1250,7 @@ function updateTrackside(dt) {
   const speed = Math.hypot(physics.vx, physics.vy);
   playerStopped = speed < 1.5 ? playerStopped + dt : 0;
   if (!heavyMode && !inPits && !(race && race.phase === 'grid')) {
-    const broken = physics.engineDead || physics.tyres.some((t) => t.detached) || physics.onFire;
+    const broken = physics.engineDead || physics.tyres.some((t) => t.detached) || physics.burning;
     const on = onTrackHere(physics.x, physics.z);
     // (sitting still a long time counts too, but not waiting at the start where you spawn)
     const idle = playerStopped > 12 && (!sepang || Math.hypot(physics.x - sepang.start.x, physics.z - sepang.start.z) > 60);
@@ -1269,7 +1269,8 @@ function updateTrackside(dt) {
     raceControl.update(dt, {
       physics, playerModel: carModel.car,
       playerBroken: !playerRecovered && (physics.engineDead || physics.tyres.some((t) => t.detached) || exploded),
-      playerFire: physics.onFire, playerStopped, inPits,
+      playerFire: physics.burning, playerStopped, inPits,
+      driverOut: driverOut ? { x: driverOut.person.x, z: driverOut.person.z } : null,
       wreck: { burning: exploded && wreckBurn > 0 },
       engineBlock: engineBlock ? { obj: engineBlock, fire: engineBlockFire, rest: !blockPart || blockPart.rest } : null,
       debris: flyingParts.filter((p) => p.obj !== engineBlock),
@@ -1283,7 +1284,7 @@ function updateTrackside(dt) {
     }
   }
   const rcRed = raceControl?.phase === 'red';
-  const red = rcRed || (!heavyMode && physics.onFire && playerStopped > 1 && onTrackHere(physics.x, physics.z))
+  const red = rcRed || (!heavyMode && physics.burning && playerStopped > 1 && onTrackHere(physics.x, physics.z))
     || (engineBlockFire > 0 && engineBlock && onTrackHere(engineBlock.position.x, engineBlock.position.z));
   // --- your own flags ---
   let mine = null;
@@ -2180,7 +2181,8 @@ const radiatorWorld = new THREE.Vector3();
 // them. The grille, headlights and tail lights move with the metal
 // around them. (Car's own space: x = left, z = forward.)
 const dents = [];
-const fireWorld = new THREE.Vector3();   // (where the flames are: the engine bay, or a burning brake)
+const fireWorld = new THREE.Vector3();
+const crashFireWorld = new THREE.Vector3();   // (where the flames are: the engine bay, or a burning brake)
 const _off = new THREE.Vector3();
 function dentOffset(x, y, z, out) {
   out.set(0, 0, 0);
@@ -2516,6 +2518,14 @@ function updateSmoke(dt) {
   } else fireWorld.copy(engineBayWorld);
   flames.emitFrom('fire', fireWorld, fire, carVelocity, dt);
   flameCore.emitFrom('fire', fireWorld, fire, carVelocity, dt);
+  // the crash fires: a fuel fire at the fuel cell (big, with thick black smoke), oil fires at the side
+  physics.fires.forEach((f, k) => {
+    crashFireWorld.set(f.at[0], f.at[1], f.at[2]);
+    carModel.car.localToWorld(crashFireWorld);
+    flames.emitFrom('crash' + k, crashFireWorld, Math.min(1, f.level), carVelocity, dt);
+    flameCore.emitFrom('crash' + k, crashFireWorld, Math.min(1, f.level * 0.9), carVelocity, dt);
+    if (f.kind === 'fuel') engineSmoke.emitFrom('crash' + k, crashFireWorld, Math.min(1, f.level), carVelocity, dt);
+  });
   updateEngineBlock(dt);
   updateExplosion(dt);
   flames.update(dt);
@@ -2523,7 +2533,9 @@ function updateSmoke(dt) {
   if (fireLight) {
     fireLight.position.copy(fireWorld);
     fireLight.position.y += 0.5;
-    fireLight.intensity = fire > 0 ? fire * (4 + 2 * Math.sin(clock.elapsedTime * 23) + 1.5 * Math.random()) : 0;
+    const glow = Math.max(fire, ...physics.fires.map((f) => Math.min(1, f.level)));
+    if (fire <= 0 && physics.fires.length) { fireLight.position.copy(crashFireWorld); fireLight.position.y += 0.5; }
+    fireLight.intensity = glow > 0 ? glow * (4 + 2 * Math.sin(clock.elapsedTime * 23) + 1.5 * Math.random()) : 0;
   }
 
   if (debrisPending) {
@@ -2614,8 +2626,12 @@ function findContact() {
   const consider = (depth, nx, nz, px, pz, c) => {
     if (depth > 0 && (!best || depth > best.depth)) best = { depth, nx, nz, px, pz, c };
   };
+  // (in the air: only what reaches up to the car stops it; a low barrier
+  // can be flown over, a catch fence, a wall or a building can't)
+  const bottom = physics.air ? physics.pose.y - 0.25 : -Infinity;
   for (const c of collidersNear(cx, cz)) {
     if (c.maxX < cx - 2.2 || c.minX > cx + 2.2 || c.maxZ < cz - 2.2 || c.minZ > cz + 2.2) continue;
+    if (bottom > -Infinity && bottom > groundAt((c.minX + c.maxX) / 2, (c.minZ + c.maxZ) / 2) + (BARRIER_TOP[c.kind] ?? 50)) continue;
     // Corners and edges of the car inside the box: pushed out through the
     // nearest face that's on the car's side of the box
     for (const [px, pz] of CAR_POINTS) {
@@ -2654,10 +2670,30 @@ function vehicleGroundY() {
 }
 
 let hardestHit = 0;
+let sweptFromX = null, sweptFromZ = null;
+// how tall each kind of barrier is (m): fly higher than that and you clear it
+const BARRIER_TOP = { armco: 0.75, tyres: 0.9, concrete: 1.0, bollard: 0.5, fence: 4, building: 50, tree: 50 };
 function collide(now) {
-  if (physics.air && physics.airHeight > 0.9) return;   // flying over the barriers
+  const toX = physics.x, toZ = physics.z;
+  const fromX = sweptFromX, fromZ = sweptFromZ;
+  sweptFromX = toX; sweptFromZ = toZ;
+  if (physics.air && physics.airHeight > 6) return;     // (high up, clear of everything)
   const speedBefore = Math.hypot(physics.vx, physics.vy);
   hardestHit = 0;
+  // Fast: the car can move most of a metre in one frame, and a tyre wall's
+  // barely more than that deep, so check the whole way it came, in short
+  // steps, and stop it at the first touch (otherwise a nose that got more
+  // than halfway in was pushed out of the far side: through the wall)
+  if (fromX != null && teleportGrace <= 0) {
+    const d = Math.hypot(toX - fromX, toZ - fromZ);
+    if (d > 0.25 && d < 8) {
+      const n = Math.ceil(d / 0.25);
+      for (let k = 1; k <= n; k++) {
+        physics.x = fromX + (toX - fromX) * k / n; physics.z = fromZ + (toZ - fromZ) * k / n;
+        if (findContact()) break;
+      }
+    }
+  }
   for (let iter = 0; iter < 4; iter++) {
     const k = findContact();
     if (!k) break;
@@ -2685,6 +2721,7 @@ function collide(now) {
     if (hitSpeed > 2.5 && now - lastCrashAt > 0.3 && !heavyMode) {   // (the heavy barely notices)
       lastCrashAt = now;
       if (hitSpeed > 12) crashFlash = 1.5;      // (the marshals near it flinch)
+      if (hitSpeed > 30 && teleportGrace <= 0 && !physics.damageOff) raceControl?.medical?.({ x: physics.x, z: physics.z });   // (a big one: the medical car's sent)
       physics.crashHit({ zone, speed: hitSpeed, along, across });
       // Dent the body where it struck (on the bodywork, not the wheel
       // that may have touched first), pushed in the way the wall pushed
@@ -2707,6 +2744,8 @@ function collide(now) {
     if (k.c.hit && -vn > 1.5 && now - (lastHit.get(k.c) ?? -9) > 0.25) {
       lastHit.set(k.c, now);
       const res = k.c.hit({ x: k.px, z: k.pz }, { x: k.nx, z: k.nz }, -vn);
+      // (a barrier badly hit: race control sends a repair crew, and a safety car or a red flag)
+      if (-vn > 18 && teleportGrace <= 0 && (k.c.kind === 'armco' || k.c.kind === 'tyres' || k.c.kind === 'fence')) raceControl?.barrierHit?.({ x: k.px, z: k.pz }, -vn, k.c.kind);
       if (res?.absorb) bounce *= 1 - res.absorb;                    // a barrier that gives way bounces you back less
       if (res?.chips) {
         chipVel.set(k.nx * 3, 0, k.nz * 3).addScaledVector(carVelocity, 0.3);
@@ -2738,11 +2777,15 @@ function collide(now) {
     physics.vy = vx * lx + vz * lz;
     physics.yawRate = w;
   }
+  sweptFromX = physics.x; sweptFromZ = physics.z;
   // Stopped dead from 150 km/h or more by something solid (not a scrape,
   // and never the game moving the car): it goes up
   const speedAfter = Math.hypot(physics.vx, physics.vy);
   if (speedBefore >= 150 / 3.6 && hardestHit >= 0.6 * speedBefore && speedAfter < speedBefore * 0.25
-      && teleportGrace <= 0 && !heavyMode) physics.explode();
+      && teleportGrace <= 0 && !heavyMode && !physics.damageOff && !physics.wrecked) {
+    if (speedBefore >= 180 / 3.6) splitCar();      // (the very biggest: broken in two)
+    physics.explode();
+  }
 }
 
 // ---------------------------------------------------------------------
@@ -3583,10 +3626,11 @@ function updateEngineBlock(dt) {
 // reset, Back on track, the grid, the pits, the garage): only real hits.
 let fireTime = 0, fireWarned = false, exploded = false;
 let boom = null;                      // the fireball, while it lasts
+let boomScale = 1;
 let wreckBurn = 0, wreckSmoulder = 0;
 const charredMat = new THREE.MeshStandardMaterial({ color: 0x1a1816, roughness: 1, metalness: 0.15 });
 const charredFrom = new Map();        // each part's own material, for the repair
-const wreckWorld = new THREE.Vector3(), UP_V = new THREE.Vector3(0, 3, 0);
+const wreckWorld = new THREE.Vector3(), UP_V = new THREE.Vector3(0, 3, 0), splitWorld = new THREE.Vector3();
 function explodeCar() {
   if (exploded) return;
   exploded = true;
@@ -3616,6 +3660,8 @@ function explodeCar() {
   });
   // what's left: burnt black
   carModel.car.traverse((o) => { if (o.isMesh && !o.isInstancedMesh && !charredFrom.has(o)) { charredFrom.set(o, o.material); o.material = charredMat; } });
+  splitHalf?.obj.traverse((o) => { if (o.isMesh) o.material = charredMat; });
+  if (splitHalf) boomScale = 1.6;
   // the fireball
   const ball = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 12), new THREE.MeshBasicMaterial({ color: 0xffa040, transparent: true, opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending }));
   ball.position.copy(at).add(new THREE.Vector3(0, 0.8, 0));
@@ -3634,15 +3680,15 @@ function explodeCar() {
 function updateExplosion(dt) {
   teleportGrace = Math.max(0, teleportGrace - dt);
   // on fire too long: it goes up
-  if (physics.onFire && !heavyMode && !physics.damageOff && !exploded) {
+  if (physics.burning && !heavyMode && !physics.damageOff && !exploded) {
     fireTime += dt;
     if (fireTime > 35 && !fireWarned) { fireWarned = true; showToast('FIRE SPREADING: GET OUT'); }
     if (fireTime > 45) physics.explode();
-  } else if (!physics.onFire) { fireTime = Math.max(0, fireTime - dt * 2); if (fireTime < 30) fireWarned = false; }
+  } else if (!physics.burning) { fireTime = Math.max(0, fireTime - dt * 2); if (fireTime < 30) fireWarned = false; }
   if (boom) {
     boom.t += dt;
     const k = boom.t / 0.9;
-    boom.ball.scale.setScalar(0.6 + 6.5 * Math.min(1, k * 1.6));
+    boom.ball.scale.setScalar((0.6 + 6.5 * Math.min(1, k * 1.6)) * boomScale);
     boom.ball.material.opacity = Math.max(0, 0.95 * (1 - k));
     boom.ball.material.color.setHSL(0.08 - 0.05 * Math.min(1, k), 1, 0.55 - 0.25 * Math.min(1, k));
     boom.light.intensity = Math.max(0, 2600 * (1 - k * 1.3));
@@ -3658,14 +3704,107 @@ function updateExplosion(dt) {
     carModel.car.getWorldPosition(wreckWorld); wreckWorld.y += 0.5;
     if (wreckBurn > 0) { flames.emitFrom('wreck', wreckWorld, Math.min(1, wreckBurn * 1.4), ZERO_V, dt); flameCore.emitFrom('wreck', wreckWorld, wreckBurn, ZERO_V, dt); }
     engineSmoke.emitFrom('wreck', wreckWorld, Math.max(0.25, wreckSmoulder), ZERO_V, dt);
+    // (and the torn-off half, burning where it landed)
+    if (splitHalf) {
+      splitHalf.obj.getWorldPosition(splitWorld); splitWorld.y += 0.4;
+      if (wreckBurn > 0) { flames.emitFrom('half', splitWorld, Math.min(1, wreckBurn * 1.6), ZERO_V, dt); flameCore.emitFrom('half', splitWorld, wreckBurn, ZERO_V, dt); }
+      engineSmoke.emitFrom('half', splitWorld, Math.max(0.3, wreckSmoulder), ZERO_V, dt);
+    }
   }
+  updateDriverEscape(dt);
+}
+// THE DRIVER GETS OUT: stopped, and burning (or blown up): he unclips,
+// climbs out, and runs well clear of it, towards the barrier, then turns
+// to watch. The marshals and the ambulance come to him. Reset: back in.
+let driverOut = null;
+const driverMats = {
+  suits: [new THREE.MeshStandardMaterial({ color: 0xc81d25, roughness: 0.85 })],
+  helmet: new THREE.MeshPhysicalMaterial({ color: 0xf2f2f2, roughness: 0.25, clearcoat: 1 }),
+  visor: new THREE.MeshStandardMaterial({ color: 0x111418, metalness: 0.6, roughness: 0.1 }),
+  glove: new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.7 }),
+  boot: new THREE.MeshStandardMaterial({ color: 0x18191b, roughness: 0.6 }),
+};
+let burnStill = 0;
+function driverInCar(show) {
+  if (IS_F1) { for (const m of carModel.car.userData.f1?.helmet || []) m.visible = show && cameraMode !== 'cockpit'; for (const m of f1Cockpit?.driverParts || []) m.visible = show; }
+  else if (cockpit.driver) cockpit.driver.visible = show;
+}
+function updateDriverEscape(dt) {
+  if (heavyMode || physics.damageOff) return;
+  const still = Math.hypot(physics.vx, physics.vy) < 1;
+  burnStill = (physics.burning || exploded) && still && !(pits && pits.phase !== 'off') ? burnStill + dt : 0;
+  if (!driverOut && burnStill > 1.5) {
+    // out he gets: the side away from the track, then a run for the barrier
+    const seat = carModel.car.localToWorld(new THREE.Vector3(IS_F1 ? 0 : -0.18, 0, IS_F1 ? 0 : -0.4));
+    const person = new PersonFigure(driverMats, 0);
+    scene.add(person.root);
+    let ax = Math.cos(physics.heading), az = -Math.sin(physics.heading);    // (the car's left)
+    if (sepang) {
+      const i = trackside?.nearestLine?.(seat.x, seat.z, 60) ?? -1;
+      if (i >= 0) { const p = sepang.line[i]; const ox = seat.x - p.x, oz = seat.z - p.z, d = Math.hypot(ox, oz) || 1; ax = ox / d; az = oz / d; }
+    }
+    person.place(seat.x, seat.z, Math.atan2(ax, az));
+    person.run([
+      { pose: 'HOLD', t: 0.5 },                                            // unclipping, hands on the sides
+      { go: [seat.x + ax * 1.3, seat.z + az * 1.3] },                      // over the side
+      { go: [seat.x + ax * 16, seat.z + az * 16], run: true },              // and away from the fire
+      { face: [seat.x, seat.z] },
+      { pose: 'STAND' },
+    ]);
+    driverOut = { person, t: 0 };
+    driverInCar(false);
+    if (cameraMode === 'cockpit' || cameraMode === 'bonnet') { cameraMode = 'chase'; applyCamera(); }
+    showToast('THE DRIVER\'S OUT');
+    raceControl?.medical?.({ x: seat.x, z: seat.z });
+  }
+  if (driverOut && !driverOut.gone) { driverOut.t += dt; driverOut.person.update(dt, groundAt); }
+}
+function clearDriverOut() {
+  if (driverOut) { scene.remove(driverOut.person.root); driverOut = null; }
+  burnStill = 0;
+  driverInCar(true);
+}
+// THE CAR SPLIT IN TWO (a dead stop from 180 km/h or more): the end with
+// the engine torn off the survival cell and thrown on, both halves in a
+// fireball. The driver's cell stays where it stopped.
+let splitHalf = null;
+function splitCar() {
+  if (splitHalf) return;
+  carModel.car.updateMatrixWorld(true);
+  const half = new THREE.Group();
+  const cut = IS_F1 ? -0.3 : 0.55;                 // (the TT-88: behind the seat; the Caterham: ahead of the footwell)
+  const box3 = new THREE.Box3(), mid = new THREE.Vector3();
+  const torn = [];
+  carModel.car.traverse((o) => {
+    if (!o.isMesh || o.isInstancedMesh || !o.visible || o === scratches) return;
+    box3.setFromObject(o); box3.getCenter(mid); carModel.car.worldToLocal(mid);
+    if (IS_F1 ? mid.z < cut : mid.z > cut) torn.push(o);
+  });
+  const home = torn.map((o) => ({ o, parent: o.parent, pos: o.position.clone(), quat: o.quaternion.clone(), scale: o.scale.clone() }));
+  half.position.copy(carModel.car.position); half.quaternion.copy(carModel.car.quaternion);
+  scene.add(half); half.updateMatrixWorld(true);
+  for (const o of torn) half.attach(o);
+  half.traverse((o) => { if (o.isMesh && !charredFrom.has(o)) { charredFrom.set(o, o.material); } });
+  const dir = new THREE.Vector3(Math.sin(physics.heading), 0, Math.cos(physics.heading));
+  const v = new THREE.Vector3().copy(carVelocity).multiplyScalar(0.35).addScaledVector(dir, IS_F1 ? -3 : 3);
+  v.y = 4 + Math.random() * 3;
+  flyingParts.push({ obj: half, v, w: new THREE.Vector3((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 9, (Math.random() - 0.5) * 6), rest: false, boom: true, half: true });
+  splitHalf = { obj: half, home };
+  showToast('HUGE CRASH: THE CAR\'S BROKEN IN TWO');
 }
 function clearExplosion() {
+  if (splitHalf) {
+    // (the torn-off half back on the car)
+    for (const h of splitHalf.home) { h.parent.add(h.o); h.o.position.copy(h.pos); h.o.quaternion.copy(h.quat); h.o.scale.copy(h.scale); }
+    scene.remove(splitHalf.obj);
+    splitHalf = null;
+  }
+  clearDriverOut();
   for (const [o, m] of charredFrom) o.material = m;
   charredFrom.clear();
   for (let i = flyingParts.length - 1; i >= 0; i--) if (flyingParts[i].boom) { scene.remove(flyingParts[i].obj); flyingParts[i].obj.geometry?.dispose(); flyingParts.splice(i, 1); }
   if (boom) { scene.remove(boom.ball, boom.light); boom = null; }
-  exploded = false; fireTime = 0; fireWarned = false; wreckBurn = wreckSmoulder = 0;
+  exploded = false; fireTime = 0; fireWarned = false; wreckBurn = wreckSmoulder = 0; boomScale = 1;
   teleportGrace = 0.6;     // (the car's just been moved by the game: not a crash)
 }
 function clearFlyingParts() {
@@ -3956,7 +4095,7 @@ const pits = sepang ? (() => {
       repairRadiator: () => { physics.radiator = 1; physics.coolant = 1; physics.dryTime = 0; physics.coolantTemp = Math.min(physics.coolantTemp, 0.5); },
       repairWing: (part) => fitWing(part),
       repairMirror: (side) => fitMirror(side),
-      extinguish: () => { physics.onFire = false; physics.fireLevel = 0; physics.fireTime = 0; },
+      extinguish: () => physics.putOut(),
       invalidLap: () => { if (lapTimer) lapTimer.valid = false; },
       retire: () => {
         if (lapTimer) lapTimer.valid = false;
@@ -3971,12 +4110,14 @@ const pits = sepang ? (() => {
 })() : null;
 // RACE CONTROL (racecontrol.js): Sepang only, with the computer cars' racing line
 raceControl = sepang && aiField && trackside ? new RaceControl(scene, {
-  line: sepang.line, trackside, aiField, groundAt, isMobile, pit: SEPANG_PIT,
+  line: sepang.line, trackside, aiField, groundAt, isMobile, pit: SEPANG_PIT, corners: sepang.cornerList || [],
   hooks: {
+    driverWaiting: () => !!driverOut && !driverOut.gone,
+    medicsDone: () => { if (driverOut && !driverOut.gone) { scene.remove(driverOut.person.root); driverOut.gone = true; showToast('THE DRIVER\'S BEEN TAKEN TO THE MEDICAL CENTRE: HE\'S OK'); } },
     toast: (t) => { if (t) showToast(t); },
     penalty: (sec, why) => aiField.addPenalty(sec, why),
     extinguish: (kind) => {
-      if (kind === 'car') { physics.onFire = false; physics.fireLevel = 0; physics.fireSpot = null; }
+      if (kind === 'car') physics.putOut();
       if (kind === 'wreck') wreckBurn = 0;
       if (kind === 'block') engineBlockFire = 0;
       showToast('FIRE OUT');
@@ -4092,6 +4233,7 @@ renderer.setAnimationLoop(() => {
   // the clutch (X) and you can rev it up ready; touch the throttle without
   // it and the brakes let go: that's a jump start)
   if (aiField?.holdPlayer && !(input.throttle > 0.05 && !input.clutch)) input.brake = 1;
+  if (driverOut) { input.throttle = 0; input.brake = 1; input.steer = 0; }     // (nobody in it)
   // the pit lane: the limiter, the team guiding you in, the car held on its marks
   const pitHold = pits && !heavyMode ? pits.control(input, dt) : false;
   // Fast cars move in smaller steps, so they can't skip through a thin
@@ -4186,7 +4328,7 @@ renderer.setAnimationLoop(() => {
       carModel.car.rotation.x -= (pits.lift.f - pits.lift.r) / (FRONT_AXLE - REAR_AXLE);
     }
   }
-  if (raceControl?.crane?.w.kind === 'player') carModel.car.position.y += raceControl.crane.lift;   // (up on the recovery crane's hook)
+  if (raceControl?.crane?.w?.kind === 'player') carModel.car.position.y += raceControl.crane.lift;   // (up on the recovery crane's hook)
   updateWheels(physics.steer, physics.wheelSpin);
   if (IS_F1) {
     // the TT-88: the driver's helmet hidden in his own view; exhausts glowing with the revs and boost
@@ -4243,7 +4385,7 @@ renderer.setAnimationLoop(() => {
     speedKmh: physics.speedKmh, rpm: physics.rpm, redline: heavyMode ? 2700 : physics.spec.redline, gearLabel: heavyMode ? heavyPhys.gearLabel : physics.gearLabel,
     limiter: physics.limiter, fuel: physics.fuelLevel, oil: physics.oilLevel, tyres: physics.tyres,
     health: physics.engineHealth, tyreWindow: physics.tempWindow,
-    coolant: physics.coolantTemp, fire: physics.onFire,
+    coolant: physics.coolantTemp, fire: physics.burning,
     hud: hud.parts,                 // the on-screen dashboard, copied onto the car's dash screen
   });
   updateSmoke(dt);
