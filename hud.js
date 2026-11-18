@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 14;
+export const BUILD = 15;
 
 const COLORS = {
   face: '#15181c',
@@ -721,7 +721,7 @@ function roundRect(g, x, y, w, h, r) {
 export class Hud {
   constructor({ redline, maxSpeed = 240, onTransmission, onAssist, onTyres, tyreOptions = {}, compact = false,
                 timeSpeeds = [60], onSky = {}, onWhatsNew = null, track = 'test', onTrack = null,
-                damageOn = true, onDamage = null }) {
+                damageOn = true, onDamage = null, onEngine = null }) {
     this.timeSpeeds = timeSpeeds;
     this.onSky = onSky;
     this.onTyres = onTyres;
@@ -898,6 +898,24 @@ export class Hud {
     tyreBox.append(select, note, fresh);
     this.tyreSelect = select;
 
+    // Engine swap: any engine in the car you're in (the list comes from the game)
+    const engineHeading = document.createElement('div');
+    engineHeading.className = 'sp-heading';
+    engineHeading.textContent = 'Engine';
+    const engineBox = document.createElement('div');
+    engineBox.className = 'tyre-box';
+    const engineSelect = document.createElement('select');
+    engineSelect.id = 'engine-select';
+    engineSelect.setAttribute('aria-label', 'Engine');
+    engineSelect.addEventListener('change', () => { onEngine?.(engineSelect.value); engineSelect.blur(); });
+    const engineNote = document.createElement('span');
+    engineNote.className = 'gb-note';
+    engineNote.textContent = 'Swapping fits a fresh car';
+    engineBox.append(engineSelect, engineNote);
+    this.engineSelect = engineSelect;
+    this.engineHeading = engineHeading;
+    this.engineBox = engineBox;
+
     // Time and weather
     const skyHeading = document.createElement('div');
     skyHeading.className = 'sp-heading';
@@ -973,7 +991,7 @@ export class Hud {
     newsBtn.textContent = "What's new";
     newsBtn.addEventListener('click', () => { newsBtn.blur(); onWhatsNew?.(); });
 
-    panel.append(trackHeading, trackBox, gearHeading, gearGroup, assistHeading, ...assistButtons, damageBox, tyreHeading, tyreBox, skyHeading, skyBox, newsBtn);
+    panel.append(trackHeading, trackBox, gearHeading, gearGroup, assistHeading, ...assistButtons, damageBox, tyreHeading, tyreBox, engineHeading, engineBox, skyHeading, skyBox, newsBtn);
     this.side.append(handle, panel);
     document.body.appendChild(this.side);
 
@@ -1053,7 +1071,23 @@ export class Hud {
     t.drawBackground();
   }
 
-  // Show or hide the tyre wear bars (a tank has tracks, not tyres)
+  // The engines to offer: [[key, name, stock?]], and the one fitted now
+  setEngines(list, current) {
+    const sel = this.engineSelect;
+    if (!sel) return;
+    sel.innerHTML = '';
+    for (const [key, name, stock] of list) {
+      const o = document.createElement('option');
+      o.value = key;
+      o.textContent = stock ? `${name} (stock)` : name;
+      sel.appendChild(o);
+    }
+    sel.value = current;
+  }
+  // (hidden while you're not in a car)
+  showEngines(on) { if (this.engineHeading) this.engineHeading.style.display = this.engineBox.style.display = on ? '' : 'none'; }
+
+  // Show or hide the tyre wear bars (a tracked vehicle has no tyres)
   setTyreWear(show) {
     this.tyreBars.canvas.style.display = show ? '' : 'none';
   }

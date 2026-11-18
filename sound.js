@@ -11,7 +11,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 20;
+export const BUILD = 21;
 
 // THE VOICED ENGINES (the V10's sound, made for each): bangs a turn, revs,
 // loudness matched to the approved preview, and how much of 3x the crank
@@ -207,7 +207,7 @@ class EnginePulses extends AudioWorkletProcessor {
 registerProcessor('engine-pulses', EnginePulses);
 
 // ---------------------------------------------------------------------
-// The heavy vehicle's engine (the secret one): a 6-cylinder turbo-diesel
+// The heavy vehicle's engine: a 6-cylinder turbo-diesel
 // (idle about 720 rpm, governed at 2,700), three firings per turn, each
 // one uneven, with a sharp diesel clatter as the fuel lights, a turbo that
 // whistles up a beat after the throttle, a low uneven burble in the

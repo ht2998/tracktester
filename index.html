@@ -129,7 +129,7 @@
       });
 
       // If the game hasn't started after a few seconds, check which files are missing
-      var FILES = ['rendering.js', 'ai.js', 'cockpit.js', 'debris.js', 'effects.js', 'f1.js', 'flora.js', 'garage.js', 'godrays.js', 'grass.js', 'ground.js', 'hud.js', 'input.js', 'oil.js', 'physics.js', 'pits.js', 'racingline.js', 'rain.js', 'scenery.js', 'sepang.js', 'skids.js', 'sky.js', 'smoke.js', 'sound.js', 'tank.js', 'touch.js', 'trackside.js', 'tyres.js', 'updates.js'];
+      var FILES = ['rendering.js', 'ai.js', 'assets.js', 'cockpit.js', 'debris.js', 'effects.js', 'f1.js', 'flora.js', 'garage.js', 'godrays.js', 'grass.js', 'ground.js', 'hud.js', 'input.js', 'oil.js', 'physics.js', 'pits.js', 'racingline.js', 'rain.js', 'scenery.js', 'sepang.js', 'skids.js', 'sky.js', 'smoke.js', 'sound.js', 'touch.js', 'trackside.js', 'tyres.js', 'updates.js'];
       window.checkGameStarted = function () {
         var info = document.getElementById('info');
         if (!info || info.textContent.indexOf('Rendering test') === -1) return;   // it started

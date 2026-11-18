@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 77;
+export const BUILD = 79;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 67, date: '18 Nov 2026', title: 'Engine swap in the side panel',
+    items: [
+      ['Engine list', 'Swap engines from the side panel now: the Engine list, under Tyres. Pick any engine for the car you\'re in, and you get a fresh car with it', 'update'],
+    ],
+  },
   {
     id: 66, date: '16 Nov 2026', title: 'Pit lane and garages sit properly on the ground',
     items: [
@@ -75,12 +81,10 @@ export const UPDATES = [
     ],
   },
   {
-    id: 61, date: '15 Nov 2026', title: 'GT7-style pit stops, the gunner\'s eyes, tracers',
+    id: 61, date: '15 Nov 2026', title: 'GT7-style pit stops',
     items: [
       ['The driver drives the pits', 'Over the pit entry line the driver takes it himself: down the lane on the limiter, onto his marks, and back out to the end of the exit road, where it\'s yours again', 'update'],
       ['A new pit menu', 'It comes up once you\'re in the pit lane, in steps, with big buttons: first your tyres (the crew wait at the box until you pick), then any damage (Repair or Leave each part), then fuel last: it fills up unless you press Don\'t refuel, and Stop refuelling ends it when you\'ve enough', 'new'],
-      ['The gunner\'s eyes', 'The tank\'s crew view is now through the gunner\'s own eyes: at his sight while you aim (the full magnified view with its markings). Fire, and he turns his head to watch the commander reload, then snaps back to the sight the moment the breech slams shut', 'update'],
-      ['Tracer rounds', 'Every round from the main gun and the machine gun now burns as it flies: a white-hot streak in an orange glow, so you can follow your shots', 'update'],
     ],
   },
   {
@@ -188,13 +192,6 @@ export const UPDATES = [
       ['Menus in front', 'On phones the side panel and the menu now sit in front of everything, and what is behind them is hidden while they are open', 'update'],
       ['Back on track', 'Stuck in the gravel or facing the wrong way? Press B (or Back on track in the phone menu) to go back onto the track where you are, facing the right way. Your damage stays', 'update'],
       ['Smaller map', 'The track map in the corner is a little smaller', 'update'],
-      ['The secret', 'If you have found it: it starts fresh now (no damage from before), Reset works in it, and on phones you can tap a spot to aim and use the FIRE and MG buttons', 'fire'],
-    ],
-  },
-  {
-    id: 47, date: '14 Nov 2026', title: 'The secret meets the AI',
-    items: [
-      ['Rag dolls', 'If you have found the secret, the AI cars really do not like it when it bites', 'fire'],
     ],
   },
   {
@@ -208,24 +205,9 @@ export const UPDATES = [
     ],
   },
   {
-    id: 45, date: '14 Nov 2026', title: 'The secret has a crew',
-    items: [
-      ['A view inside', 'If you have found the secret, one of its cameras now puts you inside with the crew, watching them work. Move the mouse away from the middle to turn, and keep an eye on the corner of the screen', 'camera'],
-    ],
-  },
-  {
     id: 44, date: '14 Nov 2026', title: 'Fix: barriers vanishing',
     items: [
       ['Hit barriers stay put', 'On the hills at Sepang, hitting a barrier (armco, tyre wall, catch fence, a bollard) could make it vanish: it was being redrawn at ground level of the flat test area, under the hill. It now dents, squashes or caves in right where it stands, and cracks in concrete walls show up where they should', 'barriers'],
-      ['Tidier secret seat', 'Inside the secret, nothing pokes through anything any more, and you can see out properly', 'camera'],
-    ],
-  },
-  {
-    id: 43, date: '14 Nov 2026', title: 'The secret gets better',
-    items: [
-      ['A better seat', 'If you have found the secret, its first-person view is much more detailed now, and you can see what your hands are doing', 'camera'],
-      ['Easier aiming', 'In one of its views, the view no longer swings around while you aim', 'update'],
-      ['...and chatters', 'Hold T', 'fire'],
     ],
   },
   {
@@ -238,19 +220,6 @@ export const UPDATES = [
     id: 41, date: '14 Nov 2026', title: 'Fix: free camera on the hills',
     items: [
       ['Free camera follows you up and down', 'In the free (orbit) camera, the point it turns around could stay at the height where you started instead of following you over the hills. It now stays on your vehicle wherever you are, and the shadows follow too', 'camera'],
-    ],
-  },
-  {
-    id: 40, date: '13 Nov 2026', title: 'Something is hiding in the game',
-    items: [
-      ['A secret', 'Something heavy and green is now hidden in Track Tester. It needs a code, or a secret tap somewhere. Ask whoever sent you the link', 'update'],
-      ['...and it drives like one', 'Whatever it is weighs about 8 tonnes, tops out around 80 km/h, turns on the spot, and barely notices the walls', 'update'],
-      ['...and sounds like one', 'A big six-cylinder diesel with a turbo, straining under the weight, with a burble and a deep rumble you can feel. It smokes, too', 'echo'],
-      ['...and looks where you look', 'Once you have found it, move the mouse', 'update'],
-      ['...and leaves its mark', 'Not tyre marks', 'update'],
-      ['...and has its own views', 'Try the on-board cameras', 'camera'],
-      ['...and bites', 'Click', 'fire'],
-      ['...hard', 'Barriers, fences, tyre walls and concrete do not like it', 'barriers'],
     ],
   },
   {

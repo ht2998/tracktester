@@ -32,8 +32,7 @@ import * as floraFile from './flora.js';
 import { Cockpit, EYE } from './cockpit.js';
 import { TyreLooks } from './tyres.js';
 import { setGround, groundAt, lieOnGround } from './ground.js';
-import { buildScorpion, TANK_EYE, TankPhysics } from './tank.js';
-import * as tankFile from './tank.js';
+import * as packFile from './assets.js';
 import { AIField, BUILD as AI_BUILD } from './ai.js';
 import { Garage, BUILD as GARAGE_BUILD } from './garage.js';
 import { PitStop, BUILD as PITS_BUILD } from './pits.js';
@@ -60,7 +59,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 56;
+const BUILD = 57;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -69,7 +68,7 @@ const updateScreen = startUpdates({
   'smoke.js': smokeFile.BUILD, 'hud.js': hudFile.BUILD, 'oil.js': oilFile.BUILD,
   'skids.js': skidsFile.BUILD, 'scenery.js': sceneryFile.BUILD, 'grass.js': grassFile.BUILD,
   'sky.js': skyFile.BUILD, 'debris.js': debrisFile.BUILD, 'touch.js': touchFile.BUILD,
-  'rain.js': rainFile.BUILD, 'effects.js': effectsFile.BUILD, 'cockpit.js': cockpitFile.BUILD, 'tyres.js': tyresFile.BUILD, 'sepang.js': sepangFile.BUILD, 'flora.js': floraFile.BUILD, 'racingline.js': racingLineFile.BUILD, 'ground.js': groundFile.BUILD, 'tank.js': tankFile.BUILD, 'ai.js': AI_BUILD, 'f1.js': F1_BUILD, 'garage.js': GARAGE_BUILD, 'pits.js': PITS_BUILD,
+  'rain.js': rainFile.BUILD, 'effects.js': effectsFile.BUILD, 'cockpit.js': cockpitFile.BUILD, 'tyres.js': tyresFile.BUILD, 'sepang.js': sepangFile.BUILD, 'flora.js': floraFile.BUILD, 'racingline.js': racingLineFile.BUILD, 'ground.js': groundFile.BUILD, 'assets.js': packFile.BUILD, 'ai.js': AI_BUILD, 'f1.js': F1_BUILD, 'garage.js': GARAGE_BUILD, 'pits.js': PITS_BUILD,
 });
 
 // ---------------------------------------------------------------------
@@ -1116,11 +1115,10 @@ const f1Cockpit = IS_F1 ? buildF1Cockpit(carModel.car) : null;
 // (your TT-88's driver moves with the cockpit's own body and arms: the body's still one is for other cars)
 if (f1Cockpit && carModel.car.userData.f1?.driver) carModel.car.userData.f1.driver.visible = false;
 
-// SECRET: type F V 1 0 1 on the keyboard to swap the car for an FV101
-// Scorpion-inspired light tank (tank.js), and again to swap back.
-// (For now it drives with the car's physics.)
-const tank = buildScorpion();
-// Where the mouse is pointing (for the tank's turret): a spot on the
+// The other vehicle: packed away in assets.js, and only built once it's
+// been opened (see OPENING THE PACK below)
+let heavy = null;
+// Where the mouse is pointing (for the heavy's turret): a spot on the
 // ground under the pointer, or far off if it's pointing at the sky
 const mouseAim = { x: 0, y: 0, moved: false };
 window.addEventListener('mousemove', (e) => {
@@ -1138,28 +1136,28 @@ window.addEventListener('pointerup', (e) => {
   if (!tapFrom || e.pointerId !== tapFrom.id) return;
   const still = Math.hypot(e.clientX - tapFrom.x, e.clientY - tapFrom.y) < 12 && performance.now() - tapFrom.t < 400;
   tapFrom = null;
-  if (!still || !tankMode || cameraMode === 'cockpit') return;
+  if (!still || !heavyMode || cameraMode === 'cockpit') return;
   mouseAim.x = (e.clientX / window.innerWidth) * 2 - 1;
   mouseAim.y = -(e.clientY / window.innerHeight) * 2 + 1;
   touchAim = aimPoint().clone();
 });
-const tankButtons = document.createElement('div');
-tankButtons.style.cssText = 'position:fixed;right:calc(12px + env(safe-area-inset-right));top:calc(150px + env(safe-area-inset-top));display:none;flex-direction:column;gap:10px;z-index:20';
-const tankButton = (label, size, colour) => {
+const heavyButtons = document.createElement('div');
+heavyButtons.style.cssText = 'position:fixed;right:calc(12px + env(safe-area-inset-right));top:calc(150px + env(safe-area-inset-top));display:none;flex-direction:column;gap:10px;z-index:20';
+const heavyButton = (label, size, colour) => {
   const b = document.createElement('button');
   b.type = 'button';
   b.textContent = label;
   b.style.cssText = `width:${size}px;height:${size}px;border-radius:50%;border:2px solid ${colour};background:rgba(20,22,16,0.6);color:${colour};font:700 13px system-ui,sans-serif;touch-action:none;-webkit-tap-highlight-color:transparent`;
-  tankButtons.appendChild(b);
+  heavyButtons.appendChild(b);
   return b;
 };
-const fireButton = tankButton('FIRE', 68, '#ffb347');
-const mgButton = tankButton('MG', 52, '#e8dfb8');
-document.body.appendChild(tankButtons);
+const fireButton = heavyButton('FIRE', 68, '#ffb347');
+const mgButton = heavyButton('MG', 52, '#e8dfb8');
+document.body.appendChild(heavyButtons);
 fireButton.addEventListener('pointerdown', (e) => { e.preventDefault(); fireGun(); });
 mgButton.addEventListener('pointerdown', (e) => { e.preventDefault(); COAX.held = true; });
 for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) mgButton.addEventListener(ev, () => { COAX.held = false; });
-// The pointer becomes a crosshair in the tank, and a ring shows where the
+// The pointer becomes a crosshair in the heavy, and a ring shows where the
 // gun is actually pointing (it catches up with the crosshair as the turret turns)
 const gunRing = document.createElement('div');
 gunRing.style.cssText = 'position:fixed;width:34px;height:34px;margin:-17px 0 0 -17px;border:2px solid rgba(235,240,215,0.85);border-radius:50%;box-shadow:0 0 0 1px rgba(0,0,0,0.35);pointer-events:none;display:none;z-index:15';
@@ -1172,7 +1170,7 @@ document.body.appendChild(coaxRing);
 const coaxPos = new THREE.Vector3(), coaxDir = new THREE.Vector3();
 // put a circle on screen where a gun's line meets the ground (or 400 m out)
 function ringAt(el, pos, dir) {
-  const dist = dir.y < -0.005 ? Math.min(400, (tankPhys.y - pos.y) / dir.y) : 400;
+  const dist = dir.y < -0.005 ? Math.min(400, (heavyPhys.y - pos.y) / dir.y) : 400;
   gunScreen.copy(pos).addScaledVector(dir, dist).project(camera);
   if (gunScreen.z > 1 || Math.abs(gunScreen.x) > 1.2 || Math.abs(gunScreen.y) > 1.2) { el.style.display = 'none'; return; }
   el.style.display = 'block';
@@ -1181,30 +1179,29 @@ function ringAt(el, pos, dir) {
 }
 const gunPos = new THREE.Vector3(), gunDir = new THREE.Vector3(), gunScreen = new THREE.Vector3();
 function placeGunRing() {
-  tankButtons.style.display = tankMode && isMobile ? 'flex' : 'none';
-  if (!tankMode || cameraMode === 'cockpit' || cameraMode === 'turret') { gunRing.style.display = coaxRing.style.display = 'none'; return; }
-  ringAt(gunRing, tank.muzzle(gunPos, gunDir), gunDir);
-  ringAt(coaxRing, tank.coaxMuzzle(coaxPos, coaxDir), coaxDir);
+  heavyButtons.style.display = heavyMode && isMobile ? 'flex' : 'none';
+  if (!heavyMode || cameraMode === 'cockpit' || cameraMode === 'turret') { gunRing.style.display = coaxRing.style.display = 'none'; return; }
+  ringAt(gunRing, heavy.muzzle(gunPos, gunDir), gunDir);
+  ringAt(coaxRing, heavy.coaxMuzzle(coaxPos, coaxDir), coaxDir);
 }
 // In the gunner's view (camera 3) the view sits up on the turret but
 // faces the way the hull points: it doesn't turn with the turret. The
 // mouse is a crosshair you move round the screen; the turret turns until
 // its circle sits on the crosshair and stops (the two never chase each
 // other, because turning the turret doesn't move the view).
-const inSight = () => tankMode && cameraMode === 'bonnet' && !isMobile;
+const inSight = () => heavyMode && cameraMode === 'bonnet' && !isMobile;
 function aimPoint() {
   const from = camera.position;
   const dir = aimRayEnd.set(mouseAim.x, mouseAim.y, 0.5).unproject(camera).sub(from).normalize();
-  const groundY = tankPhys.y;
+  const groundY = heavyPhys.y;
   // where the ray meets the ground (within 400 m), else 400 m out
   let dist = dir.y < -0.01 ? (groundY - from.y) / dir.y : 400;
   if (!(dist > 0) || dist > 400) dist = 400;
   return from.clone().addScaledVector(dir, dist);
 }
-const tankPhys = new TankPhysics();
-scene.add(tank.group);
-let tankMode = false;
-let secretKeys = '';
+let heavyPhys = null;
+let heavyMode = false;
+let typedKeys = '';
 const toast = document.createElement('div');
 toast.style.cssText = 'position:fixed;left:50%;top:18%;transform:translateX(-50%);padding:10px 18px;border-radius:10px;background:rgba(20,24,16,0.85);color:#d8e2b8;font:700 18px system-ui,sans-serif;letter-spacing:0.08em;pointer-events:none;opacity:0;transition:opacity 0.4s;z-index:20';
 document.body.appendChild(toast);
@@ -1248,7 +1245,7 @@ function updateTrackside(dt) {
   const inPits = pits && (pits.phase !== 'off' || pits.inLane?.(physics.x, physics.z));
   const speed = Math.hypot(physics.vx, physics.vy);
   playerStopped = speed < 1.5 ? playerStopped + dt : 0;
-  if (!tankMode && !inPits && !(race && race.phase === 'grid')) {
+  if (!heavyMode && !inPits && !(race && race.phase === 'grid')) {
     const broken = physics.engineDead || physics.tyres.some((t) => t.detached) || physics.onFire;
     const on = onTrackHere(physics.x, physics.z);
     const hazard = playerStopped > 1 && (broken || playerStopped > 12) ? (on ? 2 : 1) : 0;
@@ -1260,11 +1257,11 @@ function updateTrackside(dt) {
     if (c.dnf || c.wrecked) cars.push({ x: c.physics.x, z: c.physics.z, v: 0, hazard: onTrackHere(c.physics.x, c.physics.z) ? 2 : 1 });
   }
   // red: a car burning on the track, or the burning engine block lying on it
-  const red = (!tankMode && physics.onFire && playerStopped > 1 && onTrackHere(physics.x, physics.z))
+  const red = (!heavyMode && physics.onFire && playerStopped > 1 && onTrackHere(physics.x, physics.z))
     || (engineBlockFire > 0 && engineBlock && onTrackHere(engineBlock.position.x, engineBlock.position.z));
   // --- your own flags ---
   let mine = null;
-  if (race && race.phase === 'racing' && !tankMode) {
+  if (race && race.phase === 'racing' && !heavyMode) {
     // track limits: each time you're off the track for long enough to lose the lap is a strike.
     // 3 strikes: the black and white flag; every 2 after that: 5 seconds
     const off = (lapTimer?.offFor || 0) > 0.5;
@@ -1295,7 +1292,7 @@ function updateTrackside(dt) {
     player: { x: physics.x, z: physics.z, flag: mine },
   }, camera);
   // on screen: the flag that applies to you right now
-  const f = tankMode ? null : res.flag;
+  const f = heavyMode ? null : res.flag;
   if (f !== shownFlag) {
     shownFlag = f;
     flagBox.style.display = f ? 'flex' : 'none';
@@ -1323,7 +1320,7 @@ let stallShown = '';
 let clogWarned = false;
 function updateStallButton() {
   const touchy = matchMedia('(pointer: coarse)').matches;
-  const want = physics.stalled && !tankMode
+  const want = physics.stalled && !heavyMode
     ? (physics.cranking > 0 ? 'STARTING…' : `STALLED · ${touchy ? 'TAP' : 'PRESS I'} TO RESTART`)
       + (physics.cranking > 0 ? '' : physics.gear >= 3 ? '<small>Shift down to 1st first, or it\'ll stall again</small>' : '')
     : '';
@@ -1341,61 +1338,98 @@ function showToast(text) {
 }
 window.addEventListener('keydown', (e) => {
   if (!e.key || e.key.length !== 1) return;
-  if (e.target && e.target.tagName === 'INPUT') return;     // (typing in the phone's code box)
-  secretKeys = (secretKeys + e.key.toUpperCase()).slice(-8);
-  if (secretKeys.endsWith('FV101')) { secretKeys = ''; enterCode('FV101'); }
-  if (secretKeys.endsWith('CATERHAM')) { secretKeys = ''; enterCode('CATERHAM'); }
+  if (e.target && e.target.tagName === 'INPUT') return;
+  typedKeys = (typedKeys + e.key.toUpperCase()).slice(-8);
+  if (typedKeys.endsWith('CATERHAM')) { typedKeys = ''; enterCode('CATERHAM'); }
 });
-// A secret code, typed on a keyboard or entered in the phone's code box
+// CATERHAM typed brings the Caterham back into the garage; 'SWAP' switches
+// between the car and the other vehicle (once the pack's been opened)
 function enterCode(code) {
   code = String(code || '').toUpperCase().replace(/\s+/g, '');
   if (code === 'CATERHAM') {
-    if (tankMode) enterCode('FV101');
+    if (heavyMode) enterCode('SWAP');
     try { localStorage.setItem('tracktester-caterham', '1'); } catch (e) { /* storage blocked */ }   // (it shows in the garage from now on)
     setCar('caterham', STOCK_ENGINE.caterham);
     showToast('CATERHAM SEVEN');
     return true;
   }
-  if (code === 'FV101') {
-    tankMode = !tankMode;
+  if (code === 'SWAP') {
+    if (!heavy) return false;
+    heavyMode = !heavyMode;
     // (a fresh start: the car's damage, leaks and dents don't carry over)
     { const x = physics.x, z = physics.z, h = physics.heading; repairAll(); physics.x = x; physics.z = z; physics.heading = h; }
     // hand over where you are, facing the same way, from a standstill
-    if (tankMode) tankPhys.place(physics.x, physics.z, physics.heading);
+    if (heavyMode) heavyPhys.place(physics.x, physics.z, physics.heading);
     else {
-      physics.x = tankPhys.x; physics.z = tankPhys.z; physics.heading = tankPhys.heading;
+      physics.x = heavyPhys.x; physics.z = heavyPhys.z; physics.heading = heavyPhys.heading;
       physics.vx = physics.vy = physics.yawRate = 0;
       physics.air = false;
       physics.ground.synced = false;
     }
-    setCrashBox(tankMode);
-    if (!tankMode && cameraMode === 'turret') { cameraMode = 'bonnet'; applyCamera(); }
-    engineSound.setHeavy?.(tankMode);   // its own engine and tracks
-    carModel.car.visible = !tankMode;
-    renderer.domElement.style.cursor = tankMode ? 'crosshair' : '';
-    tank.group.visible = tankMode;
-    showToast(tankMode ? 'FV101 SCORPION' : 'BACK IN THE CAR');
+    setCrashBox(heavyMode);
+    if (!heavyMode && cameraMode === 'turret') { cameraMode = 'bonnet'; applyCamera(); }
+    engineSound.setHeavy?.(heavyMode);   // its own engine and tracks
+    carModel.car.visible = !heavyMode;
+    renderer.domElement.style.cursor = heavyMode ? 'crosshair' : '';
+    hud.showEngines?.(!heavyMode);
+    heavy.group.visible = heavyMode;
+    showToast(heavyMode ? packed.NAME.toUpperCase() : 'BACK IN THE CAR');
     return true;
   }
   return false;
 }
-// THE HIDDEN VEHICLES MENU: tap (or click) the rev counter 5 times
-// quickly and a menu of the hidden vehicles opens (works on phones, which
-// have no keyboard for the codes). The tank is the first one.
-const HIDDEN_VEHICLES = [
-  { name: 'FV101 Scorpion', code: 'FV101', active: () => tankMode },
-];
-const codeSpot = document.createElement('div');
-codeSpot.style.cssText = 'position:absolute;inset:0;pointer-events:auto;-webkit-tap-highlight-color:transparent';
-let codeTaps = [];
-codeSpot.addEventListener('pointerdown', (e) => {
-  e.preventDefault();
-  e.stopPropagation();
+// OPENING THE PACK: a particular run of taps on the dashboard's dials
+// opens it. The run itself isn't written anywhere: it's the key that
+// unlocks the pack (it's encrypted), so without it there's nothing here
+// to switch on. Each tap adds its dial's letter; a pause ends the run.
+let packed = null;          // what's in the pack, once opened
+const dialTaps = [];
+let tapTimer = null;
+function tapDial(letter) {
   const now = performance.now();
-  codeTaps = codeTaps.filter((t) => now - t < 2000);
-  codeTaps.push(now);
-  if (codeTaps.length >= 5) { codeTaps = []; openVehicleMenu(); }
-});
+  if (dialTaps.length && now - dialTaps[dialTaps.length - 1].t > 1500) dialTaps.length = 0;
+  dialTaps.push({ letter, t: now });
+  if (dialTaps.length > 16) dialTaps.shift();
+  clearTimeout(tapTimer);
+  tapTimer = setTimeout(() => { const run = dialTaps.map((d) => d.letter).join(''); dialTaps.length = 0; if (run.length >= 12) openPack(run.slice(-12)); }, 1200);
+}
+const b64bytes = (b) => Uint8Array.from(atob(b.replace(/\s+/g, '')), (c) => c.charCodeAt(0));
+async function openPack(run) {
+  if (packed) { openVehicleMenu(); return true; }
+  try {
+    const sub = (globalThis.crypto || {}).subtle;
+    if (!sub) return false;
+    const base = await sub.importKey('raw', new TextEncoder().encode(run), 'PBKDF2', false, ['deriveKey']);
+    const key = await sub.deriveKey({ name: 'PBKDF2', salt: b64bytes(packFile.SALT), iterations: packFile.ROUNDS, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+    const plain = await sub.decrypt({ name: 'AES-GCM', iv: b64bytes(packFile.IV) }, key, b64bytes(packFile.PACK));
+    // (the wrong run fails right there: nothing to show, nothing to say)
+    const here = new URL('./', import.meta.url).href;
+    const src = new TextDecoder().decode(plain)
+      .replaceAll('@@THREE@@', globalThis.__THREE_URL || 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js')
+      .replaceAll('@@BASE@@', globalThis.__PACK_BASE || here).replaceAll('@@EXT@@', globalThis.__PACK_EXT || '.js');
+    const mod = await import(/* @vite-ignore */ 'data:text/javascript;base64,' + btoa(unescape(encodeURIComponent(src))));
+    heavy = mod.build();
+    heavyPhys = new mod.Physics();
+    heavy.group.visible = false;
+    scene.add(heavy.group);
+    heavy.setPeriscopePicture(periscopeRT.texture);
+    packed = mod;
+    refreshEngineList();
+    openVehicleMenu();
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+const DIALS = () => ({ t: hud.tyreBars?.canvas, r: hud.tach?.canvas, s: hud.speedo?.canvas, f: hud.fuelGauge?.canvas, o: hud.oilGauge?.canvas });
+function hookDials() {
+  for (const [letter, el] of Object.entries(DIALS())) {
+    if (!el) continue;
+    el.style.pointerEvents = 'auto';
+    el.style.webkitTapHighlightColor = 'transparent';
+    el.addEventListener('pointerdown', (e) => { e.stopPropagation(); tapDial(letter); });
+  }
+}
 const vehicleMenu = document.createElement('div');
 vehicleMenu.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);display:none;flex-direction:column;gap:8px;min-width:220px;padding:14px;border-radius:14px;background:rgba(20,24,16,0.94);box-shadow:0 8px 30px rgba(0,0,0,0.5);z-index:40;font:600 15px system-ui,sans-serif;color:#e8e2c4';
 document.body.appendChild(vehicleMenu);
@@ -1408,28 +1442,10 @@ const menuButton = (label, onTap, dim) => {
   return b;
 };
 function openVehicleMenu() {
-  vehicleMenu.innerHTML = '<div style="font-size:12px;letter-spacing:0.12em;color:#9ea48c;margin-bottom:2px">HIDDEN VEHICLES</div>';
-  for (const v of HIDDEN_VEHICLES) {
-    vehicleMenu.appendChild(menuButton(v.active() ? `${v.name}  ✓` : v.name, () => { if (!v.active()) enterCode(v.code); vehicleMenu.style.display = 'none'; }));
-  }
-  if (HIDDEN_VEHICLES.some((v) => v.active())) {
-    vehicleMenu.appendChild(menuButton('Back to the car', () => { const v = HIDDEN_VEHICLES.find((h) => h.active()); if (v) enterCode(v.code); vehicleMenu.style.display = 'none'; }, true));
-  }
-  // ENGINE SWAP: any engine in the car you're in
-  if (!tankMode) {
-    const h = document.createElement('div');
-    h.style.cssText = 'font-size:12px;letter-spacing:0.12em;color:#9ea48c;margin:8px 0 2px';
-    h.textContent = 'ENGINE SWAP';
-    vehicleMenu.appendChild(h);
-    for (const [key, e] of Object.entries(ENGINES)) {
-      const stock = key === STOCK_ENGINE[carKind];
-      vehicleMenu.appendChild(menuButton(`${e.name}${stock ? ' (stock)' : ''}${key === engineKey ? '  ✓' : ''}`, () => {
-        setCar(carKind, key);
-        showToast(e.name.toUpperCase());
-        vehicleMenu.style.display = 'none';
-      }, key !== engineKey));
-    }
-  }
+  vehicleMenu.innerHTML = '';
+  if (!packed) return;
+  vehicleMenu.appendChild(menuButton(heavyMode ? `${packed.NAME}  ✓` : packed.NAME, () => { if (!heavyMode) enterCode('SWAP'); vehicleMenu.style.display = 'none'; }));
+  if (heavyMode) vehicleMenu.appendChild(menuButton('Back to the car', () => { enterCode('SWAP'); vehicleMenu.style.display = 'none'; }, true));
   vehicleMenu.appendChild(menuButton('Close', () => { vehicleMenu.style.display = 'none'; }, true));
   vehicleMenu.style.maxHeight = '86vh';
   vehicleMenu.style.overflowY = 'auto';
@@ -1883,7 +1899,7 @@ const grassTrails = new SkidMarks(scene, {
   maxSegments: isMobile ? 800 : 1600, tyreWidth: 0.18, rubberBonus: 0,
   threshold: 0.05, height: 0.006, base: 0x4a3b28, mark: 0x33261a,
 });
-// The tank's track marks: the imprint of the track's cleats, two to each
+// The heavy's track marks: the imprint of the track's cleats, two to each
 // piece, laid evenly (faint scuffs on tarmac, deep prints in the grass
 // and gravel)
 function cleatPattern() {
@@ -1903,7 +1919,7 @@ function cleatPattern() {
   return t;
 }
 const cleats = cleatPattern();
-const TRACK_STEP = 0.27;   // two links of the tank's track
+const TRACK_STEP = 0.27;   // two links of the heavy's track
 const trackMarks = {
   tarmac: new SkidMarks(scene, { maxSegments: isMobile ? 1200 : 3000, tyreWidth: 0.43, rubberBonus: 0, threshold: 0.05, height: 0.0035, base: 0x4a4d50, mark: 0x26272a, step: TRACK_STEP, pattern: cleats }),
   grass: new SkidMarks(scene, { maxSegments: isMobile ? 1200 : 3000, tyreWidth: 0.43, rubberBonus: 0, threshold: 0.05, height: 0.007, base: 0x4a3b28, mark: 0x2c2116, step: TRACK_STEP, pattern: cleats }),
@@ -2059,7 +2075,7 @@ const engineSmoke = new TyreSmoke(scene, {
   wind: { x: 1.1, z: 0.6 },
 });
 engineSmoke.setViewport(renderer.domElement.height, camera.fov);
-// The tank's diesel exhaust: a light grey haze at idle, and a thick black
+// The heavy's diesel exhaust: a light grey haze at idle, and a thick black
 // puff when you floor it (more fuel than the turbo has air for yet)
 const dieselSmoke = new TyreSmoke(scene, {
   maxParticles: isMobile ? 160 : 260, puffsPerSecond: isMobile ? 26 : 40,
@@ -2403,12 +2419,12 @@ function updateSmoke(dt) {
   const onTarmac = 1 - (gravelWheels + grassWheels) / 4;
   // (only tyres with rubber on them squeal: bare rims screech instead, see the sound section)
   const rubber = (a, b) => [a, b].filter((i) => !physics.tyres[i].blown).length / 2;
-  engineSound.setSqueal(tankMode ? 0 : Math.max(rearSkid * rubber(2, 3), frontSkid * rubber(0, 1)) * onTarmac * (1 - 0.75 * rain.wetness), speed);
+  engineSound.setSqueal(heavyMode ? 0 : Math.max(rearSkid * rubber(2, 3), frontSkid * rubber(0, 1)) * onTarmac * (1 - 0.75 * rain.wetness), speed);
   engineSound.setGravel(gravelWheels / 4, speed, Math.max(rearSkid, frontSkid));
   engineSound.setGrass(grassWheels / 4, speed, Math.max(rearSkid, frontSkid));
-  // the tank leaves track marks, not tyre marks
-  if (tankMode) layTrackMarks(speed);
-  for (const p of tankMode ? [] : SMOKE_POINTS) {
+  // the heavy leaves track marks, not tyre marks
+  if (heavyMode) layTrackMarks(speed);
+  for (const p of heavyMode ? [] : SMOKE_POINTS) {
     skidWorld.set(p.local.x, 0, p.local.z);
     carModel.car.localToWorld(skidWorld);
     // (a bare rim or a missing wheel leaves no rubber; a wet track takes far less)
@@ -2493,9 +2509,9 @@ const COLLIDERS = echoSurfaces.colliders || [];
 let CAR_FRONT = 1.53, CAR_REAR = 1.52, CAR_HALF_W = 0.8;
 let CAR_MASS = CATERHAM.mass || 560;
 let CAR_INERTIA = CAR_MASS * ((CAR_FRONT + CAR_REAR) ** 2 + (2 * CAR_HALF_W) ** 2) / 12;
-// The tank (secret) is much bigger and heavier: walls push it about far less
-function setCrashBox(isTank) {
-  [CAR_FRONT, CAR_REAR, CAR_HALF_W, CAR_MASS] = isTank ? [2.25, 2.2, 1.1, 8000] : [1.53, 1.52, 0.8, CATERHAM.mass || 560];
+// The heavy is much bigger and heavier: walls push it about far less
+function setCrashBox(isHeavy) {
+  [CAR_FRONT, CAR_REAR, CAR_HALF_W, CAR_MASS] = isHeavy ? [2.25, 2.2, 1.1, 8000] : [1.53, 1.52, 0.8, CATERHAM.mass || 560];
   CAR_INERTIA = CAR_MASS * ((CAR_FRONT + CAR_REAR) ** 2 + (2 * CAR_HALF_W) ** 2) / 12;
 }
 // bounce: how much speed into the wall comes back out; grip: friction along it
@@ -2580,10 +2596,10 @@ function findContact() {
   return best;
 }
 
-// How high the car (or the tank) is sitting right now: the tank keeps its
+// How high the car (or the heavy) is sitting right now: the heavy keeps its
 // own height, as the car's physics isn't running while you drive it
 function vehicleGroundY() {
-  if (tankMode) return tankPhys.y;
+  if (heavyMode) return heavyPhys.y;
   return physics.air ? physics.pose.y : physics.ground.y;
 }
 
@@ -2612,7 +2628,7 @@ function collide(now) {
     const zone = nf < -0.6 ? 'front' : nf > 0.6 ? 'rear' : nl > 0 ? 'right' : 'left';
     const along = rx * fx + rz * fz, across = rx * lx + rz * lz;
     const hitSpeed = -vn * (CRASH_SOFT[k.c.kind] ?? 1);
-    if (hitSpeed > 2.5 && now - lastCrashAt > 0.3 && !tankMode) {   // (the tank barely notices)
+    if (hitSpeed > 2.5 && now - lastCrashAt > 0.3 && !heavyMode) {   // (the heavy barely notices)
       lastCrashAt = now;
       physics.crashHit({ zone, speed: hitSpeed, along, across });
       // Dent the body where it struck (on the bodywork, not the wheel
@@ -2652,13 +2668,13 @@ function collide(now) {
     // Sliding along it: scratches (the Caterham's sides have their own
     // fitted ones; anywhere else, and anywhere on the TT-88, painted on
     // the panel that touched)
-    if (Math.abs(vt) > 2 && now - lastScratchAt > 0.05 && !tankMode) {
+    if (Math.abs(vt) > 2 && now - lastScratchAt > 0.05 && !heavyMode) {
       lastScratchAt = now;
       if (!IS_F1 && (zone === 'left' || zone === 'right')) addScratch(along, zone === 'left', Math.min(1, Math.abs(vt) / 15));
       else { scrA.set(k.px, vehicleGroundY() + 0.3, k.pz); addPaintScratch(scrA, k.nx, k.nz, Math.min(1.5, Math.abs(vt) / 10)); }
     }
     // a hard hit marks the paint where it struck, too
-    if (-vn > 4 && !tankMode && now - lastScratchAt > 0.02) { scrA.set(k.px, vehicleGroundY() + 0.3, k.pz); addPaintScratch(scrA, k.nx, k.nz, 1.2); }
+    if (-vn > 4 && !heavyMode && now - lastScratchAt > 0.02) { scrA.set(k.px, vehicleGroundY() + 0.3, k.pz); addPaintScratch(scrA, k.nx, k.nz, 1.2); }
     const rt = rz * tx - rx * tz;
     let jt = -vt / (1 / CAR_MASS + rt * rt / CAR_INERTIA);
     jt = Math.max(-props.grip * jn, Math.min(props.grip * jn, jt));
@@ -2712,6 +2728,7 @@ const hud = new Hud({
   redline: CATERHAM.redline,
   onTransmission: (name) => physics.setTransmission(name),
   onAssist: (name, on) => { physics.assists[name] = on; },
+  onEngine: (key) => { if (ENGINES[key]) { setCar(carKind, key); showToast(ENGINES[key].name.toUpperCase()); } },
   damageOn,
   onDamage: (on) => {
     damageOn = on;
@@ -2738,8 +2755,7 @@ const hud = new Hud({
     changing: (on) => sky.setChanging(on),
   },
 });
-// (the hidden vehicles menu's tap spot lives on the rev counter)
-(document.getElementById('dash') || document.body).appendChild(codeSpot);
+hookDials();
 // The car's own dashboard dials show the HUD's drawings (cockpit.js)
 cockpit.useHudDials(hud.parts);
 
@@ -2754,11 +2770,11 @@ cockpit.useHudDials(hud.parts);
 // In the cameras fixed to the car (bonnet, cockpit, T-cam) you can drag to
 // look around, even straight up at the sky.
 // ---------------------------------------------------------------------
-const CAMERA_MODES = ['chase', 'close', 'bonnet', 'turret', 'cockpit', 'tcam', 'showroom'];   // ('turret': the tank's crew view only)
+const CAMERA_MODES = ['chase', 'close', 'bonnet', 'turret', 'cockpit', 'tcam', 'showroom'];   // ('turret': the heavy's crew view only)
 const CAMERA_FOV = { chase: 50, close: 58, bonnet: 66, turret: 80, cockpit: 70, tcam: 62, showroom: 50 };
 // Cameras fixed to the car: where they sit, and how far they look down
 // =====================================================================
-// THE TANK'S GUN (secret): left-click (a click, not a drag) fires the
+// THE HEAVY'S GUN: left-click (a click, not a drag) fires the
 // 90 mm. The barrel recoils and the hull rocks back, there's a flash, a
 // blast of smoke and dust, and a tracer flies out. Where it lands: a
 // fireball, a flash, a cloud of smoke and dirt, a scorch mark, and a boom
@@ -2811,17 +2827,17 @@ const fxM = new THREE.Matrix4(), fxQ = new THREE.Quaternion(), fxS = new THREE.V
 const muzzlePos = new THREE.Vector3(), muzzleDir = new THREE.Vector3();
 
 function fireGun() {
-  if (!tankMode || GUN.reload > 0 || GUN.rounds <= 0) return;
+  if (!heavyMode || GUN.reload > 0 || GUN.rounds <= 0) return;
   GUN.rounds--;
   GUN.reload = GUN.RELOAD;
-  tank.muzzle(muzzlePos, muzzleDir);
-  // the shell (with the tank's own speed added), and its tracer
+  heavy.muzzle(muzzlePos, muzzleDir);
+  // the shell (with the heavy's own speed added), and its tracer
   const tracer = makeTracer(3, 0.06, 0.26);   // (the big gun's: a long, fat streak)
   scene.add(tracer);
   shells.push({ p: muzzlePos.clone(), v: muzzleDir.clone().multiplyScalar(GUN.SPEED).add(carVelocity), t: 0, tracer });
   // the gun and hull kick back
-  tank.fired(GUN.rounds);
-  tankPhys.recoilKick(tank.turretYaw);
+  heavy.fired(GUN.rounds);
+  heavyPhys.recoilKick(heavy.turretYaw);
   // flash, flame, a blast of smoke and dust round the muzzle
   muzzleLight.position.copy(muzzlePos);
   muzzleLight.intensity = 40;
@@ -2852,13 +2868,13 @@ const COAX = { rounds: 3000, RATE: 12.5, SPEED: 840, wait: 0, held: false, n: 0 
 const bullets = [];
 const bulletGeo = new THREE.BoxGeometry(0.02, 0.02, 0.9);
 const bulletMat = new THREE.MeshBasicMaterial({ color: 0xff7a3a });
-window.addEventListener('keydown', (e) => { if (e.code === 'KeyT' && tankMode) COAX.held = true; });
+window.addEventListener('keydown', (e) => { if (e.code === 'KeyT' && heavyMode) COAX.held = true; });
 window.addEventListener('keyup', (e) => { if (e.code === 'KeyT') COAX.held = false; });
 window.addEventListener('blur', () => { COAX.held = false; });
 const coaxMuzzlePos = new THREE.Vector3(), coaxMuzzleDir = new THREE.Vector3();
 function fireCoax() {
   COAX.rounds--;
-  tank.coaxMuzzle(coaxMuzzlePos, coaxMuzzleDir);
+  heavy.coaxMuzzle(coaxMuzzlePos, coaxMuzzleDir);
   // a little scatter
   coaxMuzzleDir.x += (Math.random() - 0.5) * 0.004;
   coaxMuzzleDir.y += (Math.random() - 0.5) * 0.004;
@@ -2877,7 +2893,7 @@ function fireCoax() {
 }
 function updateCoax(dt) {
   COAX.wait -= dt;
-  if (!tankMode) COAX.held = false;
+  if (!heavyMode) COAX.held = false;
   while (COAX.held && COAX.rounds > 0 && COAX.wait <= 0) { fireCoax(); COAX.wait += 1 / COAX.RATE; }
   if (!COAX.held) COAX.wait = Math.max(COAX.wait, 0);
   for (let i = bullets.length - 1; i >= 0; i--) {
@@ -2990,8 +3006,8 @@ function updateGun(dt) {
     }
   }
   // the ammunition and loading display
-  gunHud.style.display = tankMode && !isMobile ? 'block' : 'none';
-  if (tankMode) gunHud.textContent = `90 mm  ·  ${GUN.rounds} rounds  ·  ${GUN.rounds <= 0 ? 'EMPTY' : GUN.reload > 0 ? 'LOADING ' + GUN.reload.toFixed(1) + ' s' : 'READY'}  ·  7.62 mm (T)  ${COAX.rounds}`;
+  gunHud.style.display = heavyMode && !isMobile ? 'block' : 'none';
+  if (heavyMode) gunHud.textContent = `90 mm  ·  ${GUN.rounds} rounds  ·  ${GUN.rounds <= 0 ? 'EMPTY' : GUN.reload > 0 ? 'LOADING ' + GUN.reload.toFixed(1) + ' s' : 'READY'}  ·  7.62 mm (T)  ${COAX.rounds}`;
 }
 const gunHud = document.createElement('div');
 gunHud.style.cssText = 'position:fixed;left:50%;bottom:16px;transform:translateX(-50%);padding:5px 12px;border-radius:8px;background:rgba(15,18,12,0.7);color:#dfe8c4;font:600 13px system-ui,sans-serif;letter-spacing:0.05em;pointer-events:none;display:none;z-index:15';
@@ -3003,12 +3019,12 @@ window.addEventListener('mouseup', (e) => {
   if (e.button !== 0 || !clickFrom) return;
   const still = Math.hypot(e.clientX - clickFrom.x, e.clientY - clickFrom.y) < 6 && performance.now() - clickFrom.t < 450;
   clickFrom = null;
-  if (!still || !tankMode || e.target !== renderer.domElement) return;
+  if (!still || !heavyMode || e.target !== renderer.domElement) return;
   fireGun();
 });
 
 // =====================================================================
-// THE DRIVER'S SEAT (the tank's first-person view, camera 4): the driver
+// THE DRIVER'S SEAT (the heavy's first-person view, camera 4): the driver
 // sits at the front left, the engine right beside him on his right. He
 // sees out through the wide periscope in his hatch; below it, his two
 // steering levers (pull the left one to slow the left track and turn
@@ -3064,7 +3080,7 @@ eyepiece.style.cssText = 'position:fixed;inset:0;pointer-events:none;display:non
 eyepiece.innerHTML = sightBox.innerHTML.replace('style="position:absolute;inset:0;width:100%;height:100%"', 'preserveAspectRatio="xMidYMid meet" style="position:absolute;left:50%;top:50%;width:92vmin;height:52vmin;transform:translate(-50%,-50%)"');
 document.body.appendChild(eyepiece);
 function renderSightInset() {
-  const atSight = tankMode && cameraMode === 'turret' ? 1 - tank.gunnerLook : 0;
+  const atSight = heavyMode && cameraMode === 'turret' ? 1 - heavy.gunnerLook : 0;
   eyepiece.style.display = atSight > 0.05 ? 'block' : 'none';
   eyepiece.style.opacity = Math.min(1, atSight * 1.4).toFixed(2);
   const show = false;   // (the little picture-in-picture: not needed now the view itself is the sight)
@@ -3072,7 +3088,7 @@ function renderSightInset() {
   if (!show) return;
   const r = sightBox.getBoundingClientRect();
   if (r.width < 4) return;
-  tank.sight(sightCam.position, sightTurn);
+  heavy.sight(sightCam.position, sightTurn);
   sightCam.quaternion.copy(sightTurn);
   sightCam.aspect = r.width / r.height;
   sightCam.updateProjectionMatrix();
@@ -3093,9 +3109,8 @@ function renderSightInset() {
 // window in front of his face (like the car's mirrors)
 const periscopeRT = new THREE.WebGLRenderTarget(isMobile ? 512 : 1024, isMobile ? 164 : 328, { type: THREE.HalfFloatType, depthBuffer: true });
 const periscopeCam = new THREE.PerspectiveCamera(32, 0.5 / 0.16, 0.2, 500);
-tank.setPeriscopePicture(periscopeRT.texture);
 function renderPeriscope() {
-  tank.periscopeView(periscopeCam.position, periscopeCam.quaternion);
+  heavy.periscopeView(periscopeCam.position, periscopeCam.quaternion);
   periscopeCam.far = camera.far;
   periscopeCam.updateProjectionMatrix();
   periscopeCam.updateMatrixWorld();
@@ -3107,10 +3122,10 @@ function renderPeriscope() {
   renderer.shadowMap.autoUpdate = keepShadows;
 }
 function updateDriverSeat(input) {
-  const inSeat = tankMode && cameraMode === 'cockpit';
+  const inSeat = heavyMode && cameraMode === 'cockpit';
   driverSeat.style.display = 'none';      // (the old flat picture: the real compartment is drawn in 3D now)
-  tank.setCrew(tankMode && cameraMode === 'turret', 1 / 60, crewHandles.traverse, crewHandles.elevate);
-  tank.setInterior(inSeat, 1 / 60, { steer: input.steer, brake: input.brake, kmh: Math.abs(physics.vx) * 3.6, rpm: tankPhys.rpm, gear: tankPhys.gearLabel });
+  heavy?.setCrew(heavyMode && cameraMode === 'turret', 1 / 60, crewHandles.traverse, crewHandles.elevate);
+  heavy?.setInterior(inSeat, 1 / 60, { steer: input.steer, brake: input.brake, kmh: Math.abs(physics.vx) * 3.6, rpm: heavyPhys.rpm, gear: heavyPhys.gearLabel });
   engineSound.setDriverEar?.(inSeat);
   // night vision at night (the image intensifier), off by day
   const nv = inSeat && sky.daylight < 0.35;
@@ -3133,7 +3148,7 @@ function updateDriverSeat(input) {
   const pullL = Math.min(1, Math.max(0, steer) + brake * 0.8), pullR = Math.min(1, Math.max(0, -steer) + brake * 0.8);
   leverL?.setAttribute('transform', `rotate(${(-14 * pullL).toFixed(1)} 330 560)`);
   leverR?.setAttribute('transform', `rotate(${(14 * pullR).toFixed(1)} 670 560)`);
-  const kmh = Math.abs(physics.vx) * 3.6, rpm = tankPhys.rpm || 720;
+  const kmh = Math.abs(physics.vx) * 3.6, rpm = heavyPhys.rpm || 720;
   needleSpeed?.setAttribute('transform', `rotate(${(-120 + 240 * Math.min(1, kmh / 80)).toFixed(1)} 400 100)`);
   needleRpm?.setAttribute('transform', `rotate(${(-120 + 240 * Math.min(1, rpm / 3000)).toFixed(1)} 600 100)`);
 }
@@ -3142,13 +3157,13 @@ const ON_CAR = {
   bonnet: { spot: new THREE.Vector3(0, 0.9, 0.42), pitch: 0, near: 0.05 },
   cockpit: { spot: EYE, pitch: -0.1, near: 0.02 },
   tcam: { spot: new THREE.Vector3(0, 1.2, -0.75), pitch: -0.08, near: 0.05 },
-  turret: { spot: new THREE.Vector3(0, 1.2, -0.75), pitch: 0, near: 0.02 },   // (the tank's crew view: placed by the tank itself)
+  turret: { spot: new THREE.Vector3(0, 1.2, -0.75), pitch: 0, near: 0.02 },   // (the heavy's crew view: placed by the heavy itself)
 };
 let cameraMode = 'chase';
-// The tank's own on-board views (the roof machine gun is in the way of the
+// The heavy's own on-board views (the roof machine gun is in the way of the
 // commander's hatch): the driver's hatch at the front left, and high up
 // behind the turret (the gunner's sight is worked out from the gun itself)
-const TANK_VIEWS = {
+const HEAVY_VIEWS = {
   tcam: new THREE.Vector3(0, 2.75, -1.55),
   bonnet: new THREE.Vector3(-0.3, 2.3, -0.42),   // the gunner's view: on the turret roof, his side (right)
 };
@@ -3180,7 +3195,7 @@ window.addEventListener('pointerup', endLook);
 window.addEventListener('pointercancel', endLook);
 
 function updateCamera(dt) {
-  const gy = vehicleGroundY();   // (follows the car or tank over the hills and up into the air)
+  const gy = vehicleGroundY();   // (follows the car or heavy over the hills and up into the air)
   carPos.set(physics.x, gy, physics.z);
   forward.set(Math.sin(physics.heading), 0, Math.cos(physics.heading));
 
@@ -3207,23 +3222,23 @@ function updateCamera(dt) {
     }
     carModel.car.updateMatrixWorld();
     const mount = ON_CAR[cameraMode];
-    if (tankMode && cameraMode === 'turret') {
+    if (heavyMode && cameraMode === 'turret') {
       // the gunner's own eyes: at his sight while he aims (its narrow
       // magnified view), turned to watch the commander while he reloads
-      const k = tank.gunnerView(camera.position, camera.quaternion, dt);
+      const k = heavy.gunnerView(camera.position, camera.quaternion, dt);
       const fov = 9 + (62 - 9) * k;
       if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
-    } else if (tankMode && cameraMode === 'cockpit') {
-      // the tank's driver, in his compartment (see DRIVER'S SEAT), able to look round
-      tank.driverView(camera.position, camera.quaternion);
+    } else if (heavyMode && cameraMode === 'cockpit') {
+      // the heavy's driver, in his compartment (see DRIVER'S SEAT), able to look round
+      heavy.driverView(camera.position, camera.quaternion);
       camera.quaternion.multiply(lookTurn.setFromEuler(lookEuler.set(look.pitch, look.yaw, 0)));
     } else {
-      const f1View = !tankMode && IS_F1 ? F1_VIEWS[cameraMode] : null;
-      camera.position.copy(tankMode ? TANK_VIEWS[cameraMode] : f1View ? f1View.spot : mount.spot);
+      const f1View = !heavyMode && IS_F1 ? F1_VIEWS[cameraMode] : null;
+      camera.position.copy(heavyMode ? HEAVY_VIEWS[cameraMode] : f1View ? f1View.spot : mount.spot);
       if (f1View && cameraMode === 'cockpit') camera.position.add(f1Cockpit.head);   // (his head thrown about as he fights the car)
       carModel.car.localToWorld(camera.position);
       carModel.car.getWorldQuaternion(carTurn);
-      lookEuler.set((tankMode && cameraMode === 'bonnet' ? -0.05 : f1View ? f1View.pitch : mount.pitch) + look.pitch, Math.PI + look.yaw, 0);   // the camera looks along -z; the car faces +z
+      lookEuler.set((heavyMode && cameraMode === 'bonnet' ? -0.05 : f1View ? f1View.pitch : mount.pitch) + look.pitch, Math.PI + look.yaw, 0);   // the camera looks along -z; the car faces +z
       camera.quaternion.copy(carTurn).multiply(lookTurn.setFromEuler(lookEuler));
     }
   } else {
@@ -3254,7 +3269,7 @@ function fitViewport() {
 
 function switchCamera() {
   cameraMode = CAMERA_MODES[(CAMERA_MODES.indexOf(cameraMode) + 1) % CAMERA_MODES.length];
-  if (cameraMode === 'turret' && !tankMode) cameraMode = CAMERA_MODES[CAMERA_MODES.indexOf('turret') + 1];
+  if (cameraMode === 'turret' && !heavyMode) cameraMode = CAMERA_MODES[CAMERA_MODES.indexOf('turret') + 1];
   applyCamera();
 }
 function applyCamera() {
@@ -3319,7 +3334,7 @@ function repairAll() {
   clearFlyingParts();
 }
 // THE CARS: the Caterham and the TT-88 (f1.js), and the engine in it (the
-// engine swap is in the secret menu). Switching repairs the car and keeps
+// engine swap is in the side panel). Switching repairs the car and keeps
 // it where it is.
 // the cameras on the TT-88 (car's own frame: +z forward)
 const F1_VIEWS = {
@@ -3328,6 +3343,15 @@ const F1_VIEWS = {
   tcam: { spot: new THREE.Vector3(0, 0.98, -0.32), pitch: -0.08 },
 };
 let carKind = CAR_KIND, engineKey = STOCK_ENGINE[CAR_KIND];
+refreshEngineList();
+// The side panel's engine list: every engine, except the other vehicle's
+// own until the pack's been opened
+function refreshEngineList() {
+  try { if (!hud?.setEngines) return; } catch (e) { return; }   // (not built yet)
+  const list = Object.entries(ENGINES).filter(([k]) => k !== 'diesel' || packed)
+    .map(([k, e]) => [k, e.name, k === STOCK_ENGINE[carKind]]);
+  hud.setEngines(list, engineKey);
+}
 function setCar(kind, engine) {
   kind = kind === 'f1' ? 'f1' : 'caterham';
   const key = ENGINES[engine] ? engine : STOCK_ENGINE[kind];
@@ -3340,6 +3364,7 @@ function setCar(kind, engine) {
   }
   carKind = kind;
   engineKey = key;
+  refreshEngineList();
   physics.spec = withEngine(carKind === 'f1' ? F1_CAR : CATERHAM_CAR, engineKey);
   const x = physics.x, z = physics.z, h = physics.heading;
   repairAll();
@@ -3614,7 +3639,7 @@ function returnToTrack() {
   physics.steer = 0;
   physics.air = false;
   physics.ground.synced = false;
-  if (tankMode) tankPhys.place(x, z, h);
+  if (heavyMode) heavyPhys.place(x, z, h);
   showToast('BACK ON TRACK');
 }
 {
@@ -3715,7 +3740,7 @@ const aiField = racing ? new AIField(scene, {
     physics.steer = 0;
     physics.air = false;
     physics.ground.synced = false;
-    if (tankMode) tankPhys.place(x, z, heading);
+    if (heavyMode) heavyPhys.place(x, z, heading);
   },
 }) : null;
 
@@ -3789,7 +3814,7 @@ try { if (localStorage.getItem('tracktester-garage') === '1') { localStorage.rem
 function openGarage(opts) {
   if (garage.isOpen) return;
   resumeGame(true);                            // (the garage keeps the track waiting itself)
-  if (tankMode) enterCode('FV101');            // (out of the tank first)
+  if (heavyMode) enterCode('SWAP');            // (out of the other vehicle first)
   // the track's sounds stop: no tyres, wind, rain or other cars in here
   engineSound.setHiss?.(0);
   engineSound.setTyreFlap?.(0, 0);
@@ -3826,7 +3851,7 @@ renderer.setAnimationLoop(() => {
     repairAll();
     placeAtStart();
     pits?.reset();
-    if (tankMode) tankPhys.place(physics.x, physics.z, physics.heading);   // (the tank goes back too)
+    if (heavyMode) heavyPhys.place(physics.x, physics.z, physics.heading);   // (the heavy goes back too)
   }
   if (backToTrack) { backToTrack = false; returnToTrack(); }
 
@@ -3859,7 +3884,7 @@ renderer.setAnimationLoop(() => {
   }
   const wantLights = [0, autoLightsOn ? 1 : 0, 1, 2][lightsSetting];
   if (wantLights !== lightsMode) setLights(wantLights);
-  if (wasTapped('transmission') && !tankMode) {   // (in the tank, T fires the machine gun)
+  if (wasTapped('transmission') && !heavyMode) {   // (in the heavy, T fires the machine gun)
     const next = TRANSMISSIONS[(TRANSMISSIONS.indexOf(physics.transmission) + 1) % TRANSMISSIONS.length];
     physics.setTransmission(next);
   }
@@ -3870,25 +3895,25 @@ renderer.setAnimationLoop(() => {
   // it and the brakes let go: that's a jump start)
   if (aiField?.holdPlayer && !(input.throttle > 0.05 && !input.clutch)) input.brake = 1;
   // the pit lane: the limiter, the team guiding you in, the car held on its marks
-  const pitHold = pits && !tankMode ? pits.control(input, dt) : false;
+  const pitHold = pits && !heavyMode ? pits.control(input, dt) : false;
   // Fast cars move in smaller steps, so they can't skip through a thin
   // barrier between one frame and the next
   const stepSpeed = Math.hypot(physics.vx, physics.vy);
   const steps = Math.min(6, Math.max(1, Math.ceil(stepSpeed * dt / 0.3)));
   for (let k = 0; k < (pitHold ? 0 : steps); k++) {
-    if (tankMode) {
-      // the tank drives itself (tank.js); the rest of the game reads it
+    if (heavyMode) {
+      // the heavy drives itself (in the pack); the rest of the game reads it
       // through the car's physics, and walls push it through that too
-      tankPhys.update(dt / steps, input, (x, z) => physics.surfaceGrip(x, z));
-      Object.assign(physics, { x: tankPhys.x, z: tankPhys.z, heading: tankPhys.heading, vx: tankPhys.vx, vy: tankPhys.vy, yawRate: tankPhys.yawRate, rpm: tankPhys.rpm, engineLoad: input.throttle });
+      heavyPhys.update(dt / steps, input, (x, z) => physics.surfaceGrip(x, z));
+      Object.assign(physics, { x: heavyPhys.x, z: heavyPhys.z, heading: heavyPhys.heading, vx: heavyPhys.vx, vy: heavyPhys.vy, yawRate: heavyPhys.yawRate, rpm: heavyPhys.rpm, engineLoad: input.throttle });
       collide(clock.elapsedTime);
-      Object.assign(tankPhys, { x: physics.x, z: physics.z, vx: physics.vx, vy: physics.vy, yawRate: physics.yawRate });
+      Object.assign(heavyPhys, { x: physics.x, z: physics.z, vx: physics.vx, vy: physics.vy, yawRate: physics.yawRate });
     } else {
       physics.update(input, dt / steps);
       collide(clock.elapsedTime);
     }
   }
-  aiField?.update(dt, { player: physics, camera, playerMass: tankMode ? 8720 : physics.spec.mass, wetness: rain.wetness });
+  aiField?.update(dt, { player: physics, camera, playerMass: heavyMode ? 8720 : physics.spec.mass, wetness: rain.wetness });
   updateTrackside(dt);
   pits?.update(dt, camera);
   engineSound.setHorn(input.horn);
@@ -3943,10 +3968,10 @@ renderer.setAnimationLoop(() => {
   const ease = 1 - Math.exp(-dt / 0.06);
   slopeView.pitch += (-Math.atan(GRD.slopeF) - slopeView.pitch) * ease;
   slopeView.roll += (Math.atan(GRD.slopeL) - slopeView.roll) * ease;
-  if (tankMode) {
-    // the tank sits on the ground, tilted with it (the hidden car follows, for the effects)
-    carModel.car.position.set(tankPhys.x, tankPhys.y, tankPhys.z);
-    carModel.car.rotation.set(tankPhys.pitch + tankPhys.rock.pitch, tankPhys.heading, tankPhys.roll + tankPhys.rock.roll, 'YXZ');
+  if (heavyMode) {
+    // the heavy sits on the ground, tilted with it (the hidden car follows, for the effects)
+    carModel.car.position.set(heavyPhys.x, heavyPhys.y, heavyPhys.z);
+    carModel.car.rotation.set(heavyPhys.pitch + heavyPhys.rock.pitch, heavyPhys.heading, heavyPhys.roll + heavyPhys.rock.roll, 'YXZ');
   } else if (physics.air) {
     // flying, tipping or upside down: drawn exactly as the free 3D body is
     const P = physics.pose;
@@ -3983,13 +4008,13 @@ renderer.setAnimationLoop(() => {
     }
   }
   updateFlyingParts(dt);
-  // The tank (secret): sits where the car is, each track running at the
+  // The heavy: sits where the car is, each track running at the
   // speed of its own side
-  if (tankMode) {
-    tank.group.position.copy(carModel.car.position);
-    tank.group.quaternion.copy(carModel.car.quaternion);
-    tank.update(dt, physics.vx - physics.yawRate * 0.88, physics.vx + physics.yawRate * 0.88);
-    tank.setLights(lightsMode > 0);
+  if (heavyMode) {
+    heavy.group.position.copy(carModel.car.position);
+    heavy.group.quaternion.copy(carModel.car.quaternion);
+    heavy.update(dt, physics.vx - physics.yawRate * 0.88, physics.vx + physics.yawRate * 0.88);
+    heavy.setLights(lightsMode > 0);
     // the turret turns to face the mouse pointer
     // (the driver doesn't aim the gun; inside the turret the gunner turns it
     // with his handles: the further the mouse is from the middle of the
@@ -3998,15 +4023,15 @@ renderer.setAnimationLoop(() => {
       const dead = (v) => (Math.abs(v) < 0.05 ? 0 : Math.sign(v) * Math.min(1, (Math.abs(v) - 0.05) / 0.55));
       crewHandles.traverse = mouseAim.moved && !isMobile ? dead(mouseAim.x) : 0;
       crewHandles.elevate = mouseAim.moved && !isMobile ? dead(mouseAim.y) : 0;
-      if (isMobile && touchAim) tank.aimAt(touchAim, dt);       // (phones: on the spot you tapped)
-      else tank.turnBy(-crewHandles.traverse * 0.7 * dt, crewHandles.elevate * 0.4 * dt);
-    } else if (isMobile && touchAim && cameraMode !== 'cockpit') tank.aimAt(touchAim, dt);
-    else if (mouseAim.moved && !isMobile && cameraMode !== 'cockpit') tank.aimAt(aimPoint(), dt);
+      if (isMobile && touchAim) heavy.aimAt(touchAim, dt);       // (phones: on the spot you tapped)
+      else heavy.turnBy(-crewHandles.traverse * 0.7 * dt, crewHandles.elevate * 0.4 * dt);
+    } else if (isMobile && touchAim && cameraMode !== 'cockpit') heavy.aimAt(touchAim, dt);
+    else if (mouseAim.moved && !isMobile && cameraMode !== 'cockpit') heavy.aimAt(aimPoint(), dt);
     // black smoke when the throttle runs ahead of the turbo
     const thr = input.throttle || 0;
-    dieselBoost += (thr * Math.min(1, tankPhys.rpm / 2700) - dieselBoost) * Math.min(1, dt / (thr > dieselBoost ? 0.7 : 0.35));
+    dieselBoost += (thr * Math.min(1, heavyPhys.rpm / 2700) - dieselBoost) * Math.min(1, dt / (thr > dieselBoost ? 0.7 : 0.35));
     const sooty = 0.12 + 0.25 * thr + 1.4 * Math.max(0, thr - dieselBoost);
-    dieselSmoke.emitFrom('exhaust', tank.exhaust.getWorldPosition(exhaustWorld), Math.min(1, sooty), carVelocity, dt);
+    dieselSmoke.emitFrom('exhaust', heavy.exhaust.getWorldPosition(exhaustWorld), Math.min(1, sooty), carVelocity, dt);
   }
   cockpit.update(dt, {
     steer: physics.steer, kick: physics.steerKick || 0, gear: physics.gear, transmission: physics.transmission,
@@ -4015,7 +4040,7 @@ renderer.setAnimationLoop(() => {
     throttle: input.throttle, brake: input.brake, clutch: physics.clutchPedal, horn: !!input.horn,
   });
   cockpit.drawScreen(dt, {
-    speedKmh: physics.speedKmh, rpm: physics.rpm, redline: tankMode ? 2700 : physics.spec.redline, gearLabel: tankMode ? tankPhys.gearLabel : physics.gearLabel,
+    speedKmh: physics.speedKmh, rpm: physics.rpm, redline: heavyMode ? 2700 : physics.spec.redline, gearLabel: heavyMode ? heavyPhys.gearLabel : physics.gearLabel,
     limiter: physics.limiter, fuel: physics.fuelLevel, oil: physics.oilLevel, tyres: physics.tyres,
     health: physics.engineHealth, tyreWindow: physics.tempWindow,
     coolant: physics.coolantTemp, fire: physics.onFire,
@@ -4079,8 +4104,8 @@ renderer.setAnimationLoop(() => {
   engineSound.setRain?.(rain.intensity, rain.wetness, carSpeed, puddleUnder);
   engineSound.setMud?.(mudUnder, carSpeed);
 
-  hud.setRevScale?.(tankMode ? 2700 : physics.spec.redline);   // (the tank's diesel is governed at 2,700)
-  hud.setTyreWear?.(!tankMode);                            // (no tyres on a tank)
+  hud.setRevScale?.(heavyMode ? 2700 : physics.spec.redline);   // (the heavy's diesel is governed at 2,700)
+  hud.setTyreWear?.(!heavyMode);                            // (no tyres on a heavy)
   hud.update({
     sky: { clock: sky.clock, hours: sky.hours, speed: sky.speed, locked: sky.locked,
            weather: sky.weather, changing: sky.changing, now: sky.weatherNow },
@@ -4095,11 +4120,11 @@ renderer.setAnimationLoop(() => {
         || physics.tyreSlip.rear > 0.35 || physics.tyreSlip.front > 0.5),
       handbrake: !!input.handbrake,
       coolant: physics.coolantTemp,
-      cold: !tankMode && !physics.engineDead && physics.oilTemp < 70,
+      cold: !heavyMode && !physics.engineDead && physics.oilTemp < 70,
     },
     speedKmh: physics.speedKmh,
     rpm: physics.rpm,
-    gearLabel: tankMode ? tankPhys.gearLabel : physics.gearLabel,
+    gearLabel: heavyMode ? heavyPhys.gearLabel : physics.gearLabel,
     limiter: physics.limiter,
     transmission: physics.transmission,
     engineHealth: physics.engineHealth,
@@ -4114,8 +4139,8 @@ renderer.setAnimationLoop(() => {
   });
   touchUI?.update({ transmission: physics.transmission, gearLabel: physics.gearLabel, muted: engineSound.muted, lights: lightsSetting, racingLine: racing ? racingLineOn : null });
 
-  if (cameraMode === 'cockpit' && !tankMode && !IS_F1) cockpit.renderMirrors(renderer, scene);
-  if (cameraMode === 'cockpit' && tankMode) renderPeriscope();
+  if (cameraMode === 'cockpit' && !heavyMode && !IS_F1) cockpit.renderMirrors(renderer, scene);
+  if (cameraMode === 'cockpit' && heavyMode) renderPeriscope();
   updateGun(dt);
   updateDriverSeat(input);
   placeGunRing();

@@ -14,7 +14,7 @@ import { groundAt } from './ground.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 4;
+export const BUILD = 5;
 
 const CELL = 2;   // metres: size of each square in the lookup grid
 const cellKey = (x, z) => `${Math.floor(x / CELL)},${Math.floor(z / CELL)}`;
@@ -33,7 +33,7 @@ export class SkidMarks {
     step = 0, pattern = null,
   } = {}) {
     // step: lay the mark in pieces exactly this long (so a pattern like a
-    // tank track's cleats repeats evenly); pattern: a picture laid along each piece
+    // tracked vehicle's cleats repeats evenly); pattern: a picture laid along each piece
     this.step = step;
     this.max = maxSegments;
     this.threshold = threshold;

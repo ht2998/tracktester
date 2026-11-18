@@ -23,7 +23,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 9;
+export const BUILD = 10;
 
 import * as THREE from 'three';
 import { CarPhysics, CATERHAM } from './physics.js';
@@ -477,7 +477,7 @@ export class AIField {
 
   // ---------------------------------------------------------------------
   // Every frame. player: the player's car physics; camera: where you're
-  // looking from; playerMass: 560 for the car, much more for the tank
+  // looking from; playerMass: 560 for the car, much more for the heavy vehicle
   // ---------------------------------------------------------------------
   update(dt, { player, camera, playerMass = 560, wetness = 0 }) {
     if (!this.cars.length && !this.race) return;
