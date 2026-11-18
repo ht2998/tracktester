@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 19;
+export const BUILD = 20;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -681,20 +681,38 @@ export function buildF1Cockpit(car) {
   cv.width = 256; cv.height = 96;
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
-  const screen = add(new THREE.PlaneGeometry(0.17, 0.064), new THREE.MeshBasicMaterial({ map: tex }));
-  screen.position.set(0, 0.49, 0.575); screen.rotation.set(-0.5, Math.PI, 0);
-  // the steering column and wheel (a small one, with two grips)
+  // the steering column and the wheel: an F1-style one, not a round rim. A
+  // flat carbon plate, squared off top and bottom, a rubber grip each side,
+  // the screen in the middle (gear, speed, revs, shift lights), coloured
+  // rotary knobs and buttons round it, and the gear paddles behind
   const column = new THREE.Group();
-  column.position.set(0, 0.52, 0.42);
-  column.rotation.x = -0.45;                       // tilted back towards him
+  column.position.set(0, 0.47, 0.45);
+  column.rotation.x = -0.5;                        // tilted back towards him, below his eye line
   group.add(column);
   add(new THREE.CylinderGeometry(0.018, 0.018, 0.2, 10).rotateX(Math.PI / 2).translate(0, 0, 0.1), M.steel, column);
   const wheel = new THREE.Group();
   column.add(wheel);
-  add(new THREE.TorusGeometry(0.13, 0.016, 8, 28), M.carbon, wheel);
-  for (const sx of [1, -1]) add(new THREE.CylinderGeometry(0.024, 0.024, 0.09, 12).translate(sx * 0.13, 0, 0), M.grip, wheel);
-  add(box(0.18, 0.05, 0.02, 0, 0, 0), M.carbon, wheel);
-  add(new THREE.CylinderGeometry(0.03, 0.03, 0.02, 14).rotateX(Math.PI / 2), M.knob, wheel);   // the hub badge (plain yellow)
+  {
+    // the plate: a rounded rectangle, a little wider at the top
+    const W = 0.135, Ht = 0.07, Hb = 0.06, r = 0.022;
+    const sh = new THREE.Shape();
+    sh.moveTo(-W + r, -Hb); sh.lineTo(W - r, -Hb); sh.quadraticCurveTo(W, -Hb, W, -Hb + r);
+    sh.lineTo(W, Ht - r); sh.quadraticCurveTo(W, Ht, W - r, Ht); sh.lineTo(-W + r, Ht); sh.quadraticCurveTo(-W, Ht, -W, Ht - r);
+    sh.lineTo(-W, -Hb + r); sh.quadraticCurveTo(-W, -Hb, -W + r, -Hb);
+    add(new THREE.ExtrudeGeometry(sh, { depth: 0.022, bevelEnabled: false }).translate(0, 0, -0.011), M.carbon, wheel);
+    // the grips: chunky rubber, a little proud of the plate at each side
+    for (const sx of [1, -1]) add(new THREE.BoxGeometry(0.042, 0.115, 0.045).translate(sx * 0.125, -0.002, -0.004), M.grip, wheel);
+    // the paddles behind (up on the right, down on the left)
+    for (const sx of [1, -1]) add(new THREE.BoxGeometry(0.06, 0.05, 0.006).translate(sx * 0.075, 0.035, 0.022), M.steel, wheel);
+    // rotary knobs and buttons round the screen
+    const KNOBS = [[-0.075, -0.035, 0xd8312a], [0.075, -0.035, 0x2a62c9], [-0.045, -0.048, 0xf2c12e], [0.045, -0.048, 0x2b9a52]];
+    for (const [x, y, c] of KNOBS) add(new THREE.CylinderGeometry(0.011, 0.011, 0.012, 10).rotateX(Math.PI / 2).translate(x, y, -0.016), new THREE.MeshStandardMaterial({ color: c, roughness: 0.4 }), wheel);
+    const BUTTONS = [[-0.085, 0.045, 0xf4f4f0], [0.085, 0.045, 0xf4f4f0], [-0.085, 0.015, 0xd8312a], [0.085, 0.015, 0x2b9a52]];
+    for (const [x, y, c] of BUTTONS) add(new THREE.CylinderGeometry(0.008, 0.008, 0.008, 10).rotateX(Math.PI / 2).translate(x, y, -0.014), new THREE.MeshStandardMaterial({ color: c, roughness: 0.4 }), wheel);
+  }
+  // the screen, on the wheel itself (facing him)
+  const screen = add(new THREE.PlaneGeometry(0.1, 0.0375), new THREE.MeshBasicMaterial({ map: tex }), wheel);
+  screen.position.set(0, 0.022, -0.0125); screen.rotation.set(0, Math.PI, 0);
   // the gear lever on the right (sequential: pull back to change up, push to change down)
   const lever = new THREE.Group();
   lever.position.set(-0.2, 0.42, 0.3);
@@ -749,7 +767,7 @@ export function buildF1Cockpit(car) {
       // hands on the grips (the right one away to the lever during a change)
       group.updateMatrixWorld(true);
       for (let i = 0; i < 2; i++) {
-        wheel.localToWorld(gripPt.set(i === 0 ? -0.13 : 0.13, 0, -0.02));
+        wheel.localToWorld(gripPt.set(i === 0 ? -0.125 : 0.125, 0, -0.03));
         group.worldToLocal(gripPt);
         if (i === 0 && shift < 1) {
           shift = Math.min(1, shift + dt / 0.38);

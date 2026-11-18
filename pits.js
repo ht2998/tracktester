@@ -26,7 +26,7 @@
 // a smashed radiator): the team retire the car. DNF on the standings, and
 // they push it back into the garage.
 // =====================================================================
-export const BUILD = 5;
+export const BUILD = 6;
 
 import * as THREE from 'three';
 
@@ -40,7 +40,7 @@ export const SEPANG_PIT = {
 };
 
 // ---- the crew: simple jointed people in team overalls ----
-const POSES = {
+export const POSES = {
   STAND: {},
   KNEEL: { drop: 0.42, lean: 0.3, thL: 1.45, knL: 1.45, thR: 0, knR: 1.6, shL: 0.9, shR: 1.15, elL: 0.6, elR: 0.35 },
   KNEEL_UP: { drop: 0.42, lean: 0.1, thL: 1.45, knL: 1.45, thR: 0, knR: 1.6, shL: 0.9, shR: 3.0, elL: 0.6, elR: 0.1 },
@@ -63,7 +63,7 @@ const KEYS = ['drop', 'lean', 'shL', 'shR', 'elL', 'elR', 'outL', 'outR', 'thL',
 const geoCache = {};
 const G = (k, make) => geoCache[k] || (geoCache[k] = make());
 
-class Person {
+export class Person {
   constructor(mats, colour) {
     const root = this.root = new THREE.Group();
     const suit = mats.suits[colour];
@@ -216,7 +216,7 @@ function makeChurn(mats) {
   g.add(can, hose);
   return g;
 }
-function makeExtinguisher(mats) {
+export function makeExtinguisher(mats) {
   const g = new THREE.Group();
   const can = new THREE.Mesh(G('ext', () => new THREE.CylinderGeometry(0.08, 0.08, 0.5, 12).translate(0, 0.25, 0)), mats.red);
   const top = new THREE.Mesh(G('exttop', () => new THREE.CylinderGeometry(0.03, 0.05, 0.08, 8).translate(0, 0.54, 0)), mats.black);
@@ -536,7 +536,12 @@ body.pit-auto #touch > *:not(.t-menu):not(.t-sheet):not(.t-rotate) { visibility:
     const limit = this.inLimit(x, z);
     // over the pit entry line: the menu comes up, the crew come out, and
     // the driver takes it from here (going faster than the limit: a penalty)
-    if (this.phase === 'off' && limit && !this.wasLimit && Math.cos(P.heading) < 0) {
+    if (this.phase === 'off' && limit && !this.wasLimit && Math.cos(P.heading) < 0 && this.hooks.driveThrough?.()) {
+      // a drive-through: down the lane at the limit and straight out again, no stop
+      this.phase = 'out'; this.driveThrough = true;
+      this.penalty = kmh > LIMIT_KMH + 3;
+      if (this.penalty) this.hooks.toast?.(`PIT LANE SPEEDING`);
+    } else if (this.phase === 'off' && limit && !this.wasLimit && Math.cos(P.heading) < 0) {
       this.phase = 'in';
       this.penalty = kmh > LIMIT_KMH + 3;
       if (this.penalty) { this.hooks.toast?.(`PIT LANE SPEEDING: ${PENALTY_S} s PENALTY`); this.hooks.invalidLap?.(); }
@@ -564,6 +569,7 @@ body.pit-auto #touch > *:not(.t-menu):not(.t-sheet):not(.t-rotate) { visibility:
     const FAST = 15.4, PIT = this.pit;
     const laneX = (zz) => {
       if (this.phase === 'in') return zz > B.z + 28 ? FAST : zz > B.z + 10 ? FAST + (B.x - FAST) * (1 - (zz - B.z - 10) / 18) : B.x;
+      if (this.driveThrough) return zz > PIT.z0 ? FAST : FAST + (9 - FAST) * Math.min(1, (PIT.z0 - zz) / (PIT.z0 - PIT.exitZ));
       if (zz > B.z - 14) return B.x + (FAST - B.x) * Math.min(1, (B.z - zz) / 14);
       if (zz > PIT.z0) return FAST;
       return FAST + (9 - FAST) * Math.min(1, (PIT.z0 - zz) / (PIT.z0 - PIT.exitZ));   // (up the exit road, back to the track)
@@ -636,6 +642,7 @@ body.pit-auto #touch > *:not(.t-menu):not(.t-sheet):not(.t-rotate) { visibility:
   }
 
   leave() {
+    if (this.driveThrough) { this.driveThrough = false; this.hooks.served?.(); }
     this.phase = 'off';
     this.menu.style.display = 'none';
     this.limiterEl.style.display = 'none';

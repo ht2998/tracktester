@@ -4,11 +4,11 @@
     "cockpit.js": 13,
     "godrays.js": 1,
     "scenery.js": 7,
-    "updates.js": 80,
+    "updates.js": 81,
     "debris.js": 4,
     "effects.js": 4,
     "sky.js": 6,
-    "rendering.js": 60,
+    "rendering.js": 61,
     "rain.js": 4,
     "hud.js": 15,
     "physics.js": 20,
@@ -24,11 +24,12 @@
     "flora.js": 3,
     "racingline.js": 6,
     "ground.js": 1,
-    "ai.js": 10,
-    "f1.js": 19,
+    "ai.js": 11,
+    "f1.js": 20,
     "garage.js": 1,
-    "pits.js": 5,
-    "trackside.js": 3,
-    "assets.js": 1
+    "pits.js": 6,
+    "trackside.js": 4,
+    "assets.js": 1,
+    "racecontrol.js": 1
   }
 }

@@ -23,7 +23,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 10;
+export const BUILD = 11;
 
 import * as THREE from 'three';
 import { CarPhysics, CATERHAM } from './physics.js';
@@ -490,16 +490,17 @@ export class AIField {
     if (race) {
       race.t += dt;
       if (race.phase === 'grid') {
-        const lit = race.lit = Math.min(5, Math.floor(race.t / 0.6));
+        const lit = race.lit = Math.min(5, Math.floor((race.t - (race.gridAt || 0)) / 0.6));
         // Jump start: moving off your grid box before the lights go out.
         // A 5 second time penalty (10 if you're well clear of it)
         const moved = Math.hypot(player.x - this.player.gridX, player.z - this.player.gridZ);
-        const pen = moved > 8 ? 10 : moved > 0.8 ? 5 : 0;
-        if (pen > this.player.penalty) { this.player.penalty = pen; this.onPenalty?.(pen, 'JUMP START'); }
+        // (well clear of your box: a drive-through instead, within 3 laps)
+        if (moved > 8 && !this.player.driveThrough && !this.player.jumped) { this.player.jumped = true; this.player.driveThrough = { since: this.player.lap }; this.onPenalty?.('drive', 'JUMP START'); }
+        else if (moved > 0.8 && !this.player.penalty && !this.player.jumped) { this.player.jumped = true; this.player.penalty = 5; this.onPenalty?.(5, 'JUMP START'); }
         this.lights.style.display = 'flex';
         [...this.lights.children].forEach((el, k) => { el.style.background = k < lit ? '#ff2a1a' : '#2a1414'; el.style.boxShadow = k < lit ? '0 0 12px #ff2a1a' : 'none'; });
         if (race.t >= race.lightsOut) {
-          race.phase = 'racing'; race.start = race.t; this.holdPlayer = false;
+          race.phase = 'racing'; if (race.start == null) race.start = race.t; this.holdPlayer = false;   // (a restart keeps the race's clock)
           [...this.lights.children].forEach((el) => { el.style.background = '#2a1414'; el.style.boxShadow = 'none'; });
           setTimeout(() => { this.lights.style.display = 'none'; }, 900);
         }
@@ -528,7 +529,8 @@ export class AIField {
     for (const c of this.cars) {
       if (c.parked) { c.physics.vx = c.physics.vy = 0; continue; }   // (retired, taken away)
       // (retired in a race: left where it stopped until you're well away, then recovered)
-      if (c.dnf && !c.parked && (c.retired = (c.retired || 0) + dt) > 8 && c.dist > 60) {
+      // (with race control running, the recovery crane takes the ones in sight)
+      if (c.dnf && !c.parked && (c.retired = (c.retired || 0) + dt) > 8 && c.dist > (this.rules ? 400 : 60)) {
         c.parked = true;
         const k = this.cars.indexOf(c);
         c.physics.x = 1e4 + k * 30; c.physics.z = 1e4; c.full = false;
@@ -548,7 +550,9 @@ export class AIField {
   // A car far away: just moves along the line at the pace he'd be doing
   glide(c, dt) {
     const pts = this.racing.pts, m = this.m;
-    const target = this.plan().v[c.near] * c.lapPace;
+    const planV = this.plan().v[c.near];
+    let target = planV * c.lapPace;
+    if (this.rules) target = Math.min(target, this.rules.cap(c, c.near, planV));   // (flags, safety car, VSC)
     c.speed += clamp(target - c.speed, -9 * dt, 4 * dt);
     c.frac += Math.max(0, c.speed) * dt;
     while (c.frac >= (pts[c.near].ds || 2)) { c.frac -= pts[c.near].ds || 2; c.near = (c.near + 1) % m; }
@@ -589,7 +593,10 @@ export class AIField {
     const w = this.track[j] ? this.track[j].width / 2 - 1.1 : 4;
     if (mk === 'wide') c.wide += (c.mistake.side * 2.2 - c.wide) * Math.min(1, dt * 1.5);
     else c.wide *= 1 - Math.min(1, dt * 0.8);
-    const wantLat = clamp(c.wob(p.s) * D.wander + (c.pass || 0) + c.wide, -w - (pts[j].off || 0), w - (pts[j].off || 0));
+    // (a car a lap up right behind him: over to one side to let it by)
+    const over = this.rules ? this.rules.moveOver(c) : 0;
+    c.over = (c.over || 0) + (over - (c.over || 0)) * Math.min(1, dt * 1.5);
+    const wantLat = clamp(c.wob(p.s) * D.wander + (c.pass || 0) + c.wide + c.over, -w - (pts[j].off || 0), w - (pts[j].off || 0));
     const tx = pts[j].x + pts[j].nx * wantLat - P.x, tz = pts[j].z + pts[j].nz * wantLat - P.z;
     const fx = Math.sin(P.heading), fz = Math.cos(P.heading), lx = Math.cos(P.heading), lz = -Math.sin(P.heading);
     const alpha = Math.atan2(tx * lx + tz * lz, tx * fx + tz * fz);
@@ -618,10 +625,18 @@ export class AIField {
       // (only once he's going: at a standstill, after a spin or a reset, he must be able to pull away)
       if (ease > 0 && v > 10) target = Math.min(target, Math.max(8, v * (1 - K[4] * ease)));
     }
+    // race control: flags, the safety car, the VSC, a red flag
+    const noPass = this.rules ? this.rules.noPass(c.near) : false;
+    if (this.rules) {
+      target = Math.min(target, this.rules.cap(c, c.near, this.plan().v[c.near]));
+      if (Math.abs(c.over || 0) > 0.5) target *= 0.93;
+    }
     // don't drive into the car ahead: follow it, or pull out to pass
-    c.pass = (c.pass || 0) * (1 - Math.min(1, dt * 0.5));
+    c.pass = (c.pass || 0) * (1 - Math.min(1, dt * (noPass ? 2 : 0.5)));
     for (const o of this.others(c)) {
       const gap = o.ahead;
+      // (no overtaking: just follow, whatever line it's on)
+      if (noPass && gap > 0 && gap < 35 && Math.abs(o.lat - wantLat) < 4) { target = Math.min(target, Math.max(0, o.v + (gap - 10) * 0.5)); continue; }
       if (gap <= 0 || gap > 30 || Math.abs(o.lat - (wantLat)) > 2.4) continue;
       if (v > o.v + 0.5) {
         // room on the other side? pull out
@@ -825,7 +840,7 @@ export class AIField {
       M.car.position.set(P.pose.x, P.pose.y, P.pose.z);
       M.car.quaternion.set(P.pose.q[0], P.pose.q[1], P.pose.q[2], P.pose.q[3]);
     } else {
-      M.car.position.set(P.x, G.y, P.z);
+      M.car.position.set(P.x, G.y + (c.lift || 0), P.z);     // (c.lift: hanging from the recovery crane)
       M.car.rotation.set(-Math.atan(G.slopeF || 0), P.heading, Math.atan(G.slopeL || 0), 'YXZ');
     }
     c.spin += (Math.max(-80, Math.min(80, P.vx / (this.spec.wheelRadius || CATERHAM.wheelRadius)))) * dt;
@@ -883,6 +898,38 @@ export class AIField {
     const me = progress(this.player, this.player.near);
     return this.cars.some((c) => !c.dnf && !c.parked && !c.finished && (progress(c, c.near) - me) > L - 120 && (progress(c, c.near) - me) < L);
   }
+  // The red flag's over: everyone back on the grid in the order they were,
+  // with the laps they'd done, and a standing start again
+  restartFromGrid() {
+    const race = this.race;
+    if (!race) return;
+    const m = this.m, pts = this.racing.pts, L = this.racing.length;
+    const progress = (t, near) => t.lap * L + ((pts[near].s - pts[this.startIndex].s + L) % L);
+    const field = this.cars.filter((c) => !c.dnf && !c.parked).map((c) => ({ c, p: progress(c, c.near) }));
+    if (!this.player.dnf && !this.player.finished) field.push({ me: true, p: progress(this.player, this.player.near) });
+    field.sort((a, b) => b.p - a.p);
+    const slot = (k) => {
+      const i = ((this.startIndex - 3 - 4 * k) % m + m) % m;
+      const p = pts[i];
+      const side = (k % 2 ? -1 : 1) * 1.8 - (p.off || 0);
+      return { i, side, x: p.x + p.nx * side, z: p.z + p.nz * side, heading: Math.atan2(p.fx, p.fz) };
+    };
+    field.forEach((f, k) => {
+      const g = slot(k);
+      // (laps done so far; crossing the line again starts the next one)
+      const done = Math.max(0, Math.floor(f.p / L));
+      if (f.me) {
+        this.onPlacePlayer?.(g.x, g.z, g.heading);
+        Object.assign(this.player, { lap: done - 1, near: g.i, last: g.i, gridX: g.x, gridZ: g.z });
+      } else {
+        this.placeOnLine(f.c, g.i, g.side, 0);
+        f.c.lap = done - 1; f.c.last = g.i; f.c.full = true; f.c.stuck = 0;
+      }
+    });
+    race.phase = 'grid'; race.t = race.t || 0; race.lightsOut = race.t + 3.2 + Math.random() * 1.4; race.gridAt = race.t;
+    this.holdPlayer = true;
+  }
+
   // Add a time penalty (seconds) to yours
   addPenalty(sec, why) { if (this.race && !this.player.finished) { this.player.penalty = (this.player.penalty || 0) + sec; this.onPenalty?.(sec, why); } }
 

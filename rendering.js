@@ -35,7 +35,8 @@ import { setGround, groundAt, lieOnGround } from './ground.js';
 import * as packFile from './assets.js';
 import { AIField, BUILD as AI_BUILD } from './ai.js';
 import { Garage, BUILD as GARAGE_BUILD } from './garage.js';
-import { PitStop, BUILD as PITS_BUILD } from './pits.js';
+import { PitStop, SEPANG_PIT, BUILD as PITS_BUILD } from './pits.js';
+import { RaceControl, BUILD as RACECONTROL_BUILD } from './racecontrol.js';
 import { buildF1Body, buildF1Cockpit, buildF1RimGeometry, F1_CAR, CATERHAM_CAR, ENGINES, withEngine, STOCK_ENGINE, BUILD as F1_BUILD } from './f1.js';
 import * as groundFile from './ground.js';
 import * as tyresFile from './tyres.js';
@@ -59,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 60;
+const BUILD = 61;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -68,7 +69,7 @@ const updateScreen = startUpdates({
   'smoke.js': smokeFile.BUILD, 'hud.js': hudFile.BUILD, 'oil.js': oilFile.BUILD,
   'skids.js': skidsFile.BUILD, 'scenery.js': sceneryFile.BUILD, 'grass.js': grassFile.BUILD,
   'sky.js': skyFile.BUILD, 'debris.js': debrisFile.BUILD, 'touch.js': touchFile.BUILD,
-  'rain.js': rainFile.BUILD, 'effects.js': effectsFile.BUILD, 'cockpit.js': cockpitFile.BUILD, 'tyres.js': tyresFile.BUILD, 'sepang.js': sepangFile.BUILD, 'flora.js': floraFile.BUILD, 'racingline.js': racingLineFile.BUILD, 'ground.js': groundFile.BUILD, 'assets.js': packFile.BUILD, 'ai.js': AI_BUILD, 'f1.js': F1_BUILD, 'garage.js': GARAGE_BUILD, 'pits.js': PITS_BUILD, 'trackside.js': TRACKSIDE_BUILD,
+  'rain.js': rainFile.BUILD, 'effects.js': effectsFile.BUILD, 'cockpit.js': cockpitFile.BUILD, 'tyres.js': tyresFile.BUILD, 'sepang.js': sepangFile.BUILD, 'flora.js': floraFile.BUILD, 'racingline.js': racingLineFile.BUILD, 'ground.js': groundFile.BUILD, 'assets.js': packFile.BUILD, 'ai.js': AI_BUILD, 'f1.js': F1_BUILD, 'garage.js': GARAGE_BUILD, 'pits.js': PITS_BUILD, 'trackside.js': TRACKSIDE_BUILD, 'racecontrol.js': RACECONTROL_BUILD,
 });
 
 // ---------------------------------------------------------------------
@@ -1227,7 +1228,9 @@ const FLAG_TOASTS = {
   white: 'WHITE FLAG: SLOW CAR AHEAD', oil: 'SLIPPERY TRACK: OIL AHEAD', bw: 'BLACK AND WHITE FLAG: TRACK LIMITS WARNING',
   meatball: 'MEATBALL FLAG: YOUR CAR IS DAMAGED. PIT THIS LAP', black: 'BLACK FLAG: DISQUALIFIED', chequered: 'CHEQUERED FLAG',
 };
-let shownFlag = null, playerStopped = 0;
+let shownFlag = null, playerStopped = 0, crashFlash = 0;
+let playerRecovered = false;     // (your wreck's been lifted away: parked, not a wreck out there any more)
+const sprayFrom = new THREE.Vector3(), sprayVel = new THREE.Vector3();
 const flagState = { race: null, strikes: 0, wasOff: false, bwTime: 0, meatLap: null, pitted: false };
 const onTrackHere = (x, z) => { const s = sepang.surfaceAt(x, z); return s === 'tarmac' || s === 'kerb'; };
 function updateTrackside(dt) {
@@ -1249,7 +1252,9 @@ function updateTrackside(dt) {
   if (!heavyMode && !inPits && !(race && race.phase === 'grid')) {
     const broken = physics.engineDead || physics.tyres.some((t) => t.detached) || physics.onFire;
     const on = onTrackHere(physics.x, physics.z);
-    const hazard = playerStopped > 1 && (broken || playerStopped > 12) ? (on ? 2 : 1) : 0;
+    // (sitting still a long time counts too, but not waiting at the start where you spawn)
+    const idle = playerStopped > 12 && (!sepang || Math.hypot(physics.x - sepang.start.x, physics.z - sepang.start.z) > 60);
+    const hazard = playerStopped > 1 && (broken || idle) ? (on ? 2 : 1) : 0;
     const slow = on && speed > 1.5 && speed < 12 && (physics.tyres.some((t) => t.detached || t.rim) || physics.engineHealth < 0.3);
     cars.push({ x: physics.x, z: physics.z, v: speed, hazard, slow });
   }
@@ -1258,7 +1263,27 @@ function updateTrackside(dt) {
     if (c.dnf || c.wrecked) cars.push({ x: c.physics.x, z: c.physics.z, v: 0, hazard: onTrackHere(c.physics.x, c.physics.z) ? 2 : 1 });
   }
   // red: a car burning on the track, or the burning engine block lying on it
-  const red = (!heavyMode && physics.onFire && playerStopped > 1 && onTrackHere(physics.x, physics.z))
+  // race control: the safety car, the crane, the marshals, your penalties (racecontrol.js)
+  if (raceControl && !heavyMode) {
+    const blockPart = engineBlock ? flyingParts.find((p) => p.obj === engineBlock) : null;
+    raceControl.update(dt, {
+      physics, playerModel: carModel.car,
+      playerBroken: !playerRecovered && (physics.engineDead || physics.tyres.some((t) => t.detached) || exploded),
+      playerFire: physics.onFire, playerStopped, inPits,
+      wreck: { burning: exploded && wreckBurn > 0 },
+      engineBlock: engineBlock ? { obj: engineBlock, fire: engineBlockFire, rest: !blockPart || blockPart.rest } : null,
+      debris: flyingParts.filter((p) => p.obj !== engineBlock),
+      camera,
+    });
+    // the extinguishers' white clouds
+    for (const s of raceControl.sprays()) {
+      sprayFrom.set(s.x, groundAt(s.x, s.z) + 1, s.z);
+      sprayVel.set((s.tx - s.x) * 2.2, 0.4, (s.tz - s.z) * 2.2);
+      steam.emitFrom('ext' + s.x.toFixed(1), sprayFrom, 1, sprayVel, dt);
+    }
+  }
+  const rcRed = raceControl?.phase === 'red';
+  const red = rcRed || (!heavyMode && physics.onFire && playerStopped > 1 && onTrackHere(physics.x, physics.z))
     || (engineBlockFire > 0 && engineBlock && onTrackHere(engineBlock.position.x, engineBlock.position.z));
   // --- your own flags ---
   let mine = null;
@@ -1283,12 +1308,21 @@ function updateTrackside(dt) {
       aiField.player.dsq = aiField.player.dnf = true;
       if (lapTimer) lapTimer.valid = false;
     }
+    // a drive-through not served within 3 laps: out (black flag)
+    const DT = aiField.player.driveThrough;
+    if (DT && aiField.player.lap > (DT.since ?? 0) + 3 && !aiField.player.dsq) { aiField.player.dsq = aiField.player.dnf = true; showToast('DRIVE-THROUGH NOT SERVED: BLACK FLAG'); }
     mine = aiField.player.dsq ? 'black' : flagState.meatLap != null && !flagState.pitted ? 'meatball'
       : flagState.bwTime > 0 ? 'bw' : aiField.blueFlagFor() ? 'blue' : null;
   }
   const chequered = !!race && (aiField.player.finished || aiField.cars.some((c) => c.finished));
+  // who's moving near the marshals (they watch them, and step back from one coming off)
+  const movers = [];
+  if (!heavyMode) movers.push({ x: physics.x, z: physics.z, v: speed, off: !onTrackHere(physics.x, physics.z), crash: crashFlash > 0 });
+  for (const c of aiField?.cars || []) if (!c.parked && c.dist < 300) movers.push({ x: c.physics.x, z: c.physics.z, v: Math.abs(c.physics.vx), off: c.full && !onTrackHere(c.physics.x, c.physics.z) });
+  crashFlash = Math.max(0, crashFlash - dt);
+  trackside.setPitExit?.(!(rcRed || (race && race.phase === 'grid')));
   const res = trackside.update(dt, {
-    cars, red, chequered,
+    cars, red, chequered, movers, phase: raceControl?.phase,
     slippery: (x, z) => oil.gripAt(x, z) < 0.9 || coolant.gripAt(x, z) < 0.9,
     player: { x: physics.x, z: physics.z, flag: mine },
   }, camera);
@@ -1889,7 +1923,10 @@ placeAtStart();
 // Oil dripped by a badly damaged engine. Tyres on oil lose grip.
 const oil = new OilSlicks(scene, { colour: 0xc4891f });   // (engine oil: honey-coloured when fresh, see below)
 // Coolant: pink-red, watery, dripping from the radiator at the front
-const coolant = new OilSlicks(scene, { colour: 0xe0336e, ahead: 1.45, slickGrip: 0.55, roughness: 0.05, metalness: 0.1, maxSegments: 900, maxPuddles: 60, flowSpeed: 6, flowTime: 15, amount: 0.6, evaporate: 0.012 });   // (runs like water; about 4.5 litres of it against 7 of oil, and it dries up in the heat)
+// (the TT-88 runs on plain water with an additive, like real racing cars: racing bans slippery
+// glycol antifreeze, so its leaks are clear and less slippery; the Caterham's a road car
+// underneath: orange antifreeze)
+const coolant = new OilSlicks(scene, { colour: IS_F1 ? 0x8fa3ad : 0xe0791f, ahead: IS_F1 ? 0 : 1.45, slickGrip: IS_F1 ? 0.78 : 0.55, roughness: IS_F1 ? 0.02 : 0.05, metalness: IS_F1 ? 0.35 : 0.1, maxSegments: 900, maxPuddles: 60, flowSpeed: 6, flowTime: 15, amount: 0.6, evaporate: 0.012 });   // (runs like water; about 4.5 litres of it against 7 of oil, and it dries up in the heat)
 // The engine oil's colour: honey-yellow when fresh, going brown then black
 // the further you drive, and milky tan once coolant gets into it
 const OIL_HONEY = new THREE.Color(0xc4891f), OIL_BROWN = new THREE.Color(0x4b2c12), OIL_BLACK = new THREE.Color(0x120e0b), OIL_MILKY = new THREE.Color(0xcbb08f);
@@ -2647,6 +2684,7 @@ function collide(now) {
     hardestHit = Math.max(hardestHit, hitSpeed);
     if (hitSpeed > 2.5 && now - lastCrashAt > 0.3 && !heavyMode) {   // (the heavy barely notices)
       lastCrashAt = now;
+      if (hitSpeed > 12) crashFlash = 1.5;      // (the marshals near it flinch)
       physics.crashHit({ zone, speed: hitSpeed, along, across });
       // Dent the body where it struck (on the bodywork, not the wheel
       // that may have touched first), pushed in the way the wall pushed
@@ -3299,7 +3337,7 @@ function applyCamera() {
   camera.fov = CAMERA_FOV[cameraMode];
   camera.near = ON_CAR[cameraMode]?.near ?? (cameraMode === 'turret' ? 0.02 : 0.1);
   cockpit.setFirstPerson(cameraMode === 'cockpit');
-  hud.setInCar?.(cameraMode === 'cockpit' && !IS_F1);
+  hud.setInCar?.(cameraMode === 'cockpit');   // (in the cockpit the car's own dials show it: the Caterham's dash, the TT-88's wheel)
   camera.updateProjectionMatrix();
   fitViewport();
   controls.enabled = cameraMode === 'showroom';
@@ -3355,6 +3393,7 @@ function repairAll() {
   clearScratchDecals();
   clearExplosion();
   clearFlyingParts();
+  playerRecovered = false;
 }
 // THE CARS: the Caterham and the TT-88 (f1.js), and the engine in it (the
 // engine swap is in the side panel). Switching repairs the car and keeps
@@ -3362,7 +3401,7 @@ function repairAll() {
 // the cameras on the TT-88 (car's own frame: +z forward)
 const F1_VIEWS = {
   bonnet: { spot: new THREE.Vector3(0, 0.62, 0.95), pitch: -0.06 },
-  cockpit: { spot: new THREE.Vector3(0, 0.72, 0.1), pitch: -0.2 },
+  cockpit: { spot: new THREE.Vector3(0, 0.88, 0.02), pitch: -0.27 },     // (his eye well above the cockpit's sides, as a real driver's is)
   tcam: { spot: new THREE.Vector3(0, 0.98, -0.32), pitch: -0.08 },
 };
 let carKind = CAR_KIND, engineKey = STOCK_ENGINE[CAR_KIND];
@@ -3849,7 +3888,7 @@ const aiField = racing ? new AIField(scene, {
     groundHeight: groundAt, roadHeight: (x, z) => physics.roadHeight(x, z), wearScale: () => physics.wearScale(),
   },
   // a time penalty (a jump start, track limits)
-  onPenalty: (sec, why) => showToast(`${why}: ${sec} SECOND TIME PENALTY`),
+  onPenalty: (sec, why) => showToast(sec === 'drive' ? `${why}: DRIVE-THROUGH PENALTY` : `${why}: ${sec} SECOND TIME PENALTY`),
   // the race grid: you go to the back of it, stopped and straightened up
   onPlacePlayer: (x, z, heading) => {
     teleportGrace = 0.6;
@@ -3925,9 +3964,50 @@ const pits = sepang ? (() => {
         showToast('DNF: THE TEAM HAVE RETIRED THE CAR');
       },
       toast: (t) => showToast(t),
+      driveThrough: () => !!aiField?.player?.driveThrough && aiField.race?.phase === 'racing',
+      served: () => { if (aiField?.player?.driveThrough) { aiField.player.driveThrough = null; showToast('DRIVE-THROUGH SERVED'); } },
     },
   });
 })() : null;
+// RACE CONTROL (racecontrol.js): Sepang only, with the computer cars' racing line
+raceControl = sepang && aiField && trackside ? new RaceControl(scene, {
+  line: sepang.line, trackside, aiField, groundAt, isMobile, pit: SEPANG_PIT,
+  hooks: {
+    toast: (t) => { if (t) showToast(t); },
+    penalty: (sec, why) => aiField.addPenalty(sec, why),
+    extinguish: (kind) => {
+      if (kind === 'car') { physics.onFire = false; physics.fireLevel = 0; physics.fireSpot = null; }
+      if (kind === 'wreck') wreckBurn = 0;
+      if (kind === 'block') engineBlockFire = 0;
+      showToast('FIRE OUT');
+    },
+    removeDebris: (d) => { scene.remove(d.obj); const i = flyingParts.indexOf(d); if (i >= 0) flyingParts.splice(i, 1); },
+    removeBlock: () => {
+      if (!engineBlock) return;
+      scene.remove(engineBlock);
+      const i = flyingParts.findIndex((p) => p.obj === engineBlock); if (i >= 0) flyingParts.splice(i, 1);
+      engineBlockFire = 0;
+    },
+    // your wreck, lifted clear: in practice a fresh car in your pit box; out of a race, parked in the garage
+    recoverPlayer: () => {
+      const B = SEPANG_PIT.box;
+      teleportGrace = 0.6;
+      if (aiField?.race && (aiField.player.dnf || aiField.race.phase === 'racing')) {
+        aiField.player.dnf = true;
+        playerRecovered = true;
+        physics.x = SEPANG_PIT.garageX + 4; physics.z = B.z; physics.heading = -Math.PI / 2;
+        physics.vx = physics.vy = physics.yawRate = 0; physics.ground.synced = false;
+        showToast('RECOVERED: OUT OF THE RACE');
+      } else {
+        repairAll();
+        physics.x = B.x; physics.z = B.z; physics.heading = B.h;
+        physics.vx = physics.vy = physics.yawRate = 0; physics.ground.synced = false;
+        pits?.reset?.();
+        showToast('RECOVERED: A FRESH CAR IN YOUR PIT BOX');
+      }
+    },
+  },
+}) : null;
 try { if (localStorage.getItem('tracktester-garage') === '1') { localStorage.removeItem('tracktester-garage'); garageOnStart = 1; } } catch (e) { /* storage blocked */ }
 function openGarage(opts) {
   if (garage.isOpen) return;
@@ -4106,6 +4186,7 @@ renderer.setAnimationLoop(() => {
       carModel.car.rotation.x -= (pits.lift.f - pits.lift.r) / (FRONT_AXLE - REAR_AXLE);
     }
   }
+  if (raceControl?.crane?.w.kind === 'player') carModel.car.position.y += raceControl.crane.lift;   // (up on the recovery crane's hook)
   updateWheels(physics.steer, physics.wheelSpin);
   if (IS_F1) {
     // the TT-88: the driver's helmet hidden in his own view; exhausts glowing with the revs and boost

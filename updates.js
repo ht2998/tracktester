@@ -21,11 +21,25 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 80;
+export const BUILD = 81;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 69, date: '18 Nov 2026', title: 'Race control',
+    items: [
+      ['The safety car', 'A car stopped on the track in a race brings out the safety car (silver, with its light bar flashing): the field queues behind it, no overtaking, until the track\'s clear. Then "SAFETY CAR IN THIS LAP", and it peels off into the pit lane', 'new'],
+      ['The VSC', 'A car stopped off the track brings out the virtual safety car instead: everyone slows down everywhere. Speed under it, or through double yellows, and after warnings it costs 5 seconds', 'new'],
+      ['Red flags that stop the race', 'A car going up stops the race: the ambulance comes out, the wreck is cleared, and everyone lines up on the grid again in the order they were for a fresh standing start', 'new'],
+      ['The recovery crane', 'A compact wheeled crane comes out from behind the barrier, lifts the wreck clear and drives it away. It only works under double yellows, a safety car or a VSC, in memory of Jules Bianchi. In practice your car comes back to your pit box fixed; in a race you\'re out', 'new'],
+      ['Marshals that move', 'The marshals near you are real people now: they watch the cars go by and turn to follow them, raise and wave their flags, and step back sharply when a car comes off near them. Fire marshals run out with extinguishers to a burning car or engine, and marshals pick up bits of car left on the track', 'new'],
+      ['The rules', 'Overtaking under yellow, the VSC or the safety car, or ignoring blue flags: 5 seconds. A big jump start is now a drive-through: down the pit lane without stopping, within 3 laps, or the black flag. The computer drivers slow down under yellow, queue behind the safety car, and move over when you lap them', 'new'],
+      ['Grandstands and crowds', 'Grandstands at turns 1, 2, 4 and the last hairpin, full of people who stand up and cheer as you go past. Race control\'s tower on the pit building, and pit exit lights', 'new'],
+      ['TT-88 cockpit', 'A proper F1-style steering wheel: squared off, with grips, the screen on the wheel, knobs, buttons and paddles, sitting below your eye line', 'fix'],
+      ['Coolant colours', 'The TT-88 runs water, like real racing cars, so its leaks are clear and less slippery. The Caterham\'s antifreeze is orange', 'fix'],
+    ],
+  },
   {
     id: 68, date: '18 Nov 2026', title: 'Up in flames',
     items: [

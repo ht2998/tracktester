@@ -31,15 +31,16 @@
 
 import * as THREE from 'three';
 import { addCollider, canvasTexture } from './scenery.js';
+import { Person } from './pits.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 3;
+export const BUILD = 4;
 
 export const FLAG_NAMES = {
   green: 'GREEN FLAG', yellow: 'YELLOW FLAG', yellow2: 'DOUBLE YELLOW', red: 'RED FLAG', blue: 'BLUE FLAG',
   white: 'WHITE FLAG', oil: 'SLIPPERY TRACK', black: 'BLACK FLAG', bw: 'BLACK AND WHITE FLAG',
-  meatball: 'MEATBALL FLAG', chequered: 'CHEQUERED FLAG',
+  meatball: 'MEATBALL FLAG', chequered: 'CHEQUERED FLAG', sc: 'SAFETY CAR', vsc: 'VIRTUAL SAFETY CAR',
 };
 
 // The flags' faces, painted on a canvas (the cloth and the light panels)
@@ -55,16 +56,21 @@ export function paintFlag(g, w, h, flag) {
     case 'oil': fill('#ffd21a'); for (let k = 0; k < 6; k += 2) fill('#e3221b', (k * w) / 6, 0, w / 6, h); break;
     case 'bw': fill('#f4f4f0'); g.fillStyle = '#121212'; g.beginPath(); g.moveTo(0, 0); g.lineTo(w, 0); g.lineTo(0, h); g.closePath(); g.fill(); break;
     case 'meatball': fill('#121212'); g.fillStyle = '#ff7a12'; g.beginPath(); g.arc(w / 2, h / 2, Math.min(w, h) * 0.3, 0, Math.PI * 2); g.fill(); break;
+    case 'sc': case 'vsc': {
+      fill('#f4f4f0'); g.strokeStyle = '#121212'; g.lineWidth = Math.max(2, w / 20); g.strokeRect(1, 1, w - 2, h - 2);
+      g.fillStyle = '#121212'; g.font = `bold ${Math.round(h * (flag === 'sc' ? 0.62 : 0.5))}px sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(flag.toUpperCase(), w / 2, h / 2 + 1); break;
+    }
     case 'chequered': for (let i = 0; i < 6; i++) for (let j = 0; j < 4; j++) fill((i + j) % 2 ? '#121212' : '#f4f4f0', (i * w) / 6, (j * h) / 4, w / 6 + 0.5, h / 4 + 0.5); break;
     default: fill('#1a1c1f');
   }
 }
 
-const FLAGS = ['green', 'yellow', 'yellow2', 'red', 'blue', 'white', 'oil', 'black', 'bw', 'meatball', 'chequered'];
+const FLAGS = ['green', 'yellow', 'yellow2', 'red', 'blue', 'white', 'oil', 'black', 'bw', 'meatball', 'chequered', 'sc', 'vsc'];
 // which flags the marshals wave (the rest just hold them out still)
 const WAVED = new Set(['yellow', 'yellow2', 'blue', 'red', 'chequered', 'oil']);
 // which flags blink on the light panels
-const BLINK = new Set(['yellow', 'yellow2', 'red', 'blue']);
+const BLINK = new Set(['yellow', 'yellow2', 'red', 'blue', 'sc', 'vsc']);
 
 export function buildTrackside(scene, { line, kerb, surfaceAt, colliders, corners, startI, heightAt = () => 0, isMobile = false }) {
   const groundAt = heightAt;
@@ -205,6 +211,7 @@ export function buildTrackside(scene, { line, kerb, surfaceAt, colliders, corner
 
   // one marshal: the static body (instanced), and his arm with a flag (his own meshes)
   const addMarshal = (x, z, ry, y0) => {
+    const idx = { body: parts.get('body').list.length, head: parts.get('head').list.length, cap: parts.get('cap').list.length };
     put('body', x, y0, z, ry); put('head', x, y0, z, ry); put('cap', x, y0, z, ry);
     const shoulder = new THREE.Group();
     shoulder.position.set(x + Math.cos(ry) * 0.24, y0 + 1.36, z - Math.sin(ry) * 0.24);
@@ -218,7 +225,7 @@ export function buildTrackside(scene, { line, kerb, surfaceAt, colliders, corner
     flag.add(pole, cloth);
     shoulder.add(arm, flag);
     group.add(shoulder);
-    return { shoulder, flag, cloth, phase: Math.random() * 6 };
+    return { shoulder, flag, cloth, phase: Math.random() * 6, idx, x, z, ry, y0 };
   };
   const addPost = (spot, i, { platform = false } = {}) => {
     const y = groundAt(spot.x, spot.z);
@@ -496,6 +503,7 @@ export function buildTrackside(scene, { line, kerb, surfaceAt, colliders, corner
     mesh.castShadow = p.shadow && !isMobile;
     mesh.receiveShadow = true;
     group.add(mesh);
+    p.mesh = mesh;
   }
 
   // --- The flags: every frame, from what's happening on the track ---
@@ -534,6 +542,8 @@ export function buildTrackside(scene, { line, kerb, surfaceAt, colliders, corner
     for (let k = 0; k < posts.length; k++) {
       let flag = null;
       if (state.red) flag = 'red';
+      else if (state.phase === 'sc') flag = level[k] >= 2 ? 'yellow2' : 'sc';
+      else if (state.phase === 'vsc') flag = level[k] >= 2 ? 'yellow2' : 'vsc';
       else if (level[k] === 3) flag = 'yellow2';
       else if (level[k] === 2) flag = 'yellow';
       else if (oilSectors.has(k)) flag = 'oil';
@@ -551,7 +561,8 @@ export function buildTrackside(scene, { line, kerb, surfaceAt, colliders, corner
       if (!posts[next].flag || state.player.flag === 'blue') posts[next].flag = state.player.flag;
       if (!posts[0].flag) posts[0].flag = state.player.flag;
     }
-    result.flag = state.player.flag && !state.red ? state.player.flag : posts[ks].flag;
+    result.flag = state.player.flag && !state.red ? state.player.flag
+      : state.phase === 'sc' ? 'sc' : state.phase === 'vsc' ? 'vsc' : posts[ks].flag;
     // show them (only the posts near the camera wave: no one sees the rest)
     const cx = camera ? camera.position.x : state.player.x, cz = camera ? camera.position.z : state.player.z;
     for (const post of posts) {
@@ -560,6 +571,7 @@ export function buildTrackside(scene, { line, kerb, surfaceAt, colliders, corner
       const blinkOff = f && BLINK.has(f) && Math.floor(time * 2.5) % 2 === 1;
       const want = !f || blinkOff ? panelMats.off : panelMats[f];
       if (post.panel.material !== want) post.panel.material = want;
+      if (post.live) continue;    // (the near ones: real people, see below)
       post.marshals.forEach((mar, k) => {
         // (the second marshal only joins in for a double yellow)
         const flagNow = k === 1 && f !== 'yellow2' ? null : f;
@@ -574,8 +586,218 @@ export function buildTrackside(scene, { line, kerb, surfaceAt, colliders, corner
         mar.cloth.rotation.y = WAVED.has(flagNow) ? Math.sin(t * 1.7) * 0.4 : 0;
       });
     }
+    updateLive(dt, state, cx, cz);
+    updateCrowds(dt, state, cx, cz);
     return result;
   }
 
-  return { group, posts, cameras, boards, bills, update, setStartLights, sectorOf, nearestLine, result };
+  // --- LIVE MARSHALS: the posts nearest you get real people (the pit
+  // crew's jointed figures, in orange): they stand and watch the cars go
+  // by, turn to follow them, raise and wave their flags, and step back
+  // sharply when a car comes off the track near them. Further away the
+  // simple standing figures do. ---
+  const marshalMats = {
+    suits: [new THREE.MeshStandardMaterial({ color: 0xff7a12, roughness: 0.75 })],
+    helmet: new THREE.MeshStandardMaterial({ color: 0xf2f2ee, roughness: 0.5 }),
+    visor: new THREE.MeshStandardMaterial({ color: 0xf2f2ee, roughness: 0.5 }),
+    glove: new THREE.MeshStandardMaterial({ color: 0x2a2c30, roughness: 0.8 }),
+    boot: new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 }),
+  };
+  const LIVE = isMobile ? 2 : 4;
+  const pool = [];
+  let liveClock = 0;
+  const zero = new THREE.Matrix4().makeScale(0, 0, 0);
+  const setStatic = (mar, show) => {
+    for (const name of ['body', 'head', 'cap']) {
+      const P = parts.get(name); if (!P.mesh) continue;
+      const [x, y, z, ry] = P.list[mar.idx[name]];
+      P.mesh.setMatrixAt(mar.idx[name], show ? mm.compose(pos.set(x, y, z), q.setFromAxisAngle(yAxis, ry), scl.set(1, 1, 1)) : zero);
+      P.mesh.instanceMatrix.needsUpdate = true;
+    }
+    mar.shoulder.visible = show;
+  };
+  const makeLive = () => {
+    const person = new Person(marshalMats, 0);
+    const flag = new THREE.Group();
+    const pole = new THREE.Mesh(poleGeo, dark);
+    const cloth = new THREE.Mesh(clothGeo, flagMats.yellow);
+    cloth.position.set(0, -1.1, 0);
+    flag.add(pole, cloth);
+    flag.rotation.x = -0.4;
+    person.handR.add(flag);
+    group.add(person.root);
+    return { person, flag, cloth, post: null, k: 0, flinch: 0, look: 0 };
+  };
+  function updateLive(dt, state, cx, cz) {
+    liveClock -= dt;
+    if (liveClock <= 0) {
+      liveClock = 0.5;
+      const want = posts.slice(1).map((p) => ({ p, d: (p.x - cx) ** 2 + (p.z - cz) ** 2 })).filter((e) => e.d < 260 * 260)
+        .sort((a, b) => a.d - b.d).slice(0, LIVE).map((e) => e.p);
+      for (const post of posts) {
+        const on = want.includes(post);
+        if (on === !!post.live) continue;
+        post.live = on;
+        post.marshals.forEach((mar, k) => {
+          setStatic(mar, !on);
+          if (on) {
+            const L = pool.find((l) => !l.post) || (pool.push(makeLive()), pool[pool.length - 1]);
+            L.post = post; L.k = k; L.mar = mar;
+            L.person.queue = []; L.person.want = 'STAND';
+            L.person.place(mar.x, mar.z, mar.ry);
+            L.person.root.visible = true;
+          } else {
+            const L = pool.find((l) => l.mar === mar);
+            if (L) { L.post = null; L.mar = null; L.person.root.visible = false; }
+          }
+        });
+      }
+    }
+    for (const L of pool) {
+      if (!L.post) continue;
+      const P = L.person, mar = L.mar, f = L.post.flag;
+      const flagNow = L.k === 1 && f !== 'yellow2' ? null : f;
+      // a car off the track and close, at speed (or a crash nearby): step back, sharpish
+      if (!P.busy) {
+        let scare = false;
+        for (const c of state.movers || []) {
+          const d = Math.hypot(c.x - mar.x, c.z - mar.z);
+          if ((d < 16 && c.v > 12 && c.off) || (c.crash && d < 35)) { scare = true; break; }
+        }
+        if (scare) {
+          const bx = mar.x - Math.sin(mar.ry) * 2.4, bz = mar.z - Math.cos(mar.ry) * 2.4;
+          P.run([{ go: [bx, bz], back: true }, { pose: 'SHOCK', t: 1.1 }, { pose: 'STAND' }, { wait: 0.8 }, { go: [mar.x, mar.z] }, { face: mar.ry }]);
+        }
+      }
+      // watching: turn to follow the nearest car (when not busy with a flag or stepping back)
+      if (!P.busy) {
+        let tgt = null, best = 130;
+        for (const c of state.movers || []) { const d = Math.hypot(c.x - mar.x, c.z - mar.z); if (d < best) { best = d; tgt = c; } }
+        let want = flagNow ? mar.ry : tgt ? Math.atan2(tgt.x - mar.x, tgt.z - mar.z) : mar.ry;
+        // (never round with his back to the track: a turn of the head and shoulders, up to 100 degrees)
+        let d = Math.atan2(Math.sin(want - mar.ry), Math.cos(want - mar.ry));
+        d = Math.max(-1.75, Math.min(1.75, d));
+        const aim = mar.ry + d;
+        let df = Math.atan2(Math.sin(aim - P.face), Math.cos(aim - P.face));
+        P.face += df * Math.min(1, dt * 3);
+        P.want = flagNow ? (WAVED.has(flagNow) ? 'LOLLY_UP' : 'LOLLY') : 'STAND';
+      }
+      L.flag.visible = !!flagNow;
+      if (flagNow && L.cloth.material !== flagMats[flagNow]) L.cloth.material = flagMats[flagNow];
+      P.update(dt, groundAt);
+      // waving: the arm swinging over his head, the flag flapping
+      if (flagNow && WAVED.has(flagNow) && !P.busy) {
+        const t = time * 5.5 + mar.phase;
+        P.shR.rotation.z = -Math.sin(t) * 0.6;
+        L.cloth.rotation.y = Math.sin(t * 1.7) * 0.4;
+      } else { P.shR.rotation.z = 0; L.cloth.rotation.y = 0; }
+    }
+  }
+
+  // --- GRANDSTANDS AND CROWDS: Sepang's big stands outside turns 1-2
+  // and at the last hairpin, and people on the grass banks in between.
+  // The crowd stands up and cheers as you go past. ---
+  const crowds = [];
+  {
+    const seatMat = new THREE.MeshStandardMaterial({ color: 0x8c9096, roughness: 0.8 });
+    const roofMat = new THREE.MeshStandardMaterial({ color: 0xe9e9e4, roughness: 0.6, side: THREE.DoubleSide });
+    const steelM = new THREE.MeshStandardMaterial({ color: 0x9a9ea3, roughness: 0.45, metalness: 0.6 });
+    const shirts = [0xd8312a, 0x2a62c9, 0xf2c12e, 0x2b9a52, 0xf4f4f0, 0x15171a, 0xff7a12, 0x7c1f8f];
+    const personGeo = new THREE.BoxGeometry(0.42, 0.75, 0.32).translate(0, 0.38, 0);
+    const stand = (spot, len, rows, roof) => {
+      const g = new THREE.Group();
+      const y = groundAt(spot.x, spot.z), ry = towardTrack(spot.x, spot.z, spot.i);
+      g.position.set(spot.x, y, spot.z); g.rotation.y = ry;
+      // the stepped seating, rising away from the track (its front faces +z: the track)
+      for (let r = 0; r < rows; r++) {
+        const step = new THREE.Mesh(new THREE.BoxGeometry(len, 0.45, 0.85), seatMat);
+        step.position.set(0, 0.22 + r * 0.45, -r * 0.85); step.receiveShadow = true; g.add(step);
+      }
+      if (roof) {
+        const top = new THREE.Mesh(new THREE.PlaneGeometry(len + 2, rows * 0.85 + 3), roofMat);
+        top.rotation.x = -Math.PI / 2 + 0.12; top.position.set(0, rows * 0.45 + 3.2, -rows * 0.42); g.add(top);
+        for (const sx of [-len / 2, 0, len / 2]) { const post = new THREE.Mesh(new THREE.BoxGeometry(0.25, rows * 0.45 + 3.2, 0.25).translate(0, (rows * 0.45 + 3.2) / 2, 0), steelM); post.position.set(sx, 0, -rows * 0.85); g.add(post); }
+      }
+      // the people: a crowd of simple figures in bright shirts
+      const per = isMobile ? 0.35 : 0.8;
+      const n = Math.floor(len * rows * per);
+      const mesh = new THREE.InstancedMesh(personGeo, new THREE.MeshStandardMaterial({ roughness: 0.8 }), n);
+      const seats = [];
+      const col = new THREE.Color();
+      for (let k = 0; k < n; k++) {
+        const r = Math.floor(Math.random() * rows), x = (Math.random() - 0.5) * (len - 1);
+        seats.push([x, 0.45 + r * 0.45, -r * 0.85 + 0.1, Math.random() * 6]);
+        mesh.setColorAt?.(k, col.setHex(shirts[k % shirts.length]));
+      }
+      g.add(mesh);
+      group.add(g);
+      const C = { g, mesh, seats, cheer: 0, x: spot.x, z: spot.z };
+      setCrowd(C, 0, 0);
+      crowds.push(C);
+      { const r = len * 0.36; addSolid(spot.x - r, spot.x + r, spot.z - r, spot.z + r, 'building'); }
+    };
+    const S = [[1, 40, 10, true], [2, 30, 8, false], [4, 26, 6, false], [15, 46, 12, true]];
+    for (const [n, len, rows, roof] of S) {
+      const c = byNumber(n);
+      if (!c) continue;
+      const spot = placeOut(c.apex, -c.side, 14, len / 2 + 2);
+      if (spot) stand(spot, len, rows, roof);
+    }
+  }
+  function setCrowd(C, cheer, t) {
+    const mm2 = new THREE.Matrix4(), p2 = new THREE.Vector3(), s2 = new THREE.Vector3(1, 1, 1), q2 = new THREE.Quaternion();
+    C.seats.forEach(([x, y, z, ph], k) => {
+      const up = cheer * (0.25 + 0.2 * Math.max(0, Math.sin(t * 9 + ph)));
+      C.mesh.setMatrixAt(k, mm2.compose(p2.set(x, y + up, z), q2, s2.set(1, 1 + cheer * 0.25, 1)));
+    });
+    C.mesh.instanceMatrix.needsUpdate = true;
+  }
+  function updateCrowds(dt, state, cx, cz) {
+    const P = state.player;
+    for (const C of crowds) {
+      const camNear = (C.x - cx) ** 2 + (C.z - cz) ** 2 < 300 * 300;
+      const close = P && Math.hypot(P.x - C.x, P.z - C.z) < 90;
+      const want = close ? 1 : 0;
+      const before = C.cheer;
+      C.cheer += (want - C.cheer) * Math.min(1, dt * (want ? 4 : 1));
+      if (camNear && (C.cheer > 0.02 || before > 0.02)) setCrowd(C, C.cheer, time);
+    }
+  }
+
+  // --- RACE CONTROL TOWER: on the pit building, by the line ---
+  {
+    const towerMat = new THREE.MeshStandardMaterial({ color: 0xdedfda, roughness: 0.6 });
+    const glassM = new THREE.MeshStandardMaterial({ color: 0x2b3f52, roughness: 0.12, metalness: 0.35 });
+    const tx = 30, tz = 14, ty = groundAt(tx, tz) + 5;
+    const add = (geo, mat, y) => { const m = new THREE.Mesh(geo, mat); m.position.set(tx, ty + y, tz); m.castShadow = !isMobile; group.add(m); return m; };
+    add(new THREE.BoxGeometry(8, 2.6, 7).translate(0, 1.3, 0), towerMat, 0);
+    add(new THREE.BoxGeometry(8.1, 2.2, 7.1).translate(0, 3.7, 0), glassM, 0);
+    add(new THREE.BoxGeometry(9, 0.3, 8).translate(0, 4.95, 0), towerMat, 0);
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(6, 0.8), new THREE.MeshStandardMaterial({ roughness: 0.6, map: canvasTexture(256, 32, (g2, w, h) => {
+      g2.fillStyle = '#15171a'; g2.fillRect(0, 0, w, h); g2.fillStyle = '#f4f4f0'; g2.font = 'bold 20px sans-serif'; g2.textAlign = 'center'; g2.textBaseline = 'middle'; g2.fillText('RACE CONTROL', w / 2, h / 2 + 1);
+    }) }));
+    sign.position.set(tx - 4.06, ty + 2.2, tz); sign.rotation.y = -Math.PI / 2; group.add(sign);
+  }
+
+  // --- PIT EXIT LIGHTS: at the end of the pit lane, facing the cars
+  // leaving: green when it's open, red when it's shut ---
+  const pitLights = {};
+  {
+    const px = 16.8, pz = -245, py = groundAt(px, pz);     // (just off the exit road, on the garage side)
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 2.6, 8).translate(0, 1.3, 0), new THREE.MeshStandardMaterial({ color: 0x2a2d31, roughness: 0.5 }));
+    pole.position.set(px, py, pz); group.add(pole);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.95, 0.3), new THREE.MeshStandardMaterial({ color: 0x111214, roughness: 0.5 }));
+    head.position.set(px, py + 2.9, pz); group.add(head);
+    pitLights.red = new THREE.MeshBasicMaterial({ color: 0x2a0d0b, toneMapped: false });
+    pitLights.green = new THREE.MeshBasicMaterial({ color: 0x22ff66, toneMapped: false });
+    for (const [mat, dy] of [[pitLights.red, 0.22], [pitLights.green, -0.22]]) {
+      const lamp = new THREE.Mesh(new THREE.CircleGeometry(0.14, 14), mat);
+      lamp.position.set(px, py + 2.9 + dy, pz + 0.16);       // (facing +z: the cars coming down the pit lane)
+      group.add(lamp);
+    }
+    addSolid(px - 0.15, px + 0.15, pz - 0.15, pz + 0.15, 'building');
+  }
+  const setPitExit = (open) => { pitLights.red.color.setHex(open ? 0x2a0d0b : 0xff2a1a); pitLights.green.color.setHex(open ? 0x22ff66 : 0x0b2412); };
+
+  return { group, posts, setPitExit, crowds, cameras, boards, bills, update, setStartLights, sectorOf, nearestLine, result };
 }
