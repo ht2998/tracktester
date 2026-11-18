@@ -59,7 +59,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 59;
+const BUILD = 60;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -1396,8 +1396,9 @@ function tapDial(letter) {
   tapTimer = setTimeout(() => { const run = dialTaps.map((d) => d.letter).join(''); dialTaps.length = 0; if (run.length >= 12) openPack(run.slice(-12)); }, 1200);
 }
 const b64bytes = (b) => Uint8Array.from(atob(b.replace(/\s+/g, '')), (c) => c.charCodeAt(0));
+let openedWith = null;     // (the run that opened it, kept only in memory: the menu always needs it again)
 async function openPack(run) {
-  if (packed) { openVehicleMenu(); return true; }
+  if (packed) { if (run === openedWith) { openVehicleMenu(); return true; } return false; }
   try {
     const sub = (globalThis.crypto || {}).subtle;
     if (!sub) return false;
@@ -1416,6 +1417,7 @@ async function openPack(run) {
     scene.add(heavy.group);
     heavy.setPeriscopePicture(periscopeRT.texture);
     packed = mod;
+    openedWith = run;
     refreshEngineList();
     openVehicleMenu();
     return true;
