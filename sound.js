@@ -11,7 +11,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 24;
+export const BUILD = 25;
 
 // THE VOICED ENGINES (the V10's sound, made for each): bangs a turn, revs,
 // loudness matched to the approved preview, and how much of 3x the crank
@@ -1122,7 +1122,10 @@ export class EngineSound {
     }
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     if (!AudioCtx) return;
-    const ctx = new AudioCtx();
+    // (a bigger buffer than the default: when the game's struggling, the
+    // sound still has enough made ahead not to break up)
+    let ctx;
+    try { ctx = new AudioCtx({ latencyHint: 'playback' }); } catch (e) { ctx = new AudioCtx(); }
     this.ctx = ctx;
     this.noise = makeNoiseBuffer(ctx);
 
@@ -1713,6 +1716,10 @@ export class EngineSound {
 
   // Called every frame with the car's physics
   update(car, listenerPos, ear = null) {
+    // (how long the frames are taking: when the game lags, the revs glide
+    // over the whole gap between updates instead of jumping and holding)
+    if (this.ctx) { const now = this.ctx.currentTime; this.frameGap = Math.min(0.25, Math.max(0.008, now - (this.lastUpdate ?? now - 0.016))); this.lastUpdate = now; }
+    const glide = Math.max(0.03, (this.frameGap || 0.016) * 0.7);
     if (!this.ctx) return;
     const s = this.spec;
     const t = this.ctx.currentTime;
@@ -1760,10 +1767,10 @@ export class EngineSound {
       this.v10Rpm = sharp || this.v10Rpm == null ? rpm : this.v10Rpm + (rpm - this.v10Rpm) * (1 - Math.exp(-gap / 0.14));
       this.v10Load = this.v10Load == null ? load : this.v10Load + (load - this.v10Load) * (1 - Math.exp(-gap / (load > this.v10Load ? 0.05 : 0.18)));
       const vr = this.v10Rpm, vl = car.tractionControl ? Math.max(this.v10Load, load) : this.v10Load;
-      this.v10.parameters.get('rpm').setTargetAtTime(vr, t, 0.03);
+      this.v10.parameters.get('rpm').setTargetAtTime(vr, t, glide);
       this.v10.parameters.get('load').setTargetAtTime(vl, t, loadEase);
       this.v10.parameters.get('limiter').setValueAtTime(car.onLimiter ? 1 : 0, t);
-      this.v10Shape.parameters.get('rpm').setTargetAtTime(vr, t, 0.03);
+      this.v10Shape.parameters.get('rpm').setTargetAtTime(vr, t, glide);
       this.v10Shape.parameters.get('load').setTargetAtTime(vl, t, loadEase);
       // (behind the exhaust, in front, or off to the side; and how far)
       if (ear && car.x != null) {
@@ -1775,7 +1782,7 @@ export class EngineSound {
       }
     }
     if (this.voice) {
-      this.voice.parameters.get('rpm').setTargetAtTime(rpm, t, 0.03);
+      this.voice.parameters.get('rpm').setTargetAtTime(rpm, t, glide);
       this.voice.parameters.get('load').setTargetAtTime(load, t, loadEase);
       this.voice.parameters.get('limiter').setValueAtTime(car.onLimiter ? 1 : 0, t);
       this.voice.parameters.get('knock').setTargetAtTime(car.knock ?? 0, t, 0.3);

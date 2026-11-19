@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 93;
+export const BUILD = 94;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 82, date: '19 Nov 2026', title: 'Smooth through lag',
+    items: [
+      ['No more choppy sound when it lags', 'When the game lagged, the engine sound broke up: the sound had too little made ahead to cover the gap, and the revs jumped and held between frames. Now it keeps more sound made ahead, and the revs glide across however long a frame takes, so a stutter on screen doesn\'t chop up the engine', 'fix'],
+    ],
+  },
   {
     id: 81, date: '19 Nov 2026', title: 'A smooth climb',
     items: [
