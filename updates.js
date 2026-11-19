@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 103;
+export const BUILD = 104;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 92, date: '19 Nov 2026', title: 'Broken suspension',
+    items: [
+      ['The suspension breaks', 'Lose a wheel or blow the car up and the suspension goes with it: the wishbones, pushrods and track rods snap near the chassis, leaving jagged stubs, and the rest goes flying. No more arms hanging in the air where a wheel used to be. It\'s all new again after a repair', 'fix'],
+    ],
+  },
   {
     id: 91, date: '19 Nov 2026', title: 'Pedals',
     items: [

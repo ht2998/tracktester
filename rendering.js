@@ -60,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 76;
+const BUILD = 77;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -1675,12 +1675,44 @@ function placeLinkEnd(out, p, m, w, steersWith, steer) {
   }
   return out;
 }
+// A WHEEL TORN OFF, OR THE CAR BLOWN UP: the suspension breaks. Each
+// wishbone, pushrod and track rod snaps near the chassis: a short jagged
+// stub stays on the car and the rest goes flying (the upright goes with
+// the wheel). Fixed in the pits, it's all new again.
+const _lw = new THREE.Vector3(), _lw2 = new THREE.Vector3();
+function snapLink(r, mesh) {
+  r.broken = true;
+  if (r.m1 > 0 && r.m2 > 0) return;                          // (the upright: gone with the wheel)
+  placeLinkEnd(linkA, r.p1, r.m1, r.w, false, 0);
+  placeLinkEnd(linkB, r.p2, r.m2, r.w, false, 0);
+  const len = linkA.distanceTo(linkB);
+  if (len < 0.05) return;
+  // the piece that flies: from the break (a third of the way out) to the outer end
+  carModel.car.updateMatrixWorld();
+  _lw.copy(linkA).lerp(linkB, 0.3); _lw2.copy(linkB);
+  carModel.car.localToWorld(_lw); carModel.car.localToWorld(_lw2);
+  const piece = new THREE.Mesh(new THREE.CylinderGeometry(r.radius, r.radius, len * 0.7, 6), mesh.material);
+  piece.position.addVectors(_lw, _lw2).multiplyScalar(0.5);
+  piece.quaternion.setFromUnitVectors(LINK_UP, _lw2.sub(_lw).normalize());
+  piece.castShadow = true;
+  scene.add(piece);
+  flyingParts.push({ obj: piece, v: new THREE.Vector3().copy(carVelocity).multiplyScalar(0.6).add(new THREE.Vector3((Math.random() - 0.5) * 6, 2 + Math.random() * 4, (Math.random() - 0.5) * 6)), w: new THREE.Vector3((Math.random() - 0.5) * 18, (Math.random() - 0.5) * 18, (Math.random() - 0.5) * 18), rest: false });
+}
 function updateLinks(list, mesh, steer) {
   list.forEach((r, i) => {
-    const gone = physics.tyres[r.w].detached && r.m1 === 1;   // (the upright left with the wheel)
-    if (gone) { mesh.setMatrixAt(i, HIDDEN); return; }
-    placeLinkEnd(linkA, r.p1, r.m1, r.w, r.steers && r.m1 > 0, steer);
-    placeLinkEnd(linkB, r.p2, r.m2, r.w, r.steers, steer);
+    const torn = physics.tyres[r.w].detached || physics.wrecked;
+    if (torn && !r.broken) snapLink(r, mesh);
+    if (!torn) r.broken = false;
+    if (torn && r.m1 > 0) { mesh.setMatrixAt(i, HIDDEN); return; }      // (the upright: left with the wheel)
+    if (torn) {
+      // just the stub left on the chassis: a third of it, ending in the break
+      placeLinkEnd(linkA, r.p1, r.m1, r.w, false, steer);
+      placeLinkEnd(linkB, r.p2, r.m2, r.w, false, steer);
+      linkB.lerp(linkA, 0.7);
+    } else {
+      placeLinkEnd(linkA, r.p1, r.m1, r.w, r.steers && r.m1 > 0, steer);
+      placeLinkEnd(linkB, r.p2, r.m2, r.w, r.steers, steer);
+    }
     linkDir.subVectors(linkB, linkA);
     const length = linkDir.length();
     linkMid.addVectors(linkA, linkB).multiplyScalar(0.5);
