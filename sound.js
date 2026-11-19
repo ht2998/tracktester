@@ -11,13 +11,18 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 21;
+export const BUILD = 22;
 
 // THE VOICED ENGINES (the V10's sound, made for each): bangs a turn, revs,
 // loudness matched to the approved preview, and how much of 3x the crank
 // is in the chord (the flat-plane V8: none, just its two octaves)
 const VOICES = {
-  v10: { fire: 5, red: 19200, idle: 4000, norm: 0.2023 },
+  // (the 3.0 V10, rebuilt from its notes: the firing note, the octave
+  // below from one bank, the major third below, the fifth above; at full
+  // revs and at idle, as approved in the previews)
+  v10: { fire: 5, red: 19200, idle: 4000, norm: 2.3, rest: 0.075,
+    mix: [[1, 0.413], [0.5, 0.475], [0.8, 0.1085], [1.5, 0.123]],
+    idleMix: [[1, 0.39], [0.5, 0.39], [0.8, 0.17], [1.5, 0.075]] },
   v12: { fire: 6, red: 13500, idle: 3800, norm: 0.2065 },
   v8f: { fire: 4, red: 19000, idle: 4000, norm: 0.1698, three: 0 },
 };
@@ -492,6 +497,16 @@ class V10Shaper extends AudioWorkletProcessor {
     return [
       { name: 'rpm', defaultValue: 4000, minValue: 0, maxValue: 22000, automationRate: 'k-rate' },
       { name: 'load', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+      { name: 'aim', defaultValue: 0, minValue: -1, maxValue: 1, automationRate: 'k-rate' },
+      { name: 'far', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+      // an upshift: cut (0 none, 1 the sparks cut) and pop (raised as the
+      // sparks come back: the unburnt fuel goes off in the exhaust)
+      { name: 'cut', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+      { name: 'pop', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+      // a downshift: blip (the throttle blipped to match the revs: a sharp
+      // blat) and the overrun crackle off the throttle (0-1, how much)
+      { name: 'blip', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+      { name: 'crackle', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
     ];
   }
   // options: fire (bangs a turn: 5 for a V10, 6 for a V12), red and idle
@@ -521,6 +536,22 @@ class V10Shaper extends AudioWorkletProcessor {
     this.taps = [[0.045, 0.32], [0.07, 0.3], [0.11, 0.26], [0.16, 0.22], [0.23, 0.18], [0.31, 0.14], [0.42, 0.1], [0.55, 0.07], [0.7, 0.045]].map(([d, g]) => [Math.round(d * sr), g]);
     this.eLP1 = 0; this.eLP2 = 0;
     this.hpY = 0; this.hpX = 0;
+    // THE NOTE MIX (when given): the sound rebuilt from the notes that make
+    // it, each held at its share of the volume. mix: [[ratio of the
+    // firing note, share], ...]; rest: the share left for the raw sound.
+    // Each note is pulled out of the engine's own sound (so it keeps its
+    // grain) and blended with a pure tone at the same pitch (so it's
+    // always there), then levelled and set at its share.
+    // idleMix: the shares at idle (blended into mix as the revs rise)
+    const im = new Map((o.idleMix || o.mix || []).map(([r, sh]) => [r, sh]));
+    this.mix = o.mix ? o.mix.map(([r, share]) => ({ r, share, idle: im.get(r) ?? share, f1: this.bq(), f2: this.bq(), lvl: 1e-4, d: 0 })) : null;
+    this.rest = o.rest ?? 0.09;
+    this.restLvl = 1e-4;
+    // the shift: the gearbox's whine through the cut, and the bang after it
+    this.cutK = 0; this.whineP = 0; this.lastPop = 0;
+    this.blipPops = o.blipPops ?? true;   // (the string of pops through a downshift's blip)
+    this.bangs = [];                    // [time to go (samples), size]
+    this.bangF = this.bq(); this.bangF2 = this.bq(); this.thumpP = 0;
   }
   bq() { return { b0: 1, b1: 0, b2: 0, a1: 0, a2: 0, x1: 0, x2: 0, y1: 0, y2: 0 }; }
   shelf(f, db) {
@@ -546,6 +577,18 @@ class V10Shaper extends AudioWorkletProcessor {
     // the block's filter settings, following the revs
     this.setLP(this.lp1, (500 + (rpm / RED) * 2432 + load * 1600) * 1.18); this.setLP(this.lp2, (500 + (rpm / RED) * 2432 + load * 1600) * 1.18);
     for (const p of this.peaks) this.setPeak(p.f, firing * p.m, p.db, p.q);
+    if (this.mix) {
+      const aim = parameters.aim ? parameters.aim[0] : 0, far = parameters.far ? parameters.far[0] : 0;
+      const behind = Math.max(0, aim), front = Math.max(0, -aim);
+      for (const m of this.mix) {
+        this.setBP(m.f1, firing * m.r, 9); this.setBP(m.f2, firing * m.r, 9);
+        const high = m.r >= 1;      // (the scream and the sizzle; the rumble and the harmony are the low ones)
+        const dirW = high ? 1 + 0.25 * behind * (m.r > 1 ? 1.4 : 1) - 0.5 * front * (m.r > 1 ? 1.2 : 1) : 1 - 0.2 * behind + 0.3 * front;
+        const farW = Math.exp(-far * (m.r > 1 ? 2.2 : high ? 1.3 : 0.25));
+        m.wWant = dirW * farW;
+        m.w = m.w ?? m.wWant;
+      }
+    }
     this.setBP(this.rb, 100, 0.7); this.setBP(this.rb2, 100, 0.7);
     const hi = Math.min(1, Math.max(0, (rpm - 0.469 * RED) / (0.469 * RED)));
     const idleness = Math.min(1, Math.max(0, 1 - (rpm - this.IDLE) / (0.26 * RED)));
@@ -553,6 +596,28 @@ class V10Shaper extends AudioWorkletProcessor {
     const vol = (0.5 + 0.25 * rv + 0.35 * load) * (1 + 1.6 * Math.min(1, Math.max(0, 1 - (rpm - this.IDLE) / (0.3125 * this.RED))));   // (idle as loud as in the approved idle preview)
     const tps = rpm / 60 / sr;
     const W = Math.tanh(1.4);
+    const cutNow = parameters.cut ? parameters.cut[0] : 0, popNow = parameters.pop ? parameters.pop[0] : 0;
+    if (popNow > 0.5 && this.lastPop <= 0.5) {
+      // (the bang, then one to three smaller pops a few milliseconds apart)
+      this.bang = { t: 0, a: 0.25 + Math.random() * 0.08 }; this.thumpP = 0;
+      this.setBP(this.bangF, 1100 + Math.random() * 500, 0.9); this.setBP(this.bangF2, 1300 + Math.random() * 400, 0.9);
+      let at = 0; const n2 = 1 + Math.floor(Math.random() * 3);
+      for (let k = 0; k < n2; k++) { at += Math.round((0.012 + Math.random() * 0.02) * sr); this.bangs.push([at, 0.08 + Math.random() * 0.08]); }
+    }
+    this.lastPop = popNow;
+    // a downshift: the gearbox's clunk as the gear goes in, at the start of the blip
+    const blipNow = parameters.blip ? parameters.blip[0] : 0, crackleNow = parameters.crackle ? parameters.crackle[0] : 0;
+    if (blipNow > 0.5 && !(this.lastBlip > 0.5)) {
+      this.clunk = { t: 0 };
+      // (a fast string of pops through the blip, like anti-lag: the extra fuel lit late, going off in the exhaust)
+      let at = Math.round(0.012 * sr); const n2 = this.blipPops ? 5 + Math.floor(Math.random() * 4) : 0;
+      for (let k = 0; k < n2; k++) { this.bangs.push([at, 0.018 + Math.random() * 0.018]); at += Math.round((0.011 + Math.random() * 0.01) * sr); }
+      this.flutP = 0;
+      // (and duller: lower, so they're soft pops, not a ringing pang)
+      this.setBP(this.bangF, 520 + Math.random() * 200, 0.7); this.setBP(this.bangF2, 640 + Math.random() * 200, 0.7);
+    }
+    this.lastBlip = blipNow;
+    this.crackleNow = crackleNow; this.blipNow = blipNow;
     for (let n = 0; n < out.length; n++) {
       const x0 = inp ? inp[n] : 0;
       this.ph += tps;
@@ -572,6 +637,28 @@ class V10Shaper extends AudioWorkletProcessor {
       const top = Math.sin(this.FIRE * P + this.drift[4]) + 0.3 * Math.sin(2 * this.FIRE * P);   // (the main note: the V10's major third, the V12's fifth)
       y += Math.tanh(top * 1.5) * lvl * (0.35 + 1.4 * hi);
       for (const p of this.peaks) y = this.run(p.f, y);
+      if (this.mix) {
+        // (where you are changes the mix: the high notes beam straight out of
+        // the exhaust and die away with distance; the low ones bend round
+        // the car and carry. Behind it: the scream and the sizzle on top. In
+        // front: the rumble and the harmony first. A long way off: the lows.)
+        // each note: its band out of the sound, plus a steady tone, levelled
+        this.restLvl += (y * y - this.restLvl) * 0.0008;
+        const body = Math.sqrt(this.lvl) + 1e-6;
+        let sum = y / (Math.sqrt(this.restLvl) + 1e-6) * this.rest;
+        for (const m of this.mix) {
+          m.w += (m.wWant - m.w) * 0.0005;               // (smoothly, as you move round)
+          const b = this.run(m.f2, this.run(m.f1, y));
+          m.lvl += (b * b - m.lvl) * 0.0008;
+          m.d += (Math.random() - 0.5) * 0.004;
+          const tone = Math.sin(m.r * this.FIRE * P + m.d);
+          const part = 0.55 * b / (Math.sqrt(m.lvl) + 1e-6) * Math.SQRT1_2 + 0.45 * tone;
+          // (in a blip: hollow, the sharp top notes held back)
+          const hollow = this.blipK > 0 && m.r >= 1 ? 1 - 0.55 * this.blipK : 1;
+          sum += part * (m.share + (m.idle - m.share) * idleness) * m.w * hollow;
+        }
+        y = sum * body * 1.6;
+      }
       // the idle: a lumpy beat every turn and every cycle (each cycle a
       // little different), and a spike of rumble every 5 cycles
       if (idleness > 0) {
@@ -588,7 +675,63 @@ class V10Shaper extends AudioWorkletProcessor {
         const rum = Math.tanh((low * 3 + Math.sin(P * 0.5) * 0.7) * 1.4);
         y += idleness * rum * env * 0.45 * 1.6;
       }
+      // the blip's flutter: the note chopping rapidly as the late-lit fuel
+      // fires unevenly (about 30 times a second, never quite regular)
+      this.blipK = (this.blipK || 0) + ((this.blipNow > 0.5 ? 1 : 0) - (this.blipK || 0)) * 0.01;
+      if (this.blipK > 0.01) {
+        if (this.flutRate == null || (this.blipNow > 0.5 && !(this.blipWas > 0.5))) this.flutRate = 20 + Math.random() * 18;   // (each blip flutters at its own rate)
+        this.blipWas = this.blipNow;
+        this.flutP = (this.flutP || 0) + (this.flutRate + 8 * Math.sin(this.ph * 0.7) + (Math.random() - 0.5) * 30) / sr;
+        const fl = 0.5 + 0.5 * Math.tanh(4 * Math.sin(this.flutP * 2 * Math.PI));
+        y *= 1 - this.blipK * 0.6 * (1 - fl);
+      }
+      if (this.cutK > 0.001) y *= 1 - Math.min(1, this.cutK * 1.15);   // (no combustion through the cut: the notes go silent, not sliding down with the revs)
       y *= vol;
+      // THE UPSHIFT: through the cut the combustion's gone and the gearbox
+      // whines as the revs fall; then the fuel that went in unburnt goes off
+      // in the hot exhaust: a sharp bang with a thump under it, and a pop or
+      // two after
+      if (cutNow > 0.001 || this.cutK > 0.001) {
+        // (its note set as the cut starts and held there: no slide down with the revs)
+        if (cutNow > 0.5 && this.cutK < 0.05) this.whineHz = 2400 + rpm * 0.09;
+        this.cutK += (cutNow - this.cutK) * (cutNow > this.cutK ? 0.08 : 0.03);
+        this.whineP += (this.whineHz || 3800) / sr;
+        // (a whine with a little of its octave in it, the gears loaded then unloaded)
+        const wv = Math.sin(this.whineP * 2 * Math.PI) + 0.35 * Math.sin(this.whineP * 4 * Math.PI);
+        y += wv * this.cutK * 0.22 * vol * (0.7 + 0.3 * Math.sin(this.whineP * 0.37));
+        // the blat: rough noise, crackling, shaped round the low notes
+        if (Math.random() < 0.012) this.crk = 0.6 + Math.random() * 0.8;
+        this.crk = (this.crk || 0) * 0.985;
+        const nz = Math.random() * 2 - 1;
+        this.blatA = (this.blatA || 0) + (nz - (this.blatA || 0)) * 0.22;              // (darkened)
+        this.blatB = (this.blatB || 0) + (this.blatA - (this.blatB || 0)) * 0.22;
+        y += (this.blatB * 2.4 + nz * this.crk * 0.5) * this.cutK * 0.55 * vol;
+      }
+      if (this.bang) {
+        const b = this.bang; b.t++;
+        const tt = b.t / sr;
+        if (tt > 0.16) this.bang = null;
+        else {
+          const env = Math.min(1, tt / 0.0012) * Math.exp(-tt / 0.028);
+          this.thumpP += 75 / sr;
+          const crack = this.run(this.bangF2, this.run(this.bangF, Math.random() * 2 - 1));
+          y += (crack * 2.6 + Math.sin(this.thumpP * 2 * Math.PI) * Math.exp(-tt / 0.05) * 0.9) * env * b.a * vol;
+        }
+      }
+      for (const bb of this.bangs) if (--bb[0] === 0) { this.bang = { t: 0, a: Math.max(bb[1], this.bang && this.bang.t < 0.006 * sr ? this.bang.a : 0) }; this.thumpP = 0; }   // (each pop its own, even one straight after another)
+      // the overrun: off the throttle at high revs the fuel going through
+      // unburnt crackles and pops in the exhaust, irregular, now and then a bigger one
+      if (this.crackleNow > 0 && (!this.bang || this.bang.t > 0.02 * sr) && Math.random() < this.crackleNow * 32 / sr) {
+        this.bang = { t: 0, a: (Math.random() < 0.15 ? 0.13 : 0.04) + Math.random() * 0.05 }; this.thumpP = 0;
+        this.setBP(this.bangF, 900 + Math.random() * 900, 0.8); this.setBP(this.bangF2, 1100 + Math.random() * 800, 0.8);
+      }
+      // the clunk: a dull knock from the gearbox as the lower gear goes in
+      if (this.clunk) {
+        const ct = ++this.clunk.t / sr;
+        if (ct > 0.06) this.clunk = null;
+        else { this.clunkP = (this.clunkP || 0) + 140 / sr; y += (Math.sin(this.clunkP * 2 * Math.PI) * 0.8 + (Math.random() * 2 - 1) * 0.25) * Math.exp(-ct / 0.012) * 0.35 * vol; }
+      }
+      if (this.bangs.length && this.bangs.every((bb) => bb[0] <= 0)) this.bangs = [];
       // echoes off what's around
       this.echoBuf[this.ew] = y;
       let e = 0;
@@ -1564,7 +1707,7 @@ export class EngineSound {
   }
 
   // Called every frame with the car's physics
-  update(car, listenerPos) {
+  update(car, listenerPos, ear = null) {
     if (!this.ctx) return;
     const s = this.spec;
     const t = this.ctx.currentTime;
@@ -1608,6 +1751,14 @@ export class EngineSound {
       this.v10.parameters.get('limiter').setValueAtTime(car.onLimiter ? 1 : 0, t);
       this.v10Shape.parameters.get('rpm').setTargetAtTime(rpm, t, 0.03);
       this.v10Shape.parameters.get('load').setTargetAtTime(load, t, loadEase);
+      // (behind the exhaust, in front, or off to the side; and how far)
+      if (ear && car.x != null) {
+        const dx = ear.x - car.x, dz = ear.z - car.z, d = Math.hypot(dx, dz) || 1;
+        // (sat in it, or on it: a little behind, as a driver hears it)
+        const aim = d < 3.5 ? 0.3 : -(dx * Math.sin(car.heading) + dz * Math.cos(car.heading)) / d;
+        this.v10Shape.parameters.get('aim').setTargetAtTime(clamp(aim, -1, 1), t, 0.08);
+        this.v10Shape.parameters.get('far').setTargetAtTime(clamp((d - 12) / 150, 0, 1), t, 0.2);
+      }
     }
     if (this.voice) {
       this.voice.parameters.get('rpm').setTargetAtTime(rpm, t, 0.03);
@@ -2008,8 +2159,22 @@ export class EngineSound {
 
   // Gear change sound: a sharp mechanical clack for the manual (sequential),
   // a soft thump for the automatic, and nothing at all for the CVT.
+  // the V10's upshift (approved preview): a few cylinders drop out for 8
+  // ms (the split chop), then the sparks are cut for 20-40 ms (the gearbox
+  // whine and the exhaust's rasp through it), then the unburnt fuel goes
+  // off in the exhaust as they come back
+  v10Shift(direction) {
+    if (!this.ctx || !this.v10 || this.spec.voice !== this.v10Kind || this.heavyOn || direction !== 'up') return;
+    const t = this.ctx.currentTime, d = 0.02 + Math.random() * 0.02;
+    const mf = this.v10.parameters.get('misfire'), cut = this.v10Shape.parameters.get('cut'), pop = this.v10Shape.parameters.get('pop');
+    mf.setValueAtTime(0.3, t); mf.setValueAtTime(1, t + 0.008); mf.setValueAtTime(0, t + 0.008 + d);
+    cut.setValueAtTime(1, t + 0.008); cut.setValueAtTime(0, t + 0.008 + d);
+    pop.setValueAtTime(1, t + 0.008 + d); pop.setValueAtTime(0, t + 0.02 + d);
+  }
   playShift(style) {
     if (!this.ctx || style === 'cvt') return;
+    // (the V10: no clack or thump; its shift is in its own voice)
+    if (this.v10 && this.spec.voice === this.v10Kind && !this.heavyOn) return;
     const ctx = this.ctx;
     const t = ctx.currentTime;
 

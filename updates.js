@@ -21,11 +21,20 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 90;
+export const BUILD = 91;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 79, date: '19 Nov 2026', title: 'The V10, rebuilt',
+    items: [
+      ['Built from its notes', 'The 3.0 V10 is rebuilt from the notes that make a real one: the firing note (the scream), the octave below from one bank (the rumble), the major third below (the harmony) and the fifth above (the sizzle), each at its own share of the sound. At idle the rumble leads; flat out the scream does. It\'s louder too', 'update'],
+      ['Where you hear it from', 'Behind the exhaust the scream and sizzle are on top; from in front the rumble and harmony come through first; a long way off the low notes carry and the highs fade. It changes as the camera moves round the car and as it goes past', 'new'],
+      ['Upshifts', 'A split chop as a few cylinders drop out, a split-second spark cut with the gearbox whine and a rasp from the exhaust through it, then a soft bang as the fuel that went in unburnt goes off when the sparks come back. Every shift a little different', 'new'],
+      ['Downshifts', 'The engine dips through the shift as the revs rise to the lower gear, without the old gearbox thump and clack', 'update'],
+    ],
+  },
   {
     id: 78, date: '19 Nov 2026', title: 'Out of step',
     items: [

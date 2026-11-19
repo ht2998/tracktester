@@ -60,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 68;
+const BUILD = 69;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -4404,6 +4404,7 @@ renderer.setAnimationLoop(() => {
     if (e.type === 'pop') engineSound.playPop?.(e.size);
     if (e.type === 'shift') {
       engineSound.playShift(physics.transmission === 'cvt' ? 'cvt' : e.style);
+      engineSound.v10Shift?.(e.direction);
       cockpit.onShift(physics.transmission, e.direction);
       f1Cockpit?.onShift(e.direction);
     }
@@ -4561,7 +4562,7 @@ renderer.setAnimationLoop(() => {
   renderer.toneMappingExposure = 1 + 0.55 * (1 - sky.daylight);
 
   updateCamera(dt);
-  engineSound.update(physics, carPos);
+  engineSound.update(physics, carPos, camera.position);   // (and where you're hearing it from: the camera)
   engineSound.setHiss(physics.tyreHiss);
   const carSpeed = Math.hypot(physics.vx, physics.vy);
   // A blown tyre grinds, more as it shreds down towards the rim
