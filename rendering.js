@@ -60,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 77;
+const BUILD = 78;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -2331,8 +2331,21 @@ function dentOffset(x, y, z, out) {
   }
   const l = out.length();
   if (l > 0.95) out.multiplyScalar(0.95 / l);                                 // metal only goes so far (a big crash pushes the front right in)
+  // AN F1 NOSE HIT HEAD ON: it's a crash structure, and it concertinas.
+  // The tip's pushed straight back, the rest of the nose folding up
+  // behind it in wrinkles, bulging out a little as it goes, down to the
+  // tub (which doesn't give)
+  if (noseCrush > 0 && z > NOSE_BASE) {
+    const k = Math.min(1, (z - NOSE_BASE) / (NOSE_TIP - NOSE_BASE)), c = Math.min(noseCrush, (NOSE_TIP - NOSE_BASE) * 0.85);
+    const crumple = Math.min(1, c / 0.25) * Math.sin(Math.PI * k);
+    out.z -= c * k * k * (3 - 2 * k) * 0.6 + c * k * 0.4;
+    out.y += (Math.sin(z * 47 + 1.3) * 0.018 + Math.sin(x * 61) * 0.008) * crumple - 0.03 * c * k;
+    out.x += x * 0.35 * crumple * Math.min(1, c) + Math.sin(z * 53 + y * 29) * 0.012 * crumple;
+  }
   return out;
 }
+let noseCrush = 0;                                     // (m the F1 nose has been pushed back)
+const NOSE_TIP = IS_F05 ? 2.76 : 2.52, NOSE_BASE = IS_F05 ? 1.25 : 1.15;
 const bodyOriginals = new Map();
 function reshapeBody() {
   for (const m of carModel.crush.panels) {
@@ -2375,6 +2388,7 @@ function dentBody(x, y, z, dx, dz, depth, radius) {
 }
 function clearDents() {
   dents.length = 0;
+  noseCrush = 0;
   scratchList.length = 0;
   reshapeBody();
 }
@@ -2976,6 +2990,7 @@ function collide(now) {
         const folds = hitSpeed > 28 ? 3 : hitSpeed > 16 ? 2 : 1;
         for (let k = 0; k < folds; k++) {
           const f = 1 - k * 0.3, back = k * (IS_F1 ? 0.6 : 0.45);
+          if (zone === 'front' && IS_F1 && k === 0) noseCrush = Math.min(1.2, noseCrush + (hitSpeed - 3) * 0.022 * Math.max(0, -nf));
           if (zone === 'front') dentBody(Math.max(-0.28, Math.min(0.28, across)) * f, 0.4, NOSE - back, nl, nf, depth * f, radius);
           else if (zone === 'rear') dentBody(Math.max(-0.7, Math.min(0.7, across)) * f, 0.52, TAIL + back, nl, nf, depth * 0.9 * f, radius);
           else if (k === 0) dentBody(zone === 'left' ? 0.45 : -0.45, 0.42, Math.max(-1.3, Math.min(1.45, along)), nl, nf, depth * 0.7, radius);

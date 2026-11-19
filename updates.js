@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 104;
+export const BUILD = 105;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 93, date: '19 Nov 2026', title: 'Noses that fold',
+    items: [
+      ['Head-on, the nose concertinas', 'Hit something head on in an F1 car and the nose is pushed straight back, folding up in wrinkles behind the tip, bulging a little, down to the tub. Before, a front hit only dented it in from the sides', 'fix'],
+    ],
+  },
   {
     id: 92, date: '19 Nov 2026', title: 'Broken suspension',
     items: [
