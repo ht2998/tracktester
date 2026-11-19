@@ -35,7 +35,7 @@ import { setGround, groundAt, lieOnGround } from './ground.js';
 import * as packFile from './assets.js';
 import { AIField, BUILD as AI_BUILD } from './ai.js';
 import { Garage, BUILD as GARAGE_BUILD } from './garage.js';
-import { PitStop, SEPANG_PIT, Person as PersonFigure, BUILD as PITS_BUILD } from './pits.js';
+import { PitStop, SEPANG_PIT, Person as PersonFigure, climbOutKeys, BUILD as PITS_BUILD } from './pits.js';
 import { RaceControl, BUILD as RACECONTROL_BUILD } from './racecontrol.js';
 import { buildF1Body, buildF1Cockpit, buildF1RimGeometry, F1_CAR, CATERHAM_CAR, ENGINES, withEngine, STOCK_ENGINE, BUILD as F1_BUILD } from './f1.js';
 import * as groundFile from './ground.js';
@@ -60,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 63;
+const BUILD = 64;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -3772,13 +3772,17 @@ function updateDriverEscape(dt) {
       const i = trackside?.nearestLine?.(seat.x, seat.z, 60) ?? -1;
       if (i >= 0) { const p = sepang.line[i]; const ox = seat.x - p.x, oz = seat.z - p.z, d = Math.hypot(ox, oz) || 1; ax = ox / d; az = oz / d; }
     }
-    person.place(seat.x, seat.z, Math.atan2(ax, az));
-    const over = [seat.x + ax * 1.25, seat.z + az * 1.25];
+    // (sat facing forward, turning towards the side he gets out on)
+    const fwd = physics.heading, toSide = Math.atan2(ax, az);
+    person.place(seat.x, seat.z, fwd + Math.atan2(Math.sin(toSide - fwd), Math.cos(toSide - fwd)) * 0.45);
+    const over = [seat.x + ax * 1.05, seat.z + az * 1.05];
     const clear = (m) => [seat.x + ax * m, seat.z + az * m];
+    const hipY = IS_F1 ? 0.3 : 0.62;
+    // (sat still in it for a moment first, then out)
+    const climb = (hurry, still = 0) => { const K = climbOutKeys([seat.x, seat.z], over, hipY, hurry); if (still) { K.forEach((f) => { f.t += still; }); K.unshift({ ...K[0], t: 0 }); } return { keys: K, after: 'STAND' }; };
     if (how === 'fire') {
       person.run([
-        { pose: 'HOLD', t: 0.45 },                                            // unclipping, hands on the sides
-        { vault: over, h: 0.55, t: 0.6 },                                     // up and over the side
+        climb(1),                                                            // up, out over the side, quick
         ...footTo(over, clear(17), { run: true, panic: true }),              // and away from the fire, fast
         { face: [seat.x, seat.z] }, { look: [seat.x, seat.z] },
         { pose: 'HUNCH', t: 4 }, { pose: 'STAND' },
@@ -3786,10 +3790,10 @@ function updateDriverEscape(dt) {
     } else if (how === 'shaken') {
       // the way Leclerc got out at Monza: climbs out, jogs clear, then sits by the barrier
       person.run([
-        { pose: 'HOLD', t: 1.0 },
-        { vault: over, h: 0.55, t: 0.85 },
-        { wait: 0.4 },
-        ...footTo(over, clear(9), { v: 3.0 }),
+        climb(0.45, 0.6),                                                   // (a moment to gather himself first)
+        { go: clear(2.2), stagger: true },                                   // (unsteady for a step or two)
+        { pose: 'HUNCH', t: 0.8 },
+        ...footTo(clear(2.2), clear(9), { v: 3.0 }),
         { face: [seat.x, seat.z] }, { look: [seat.x, seat.z] },
         { pose: 'HUNCH', t: 1.6 },
         { pose: 'SIT', t: 3 }, { look: null },
@@ -3798,10 +3802,14 @@ function updateDriverEscape(dt) {
     } else {
       // hurt: slowly out, a few unsteady steps, and down
       person.run([
-        { pose: 'HOLD', t: 2.2 },
-        { vault: over, h: 0.5, t: 1.6 },
+        climb(0, 1.5),
+        // a few lurching steps, a stop bent over with his hands on his knees,
+        // a few more, then a knee goes, down onto it, and over onto his back
         { pose: 'HUNCH' },
-        { go: clear(4.5), stagger: true },
+        { go: clear(2.6), stagger: true },
+        { pose: 'HUNCH', t: 1.6 },
+        { go: clear(4.6), stagger: true },
+        { pose: 'KNEEL', t: 1.1 },
         { pose: 'FALL', t: 0.9 },
         { pose: 'LIE' },
       ]);
@@ -4444,7 +4452,7 @@ renderer.setAnimationLoop(() => {
   if (IS_F1) {
     // the TT-88: the driver's helmet hidden in his own view; exhausts glowing with the revs and boost
     const F = carModel.car.userData.f1;
-    for (const m of F.helmet) m.visible = cameraMode !== 'cockpit';
+    for (const m of F.helmet) m.visible = cameraMode !== 'cockpit' && !driverOut;     // (and not there at all once he's out)
     F.exhaustMat.emissiveIntensity = Math.max(0, physics.rpm / physics.spec.redline - 0.55) * 3 * (0.5 + (physics.boost || 0));
     f1Cockpit.update(dt, {
       steer: physics.steer, maxSteer: physics.spec.maxSteer, speed: physics.vx, slip: physics.vy,

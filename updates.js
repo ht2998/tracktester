@@ -21,11 +21,21 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 83;
+export const BUILD = 84;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 72, date: '19 Nov 2026', title: 'Climbing out',
+    items: [
+      ['He climbs out', 'The driver climbs out of the car properly now: sat in it, hands onto the sides of the cockpit, pushes himself up to stand on the seat, one leg over the side, then the other, and down. Quick when it\'s on fire, slow when he\'s dazed', 'update'],
+      ['A real vault', 'Marshals and drivers going over a barrier plant both hands on top of it, take their weight on their arms as their hips come up and their legs swing over to the side, then land on bent knees and run on', 'fix'],
+      ['Stumbling', 'A hurt driver lurches rather than walks: quick steps then nearly stopping, bent over, arms out wide for balance, his head hanging, a knee giving way now and then. He stops with his hands on his knees, goes a few more steps, then down onto a knee and over', 'update'],
+      ['Helmet left behind', 'Once he\'d got out of the TT-88, his helmet stayed showing in the cockpit. Fixed', 'fix'],
+      ['The crane', 'If the wreck it\'s going to gets moved, it works out a new way there', 'fix'],
+    ],
+  },
   {
     id: 71, date: '19 Nov 2026', title: 'Real people',
     items: [

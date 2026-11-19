@@ -34,7 +34,7 @@ import { Person, makeExtinguisher } from './pits.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 3;
+export const BUILD = 4;
 
 const std = (color, rough = 0.6, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: rough, ...extra });
 const boxAt = (w, h, d, x = 0, y = 0, z = 0) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
@@ -575,6 +575,7 @@ export class RaceControl {
     // a VSC or a red flag in a race; any time in practice)
     const craneOK = !racing || this.phase !== 'green';
     if (!this.crane && craneOK && needs.wrecks.length) this.sendCrane(needs.wrecks[0]);
+    if (this.crane?.state === 'go') { const nw = needs.wrecks.find((x) => x.key === this.crane.w.key); if (nw) { this.crane.w.x = nw.x; this.crane.w.z = nw.z; } }
     if (this.crane) this.updateCrane(dt, S, this.crane);
     if (this.phase === 'sc' && this.sc.state === 'parked') this.sendSafetyCar();
     this.updateSafetyCar(dt, needs);
@@ -698,15 +699,18 @@ export class RaceControl {
     const post = this.nearestPost(w.x, w.z) || c.post;
     const pl = this.line[post.i ?? 0] || lp, ax = post.x - pl.x, az = post.z - pl.z, ad = Math.hypot(ax, az) || 1;
     const ptx = Math.sin(pl.heading || 0), ptz = Math.cos(pl.heading || 0);
+    this.sendCraneTo(c, w);
+    this.hooks.toast?.(w.kind === 'player' ? 'RECOVERY CRANE ON ITS WAY' : null);
+  }
+  sendCraneTo(c, w) {
     // where it stops: beside the wreck, on the track side of it
     const wi = this.trackside.nearestLine(w.x, w.z, 60), wp = this.line[Math.max(0, wi)];
     let sx = wp.x - w.x, sz = wp.z - w.z, sd = Math.hypot(sx, sz);
     if (sd < 2) { sx = -Math.sin(wp.heading); sz = -Math.cos(wp.heading); sd = 1; }     // (on the racing line: behind it)
     const stand = [w.x + sx / sd * 4.2, w.z + sz / sd * 4.2];
     const red = this.phase === 'red' || !(this.ai.race && this.ai.race.phase === 'racing');
-    Object.assign(c, { w, stand, state: 'go', t: 0, lift: 0, offset: null, legs: this.planDrive(c, stand, { allowBack: red }), mode: 'free', v: 0 });
+    Object.assign(c, { w, stand, aimAt: [w.x, w.z], state: 'go', t: 0, lift: 0, offset: null, legs: this.planDrive(c, stand, { allowBack: red }), mode: 'free' });
     c.legs[c.legs.length - 1].short = 0.3;
-    this.hooks.toast?.(w.kind === 'player' ? 'RECOVERY CRANE ON ITS WAY' : null);
   }
   place(v) { v.group.position.set(v.x, this.groundAt(v.x, v.z), v.z); v.group.rotation.y = v.heading; }
   steerTo(v, tx, tz, speed, dt, stopShort = 0, turn = 0.9) {
@@ -745,6 +749,8 @@ export class RaceControl {
       const d = Math.hypot(w.x - c.x, w.z - c.z);
       if (fire && d < 22) { c.v = 0; c.waiting = true; return; }
       c.waiting = false;
+      // (the wreck's been moved since it set off: a new way there)
+      if (Math.hypot(w.x - c.aimAt[0], w.z - c.aimAt[1]) > 4) { this.sendCraneTo(c, w); }
       if (this.driveLegs(c, dt, 5.5, 2.2)) { c.state = 'reach'; c.t = 0; }
     } else if (c.state === 'reach') {
       // swing the boom over it, lower the hook

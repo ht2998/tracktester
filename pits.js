@@ -26,7 +26,7 @@
 // a smashed radiator): the team retire the car. DNF on the standings, and
 // they push it back into the garage.
 // =====================================================================
-export const BUILD = 8;
+export const BUILD = 9;
 
 import * as THREE from 'three';
 
@@ -207,27 +207,46 @@ export class Person {
         if (Math.abs(d) <= step) { this.face = want; this.queue.shift(); continue; }
         this.face += Math.sign(d) * step; break;
       }
-      // over a barrier: a hand on it, legs swung over to the side, and on
-      if (a.vault || a.dive) {
-        const to = a.vault || a.dive, T = a.t ?? (a.vault ? 0.7 : 0.45);
-        if (!a.from) { a.from = [this.x, this.z]; a.u = 0; a.prev = this.want; this.want = a.vault ? 'VAULT' : 'DIVE'; this.face = Math.atan2(to[0] - this.x, to[1] - this.z); }
+      // a move made of key poses (a vault, climbing out of a car): each key
+      // has its time, the pose, where he is and how high he's lifted
+      if (a.vault && !a.keys) { a.keys = vaultKeys([this.x, this.z], a.vault, a.h ?? 0.75); }
+      if (a.keys) {
+        if (a.k == null) { a.k = 0; a.from = [this.x, this.z]; for (const f of a.keys) if (!f.at) f.at = null; }
+        a.k += dt;
+        const K = a.keys, total = K[K.length - 1].t;
+        let j = 0; while (j < K.length - 2 && a.k > K[j + 1].t) j++;
+        const f0 = K[j], f1 = K[j + 1], u = Math.max(0, Math.min(1, (a.k - f0.t) / Math.max(1e-3, f1.t - f0.t))), e = u * u * (3 - 2 * u);
+        const P0 = POSES[f0.pose] || f0.pose, P1 = POSES[f1.pose] || f1.pose;
+        for (const key of KEYS) this.p[key] = (P0[key] || 0) + ((P1[key] || 0) - (P0[key] || 0)) * e;
+        const a0 = f0.at || a.from, a1 = f1.at || a0;
+        this.x = a0[0] + (a1[0] - a0[0]) * e; this.z = a0[1] + (a1[1] - a0[1]) * e;
+        lift = (f0.lift || 0) + ((f1.lift || 0) - (f0.lift || 0)) * e;
+        if (a.face2 != null) this.face = a.face2; else if (f1.at && (Math.abs(a1[0] - a0[0]) + Math.abs(a1[1] - a0[1]) > 0.05) && !f1.keepFace) { let df = Math.atan2(a1[0] - a0[0], a1[1] - a0[1]) - this.face; df = Math.atan2(Math.sin(df), Math.cos(df)); this.face += df * Math.min(1, dt * 8); }
+        this.keyed = true;
+        if (a.k >= total) { this.queue.shift(); this.want = a.after || 'STAND'; this.keyed = false; continue; }
+        break;
+      }
+      // a dive out of a car's way
+      if (a.dive) {
+        const to = a.dive, T = a.t ?? 0.45;
+        if (!a.from) { a.from = [this.x, this.z]; a.u = 0; this.want = 'DIVE'; this.face = Math.atan2(to[0] - this.x, to[1] - this.z); }
         a.u = Math.min(1, a.u + dt / T);
-        const e = a.vault ? a.u : 1 - (1 - a.u) * (1 - a.u);
+        const e = 1 - (1 - a.u) * (1 - a.u);
         this.x = a.from[0] + (to[0] - a.from[0]) * e; this.z = a.from[1] + (to[1] - a.from[1]) * e;
-        lift = Math.sin(Math.PI * a.u) * (a.vault ? (a.h ?? 0.75) * 0.75 : 0.35);
-        speed = a.vault ? 2.5 : 0;
-        this.vaulting = !!a.vault;
-        if (a.u >= 1) { this.queue.shift(); this.want = a.vault ? (a.prev === 'VAULT' ? 'STAND' : a.prev) : 'PRONE'; this.vaulting = false; continue; }
+        lift = Math.sin(Math.PI * a.u) * 0.35;
+        if (a.u >= 1) { this.queue.shift(); this.want = 'PRONE'; continue; }
         break;
       }
       if (a.go) {
         const [tx, tz] = a.go, dx = tx - this.x, dz = tz - this.z, d = Math.hypot(dx, dz);
-        const v = a.stagger ? 0.9 : a.panic ? 5.6 : a.run ? 4.6 : a.back ? 1.1 : (a.v || 1.6);
+        // (a stumble: lurching steps, quick then nearly stopping, never a steady pace)
+        const lurch = a.stagger ? Math.max(0, Math.sin(this.t * 3.3) + 0.35 * Math.sin(this.t * 7.9 + 1)) : 0;
+        const v = a.stagger ? 0.25 + 1.1 * lurch : a.panic ? 5.6 : a.run ? 4.6 : a.back ? 1.1 : (a.v || 1.6);
         this.panic = !!a.panic; this.stagger = !!a.stagger;
         if (d < 0.04) { this.x = tx; this.z = tz; this.queue.shift(); continue; }
         const step = Math.min(d, v * dt);
         let sx = dx / d, sz = dz / d;
-        if (a.stagger) { const w = Math.sin(this.t * 2.3) * 0.45; const c = Math.cos(w), s2 = Math.sin(w); [sx, sz] = [sx * c + sz * s2, -sx * s2 + sz * c]; }
+        if (a.stagger) { const w = Math.sin(this.t * 2.3) * 0.55 + Math.sin(this.t * 5.7) * 0.2; const c = Math.cos(w), s2 = Math.sin(w); [sx, sz] = [sx * c + sz * s2, -sx * s2 + sz * c]; }
         this.x += sx * step; this.z += sz * step;
         speed = v;
         this.back = !!a.back;
@@ -239,8 +258,8 @@ export class Person {
     if (this.follow) { const f = this.follow(); this.x = f[0]; this.z = f[1]; this.face = f[2]; speed = f[3] || 0; }
     // the pose: eased towards what he's doing, with legs walking
     const P = POSES[this.want] || POSES.STAND, k = Math.min(1, dt * (P.rate || 9));
-    for (const key of KEYS) this.p[key] += ((P[key] || 0) - this.p[key]) * k;
-    const walking = speed > 0 && !this.vaulting;
+    if (!this.keyed) for (const key of KEYS) this.p[key] += ((P[key] || 0) - this.p[key]) * k;
+    const walking = speed > 0 && !this.keyed;
     this.moving += ((walking ? 1 : 0) - this.moving) * Math.min(1, dt * 8);
     const fast = speed > 3;
     this.phase += dt * (fast ? (this.panic ? 12.5 : 11) : this.stagger ? 5 : 7.5) * (this.back ? -1 : 1);
@@ -268,12 +287,77 @@ export class Person {
     this.root.rotation.set(p.tilt, this.face, p.roll + (this.stagger ? Math.sin(this.t * 2.3) * 0.12 : 0), 'YXZ');
     // (in a panic: hunched, the body twisting with each stride, looking about)
     this.torso.rotation.y = this.panic ? Math.sin(this.phase) * 0.18 : 0;
+    // stumbling: bent over, arms out wide for balance and grabbing at the
+    // air, the knees buckling now and then, his head hanging and lolling
+    this.stagK = (this.stagK || 0) + ((this.stagger ? 1 : 0) - (this.stagK || 0)) * Math.min(1, dt * 4);
+    if (this.stagK > 0.01) {
+      const S = this.stagK, t = this.t;
+      const buckle = Math.max(0, Math.sin(t * 1.9 + 0.5) - 0.55) * 2.2;          // (every so often a knee goes)
+      this.hips.position.y -= buckle * 0.14 * S;
+      this.knL.rotation.x += buckle * 0.6 * S; this.thL.rotation.x -= buckle * 0.35 * S;
+      this.torso.rotation.x += (0.28 + 0.15 * Math.sin(t * 2.7)) * S + buckle * 0.25 * S;
+      this.torso.rotation.z = Math.sin(t * 2.3) * 0.16 * S;
+      this.shL.rotation.z += (0.55 + 0.25 * Math.sin(t * 3.1)) * S; this.shR.rotation.z -= (0.5 + 0.25 * Math.sin(t * 2.6 + 1)) * S;
+      this.shL.rotation.x -= (0.35 + buckle * 0.6) * S; this.shR.rotation.x -= (0.3 + buckle * 0.5) * S;     // (reaching out as he goes down)
+      this.elL.rotation.x -= 0.4 * S; this.elR.rotation.x -= 0.35 * S;
+    } else this.torso.rotation.z = 0;
     // the head: looks at what he's watching, or about him in a panic
     let hy = 0;
     if (this.lookAt) { const a2 = Math.atan2(this.lookAt[0] - this.x, this.lookAt[1] - this.z) - this.face - this.torso.rotation.y; hy = Math.max(-1.2, Math.min(1.2, Math.atan2(Math.sin(a2), Math.cos(a2)))); }
     else if (this.panic) hy = Math.sin(this.t * 3.4) * 0.5;
-    this.head.rotation.set(-(p.head || 0) - (fast ? 0.15 : 0) * this.moving, this.head.rotation.y + (hy - this.head.rotation.y) * Math.min(1, dt * 8), 0);
+    const S2 = this.stagK || 0;
+    this.head.rotation.set(-(p.head || 0) - (fast ? 0.15 : 0) * this.moving - (0.35 + 0.15 * Math.sin(this.t * 1.7)) * S2, this.head.rotation.y + (hy - this.head.rotation.y) * Math.min(1, dt * 8), Math.sin(this.t * 1.3) * 0.2 * S2);
   }
+}
+
+// THE SIDE VAULT: run up, both hands planted on the top of the barrier,
+// weight onto the arms as the hips come up and the legs swing over to one
+// side, tucked; then down on the far side, knees bending, and away
+function vaultKeys(from, to, h) {
+  const dx = to[0] - from[0], dz = to[1] - from[1], d = Math.hypot(dx, dz) || 1, ux = dx / d, uz = dz / d;
+  const mid = [from[0] + dx * 0.5, from[1] + dz * 0.5];
+  const at = (m) => [mid[0] + ux * m, mid[1] + uz * m];
+  const reach = 0.35 + h * 0.55;                     // (arms down to the top of it)
+  return [
+    { t: 0, pose: 'STAND', at: at(-0.55) },
+    // the plant: leaning in, both hands down on the top rail, knees bent ready
+    { t: 0.16, pose: { lean: 0.55, drop: 0.12, shL: reach + 0.35, shR: reach + 0.35, elL: 0.15, elR: 0.15, outL: -0.1, outR: -0.1, thL: 0.4, knL: 0.6, thR: 0.4, knR: 0.6, head: 0.2 }, at: at(-0.42) },
+    // up on the arms: hips lifting, the legs swinging out to the side, tucked
+    { t: 0.36, pose: { lean: 0.3, roll: 0.55, shL: reach * 0.55, shR: reach * 0.7, elL: 0.05, elR: 0.1, outL: 0.05, outR: 0.15, thL: 1.55, knL: 1.5, thR: 1.35, knR: 1.6, head: 0.1 }, at: at(-0.1), lift: h * 0.62 },
+    // over the top: legs across, the hands pushing off
+    { t: 0.52, pose: { lean: 0.1, roll: 0.75, shL: 0.35, shR: 0.55, elL: 0.0, elR: 0.05, outL: 0.25, outR: 0.3, thL: 1.25, knL: 0.9, thR: 1.0, knR: 0.8 }, at: at(0.2), lift: h * 0.68 },
+    // down on the far side, landing on bent knees, arms out for balance
+    { t: 0.7, pose: { lean: 0.25, drop: 0.2, roll: 0.1, shL: 0.9, shR: 0.7, elL: 0.4, elR: 0.5, outL: 0.45, outR: 0.4, thL: 0.55, knL: 0.95, thR: 0.35, knR: 0.7 }, at: at(0.5), lift: 0 },
+    { t: 0.85, pose: { lean: 0.3, shL: 0.4, shR: 0.2, elL: 1.2, elR: 1.2, thL: 0.2, knL: 0.3 }, at: at(0.7) },
+  ];
+}
+// CLIMBING OUT OF THE CAR: sat in it, hands on the sides of the cockpit,
+// pushed up to stand on the seat, one leg over the side, then the other,
+// and down beside it. seat: [x, z], out: [x, z] (beside the car, on the
+// side he's getting out), hipY: how high the seat is, hurry: 0 (dazed) - 1 (on fire)
+export function climbOutKeys(seat, out, hipY = 0.35, hurry = 0.5) {
+  const s = 1.6 - hurry * 0.75;                      // (slower if he's dazed)
+  const sx = out[0] - seat[0], sz = out[1] - seat[1];
+  const p = (m) => [seat[0] + sx * m, seat[1] + sz * m];
+  const sit = 0.95 - hipY;                            // (how far the hips drop to sit in it)
+  const floor = Math.max(0, hipY - 0.32);            // (he stands on the floor of the tub)
+  return [
+    // sat in it, legs out ahead under the dash, hands on the wheel
+    { t: 0, pose: { drop: sit, lean: -0.15, thL: 1.5, thR: 1.5, knL: 0.25, knR: 0.25, shL: 1.15, shR: 1.15, elL: 0.6, elR: 0.6 }, at: p(0) },
+    // hands to the cockpit sides
+    { t: 0.35 * s, pose: { drop: sit, lean: 0.05, thL: 1.5, thR: 1.5, knL: 0.6, knR: 0.6, shL: 0.25, shR: 0.25, outL: 0.55, outR: 0.55, elL: 0.35, elR: 0.35 }, at: p(0) },
+    // pushing up on them, knees drawn in
+    { t: 0.75 * s, pose: { drop: sit * 0.55, lean: 0.35, thL: 1.3, thR: 1.2, knL: 1.6, knR: 1.6, shL: 0.1, shR: 0.1, outL: 0.45, outR: 0.45, elL: 0.05, elR: 0.05 }, at: p(0.02), lift: floor * 0.5 },
+    // up, stood on the seat
+    { t: 1.05 * s, pose: { drop: 0.05, lean: 0.2, thL: 0.2, knL: 0.3, shL: 0.35, shR: 0.35, outL: 0.5, outR: 0.5, elL: 0.2, elR: 0.2 }, at: p(0.08), lift: floor },
+    // the near leg up and over the side, a hand on the side for balance
+    { t: 1.45 * s, pose: { lean: 0.15, roll: -0.35, thL: 1.55, knL: 1.3, thR: 0.05, knR: 0.1, shL: 0.6, outL: 0.9, shR: 0.3, outR: 0.4, elL: 0.3, elR: 0.25 }, at: p(0.4), lift: floor + 0.05, keepFace: true },
+    // astride the side, then the other leg over
+    { t: 1.8 * s, pose: { lean: 0.25, roll: 0.25, thL: 0.25, knL: 0.35, thR: 1.4, knR: 1.4, shL: 0.5, outL: 0.5, shR: 0.7, outR: 0.6, elL: 0.3, elR: 0.3 }, at: p(0.75), lift: floor * 0.6 + 0.1, keepFace: true },
+    // down on the ground beside it
+    { t: 2.1 * s, pose: { drop: 0.18, lean: 0.3, thL: 0.5, knL: 0.8, thR: 0.4, knR: 0.7, shL: 0.6, shR: 0.6, outL: 0.3, outR: 0.3, elL: 0.6, elR: 0.6 }, at: p(1), lift: 0, keepFace: true },
+    { t: 2.3 * s, pose: 'STAND', at: p(1) },
+  ];
 }
 
 // skin, hair and the like, shared by everyone
