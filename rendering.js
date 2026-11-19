@@ -60,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 71;
+const BUILD = 72;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -3568,7 +3568,7 @@ function setCar(kind, engine) {
   carKind = kind;
   engineKey = key;
   refreshEngineList();
-  physics.spec = withEngine(carKind === 'f1' ? F1_CAR : CATERHAM_CAR, engineKey);
+  physics.spec = washerTuned(withEngine(carKind === 'f1' ? F1_CAR : CATERHAM_CAR, engineKey));
   const x = physics.x, z = physics.z, h = physics.heading;
   repairAll();
   physics.x = x; physics.z = z; physics.heading = h;
@@ -3946,6 +3946,13 @@ const driverHooks = {
 // THE WASHING MACHINE WINS: once it's stopped, the driver walks over,
 // opens its door, leans in and takes the trophy out, and holds it up
 let washerParty = null;
+// (the washing machine's tyres: they never let go; its steering: twice the
+// lock, three times as quick)
+function washerTuned(spec) {
+  if (!WASHER || spec.washer) return spec;
+  // (and its weight carried almost at the road, so all that grip can't roll it over)
+  return { ...spec, washer: true, frontGrip: spec.frontGrip * 1.6, rearGrip: spec.rearGrip * 1.3, maxSteer: 0.75, steerSpeed: 10, cgHeight: 0.04 };
+}
 function startWasherParty() {
   if (!washerBody || washerParty) return;
   washerParty = { state: 'stopping', t: 0 };
@@ -4511,7 +4518,7 @@ renderer.setAnimationLoop(() => {
   // it and the brakes let go: that's a jump start)
   if (aiField?.holdPlayer && !(input.throttle > 0.05 && !input.clutch)) input.brake = 1;
   if (driverOut || driverDead || washerParty) { input.throttle = 0; input.brake = 1; input.steer = 0; }     // (nobody in it, or nobody alive, or he's out with his trophy)
-  if (WASHER) physics.damageOff = true;      // (the washing machine can't be hurt)
+  if (WASHER) { physics.damageOff = true; if (!physics.spec.washer) physics.spec = washerTuned(physics.spec); }      // (the washing machine can't be hurt, and grips like nothing else)
   // the pit lane: the limiter, the team guiding you in, the car held on its marks
   const pitHold = pits && !heavyMode ? pits.control(input, dt) : false;
   // Fast cars move in smaller steps, so they can't skip through a thin
@@ -4527,7 +4534,27 @@ renderer.setAnimationLoop(() => {
       collide(clock.elapsedTime);
       Object.assign(heavyPhys, { x: physics.x, z: physics.z, vx: physics.vx, vy: physics.vy, yawRate: physics.yawRate });
     } else {
+      const sp0 = WASHER ? Math.hypot(physics.vx, physics.vy) : 0;
       physics.update(input, dt / steps);
+      // (the washing machine never lets go: whatever it's doing, it goes
+      // where it's pointing, its speed carried round with it)
+      if (WASHER && !physics.air) {
+        let sp = Math.hypot(physics.vx, physics.vy);
+        if (sp > 1) {
+          const S = physics.spec, L = S.cgToFront + S.cgToRear;
+          const fwd = Math.sign(physics.vx || 1);
+          // (and the wheels scrubbing sideways don't slow it: only the brakes,
+          // or lifting off, do)
+          if ((input.brake || 0) < 0.05) sp = Math.max(sp, sp0 - 4 * dt / steps);
+          // (turning exactly as the wheels point, like a car on rails, and the
+          // rear wheels never step out)
+          // (but never more than about 6 g of cornering, or it'd turn on the spot at 300)
+          const want = fwd * sp * Math.tan(physics.steer) / L, most = 60 / sp;
+          physics.yawRate = Math.max(-most, Math.min(most, want));
+          physics.vy = physics.yawRate * S.cgToRear;
+          physics.vx = fwd * Math.sqrt(Math.max(0, sp * sp - physics.vy * physics.vy));
+        }
+      }
       collide(clock.elapsedTime);
     }
   }

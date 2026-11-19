@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 96;
+export const BUILD = 97;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 85, date: '19 Nov 2026', title: 'Glued down',
+    items: [
+      ['Never lets go', 'That rather different thing you can drive now never loses grip: it goes exactly where it\'s pointed, however fast, and turns much harder. Walls still stop it', 'update'],
+    ],
+  },
   {
     id: 84, date: '19 Nov 2026', title: 'Penalties on screen',
     items: [
