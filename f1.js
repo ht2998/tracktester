@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 29;
+export const BUILD = 30;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -493,9 +493,9 @@ export function buildF1Body(car, addPanel) {
 // =====================================================================
 export function buildF05Body(car, addPanel) {
   const MAT = {
-    // (French racing blue. Painted, not metallic, and a touch brighter than the
-    // paint chip, as the screen's film-like colour mapping darkens deep blues)
-    blue: new THREE.MeshPhysicalMaterial({ color: 0x0b66c8, roughness: 0.28, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.06 }),
+    // (French racing blue, the bright azure it should be (like the toy-brick
+    // Dark Azure). Painted, not metallic, so the light shows its colour)
+    blue: new THREE.MeshPhysicalMaterial({ color: 0x078bc9, roughness: 0.28, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.06 }),
     yellow: new THREE.MeshPhysicalMaterial({ color: 0xf4c419, roughness: 0.22, metalness: 0.1, clearcoat: 1, clearcoatRoughness: 0.06 }),
     white: new THREE.MeshPhysicalMaterial({ color: 0xf2f3f0, roughness: 0.25, metalness: 0.05, clearcoat: 1, clearcoatRoughness: 0.08 }),
     carbon: new THREE.MeshStandardMaterial({ color: 0x111215, roughness: 0.4, metalness: 0.35 }),
