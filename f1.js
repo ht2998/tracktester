@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 37;
+export const BUILD = 38;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -1099,7 +1099,10 @@ export function buildP70Body(car, addPanel) {
 // =====================================================================
 export function buildP91Body(car, addPanel) {
   const MAT = {
-    blue: new THREE.MeshPhysicalMaterial({ color: 0x2fb54a, roughness: 0.3, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.08 }),     // (the green)
+    // (the paint: orange and green in sweeping bands, painted onto the body
+    // point by point: see charge() below)
+    blue: new THREE.MeshPhysicalMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.3, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.08 }),
+    green: new THREE.MeshPhysicalMaterial({ color: 0x2fb54a, roughness: 0.3, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.08 }),   // (the small parts)
     yellow: new THREE.MeshPhysicalMaterial({ color: 0xff6a12, roughness: 0.3, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.08 }),   // (the orange)
     carbon: new THREE.MeshStandardMaterial({ color: 0x16171a, roughness: 0.6, metalness: 0.2 }),
     glass: new THREE.MeshStandardMaterial({ color: 0x2a3540, roughness: 0.05, metalness: 0.3, transparent: true, opacity: 0.5, side: THREE.DoubleSide }),
@@ -1114,6 +1117,21 @@ export function buildP91Body(car, addPanel) {
     dark: new THREE.MeshStandardMaterial({ color: 0x050506, roughness: 0.8 }),
   };
   const roofMat = MAT.blue.clone(); roofMat.side = THREE.DoubleSide;
+  // THE SCHEME: orange and green, interlocking. Broad diagonal swoops
+  // sweeping up from the nose and back over the body, each edge a little
+  // wavy, so the two colours run into each other all over the car
+  const GREEN = new THREE.Color(0x2fb54a), ORANGE = new THREE.Color(0xff6a12);
+  const charge = (x, y, z) => {
+    const ax = Math.abs(x);
+    const u = z * 0.62 + y * 1.45 + ax * 0.42 + 0.16 * Math.sin(z * 2.3 + ax * 3.1) + 0.08 * Math.sin(z * 5.1 - y * 4);
+    return Math.floor(u / 0.4) % 2 === 0 ? ORANGE : GREEN;
+  };
+  const painted = (geo) => {
+    const P = geo.attributes.position, col = new Float32Array(P.count * 3);
+    for (let i = 0; i < P.count; i++) { const c = charge(P.getX(i), P.getY(i), P.getZ(i)); col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    return geo;
+  };
   const add = (geo, mat, shadow = true) => {
     const m = new THREE.Mesh(geo, mat); m.castShadow = shadow; m.receiveShadow = true; car.add(m);
     if (mat === MAT.blue || mat === MAT.yellow || mat === roofMat) addPanel(m);
@@ -1126,23 +1144,21 @@ export function buildP91Body(car, addPanel) {
   const W = curve([[-2.45, 1.92], [-1.36, 2.0], [-0.4, 1.94], [0.4, 1.92], [1.3, 2.0], [2.0, 1.92], [2.36, 1.72]]);
   const TOP = curve([[-2.45, 0.8], [-1.8, 0.78], [-1.0, 0.75], [-0.6, 0.72], [0.6, 0.6], [1.3, 0.56], [1.9, 0.42], [2.36, 0.2]]);
   const BOT = (z) => arch(z, z > 2.0 ? 0.1 + (z - 2.0) * 0.12 : 0.1);
-  add(smoothBody(-2.45, 2.36, 90, (z) => ({ w: W(z), top: TOP(z), bot: BOT(z), tuck: 0.12, sq: 7 })), MAT.blue);
-  // the orange: the lower half all round, and the whole nose
-  add(smoothBody(-2.44, 2.37, 90, (z) => { const k = ease((z - 1.2) / 0.6); return { w: W(z) + 0.024, top: 0.38 + (TOP(z) + 0.016 - 0.38) * k, bot: BOT(z) - 0.006, tuck: 0.12, sq: 7 }; }), MAT.yellow);     // (stood well clear of the green: no flicker where they meet)
+  add(painted(smoothBody(-2.45, 2.36, 140, (z) => ({ w: W(z), top: TOP(z), bot: BOT(z), tuck: 0.12, sq: 7 }), 64)), MAT.blue);
   add(new THREE.BoxGeometry(1.3, 0.06, 4.2).translate(0, 0.12, -0.05), MAT.carbon);
   for (const s of [1, -1]) add(new THREE.CylinderGeometry(WR + 0.05, WR + 0.05, 0.42, 16, 1, true, -Math.PI / 2, Math.PI).rotateZ(Math.PI / 2).translate(s * 0.73, WR, FZ), MAT.dark, false);
   // the front fenders swelling up either side of the low nose (and back into the body)
   const FT = curve([[0.55, 0.58], [0.95, 0.68], [1.3, 0.74], [1.75, 0.66], [2.2, 0.36]]);
-  for (const s of [1, -1]) add(smoothBody(0.5, 2.22, 34, (z) => { const e = ease((z - 0.5) / 0.45); return { x: s * (0.73 - 0.12 * (1 - e)), w: (0.54 - Math.max(0, z - 1.8) * 0.5) * (0.3 + 0.7 * e), top: TOP(z) - 0.03 + (FT(z) - TOP(z) + 0.03) * e, bot: Math.max(BOT(z), 0.3 + 0.12 * (1 - e)), tuck: 0.3, sq: 3 }; }), MAT.yellow);
+  for (const s of [1, -1]) add(painted(smoothBody(0.5, 2.22, 50, (z) => { const e = ease((z - 0.5) / 0.45); return { x: s * (0.73 - 0.12 * (1 - e)), w: (0.54 - Math.max(0, z - 1.8) * 0.5) * (0.3 + 0.7 * e), top: TOP(z) - 0.03 + (FT(z) - TOP(z) + 0.03) * e, bot: Math.max(BOT(z), 0.3 + 0.12 * (1 - e)), tuck: 0.3, sq: 3 }; }, 40)), MAT.blue);
   // the cockpit: small, a wraparound screen, the roof (green), its pillars
   const CT = curve([[-0.85, 0.72], [-0.5, 0.93], [-0.05, 0.99], [0.35, 0.93], [0.72, 0.6]]);
   const CW = curve([[-0.85, 1.1], [-0.2, 1.24], [0.35, 1.28], [0.72, 1.36]]);
   add(smoothBody(-0.85, 0.72, 30, (z) => ({ w: CW(z), top: CT(z), bot: 0.55, tuck: 0.35, sq: 2.6 })), MAT.glass, false);
-  { const roof = add(smoothBody(-0.8, 0.2, 20, (z) => ({ w: CW(z) * 0.86, top: CT(z) + 0.01, bot: CT(z) - 0.06, tuck: 0.25, sq: 2.6 })), roofMat); roof.castShadow = false; }
-  for (const s of [1, -1]) add(rod([s * 0.62, 0.6, 0.7], [s * 0.52, 0.93, 0.32], 0.025), MAT.blue);
+  { const roof = add(painted(smoothBody(-0.8, 0.2, 30, (z) => ({ w: CW(z) * 0.86, top: CT(z) + 0.01, bot: CT(z) - 0.06, tuck: 0.25, sq: 2.6 }), 40)), roofMat); roof.castShadow = false; }
+  for (const s of [1, -1]) add(rod([s * 0.62, 0.6, 0.7], [s * 0.52, 0.93, 0.32], 0.025), MAT.green);
   // the long tail: the deck, the fins rising either side, the big wing between them
   const FinT = curve([[-0.9, 0.76], [-1.6, 0.86], [-2.1, 0.98], [-2.45, 1.02]]);
-  for (const s of [1, -1]) add(smoothBody(-2.45, -0.85, 30, (z) => { const e = ease((-0.85 - z) / 0.5); return { x: s * (0.86 - 0.1 * (1 - e)), w: 0.2 * (0.4 + 0.6 * e), top: TOP(z) + (FinT(z) - TOP(z)) * e, bot: TOP(z) - 0.15, tuck: 0.2, sq: 3 }; }), MAT.blue);
+  for (const s of [1, -1]) add(painted(smoothBody(-2.45, -0.85, 40, (z) => { const e = ease((-0.85 - z) / 0.5); return { x: s * (0.86 - 0.1 * (1 - e)), w: 0.2 * (0.4 + 0.6 * e), top: TOP(z) + (FinT(z) - TOP(z)) * e, bot: TOP(z) - 0.15, tuck: 0.2, sq: 3 }; })), MAT.blue);
   // the flanks: a duct ahead of each back wheel, the skirt's line
   for (const s of [1, -1]) {
     add(new THREE.PlaneGeometry(0.42, 0.16).rotateY(s * Math.PI / 2).translate(s * (W(-0.6) / 2 + 0.006), 0.48, -0.6), MAT.dark, false);
@@ -1166,7 +1182,7 @@ export function buildP91Body(car, addPanel) {
   for (const s of [1, -1]) {
     const stalk = add(rod([s * 0.66, 0.62, 0.62], [s * 0.74, 0.72, 0.62], 0.012), MAT.carbon);
     const pod = new THREE.Group(); car.add(pod);
-    pod.add(add(new THREE.BoxGeometry(0.14, 0.07, 0.05).translate(s * 0.78, 0.74, 0.62), MAT.blue));
+    pod.add(add(new THREE.BoxGeometry(0.14, 0.07, 0.05).translate(s * 0.78, 0.74, 0.62), MAT.green));
     pod.add(add(new THREE.PlaneGeometry(0.12, 0.055).rotateY(Math.PI).translate(s * 0.78, 0.74, 0.594), MAT.visor));
     mirrors[s > 0 ? 'l' : 'r'] = { stalk, pod, at: [s * 0.78, 0.74, 0.62] };
   }
@@ -1192,8 +1208,8 @@ export function buildP91Body(car, addPanel) {
   const addTo = (g, geo, mat) => { const m = add(geo, mat); g.add(m); return m; };
   for (const s of [1, -1]) addTo(s > 0 ? wings.fl : wings.fr, new THREE.BoxGeometry(0.2, 0.012, 0.16).rotateZ(-s * 0.2).translate(s * 0.88, 0.36, 2.0), MAT.carbon);
   addTo(wings.rear, new THREE.BoxGeometry(1.62, 0.03, 0.34).rotateX(0.18).translate(0, 1.0, -2.22), MAT.yellow);
-  addTo(wings.rear, new THREE.BoxGeometry(1.62, 0.018, 0.14).rotateX(0.55).translate(0, 1.07, -2.42), MAT.blue);
-  for (const s of [1, -1]) addTo(wings.rear, new THREE.BoxGeometry(0.02, 0.36, 0.56).translate(s * 0.82, 0.98, -2.25), MAT.blue);
+  addTo(wings.rear, new THREE.BoxGeometry(1.62, 0.018, 0.14).rotateX(0.55).translate(0, 1.07, -2.42), MAT.green);
+  for (const s of [1, -1]) addTo(wings.rear, new THREE.BoxGeometry(0.02, 0.36, 0.56).translate(s * 0.82, 0.98, -2.25), MAT.green);
   return { helmet: [helmet, visor, hstripe], rainMat: MAT.rain, exhaustMat: MAT.exhaust, mats: MAT, wings, mirrors, driver };
 }
 export const bodyForKind = (kind) => ({ f05: buildF05Body, f94: buildF94Body, p70: buildP70Body, p91: buildP91Body }[kind] || buildF1Body);
