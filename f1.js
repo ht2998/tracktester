@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 36;
+export const BUILD = 37;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -1128,7 +1128,7 @@ export function buildP91Body(car, addPanel) {
   const BOT = (z) => arch(z, z > 2.0 ? 0.1 + (z - 2.0) * 0.12 : 0.1);
   add(smoothBody(-2.45, 2.36, 90, (z) => ({ w: W(z), top: TOP(z), bot: BOT(z), tuck: 0.12, sq: 7 })), MAT.blue);
   // the orange: the lower half all round, and the whole nose
-  add(smoothBody(-2.44, 2.37, 90, (z) => { const k = ease((z - 1.2) / 0.6); return { w: W(z) + 0.008, top: 0.38 + (TOP(z) + 0.006 - 0.38) * k, bot: BOT(z) - 0.004, tuck: 0.12, sq: 7 }; }), MAT.yellow);
+  add(smoothBody(-2.44, 2.37, 90, (z) => { const k = ease((z - 1.2) / 0.6); return { w: W(z) + 0.024, top: 0.38 + (TOP(z) + 0.016 - 0.38) * k, bot: BOT(z) - 0.006, tuck: 0.12, sq: 7 }; }), MAT.yellow);     // (stood well clear of the green: no flicker where they meet)
   add(new THREE.BoxGeometry(1.3, 0.06, 4.2).translate(0, 0.12, -0.05), MAT.carbon);
   for (const s of [1, -1]) add(new THREE.CylinderGeometry(WR + 0.05, WR + 0.05, 0.42, 16, 1, true, -Math.PI / 2, Math.PI).rotateZ(Math.PI / 2).translate(s * 0.73, WR, FZ), MAT.dark, false);
   // the front fenders swelling up either side of the low nose (and back into the body)
