@@ -26,7 +26,7 @@
 // a smashed radiator): the team retire the car. DNF on the standings, and
 // they push it back into the garage.
 // =====================================================================
-export const BUILD = 12;
+export const BUILD = 13;
 
 import * as THREE from 'three';
 
@@ -75,7 +75,8 @@ export const POSES = {
   SIT: { rate: 6, drop: 0.79, lean: 0.3, thL: 1.5, thR: 1.42, knL: 1.05, knR: 1.3, shL: 0.55, shR: 0.65, elL: 0.95, elR: 0.85, head: 0.15 },
   SIT_HEAD: { rate: 4, drop: 0.79, lean: 0.62, thL: 1.5, thR: 1.42, knL: 1.3, knR: 1.4, shL: 1.25, shR: 1.25, elL: 2.35, elR: 2.35, outL: -0.2, outR: -0.2, head: 0.5 },
   // hurt: down on his back by the track; on the stretcher; doubled over
-  LIE: { rate: 5, tilt: -1.52, lift: 0.12, shL: 0.25, shR: 0.4, outL: 0.45, outR: 0.3, elL: 0.3, elR: 0.5, thL: 0.12, knL: 0.45, knR: 0.1, head: -0.2 },
+  // (arms gone limp: down flat on the ground beside him, palms down, one a little out from his side)
+  LIE: { rate: 5, tilt: -1.52, lift: 0.12, shL: -0.06, shR: -0.04, outL: 0.55, outR: 0.25, elL: 0.15, elR: 0.08, thL: 0.12, knL: 0.45, knR: 0.1, head: -0.15 },
   FALL: { rate: 4, tilt: -0.9, lift: 0.45, drop: 0.3, shL: 1.2, shR: 1.4, outL: 0.5, outR: 0.5, thL: 0.8, knL: 0.9, thR: 0.6, knR: 0.6 },
   HUNCH: { lean: 0.65, shL: 0.6, shR: 0.7, elL: 1.2, elR: 1.0, thL: 0.25, knL: 0.35, thR: 0.2, knR: 0.3, drop: 0.08, head: 0.3 },
   // a medic: down by him; lifting the stretcher; carrying it

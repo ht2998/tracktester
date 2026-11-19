@@ -21,11 +21,18 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 88;
+export const BUILD = 89;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 77, date: '19 Nov 2026', title: 'The quickest way',
+    items: [
+      ['The quickest clear way', 'Marshals and medics now work out the quickest way to where they\'re going that doesn\'t go through anything: round huts, trees, fences, walls and the vehicles, and over a barrier only where vaulting it beats going round', 'update'],
+      ['Limp arms', 'When the hurt driver collapses, his arms drop and lie flat on the ground beside him instead of staying up in the air', 'fix'],
+    ],
+  },
   {
     id: 76, date: '19 Nov 2026', title: 'Garage button',
     items: [

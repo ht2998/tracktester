@@ -4,7 +4,7 @@
     "cockpit.js": 13,
     "godrays.js": 1,
     "scenery.js": 8,
-    "updates.js": 88,
+    "updates.js": 89,
     "debris.js": 4,
     "effects.js": 4,
     "sky.js": 6,
@@ -27,9 +27,9 @@
     "ai.js": 11,
     "f1.js": 23,
     "garage.js": 1,
-    "pits.js": 12,
+    "pits.js": 13,
     "trackside.js": 5,
     "assets.js": 1,
-    "racecontrol.js": 7
+    "racecontrol.js": 8
   }
 }

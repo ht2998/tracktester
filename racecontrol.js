@@ -34,7 +34,7 @@ import { Person, makeExtinguisher } from './pits.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 7;
+export const BUILD = 8;
 
 const std = (color, rough = 0.6, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: rough, ...extra });
 const boxAt = (w, h, d, x = 0, y = 0, z = 0) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
@@ -518,7 +518,100 @@ export class RaceControl {
   // ---- getting about without going through things ----
   // a path on foot: straight where it's clear, over a barrier (a vault),
   // round a fence, wall, hut or tree. opts: { run, panic, v }
-  footPath(from, to, opts = {}, depth = 0) {
+  // THE QUICKEST CLEAR WAY ON FOOT: a search over a small grid (half a
+  // metre a square) round the start and the end. Walls, fences, huts,
+  // trees and the vehicles are in the way; a barrier low enough to vault
+  // can be crossed, but a vault costs time (about what 4 m of running
+  // would), so where going round a short barrier is quicker, he goes
+  // round. The squares are then pulled into straight runs.
+  footPath(from, to, opts = {}) {
+    const B = this.hooks.blocked;
+    const go = (pt) => ({ go: pt, ...opts });
+    if (!B) return [go(to)];
+    if (this.clearLine(from, to, 0.25) && !this.vehicleIn(from, to)) return [go(to)];
+    const C = 0.5, pad = 14;
+    const x0 = Math.min(from[0], to[0]) - pad, z0 = Math.min(from[1], to[1]) - pad;
+    const nx = Math.min(360, Math.ceil((Math.abs(from[0] - to[0]) + pad * 2) / C)), nz = Math.min(360, Math.ceil((Math.abs(from[1] - to[1]) + pad * 2) / C));
+    const N = nx * nz, cell = new Uint8Array(N), kindH = new Float32Array(N);     // 0 free, 1 vault, 2 no
+    const vb = this.vehicleBlobs();
+    for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
+      const x = x0 + (i + 0.5) * C, z = z0 + (j + 0.5) * C, k = j * nx + i;
+      const c = B(x, z, 0.22);
+      if (c) {
+        const h = c.kind === 'concrete' ? 1.0 : c.kind === 'tyres' ? 0.9 : c.kind === 'bollard' ? 0.5 : c.kind === 'armco' ? 0.75 : 0;
+        if (h) { cell[k] = 1; kindH[k] = h; } else cell[k] = 2;
+      } else if (vb.some(([bx, bz, br]) => (x - bx) ** 2 + (z - bz) ** 2 < (br + 0.3) ** 2)) cell[k] = 2;
+    }
+    const idx = (p) => { const i = Math.max(0, Math.min(nx - 1, Math.floor((p[0] - x0) / C))), j = Math.max(0, Math.min(nz - 1, Math.floor((p[1] - z0) / C))); return j * nx + i; };
+    const s0 = idx(from), g0 = idx(to);
+    cell[s0] = cell[s0] === 2 ? 0 : cell[s0]; cell[g0] = cell[g0] === 2 ? 0 : cell[g0];   // (he's there, after all)
+    // A*, with a little heap
+    const gs = new Float32Array(N).fill(Infinity), prev = new Int32Array(N).fill(-1), done = new Uint8Array(N);
+    const heap = [], push = (k, f) => { heap.push([f, k]); let i = heap.length - 1; while (i > 0) { const p2 = (i - 1) >> 1; if (heap[p2][0] <= heap[i][0]) break; [heap[p2], heap[i]] = [heap[i], heap[p2]]; i = p2; } };
+    const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+    const gx = g0 % nx, gz = Math.floor(g0 / nx);
+    const hcost = (k) => Math.hypot(k % nx - gx, Math.floor(k / nx) - gz);
+    gs[s0] = 0; push(s0, hcost(s0));
+    const D8 = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, 1.414], [1, -1, 1.414], [-1, 1, 1.414], [-1, -1, 1.414]];
+    let found = false, steps = 0;
+    while (heap.length && steps++ < 60000) {
+      const [, k] = pop();
+      if (done[k]) continue; done[k] = 1;
+      if (k === g0) { found = true; break; }
+      const i = k % nx, j = Math.floor(k / nx);
+      for (const [di, dj, w] of D8) {
+        const ii = i + di, jj = j + dj;
+        if (ii < 0 || jj < 0 || ii >= nx || jj >= nz) continue;
+        const kk = jj * nx + ii;
+        if (cell[kk] === 2 || done[kk]) continue;
+        if (di && dj && (cell[j * nx + ii] === 2 || cell[jj * nx + i] === 2)) continue;   // (no squeezing past a corner)
+        // (onto a barrier from open ground: the cost of a vault)
+        const extra = cell[kk] === 1 && cell[k] !== 1 ? 8 : cell[kk] === 1 ? 0.5 : 0;
+        const g2 = gs[k] + w + extra;
+        if (g2 < gs[kk]) { gs[kk] = g2; prev[kk] = k; push(kk, g2 + hcost(kk)); }
+      }
+    }
+    if (!found) return this.footPathSimple(from, to, opts);
+    const path = []; for (let k = g0; k >= 0; k = prev[k]) path.push(k); path.reverse();
+    const at = (k) => [x0 + (k % nx + 0.5) * C, z0 + (Math.floor(k / nx) + 0.5) * C];
+    // into moves: straight runs as far as each stays clear, a vault over each barrier
+    const out = [];
+    let cur = from, i = 0;
+    while (i < path.length) {
+      if (cell[path[i]] === 1) {
+        // the barrier squares in a row: over them in one vault
+        let e = i; while (e < path.length && cell[path[e]] === 1) e++;
+        const h = Math.max(...path.slice(i, e).map((k) => kindH[k]));
+        const land = e < path.length ? at(path[e]) : to;
+        const ux = land[0] - cur[0], uz = land[1] - cur[1], ud = Math.hypot(ux, uz) || 1;
+        const exit = [land[0] + ux / ud * 0.25, land[1] + uz / ud * 0.25];
+        out.push({ vault: exit, h, t: 0.55 + h * 0.3 });
+        cur = exit; i = e + 1;
+        continue;
+      }
+      // the furthest square ahead that's in a straight clear line
+      let far = i;
+      for (let k2 = i; k2 < path.length && cell[path[k2]] === 0; k2 += 2) { if (this.clearLine(cur, at(path[k2]), 0.22) && !this.vehicleIn(cur, at(path[k2]))) far = k2; else break; }
+      const next = far === path.length - 1 ? to : at(path[far]);
+      if (cell[path[Math.min(path.length - 1, far + 1)]] === 1 && far + 1 < path.length) {
+        // (run up to the barrier: stop just short of it to vault)
+        out.push(go(next)); cur = next; i = far + 1;
+      } else { out.push(go(next)); cur = next; i = far + 1; }
+    }
+    if (Math.hypot(cur[0] - to[0], cur[1] - to[1]) > 0.1) out.push(go(to));
+    return out;
+  }
+  // the vehicles, as circles (for the paths on foot)
+  vehicleBlobs() { const out = []; for (const v of [this.sc, this.ambulance, this.truck, ...(this.cranes || [])]) if (v) out.push(...this.circles(v)); return out; }
+  vehicleIn(a, b) {
+    const vb = this.vehicleBlobs(), dx = b[0] - a[0], dz = b[1] - a[1], d = Math.hypot(dx, dz) || 1;
+    for (const [cx, cz, r] of vb) {
+      const t = Math.max(0, Math.min(1, ((cx - a[0]) * dx + (cz - a[1]) * dz) / (d * d)));
+      if (Math.hypot(a[0] + dx * t - cx, a[1] + dz * t - cz) < r + 0.3) return true;
+    }
+    return false;
+  }
+  footPathSimple(from, to, opts = {}, depth = 0) {
     const B = this.hooks.blocked;
     const go = (pt) => ({ go: pt, ...opts });
     if (!B || depth > 6) return [go(to)];
@@ -535,14 +628,14 @@ export class RaceControl {
         let e = s0; while (e < d + 3 && B(from[0] + ux * e, from[1] + uz * e, 0.22)) e += step;
         const exit = [from[0] + ux * (e + 0.4), from[1] + uz * (e + 0.4)];
         const h = c.kind === 'concrete' ? 1.0 : c.kind === 'tyres' ? 0.9 : c.kind === 'bollard' ? 0.5 : 0.75;
-        return [go(entry), { vault: exit, h, t: 0.55 + h * 0.3 }, ...this.footPath(exit, to, opts, depth + 1)];
+        return [go(entry), { vault: exit, h, t: 0.55 + h * 0.3 }, ...this.footPathSimple(exit, to, opts, depth + 1)];
       }
       // something not to climb: round the side of it (whichever way's clear first)
       const nx = -uz, nz = ux;
       for (const off of [1.5, 2.5, 4, 6, 9, 13, 18]) for (const sg of [1, -1]) {
         const mid = [x + nx * off * sg - ux * 0.5, z + nz * off * sg - uz * 0.5];
         if (B(mid[0], mid[1], 0.3)) continue;
-        if (this.clearLine(from, mid, 0.22, true)) return [go(entry), ...this.footPath(entry, mid, opts, depth + 1), ...this.footPath(mid, to, opts, depth + 1)];
+        if (this.clearLine(from, mid, 0.22, true)) return [go(entry), ...this.footPathSimple(entry, mid, opts, depth + 1), ...this.footPathSimple(mid, to, opts, depth + 1)];
       }
       return [go(to)];
     }
