@@ -21,11 +21,18 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 98;
+export const BUILD = 99;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 87, date: '19 Nov 2026', title: 'No more crackle',
+    items: [
+      ['Clean engine sound', 'The V10 and V12 had been turned up so far they were hitting the ceiling of what the speakers can be sent, all the time, and crackled. They\'re brought back down to just under it: still the loudest engines in the game, but clean', 'fix'],
+      ['More rumble', 'The deep rumble under the V10 and V12 is stronger, most of all low in the revs', 'update'],
+    ],
+  },
   {
     id: 86, date: '19 Nov 2026', title: 'Howling into corners',
     items: [

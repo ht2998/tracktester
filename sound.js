@@ -11,7 +11,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 26;
+export const BUILD = 27;
 
 // THE VOICED ENGINES (the V10's sound, made for each): bangs a turn, revs,
 // loudness matched to the approved preview, and how much of 3x the crank
@@ -21,14 +21,14 @@ const VOICES = {
   // below from one bank, the major third below, the fifth above; at full
   // revs and at idle, as approved in the previews)
   v10: { fire: 5, red: 19200, idle: 4000, norm: 3.4, rest: 0.075,
-    mix: [[1, 0.413], [0.5, 0.475], [0.8, 0.1085], [1.5, 0.123]],
-    idleMix: [[1, 0.39], [0.5, 0.39], [0.8, 0.17], [1.5, 0.075]] },
+    mix: [[1, 0.413], [0.5, 0.54], [0.8, 0.1085], [1.5, 0.123]],
+    idleMix: [[1, 0.39], [0.5, 0.58], [0.8, 0.17], [1.5, 0.075]] },
   // (the 3.5 V12, rebuilt from its notes: the firing note, the octave
   // below from one bank, the fifth above (the V12's wail), the octave
   // above (the shriek) and the fifth below (warmth))
   v12: { fire: 6, red: 13500, idle: 3800, norm: 3.4, rest: 0.075,
-    mix: [[1, 0.39], [0.5, 0.24], [1.5, 0.295], [2, 0.085], [0.6667, 0.07]],
-    idleMix: [[1, 0.33], [0.5, 0.335], [1.5, 0.135], [2, 0.03], [0.6667, 0.205]] },
+    mix: [[1, 0.39], [0.5, 0.29], [1.5, 0.295], [2, 0.085], [0.6667, 0.07]],
+    idleMix: [[1, 0.33], [0.5, 0.5], [1.5, 0.135], [2, 0.03], [0.6667, 0.205]] },
   v8f: { fire: 4, red: 19000, idle: 4000, norm: 0.1698, three: 0 },
 };
 
@@ -1826,7 +1826,7 @@ export class EngineSound {
     this.engineGain.gain.setTargetAtTime(volume, t, shifting || car.engineBlown ? 0.03 : car.engineDead ? 0.4 : loadEase);
     // the V10 (its own path): the loudest engine in the game, cut in a shift
     if (this.v10Gain && this.spec.voice === this.v10Kind && !this.heavyOn) {
-      const v = (car.engineDead ? 0 : (this.v10Kind === 'v8f' ? 1.6 : 2.9)) * (shifting ? 0.5 : 1);   // (the V10 and V12 a lot louder than the rest)
+      const v = (car.engineDead ? 0 : (this.v10Kind === 'v8f' ? 1.6 : 0.9)) * (shifting ? 0.5 : 1);   // (the V10 and V12 the loudest in the game, but no louder than the output can carry: any more and it's pinned at the ceiling and crackles)
       this.v10Gain.gain.setTargetAtTime(v, t, shifting ? 0.02 : car.engineDead ? 0.4 : 0.06);
     }
 
