@@ -1439,6 +1439,9 @@ export class RaceControl {
     const ptx = Math.sin(pl.heading || 0), ptz = Math.cos(pl.heading || 0);
     this.sendCraneTo(c, w);
     this.hooks.toast?.(w.kind === 'player' ? 'RECOVERY CRANE ON ITS WAY' : null);
+    // a car: the flatbed sets off out of the pits at the same moment, for
+    // where the crane will be working
+    if ((w.kind === 'player' || w.kind === 'ai') && c.useTruck == null) c.useTruck = this.sendTruck(c, c.stand);
   }
   sendCraneTo(c, w) {
     // where it stops: beside the wreck, on the track side of it
@@ -1670,17 +1673,17 @@ export class RaceControl {
   }
 
   // ---- the flatbed: out of the pit lane to the crane, then the wreck back to the pits ----
-  sendTruck(c) {
+  sendTruck(c, at = [c.x, c.z]) {
     const T = this.truck;
     if (T.state !== 'parked') return false;
     // where it waits: on the track beside the crane, nose the way the cars go
-    const i = this.trackside.nearestLine(c.x, c.z, 60);
+    const i = this.trackside.nearestLine(at[0], at[1], 60);
     if (i < 0) return false;
-    const pr = this.project(c.x, c.z, i), half = this.line[i].width / 2;
+    const pr = this.project(at[0], at[1], i), half = this.line[i].width / 2;
     const lat = Math.sign(pr.lat || 1) * Math.max(0, Math.min(half - 1.6, Math.abs(pr.lat) - 3.6));
-    T.spot = this.pointAt(i + 2, lat); T.spotI = i + 2;
+    T.spot = this.pointAt(i + 5, lat); T.spotI = i + 5;      // (10 m on, clear of where the crane will stand)
     T.state = 'leaving'; T.mode = 'free'; T.route = this.exitRoute(); T.v = 0;
-    this.hooks.toast?.(c.w?.kind === 'player' ? 'THE FLATBED\'S ON ITS WAY' : null);
+    this.hooks.toast?.(null);
     return true;
   }
   updateTruck(dt, S) {

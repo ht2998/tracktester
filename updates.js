@@ -31,7 +31,7 @@ export const UPDATES = [
     items: [
       ['Detailed rescue vehicles', 'The safety car, the ambulance, the recovery crane and the flatbed are all rebuilt in far more detail: properly shaped bodies, real-looking wheels and brakes, lights, mirrors, handles and hinges, light bars with LED modules, and insides you can see through the glass', 'new'],
       ['A working crane', 'The crane puts its legs out before it lifts, its boom runs out in sections one after the other, and the hook always hangs straight down on its cables with slings to the car', 'new'],
-      ['Right on the bed', 'If the flatbed\'s out of reach, the crane drives over to it with your car on the hook, sets up again, and lowers it exactly onto the middle of the bed, lined up with the truck', 'fix'],
+      ['Right on the bed', 'The flatbed sets off from the pits the moment the crane does. If it\'s out of reach, the crane drives over to it with your car on the hook, sets up again, and lowers it exactly onto the middle of the bed, lined up with the truck', 'fix'],
       ['Knocked flying', 'Anyone caught by a blast is thrown off their feet, tumbles, lies there a moment and gets back up. A blast brings down trees and throws signs off their posts', 'new'],
     ],
   },
