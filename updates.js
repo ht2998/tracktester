@@ -21,11 +21,18 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 91;
+export const BUILD = 92;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 80, date: '19 Nov 2026', title: 'The V12, rebuilt',
+    items: [
+      ['Built from its notes', 'The 3.5 V12 is rebuilt the same way as the V10: the firing note, the rumble an octave below from one bank, and, where the V10 has a major third, the V12\'s fifths and octaves: the fifth above (its wail), the octave above (the shriek) and the fifth below (warmth). Sweeter than the V10, more of a wail. It changes with where you hear it from, like the V10', 'update'],
+      ['A lot louder', 'The V10 and the V12 are both a lot louder now, and fuller', 'update'],
+    ],
+  },
   {
     id: 79, date: '19 Nov 2026', title: 'The V10, rebuilt',
     items: [
