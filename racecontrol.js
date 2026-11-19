@@ -34,7 +34,7 @@ import { Person, makeExtinguisher } from './pits.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 8;
+export const BUILD = 9;
 
 const std = (color, rough = 0.6, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: rough, ...extra });
 const boxAt = (w, h, d, x = 0, y = 0, z = 0) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
@@ -1168,7 +1168,7 @@ export class RaceControl {
       return [{ pose: 'STAND' }, ...this.footPath(spot(), r.hut.corner), { go: r.hut.behind }, { fn: () => { r.done = true; } }];
     };
     r.person.run([
-      { wait: (k % 2) * 0.35 },
+      { wait: (k % 2) * 0.35 + Math.random() * 0.5 },          // (not off the mark together)
       { pose: 'RIFLE' },
       { look: [f.x, f.z] },
       { go: r.hut.corner, run: true, panic: true },
@@ -1227,7 +1227,7 @@ export class RaceControl {
       const off = (k - 1) * 1.6;
       const on = [at.x + tx * off, at.z + tz * off], stand = [on[0] + nx * 0.85, on[1] + nz * 0.85];
       r.person.run([
-        { wait: k * 0.5 },
+        { wait: k * 0.5 + Math.random() * 0.6 },
         { go: r.hut.corner, run: true },
         ...this.footPath(r.hut.corner, stand, { run: true }),
         { face: on, quick: true }, { look: on },

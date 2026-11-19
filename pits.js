@@ -26,7 +26,7 @@
 // a smashed radiator): the team retire the car. DNF on the standings, and
 // they push it back into the garage.
 // =====================================================================
-export const BUILD = 13;
+export const BUILD = 14;
 
 import * as THREE from 'three';
 
@@ -182,6 +182,10 @@ export class Person {
     this.x = 0; this.z = 0; this.face = 0; this.moving = 0; this.phase = Math.random() * 6; this.t = 0;
     this.queue = []; this.held = []; this.follow = null; this.back = false;
     this.anim = null; this.lookAt = null;
+    // everyone moves a little differently: their own pace, stride, arm
+    // swing and lean, so no two of them ever run in step
+    const r = () => Math.random();
+    this.gait = { spd: 0.9 + r() * 0.2, cad: 0.88 + r() * 0.24, arm: 0.8 + r() * 0.4, knee: 0.85 + r() * 0.3, lean: (r() - 0.5) * 0.1, bob: 0.7 + r() * 0.6 };
   }
   // the middle of his body on the ground (he's placed by his feet: lying on
   // his back, the rest of him is behind them)
@@ -248,7 +252,7 @@ export class Person {
         const [tx, tz] = a.go, dx = tx - this.x, dz = tz - this.z, d = Math.hypot(dx, dz);
         // (a stumble: lurching steps, quick then nearly stopping, never a steady pace)
         const lurch = a.stagger ? Math.max(0, Math.sin(this.t * 3.3) + 0.35 * Math.sin(this.t * 7.9 + 1)) : 0;
-        const v = a.stagger ? 0.25 + 1.1 * lurch : a.panic ? 5.6 : a.run ? 4.6 : a.back ? 1.1 : (a.v || 1.6);
+        const v = (a.stagger ? 0.25 + 1.1 * lurch : a.panic ? 5.6 : a.run ? 4.6 : a.back ? 1.1 : (a.v || 1.6)) * this.gait.spd;
         this.panic = !!a.panic; this.stagger = !!a.stagger;
         if (d < 0.04) { this.x = tx; this.z = tz; this.queue.shift(); continue; }
         const step = Math.min(d, v * dt);
@@ -270,7 +274,7 @@ export class Person {
     this.moving += ((walking ? 1 : 0) - this.moving) * Math.min(1, dt * 8);
     const fast = speed > 3;
     // (the stride keeps time with the speed, so the feet don't slide)
-    this.phase += dt * (fast ? Math.min(13, 6 + speed * 1.15) : this.stagger ? 3 + speed * 2.5 : Math.min(8.5, 2.2 + speed * 3.4)) * (this.back ? -1 : 1);
+    this.phase += dt * this.gait.cad * (fast ? Math.min(13, 6 + speed * 1.15) : this.stagger ? 3 + speed * 2.5 : Math.min(8.5, 2.2 + speed * 3.4)) * (this.back ? -1 : 1);
     const sw = Math.sin(this.phase) * this.moving * (fast ? 0.8 : 0.42);
     const p = this.p, carrying = this.held.length > 0;
     if (!speed) { this.panic = false; this.stagger = false; }
@@ -297,21 +301,21 @@ export class Person {
     // at a right angle, hands from the hip to the chin; up on the balls of
     // the feet with both off the ground between strides
     if (fast && !carrying) {
-      const M = this.moving, ph = this.phase;
+      const M = this.moving, ph = this.phase, G = this.gait;
       const leg = (thigh, knee, f) => {
-        thigh.rotation.x = thigh.rotation.x * (1 - M) - (0.22 + 0.72 * Math.sin(f)) * M;             // (forward to about 0.95, back to -0.5)
-        knee.rotation.x = knee.rotation.x * (1 - M) + (0.25 + 1.3 * Math.pow(Math.max(0, Math.cos(f - 0.6)), 1.6)) * M;   // (heel up as it comes through)
+        thigh.rotation.x = thigh.rotation.x * (1 - M) - (0.22 + 0.72 * G.knee * Math.sin(f)) * M;             // (forward to about 0.95, back to -0.5)
+        knee.rotation.x = knee.rotation.x * (1 - M) + (0.25 + 1.3 * G.knee * Math.pow(Math.max(0, Math.cos(f - 0.6)), 1.6)) * M;   // (heel up as it comes through)
       };
       leg(this.thL, this.knL, ph); leg(this.thR, this.knR, ph + Math.PI);
       const arm = (sh, el, f, sgn) => {
-        sh.rotation.x = sh.rotation.x * (1 - M) - (0.05 + 0.62 * Math.sin(f)) * M;              // (as far back as forward)
+        sh.rotation.x = sh.rotation.x * (1 - M) - (0.05 + 0.62 * G.arm * Math.sin(f)) * M;              // (as far back as forward)
         el.rotation.x = el.rotation.x * (1 - M) - (1.35 + 0.15 * Math.sin(f)) * M;
         sh.rotation.z = sh.rotation.z * (1 - M) + sgn * 0.06 * M;
       };
       arm(this.shL, this.elL, ph + Math.PI, 1); arm(this.shR, this.elR, ph, -1);
       // (the bounce: up in the air between strides, down hard on each foot)
-      this.hips.position.y = 0.95 + (Math.abs(Math.sin(ph)) * 0.035 - 0.025) * M;
-      this.torso.rotation.x = 0.16 + Math.sin(ph * 2) * 0.012;
+      this.hips.position.y = 0.95 + (Math.abs(Math.sin(ph)) * 0.035 * G.bob - 0.025) * M;
+      this.torso.rotation.x = 0.16 + G.lean + Math.sin(ph * 2) * 0.012;
       this.hips.rotation.y = Math.sin(ph) * 0.06 * M;                // (hips and shoulders counter-rotating, a little)
     } else this.hips.rotation.y = 0;
     this.root.position.set(this.x, groundAt(this.x, this.z) + lift + p.lift, this.z);

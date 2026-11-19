@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 89;
+export const BUILD = 90;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 78, date: '19 Nov 2026', title: 'Out of step',
+    items: [
+      ['Nobody in step', 'Every marshal, medic and driver now has their own way of moving: their own pace, stride length, arm swing, knee lift and lean. They also set off at slightly different moments, so they never run in sync', 'fix'],
+    ],
+  },
   {
     id: 77, date: '19 Nov 2026', title: 'The quickest way',
     items: [
