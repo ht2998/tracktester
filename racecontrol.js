@@ -150,9 +150,9 @@ function buildAmbulance() {
   addMesh(g, profileBody([[-2.62, 0.42], [-2.62, 2.42], [-2.5, 2.52], [1.25, 2.52], [1.42, 2.4], [2.02, 1.32], [2.42, 1.12], [2.52, 0.86], [2.5, 0.42]], 1.9, 0.08), white);
   // windscreen and cab side windows
   const ws = new THREE.Mesh(new THREE.PlaneGeometry(1.66, 1.18), glass);
-  ws.position.set(0, 1.86, 1.735); ws.rotation.x = -Math.atan2(0.6, 1.08); g.add(ws);
+  ws.position.set(0, 1.86 + 0.05, 1.72 + 0.09); ws.rotation.x = -Math.atan2(0.6, 1.08); g.add(ws);   // (just proud of the rounded edge)
   for (const sx of [-1, 1]) {
-    const w1 = new THREE.Mesh(new THREE.PlaneGeometry(0.85, 0.6), glass); w1.position.set(sx * 0.962, 1.88, 1.05); w1.rotation.y = sx * Math.PI / 2; g.add(w1);
+    const w1 = new THREE.Mesh(new THREE.PlaneGeometry(0.75, 0.55), glass); w1.position.set(sx * 0.962, 1.9, 1.1); w1.rotation.y = sx * Math.PI / 2; g.add(w1);
     // mirror
     addMesh(g, roundBox(0.09, 0.26, 0.17, 0.03, sx * 1.07, 1.82, 1.5), black, false);
     // the block pattern, and a red band above it
