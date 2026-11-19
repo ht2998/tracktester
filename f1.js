@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 21;
+export const BUILD = 22;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -369,10 +369,10 @@ export function buildF1Body(car, addPanel) {
   const screen = new THREE.CylinderGeometry(0.24, 0.24, 0.12, 8, 1, true, -0.9, 1.8).rotateX(-0.35).translate(0, 0.57, 0.48);
   add(screen, MAT.glass, false);
   // the driver: a helmet with a dark visor, his shoulders just below the rim
-  const helmet = add(new THREE.SphereGeometry(0.135, 20, 16).scale(1, 1.05, 1.1).translate(0, 0.64, 0.08), MAT.helmet);
-  const visor = add(new THREE.SphereGeometry(0.137, 20, 10, -0.9 + Math.PI / 2, 1.8, 1.1, 0.5).scale(1, 1.05, 1.1).translate(0, 0.64, 0.08), MAT.visor);
+  const helmet = add(new THREE.SphereGeometry(0.135, 20, 16).scale(1, 1.05, 1.1).translate(0, 0.665, -0.06), MAT.helmet);
+  const visor = add(new THREE.SphereGeometry(0.137, 20, 10, -0.9 + Math.PI / 2, 1.8, 1.1, 0.5).scale(1, 1.05, 1.1).translate(0, 0.665, -0.06), MAT.visor);
   // (a blue and yellow helmet stripe)
-  add(new THREE.TorusGeometry(0.135, 0.012, 6, 24, Math.PI).rotateY(Math.PI / 2).rotateZ(Math.PI / 2).scale(1, 1.05, 1.1).translate(0, 0.64, 0.08), MAT.yellow);
+  add(new THREE.TorusGeometry(0.135, 0.012, 6, 24, Math.PI).rotateY(Math.PI / 2).rotateZ(Math.PI / 2).scale(1, 1.05, 1.1).translate(0, 0.665, -0.06), MAT.yellow);
   // mirrors: squared-off pods on stalks at the cockpit sides (each pod
   // can be knocked off, leaving its stalk; the pit crew fit a new one)
   const mirrors = {};
@@ -510,10 +510,10 @@ export function buildF1() {
   // the steering wheel, just visible in the opening
   add(new THREE.TorusGeometry(0.11, 0.014, 6, 18).rotateX(-1.1).translate(0, 0.5, 0.38), MAT.carbon);
   // the driver: a helmet with a dark visor, his shoulders just below the rim
-  const helmet = add(new THREE.SphereGeometry(0.135, 20, 16).scale(1, 1.05, 1.1).translate(0, 0.64, 0.08), MAT.helmet);
-  const visor = add(new THREE.SphereGeometry(0.137, 20, 10, -0.9 + Math.PI / 2, 1.8, 1.1, 0.5).scale(1, 1.05, 1.1).translate(0, 0.64, 0.08), MAT.visor);
+  const helmet = add(new THREE.SphereGeometry(0.135, 20, 16).scale(1, 1.05, 1.1).translate(0, 0.665, -0.06), MAT.helmet);
+  const visor = add(new THREE.SphereGeometry(0.137, 20, 10, -0.9 + Math.PI / 2, 1.8, 1.1, 0.5).scale(1, 1.05, 1.1).translate(0, 0.665, -0.06), MAT.visor);
   // (a blue and yellow helmet stripe)
-  add(new THREE.TorusGeometry(0.135, 0.012, 6, 24, Math.PI).rotateY(Math.PI / 2).rotateZ(Math.PI / 2).scale(1, 1.05, 1.1).translate(0, 0.64, 0.08), MAT.yellow);
+  add(new THREE.TorusGeometry(0.135, 0.012, 6, 24, Math.PI).rotateY(Math.PI / 2).rotateZ(Math.PI / 2).scale(1, 1.05, 1.1).translate(0, 0.665, -0.06), MAT.yellow);
   // mirrors: round, on stalks, at the cockpit sides
   for (const s of [1, -1]) {
     add(rod([s * 0.31, 0.5, 0.55], [s * 0.42, 0.6, 0.56], 0.01), MAT.carbon);
@@ -722,7 +722,12 @@ export function buildF1Cockpit(car) {
   const knob = add(new THREE.SphereGeometry(0.022, 12, 10).translate(0, 0.145, 0), M.knob, lever);
   add(box(0.05, 0.02, 0.1, -0.2, 0.42, 0.3), M.carbon);              // its gate
   // the driver: shoulders and chest just under the rim, arms to the wheel
-  const chest = add(new THREE.CapsuleGeometry(0.15, 0.12, 6, 12).rotateZ(Math.PI / 2).scale(1, 0.7, 0.8).translate(0, 0.48, -0.02), M.suit);
+  // (sat back in the tub, not hunched over the wheel: his back against the
+  // seat, leaning back, shoulders square and his head up against the headrest)
+  const chest = add(new THREE.CapsuleGeometry(0.15, 0.12, 6, 12).rotateZ(Math.PI / 2).scale(1, 0.7, 0.8).translate(0, 0.475, -0.1), M.suit);
+  const back = add(new THREE.CapsuleGeometry(0.13, 0.22, 6, 12).scale(1.05, 1, 0.75).rotateX(-0.55).translate(0, 0.36, -0.22), M.suit);
+  const neck = add(new THREE.CylinderGeometry(0.05, 0.055, 0.1, 10).rotateX(-0.2).translate(0, 0.565, -0.075), M.suit);
+  add(new THREE.CapsuleGeometry(0.07, 0.12, 4, 10).rotateZ(Math.PI / 2).translate(0, 0.62, -0.235), M.pad);   // the headrest
   // arms like the Caterham driver's: rounded, with elbows, gloved hands with a thumb and a cuff
   const arms = [0, 1].map((side) => {
     const hand = new THREE.Group(); group.add(hand);
@@ -737,7 +742,7 @@ export function buildF1Cockpit(car) {
       hand,
     };
   });
-  const SH = [new THREE.Vector3(-0.17, 0.5, 0), new THREE.Vector3(0.17, 0.5, 0)];   // right, left shoulder
+  const SH = [new THREE.Vector3(-0.17, 0.5, -0.08), new THREE.Vector3(0.17, 0.5, -0.08)];   // right, left shoulder
   const V = { a: new THREE.Vector3(), d: new THREE.Vector3(), e: new THREE.Vector3(), p: new THREE.Vector3(), up: new THREE.Vector3(0, 1, 0), dir: new THREE.Vector3() };
   const seg = (m, a, b, len) => { V.dir.subVectors(b, a); const l = V.dir.length(); m.position.addVectors(a, b).multiplyScalar(0.5); m.quaternion.setFromUnitVectors(V.up, V.dir.divideScalar(l || 1)); m.scale.set(1, l / len, 1); };
   const reach = (i, target, pole) => {
@@ -762,12 +767,13 @@ export function buildF1Cockpit(car) {
   const gripPt = new THREE.Vector3(), knobPt = new THREE.Vector3();
   return {
     group,
-    driverParts: [chest, ...arms.flatMap((a) => [a.upper, a.fore, a.elbow, a.hand])],   // (him, without the wheel: for climbing out)
+    driverParts: [chest, back, neck, ...arms.flatMap((a) => [a.upper, a.fore, a.elbow, a.hand])],   // (him, without the wheel: for climbing out)
     head,                                          // how far his head is thrown about (car's frame): add to the eye
     // a gear change: his right hand goes to the lever
     onShift(direction) { shift = 0; shiftDir = direction > 0 ? 1 : -1; },
-    update(dt, { steer = 0, maxSteer = 0.36, speed = 0, slip = 0, bump = 0, gear = 'N', rpm = 0, redline = 12500, kmh = 0 }) {
+    update(dt, { steer = 0, maxSteer = 0.36, speed = 0, slip = 0, bump = 0, gear = 'N', rpm = 0, redline = 12500, kmh = 0, limp = false }) {
       t += dt;
+      if (limp) { steer = 0; speed = 0; slip = 0; bump = 0; shift = 1; }
       // how hard he's fighting it: the speed, how much it's sliding, the bumps.
       // Only while it's moving: stopped (or wrecked and still), his hands just rest on the wheel
       const moving = Math.min(1, Math.max(0, Math.abs(speed) - 1) / 8);
@@ -792,7 +798,7 @@ export function buildF1Cockpit(car) {
         wheel.localToWorld(gripPt.set(i === 0 ? -0.125 : 0.125, 0, -0.03));
         group.worldToLocal(gripPt);
         if (i === 0 && shift < 1) {
-          shift = Math.min(1, shift + dt / 0.38);
+          shift = Math.min(1, shift + dt / 0.5);
           const out = shift < 0.3 ? shift / 0.3 : shift > 0.7 ? (1 - shift) / 0.3 : 1;
           const throwL = shift > 0.3 && shift < 0.7 ? Math.sin(Math.PI * (shift - 0.3) / 0.4) : 0;
           lever.rotation.x = -shiftDir * 0.35 * throwL;
@@ -800,6 +806,7 @@ export function buildF1Cockpit(car) {
           knob.getWorldPosition(knobPt); group.worldToLocal(knobPt);
           gripPt.lerp(knobPt, Math.min(1, out));
         } else if (i === 0) lever.rotation.x = 0;
+        if (limp) gripPt.set(i === 0 ? -0.1 : 0.1, 0.36, 0.12);          // (hands fallen off the wheel, into his lap)
         reach(i, gripPt, POLE[i]);
       }
       // the screen and shift lights, ten times a second

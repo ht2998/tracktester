@@ -26,7 +26,7 @@
 // a smashed radiator): the team retire the car. DNF on the standings, and
 // they push it back into the garage.
 // =====================================================================
-export const BUILD = 7;
+export const BUILD = 8;
 
 import * as THREE from 'three';
 
@@ -61,50 +61,129 @@ export const POSES = {
   // handle and trigger, the other under the can
   RIFLE: { lean: 0.2, shL: 0.75, shR: 0.55, elL: 1.25, elR: 1.45, outL: -0.25, outR: -0.35 },
   SPRAY_RIFLE: { lean: 0.3, shL: 0.95, shR: 0.75, elL: 1.05, elR: 1.25, outL: -0.25, outR: -0.35, thL: 0.45, knL: 0.35, thR: -0.1, drop: 0.08 },
+  // getting out of a car coming at you: the dive, then flat on the ground
+  DIVE: { rate: 16, tilt: 1.05, lift: 0.3, shL: 2.7, shR: 2.7, elL: 0.2, elR: 0.2, thL: -0.35, thR: 0.25, knL: 0.5, knR: 0.2 },
+  PRONE: { rate: 10, tilt: 1.5, lift: 0.13, shL: 2.6, shR: 2.4, elL: 0.9, elR: 1.0, outL: 0.3, outR: 0.3, thR: 0.12, knL: 0.25, knR: 0.35, head: -0.5 },
+  // too close to dive: a duck, arms in round the head
+  DUCK: { rate: 16, drop: 0.38, lean: 0.75, shL: 2.5, shR: 2.5, elL: 2.3, elR: 2.3, outL: -0.25, outR: -0.25, thL: 1.05, thR: 1.0, knL: 1.5, knR: 1.45, head: 0.4 },
+  // pointing it out; waving others over (arm up, swinging)
+  POINT: { shR: 1.55, elR: 0.05, shL: 0.15, lean: 0.05 },
+  WAVE: { shR: 2.7, elR: 0.5, shL: 0.1, work: 0.8 },
+  // the side vault: weight on one hand, hips up, legs tucked and swung across
+  VAULT: { rate: 14, lean: 0.45, roll: 0.65, shL: 1.05, elL: 0.1, outL: 0.3, shR: 1.7, elR: 0.6, thL: 1.55, thR: 1.35, knL: 1.3, knR: 1.45 },
+  // the driver out of the car: sat by the barrier getting his breath; head in his hands
+  SIT: { rate: 6, drop: 0.79, lean: 0.3, thL: 1.5, thR: 1.42, knL: 1.05, knR: 1.3, shL: 0.55, shR: 0.65, elL: 0.95, elR: 0.85, head: 0.15 },
+  SIT_HEAD: { rate: 4, drop: 0.79, lean: 0.62, thL: 1.5, thR: 1.42, knL: 1.3, knR: 1.4, shL: 1.25, shR: 1.25, elL: 2.35, elR: 2.35, outL: -0.2, outR: -0.2, head: 0.5 },
+  // hurt: down on his back by the track; on the stretcher; doubled over
+  LIE: { rate: 5, tilt: -1.52, lift: 0.12, shL: 0.25, shR: 0.4, outL: 0.45, outR: 0.3, elL: 0.3, elR: 0.5, thL: 0.12, knL: 0.45, knR: 0.1, head: -0.2 },
+  FALL: { rate: 4, tilt: -0.9, lift: 0.45, drop: 0.3, shL: 1.2, shR: 1.4, outL: 0.5, outR: 0.5, thL: 0.8, knL: 0.9, thR: 0.6, knR: 0.6 },
+  HUNCH: { lean: 0.65, shL: 0.6, shR: 0.7, elL: 1.2, elR: 1.0, thL: 0.25, knL: 0.35, thR: 0.2, knR: 0.3, drop: 0.08, head: 0.3 },
+  // a medic: down by him; lifting the stretcher; carrying it
+  MEDIC: { drop: 0.45, lean: 0.55, thL: 1.45, knL: 1.45, thR: 0, knR: 1.6, shL: 1.0, shR: 1.1, elL: 0.6, elR: 0.5, head: 0.4 },
+  STRETCH: { drop: 0.15, lean: 0.25, shL: 0.35, shR: 0.35, elL: 0.3, elR: 0.3, thL: 0.35, knL: 0.5, thR: 0.35, knR: 0.5 },
+  STRETCH_UP: { lean: 0.02, shL: 0.25, shR: 0.25, elL: 0.35, elR: 0.35 },
+  // behind a TV camera, hands on its handles
+  CAMERA: { shL: 1.1, shR: 1.0, elL: 0.9, elR: 1.0, outL: -0.15, outR: -0.15, lean: 0.12, head: 0.05 },
 };
-const KEYS = ['drop', 'lean', 'shL', 'shR', 'elL', 'elR', 'outL', 'outR', 'thL', 'thR', 'knL', 'knR', 'work'];
+const KEYS = ['drop', 'lean', 'shL', 'shR', 'elL', 'elR', 'outL', 'outR', 'thL', 'thR', 'knL', 'knR', 'work', 'tilt', 'roll', 'lift', 'head'];
 
 const geoCache = {};
 const G = (k, make) => geoCache[k] || (geoCache[k] = make());
 
 export class Person {
+  // mats: { suits[], helmet, visor, glove, boot, skin?, cap?, look? }
+  //   look: 'crew' (pit crew: helmets), 'driver' (helmet), 'marshal' (face,
+  //   cap, hi-vis bands), 'medic' (face, no cap), 'camera' (face, cap, headphones)
   constructor(mats, colour) {
     const root = this.root = new THREE.Group();
-    const suit = mats.suits[colour];
-    const box = (w, h, d, mat, y = -h / 2) => { const m = new THREE.Mesh(G(`b${w},${h},${d},${y}`, () => new THREE.BoxGeometry(w, h, d).translate(0, y, 0)), mat); m.castShadow = true; return m; };
+    const suit = mats.suits[colour] || mats.suits[0];
+    const look = mats.look || 'crew';
+    const sk = skinMats(mats);
+    const shad = (m) => { m.castShadow = true; return m; };
+    const box = (w, h, d, mat, y = -h / 2) => shad(new THREE.Mesh(G(`b${w},${h},${d},${y}`, () => new THREE.BoxGeometry(w, h, d).translate(0, y, 0)), mat));
+    // a rounded limb hanging from its joint: len long, r thick
+    const cap = (r, len, mat, sx = 1, sz = 1) => shad(new THREE.Mesh(G(`c${r},${len},${sx},${sz}`, () => new THREE.CapsuleGeometry(r, Math.max(0.01, len - r * 1.2), 4, 10).translate(0, -len / 2, 0).scale(sx, 1, sz)), mat));
     const hips = this.hips = new THREE.Group(); hips.position.y = 0.95; root.add(hips);
-    hips.add(box(0.3, 0.16, 0.2, suit, 0));
+    hips.add(shad(new THREE.Mesh(G('pelvis', () => new THREE.CapsuleGeometry(0.12, 0.12, 4, 10).rotateZ(Math.PI / 2).scale(1, 1, 0.8)), suit)));
     const torso = this.torso = new THREE.Group(); hips.add(torso);
-    torso.add(box(0.36, 0.52, 0.22, suit, 0.27));
-    const head = new THREE.Mesh(G('head', () => new THREE.SphereGeometry(0.135, 14, 10).scale(1, 1.08, 1.05)), mats.helmet);
-    head.position.y = 0.69; head.castShadow = true; torso.add(head);
-    const visor = new THREE.Mesh(G('visor', () => new THREE.SphereGeometry(0.137, 14, 8, -0.9 + Math.PI / 2, 1.8, 1.25, 0.45).scale(1, 1.08, 1.05)), mats.visor);
-    visor.position.y = 0.69; torso.add(visor);
-    const limb = (parent, x, y, len, thick, mat) => {
+    // chest and belly: one rounded shape, broader at the shoulders
+    const chest = shad(new THREE.Mesh(G('chest', () => {
+      const g = new THREE.CapsuleGeometry(0.15, 0.3, 6, 12);
+      const a = g.attributes.position;
+      for (let i = 0; i < a.count; i++) { const y = a.getY(i), wide = 1.05 + Math.max(0, y) * 0.55; a.setX(i, a.getX(i) * wide); a.setZ(i, a.getZ(i) * 0.72); }
+      g.computeVertexNormals();
+      return g.translate(0, 0.3, 0);
+    }), suit));
+    torso.add(chest);
+    if (look === 'marshal' || look === 'medic') {
+      // hi-vis bands round the chest
+      const band = new THREE.Mesh(G('band', () => new THREE.CylinderGeometry(0.205, 0.2, 0.045, 16, 1, true).scale(1, 1, 0.74)), sk.reflect);
+      band.position.y = 0.34; torso.add(band);
+    }
+    this.neck = shad(new THREE.Mesh(G('neck', () => new THREE.CylinderGeometry(0.05, 0.055, 0.1, 10)), look === 'crew' || look === 'driver' ? suit : sk.skin));
+    this.neck.position.y = 0.58; torso.add(this.neck);
+    const head = this.head = new THREE.Group(); head.position.y = 0.63; torso.add(head);
+    if (look === 'crew' || look === 'driver') {
+      head.add(shad(new THREE.Mesh(G('helmet', () => new THREE.SphereGeometry(0.135, 16, 12).scale(1, 1.08, 1.05).translate(0, 0.06, 0)), mats.helmet)));
+      const visor = new THREE.Mesh(G('visor', () => new THREE.SphereGeometry(0.137, 14, 8, -0.9 + Math.PI / 2, 1.8, 1.25, 0.45).scale(1, 1.08, 1.05).translate(0, 0.06, 0)), mats.visor);
+      head.add(visor);
+    } else {
+      // a face: head, ears, nose, hair
+      head.add(shad(new THREE.Mesh(G('skull', () => new THREE.SphereGeometry(0.105, 16, 12).scale(0.92, 1.12, 1).translate(0, 0.07, 0)), sk.skin)));
+      head.add(new THREE.Mesh(G('nose', () => new THREE.ConeGeometry(0.018, 0.04, 6).rotateX(Math.PI / 2).translate(0, 0.06, 0.105)), sk.skin));
+      for (const sx of [-1, 1]) head.add(new THREE.Mesh(G('ear' + sx, () => new THREE.SphereGeometry(0.022, 8, 6).scale(0.5, 1, 0.8).translate(sx * 0.097, 0.07, 0)), sk.skin));
+      head.add(new THREE.Mesh(G('hair', () => new THREE.SphereGeometry(0.108, 14, 8, 0, Math.PI * 2, 0, 1.35).scale(0.94, 1.1, 1.02).translate(0, 0.075, -0.008)), sk.hair));
+      for (const sx of [-1, 1]) head.add(new THREE.Mesh(G('eye' + sx, () => new THREE.SphereGeometry(0.012, 6, 4).translate(sx * 0.036, 0.085, 0.092)), sk.eye));
+      if (look === 'marshal' || look === 'camera') {
+        head.add(shad(new THREE.Mesh(G('cap', () => new THREE.SphereGeometry(0.112, 14, 8, 0, Math.PI * 2, 0, 1.25).scale(0.96, 0.95, 1.02).translate(0, 0.095, 0)), mats.cap || sk.cap)));
+        head.add(new THREE.Mesh(G('brim', () => new THREE.CylinderGeometry(0.09, 0.09, 0.012, 14, 1, false, -Math.PI / 2, Math.PI).scale(1, 1, 0.9).translate(0, 0.12, 0.07)), mats.cap || sk.cap));
+      }
+      if (look === 'camera') {
+        // headphones
+        head.add(new THREE.Mesh(G('hband', () => new THREE.TorusGeometry(0.112, 0.01, 6, 14, Math.PI).translate(0, 0.07, 0)), sk.dark));
+        for (const sx of [-1, 1]) head.add(new THREE.Mesh(G('cup' + sx, () => new THREE.CylinderGeometry(0.04, 0.04, 0.03, 10).rotateZ(Math.PI / 2).translate(sx * 0.11, 0.07, 0)), sk.dark));
+      }
+    }
+    // arms: shoulder, upper arm, elbow, forearm, glove with a thumb
+    const limb = (parent, x, y, len, r, mat, sx, sz) => {
       const j = new THREE.Group(); j.position.set(x, y, 0); parent.add(j);
-      j.add(box(thick, len, thick, mat));
+      j.add(cap(r, len, mat, sx, sz));
       const k = new THREE.Group(); k.position.y = -len; j.add(k);
       return [j, k];
     };
-    [this.shL, this.elL] = limb(torso, 0.23, 0.5, 0.29, 0.095, suit);
-    [this.shR, this.elR] = limb(torso, -0.23, 0.5, 0.29, 0.095, suit);
-    this.elL.add(box(0.085, 0.27, 0.085, suit)); this.elR.add(box(0.085, 0.27, 0.085, suit));
-    // hands (gloves): what's held hangs from the right hand, or both
-    this.handR = new THREE.Group(); this.handR.position.y = -0.3; this.elR.add(this.handR);
-    this.handL = new THREE.Group(); this.handL.position.y = -0.3; this.elL.add(this.handL);
-    this.handR.add(box(0.08, 0.08, 0.08, mats.glove, 0)); this.handL.add(box(0.08, 0.08, 0.08, mats.glove, 0));
-    [this.thL, this.knL] = limb(hips, 0.1, -0.02, 0.45, 0.13, suit);
-    [this.thR, this.knR] = limb(hips, -0.1, -0.02, 0.45, 0.13, suit);
-    for (const k of [this.knL, this.knR]) { k.add(box(0.11, 0.44, 0.11, suit)); const f = box(0.11, 0.07, 0.24, mats.boot, -0.44); f.position.z = 0.05; k.add(f); }
+    [this.shL, this.elL] = limb(torso, 0.235, 0.5, 0.29, 0.052, suit);
+    [this.shR, this.elR] = limb(torso, -0.235, 0.5, 0.29, 0.052, suit);
+    for (const sh of [this.shL, this.shR]) sh.add(shad(new THREE.Mesh(G('delt', () => new THREE.SphereGeometry(0.065, 10, 8)), suit)));
+    this.elL.add(cap(0.045, 0.27, suit)); this.elR.add(cap(0.045, 0.27, suit));
+    const hand = (side) => {
+      const h = new THREE.Group(); h.position.y = -0.29;
+      const gl = look === 'marshal' || look === 'camera' ? sk.skin : mats.glove;
+      h.add(shad(new THREE.Mesh(G('palm', () => new THREE.BoxGeometry(0.075, 0.09, 0.035, 1, 1, 1).translate(0, -0.035, 0)), gl)));
+      h.add(new THREE.Mesh(G('fing', () => new THREE.CapsuleGeometry(0.018, 0.05, 2, 6).translate(0, -0.095, 0.006).scale(1.9, 1, 1)), gl));
+      h.add(new THREE.Mesh(G('thumb' + side, () => new THREE.CapsuleGeometry(0.014, 0.04, 2, 6).rotateZ(side * 0.5).translate(side * 0.042, -0.04, 0.02)), gl));
+      return h;
+    };
+    this.handR = hand(-1); this.elR.add(this.handR);
+    this.handL = hand(1); this.elL.add(this.handL);
+    // legs: thigh, knee, shin, boot
+    [this.thL, this.knL] = limb(hips, 0.1, -0.02, 0.45, 0.075, suit);
+    [this.thR, this.knR] = limb(hips, -0.1, -0.02, 0.45, 0.075, suit);
+    for (const k of [this.knL, this.knR]) {
+      k.add(cap(0.06, 0.44, suit));
+      if (look === 'marshal' || look === 'medic') { const b = new THREE.Mesh(G('shinband', () => new THREE.CylinderGeometry(0.064, 0.062, 0.035, 12, 1, true).translate(0, -0.3, 0)), sk.reflect); k.add(b); }
+      const f = shad(new THREE.Mesh(G('boot', () => { const g = new THREE.CapsuleGeometry(0.055, 0.15, 3, 8).rotateX(Math.PI / 2).scale(1, 0.75, 1); return g.translate(0, -0.455, 0.055); }), mats.boot));
+      k.add(f);
+    }
     // the front of the body: where a carried wheel, wing or churn sits
     this.front = new THREE.Group(); this.front.position.set(0, 0.12, 0.42); torso.add(this.front);
     this.p = Object.fromEntries(KEYS.map((k) => [k, 0]));
     this.want = 'STAND';
     this.x = 0; this.z = 0; this.face = 0; this.moving = 0; this.phase = Math.random() * 6; this.t = 0;
     this.queue = []; this.held = []; this.follow = null; this.back = false;
+    this.anim = null; this.lookAt = null;
   }
   place(x, z, face) { this.x = x; this.z = z; if (face != null) this.face = face; }
-  run(list) { this.queue = list.slice(); this.follow = null; }
+  run(list) { this.queue = list.slice(); this.follow = null; this.anim = null; }
   then(list) { this.queue.push(...list); }
   get busy() { return this.queue.length > 0; }
   hold(obj, where = 'front') { (where === 'hand' ? this.handR : where === 'handL' ? this.handL : where === 'root' ? this.root : this.front).add(obj); this.held.push(obj); }
@@ -112,7 +191,7 @@ export class Person {
 
   update(dt, groundAt, ctx) {
     this.t += dt;
-    let speed = 0;
+    let speed = 0, lift = 0;
     // work through the list of things to do
     while (this.queue.length) {
       const a = this.queue[0];
@@ -120,54 +199,95 @@ export class Person {
       if (a.pose) { this.want = a.pose; if (a.t == null) { this.queue.shift(); continue; } a.left = a.left ?? a.t; a.left -= dt; if (a.left > 0) break; this.queue.shift(); continue; }
       if (a.wait != null) { a.left = a.left ?? a.wait; a.left -= dt; if (a.left > 0) break; this.queue.shift(); continue; }
       if (a.until) { if (a.until()) { this.queue.shift(); continue; } break; }
+      if (a.look !== undefined) { this.lookAt = a.look; this.queue.shift(); continue; }
       if (a.face != null) {
         const want = Array.isArray(a.face) ? Math.atan2(a.face[0] - this.x, a.face[1] - this.z) : a.face;
         let d = want - this.face; d = Math.atan2(Math.sin(d), Math.cos(d));
-        const step = dt * 6;
+        const step = dt * (a.quick ? 12 : 6);
         if (Math.abs(d) <= step) { this.face = want; this.queue.shift(); continue; }
         this.face += Math.sign(d) * step; break;
       }
+      // over a barrier: a hand on it, legs swung over to the side, and on
+      if (a.vault || a.dive) {
+        const to = a.vault || a.dive, T = a.t ?? (a.vault ? 0.7 : 0.45);
+        if (!a.from) { a.from = [this.x, this.z]; a.u = 0; a.prev = this.want; this.want = a.vault ? 'VAULT' : 'DIVE'; this.face = Math.atan2(to[0] - this.x, to[1] - this.z); }
+        a.u = Math.min(1, a.u + dt / T);
+        const e = a.vault ? a.u : 1 - (1 - a.u) * (1 - a.u);
+        this.x = a.from[0] + (to[0] - a.from[0]) * e; this.z = a.from[1] + (to[1] - a.from[1]) * e;
+        lift = Math.sin(Math.PI * a.u) * (a.vault ? (a.h ?? 0.75) * 0.75 : 0.35);
+        speed = a.vault ? 2.5 : 0;
+        this.vaulting = !!a.vault;
+        if (a.u >= 1) { this.queue.shift(); this.want = a.vault ? (a.prev === 'VAULT' ? 'STAND' : a.prev) : 'PRONE'; this.vaulting = false; continue; }
+        break;
+      }
       if (a.go) {
         const [tx, tz] = a.go, dx = tx - this.x, dz = tz - this.z, d = Math.hypot(dx, dz);
-        const v = a.panic ? 5.4 : a.run ? 4.6 : a.back ? 1.1 : 1.6;
-        this.panic = !!a.panic;
+        const v = a.stagger ? 0.9 : a.panic ? 5.6 : a.run ? 4.6 : a.back ? 1.1 : (a.v || 1.6);
+        this.panic = !!a.panic; this.stagger = !!a.stagger;
         if (d < 0.04) { this.x = tx; this.z = tz; this.queue.shift(); continue; }
         const step = Math.min(d, v * dt);
-        this.x += dx / d * step; this.z += dz / d * step;
+        let sx = dx / d, sz = dz / d;
+        if (a.stagger) { const w = Math.sin(this.t * 2.3) * 0.45; const c = Math.cos(w), s2 = Math.sin(w); [sx, sz] = [sx * c + sz * s2, -sx * s2 + sz * c]; }
+        this.x += sx * step; this.z += sz * step;
         speed = v;
         this.back = !!a.back;
-        if (!a.back && !a.sidestep) { let df = Math.atan2(dx, dz) - this.face; df = Math.atan2(Math.sin(df), Math.cos(df)); this.face += df * Math.min(1, dt * 10); }
+        if (!a.back && !a.sidestep) { let df = Math.atan2(sx, sz) - this.face; df = Math.atan2(Math.sin(df), Math.cos(df)); this.face += df * Math.min(1, dt * (a.panic ? 14 : 10)); }
         break;
       }
       this.queue.shift();
     }
     if (this.follow) { const f = this.follow(); this.x = f[0]; this.z = f[1]; this.face = f[2]; speed = f[3] || 0; }
     // the pose: eased towards what he's doing, with legs walking
-    const P = POSES[this.want] || POSES.STAND, k = Math.min(1, dt * 9);
+    const P = POSES[this.want] || POSES.STAND, k = Math.min(1, dt * (P.rate || 9));
     for (const key of KEYS) this.p[key] += ((P[key] || 0) - this.p[key]) * k;
-    this.moving += ((speed > 0 ? 1 : 0) - this.moving) * Math.min(1, dt * 8);
-    this.phase += dt * (speed > 3 ? 11 : 7.5) * (this.back ? -1 : 1);
-    const sw = Math.sin(this.phase) * this.moving * (speed > 3 ? 0.75 : 0.42);
+    const walking = speed > 0 && !this.vaulting;
+    this.moving += ((walking ? 1 : 0) - this.moving) * Math.min(1, dt * 8);
+    const fast = speed > 3;
+    this.phase += dt * (fast ? (this.panic ? 12.5 : 11) : this.stagger ? 5 : 7.5) * (this.back ? -1 : 1);
+    const sw = Math.sin(this.phase) * this.moving * (fast ? 0.8 : 0.42);
     const p = this.p, carrying = this.held.length > 0;
-    if (!speed) this.panic = false;
-    const runLean = speed > 3 ? (this.panic ? 0.42 : 0.25) : 0;
-    this.hips.position.y = 0.95 - p.drop * (1 - this.moving) + Math.abs(Math.cos(this.phase)) * 0.03 * this.moving;
-    this.torso.rotation.x = p.lean * (1 - this.moving * 0.5) + runLean;
+    if (!speed) { this.panic = false; this.stagger = false; }
+    const runLean = fast ? (this.panic ? 0.36 : 0.22) : this.stagger ? 0.25 : 0;
+    this.hips.position.y = 0.95 - p.drop * (1 - this.moving) + Math.abs(Math.cos(this.phase)) * (fast ? 0.05 : 0.025) * this.moving;
+    this.torso.rotation.x = p.lean * (1 - this.moving * 0.6) + runLean;
     const wob = p.work ? Math.sin(this.t * 22) * 0.12 * p.work : 0;
-    const armSw = carrying ? 0 : sw * 0.9;
-    this.shL.rotation.set(-(p.shL + armSw + wob), 0, p.outL);
-    this.shR.rotation.set(-(p.shR - armSw - wob), 0, -p.outR);
-    this.elL.rotation.x = -p.elL - (carrying ? 0 : this.moving * 0.3);
-    this.elR.rotation.x = -p.elR - (carrying ? 0 : this.moving * 0.3);
+    // arms: while walking or running (hands free), they come down from the
+    // pose and swing forward and back, elbows bent more the faster he goes
+    const free = carrying ? 0 : this.moving;
+    const armSw = carrying ? 0 : sw * (fast ? 1.1 : 0.9);
+    const bend = fast ? 1.45 : 0.35;
+    this.shL.rotation.set(-(p.shL * (1 - free) + armSw + wob), 0, p.outL * (1 - free) + 0.08 * free);
+    this.shR.rotation.set(-(p.shR * (1 - free) - armSw - wob), 0, -p.outR * (1 - free) - 0.08 * free);
+    this.elL.rotation.x = -(p.elL * (1 - free) + bend * free + (fast ? Math.max(0, sw) * 0.4 : 0));
+    this.elR.rotation.x = -(p.elR * (1 - free) + bend * free + (fast ? Math.max(0, -sw) * 0.4 : 0));
     const legK = 1 - this.moving;
     this.thL.rotation.x = -(p.thL * legK + sw); this.thR.rotation.x = -(p.thR * legK - sw);
-    this.knL.rotation.x = p.knL * legK + Math.max(0, -Math.sin(this.phase)) * 0.9 * this.moving;
-    this.knR.rotation.x = p.knR * legK + Math.max(0, Math.sin(this.phase)) * 0.9 * this.moving;
-    this.root.position.set(this.x, groundAt(this.x, this.z), this.z);
-    this.root.rotation.y = this.face;
+    this.knL.rotation.x = p.knL * legK + Math.max(0, -Math.sin(this.phase)) * (fast ? 1.4 : 0.9) * this.moving;
+    this.knR.rotation.x = p.knR * legK + Math.max(0, Math.sin(this.phase)) * (fast ? 1.4 : 0.9) * this.moving;
+    this.root.position.set(this.x, groundAt(this.x, this.z) + lift + p.lift, this.z);
+    this.root.rotation.set(p.tilt, this.face, p.roll + (this.stagger ? Math.sin(this.t * 2.3) * 0.12 : 0), 'YXZ');
     // (in a panic: hunched, the body twisting with each stride, looking about)
-    this.torso.rotation.y = this.panic ? Math.sin(this.phase) * 0.22 + Math.sin(this.t * 3.1) * 0.12 : 0;
+    this.torso.rotation.y = this.panic ? Math.sin(this.phase) * 0.18 : 0;
+    // the head: looks at what he's watching, or about him in a panic
+    let hy = 0;
+    if (this.lookAt) { const a2 = Math.atan2(this.lookAt[0] - this.x, this.lookAt[1] - this.z) - this.face - this.torso.rotation.y; hy = Math.max(-1.2, Math.min(1.2, Math.atan2(Math.sin(a2), Math.cos(a2)))); }
+    else if (this.panic) hy = Math.sin(this.t * 3.4) * 0.5;
+    this.head.rotation.set(-(p.head || 0) - (fast ? 0.15 : 0) * this.moving, this.head.rotation.y + (hy - this.head.rotation.y) * Math.min(1, dt * 8), 0);
   }
+}
+
+// skin, hair and the like, shared by everyone
+let SKIN = null;
+function skinMats(mats) {
+  if (!SKIN) {
+    const std = (c, r = 0.7, extra = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: r, ...extra });
+    SKIN = {
+      skins: [std(0xd9a07a, 0.6), std(0xb57a52, 0.6), std(0x8a5a3a, 0.6), std(0xe8b896, 0.6)],
+      hair: std(0x2a1d14, 0.85), eye: std(0x15110d, 0.3), cap: std(0xf2f2ee, 0.8), dark: std(0x1a1b1e, 0.5),
+      reflect: std(0xe9ece0, 0.3, { emissive: 0x2a2c26, side: THREE.DoubleSide }),
+    };
+  }
+  return { ...SKIN, skin: mats.skin || SKIN.skins[Math.floor(Math.random() * SKIN.skins.length)] };
 }
 
 // ---- props ----

@@ -21,11 +21,26 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 82;
+export const BUILD = 83;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 71, date: '19 Nov 2026', title: 'Real people',
+    items: [
+      ['Marshals who act like people', 'A car coming straight at them: they dive out of its way and get back up (too late to dive: they duck, arms round their heads). One off the track near them: back, fast, watching it. A crash nearby: they point at it and wave the others over. Fire marshals sprint out hunched, looking about', 'new'],
+      ['Over the barrier', 'Marshals vault the barrier the way real ones do, a hand on it and their legs swung over to the side, and keep running. Fences, walls and huts they go round', 'new'],
+      ['Fires smothered', 'Fires don\'t just switch off any more. The marshals spray in bursts, working round the car, knocking the flames down a bit each time while they creep back in between. A big fuel fire takes both of them, and an empty extinguisher brings another marshal with a full one', 'fire'],
+      ['How the driver gets out', 'On fire: over the side and a sprint clear. A big hit: he climbs out, jogs clear and sits down by the barrier to get his breath back, like Leclerc at Monza; the medics walk him to the ambulance. A really big one: he staggers out and goes down by the track, and the medics jump out with a stretcher and carry him in', 'new'],
+      ['Blown up with him in it', 'If the car explodes with the driver still in it, he doesn\'t make it: he\'s left slumped and still, and the screen goes grey. Reset to go again. And the driver no longer turns black with the car', 'fire'],
+      ['Real people, real vehicles', 'Everyone has a proper body now: rounded arms and legs, hands with thumbs, faces and caps for the marshals, hi-vis bands. The camera operators near you are real people following the cars. The ambulance is a proper high-roof van and the crane a proper crane, with a three-part boom and rams', 'update'],
+      ['Driving like real vehicles', 'The ambulance and safety car glide along instead of jumping every 2 m. The crane crawls along the track at about 20 km/h, waits back while there\'s a fire, then lifts the wreck over the barrier and drives home. No more driving through walls and trees', 'fix'],
+      ['Flags made of cloth', 'The marshals\' flags ripple and flap as they\'re waved, and droop when held still', 'update'],
+      ['The driver sits properly', 'The TT-88\'s driver sits back in the seat with his head up against the headrest, and his hand moves to the gear lever for each change', 'fix'],
+      ['Codes on phones', 'There\'s a box in the side panel to type codes in, so they work on a phone too', 'new'],
+    ],
+  },
   {
     id: 70, date: '18 Nov 2026', title: 'Big crashes',
     items: [

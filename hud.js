@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 15;
+export const BUILD = 16;
 
 const COLORS = {
   face: '#15181c',
@@ -721,7 +721,7 @@ function roundRect(g, x, y, w, h, r) {
 export class Hud {
   constructor({ redline, maxSpeed = 240, onTransmission, onAssist, onTyres, tyreOptions = {}, compact = false,
                 timeSpeeds = [60], onSky = {}, onWhatsNew = null, track = 'test', onTrack = null,
-                damageOn = true, onDamage = null, onEngine = null }) {
+                damageOn = true, onDamage = null, onEngine = null, onCode = null }) {
     this.timeSpeeds = timeSpeeds;
     this.onSky = onSky;
     this.onTyres = onTyres;
@@ -859,6 +859,20 @@ export class Hud {
     damageInput.checked = damageOn;
     damageInput.addEventListener('change', () => { onDamage?.(damageInput.checked); damageInput.blur(); });
 
+    // Codes: typed in here (works with a phone's keyboard too)
+    const codeBox = document.createElement('div');
+    codeBox.className = 'tyre-box';
+    codeBox.innerHTML = `<div style="display:flex;gap:6px;align-items:center"><input type="text" id="code-input" placeholder="Enter a code" autocomplete="off" autocapitalize="characters" spellcheck="false" style="flex:1;min-width:0;padding:6px 8px;border-radius:6px;border:1px solid rgba(255,255,255,0.25);background:rgba(0,0,0,0.35);color:#fff;font:inherit;font-size:16px"><button type="button" style="padding:6px 10px;border-radius:6px;border:0;background:#f07b1a;color:#fff;font:inherit;font-weight:700">OK</button></div><span class="gb-note" id="code-note"></span>`;
+    const codeInput = codeBox.querySelector('input'), codeNote = codeBox.querySelector('#code-note');
+    const tryCode = () => {
+      const ok = onCode?.(codeInput.value);
+      codeNote.textContent = ok ? 'Done' : codeInput.value.trim() ? 'That isn\'t a code' : '';
+      if (ok) codeInput.value = '';
+      codeInput.blur();
+    };
+    for (const ev of ['keydown', 'keyup', 'keypress']) codeInput.addEventListener(ev, (e) => { e.stopPropagation(); if (ev === 'keydown' && e.key === 'Enter') tryCode(); });
+    codeBox.querySelector('button').addEventListener('click', tryCode);
+
     // Tyres: one dropdown (grouped by type) so the panel stays short
     const tyreHeading = document.createElement('div');
     tyreHeading.className = 'sp-heading';
@@ -991,7 +1005,7 @@ export class Hud {
     newsBtn.textContent = "What's new";
     newsBtn.addEventListener('click', () => { newsBtn.blur(); onWhatsNew?.(); });
 
-    panel.append(trackHeading, trackBox, gearHeading, gearGroup, assistHeading, ...assistButtons, damageBox, tyreHeading, tyreBox, engineHeading, engineBox, skyHeading, skyBox, newsBtn);
+    panel.append(trackHeading, trackBox, gearHeading, gearGroup, assistHeading, ...assistButtons, damageBox, tyreHeading, tyreBox, engineHeading, engineBox, skyHeading, skyBox, codeBox, newsBtn);
     this.side.append(handle, panel);
     document.body.appendChild(this.side);
 

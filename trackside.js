@@ -35,7 +35,7 @@ import { Person } from './pits.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 4;
+export const BUILD = 5;
 
 export const FLAG_NAMES = {
   green: 'GREEN FLAG', yellow: 'YELLOW FLAG', yellow2: 'DOUBLE YELLOW', red: 'RED FLAG', blue: 'BLUE FLAG',
@@ -163,7 +163,9 @@ export function buildTrackside(scene, { line, kerb, surfaceAt, colliders, corner
   part('hutStripe', boxGeo(2.42, 0.25, 2.02, 1.5), std(0xff7a12, 0.6));
   part('panelPole', cylGeo(0.07, 0.07, 2.6, 6), steel);
   part('panelBox', boxGeo(1.3, 1.0, 0.18, 2.5), dark);
-  part('body', cylGeo(0.2, 0.17, 1.42, 8), orange);
+  // (a person's outline turned round: boots, legs, hips, chest, shoulders, neck)
+  const figureGeo = (w) => { const pts = [[0, 0], [0.12, 0], [0.13, 0.08], [0.12, 0.5], [0.15, 0.82], [0.18, 0.92], [0.17, 1.05], [0.2, 1.25], [0.23 * w, 1.36], [0.18, 1.42], [0.06, 1.44], [0.055, 1.5], [0, 1.5]].map(([x, y]) => new THREE.Vector2(x, y)); return new THREE.LatheGeometry(pts, 10).scale(1, 1, 0.72); };
+  part('body', figureGeo(1), orange);
   part('head', (() => { const g = new THREE.SphereGeometry(0.12, 10, 8); g.translate(0, 1.55, 0); return g; })(), skin);
   part('cap', (() => { const g = new THREE.SphereGeometry(0.125, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2); g.translate(0, 1.58, 0); return g; })(), std(0xf2f2ee, 0.6));
   part('towerLeg', boxGeo(0.18, 4.2, 0.18), steel);
@@ -178,7 +180,7 @@ export function buildTrackside(scene, { line, kerb, surfaceAt, colliders, corner
   part('tripod', cylGeo(0.03, 0.03, 1.3, 5), dark);
   part('umbPole', cylGeo(0.025, 0.025, 2.2, 5), steel);
   part('umbrella', (() => { const g = new THREE.ConeGeometry(1.25, 0.45, 12, 1, true); g.translate(0, 2.2, 0); return g; })(), std(0xffffff, 0.8, { side: THREE.DoubleSide, vertexColors: false }));
-  part('opBody', cylGeo(0.19, 0.17, 1.35, 8), khaki);
+  part('opBody', figureGeo(0.97).scale(1, 0.95, 1), khaki);
   part('boardPost', boxGeo(0.12, 1.9, 0.12), steel);
   part('billLeg', boxGeo(0.15, 1.3, 0.15), steel);
 
@@ -203,9 +205,21 @@ export function buildTrackside(scene, { line, kerb, surfaceAt, colliders, corner
     panelMats[f] = new THREE.MeshBasicMaterial({ map: lit, toneMapped: false });
   }
   panelMats.off = new THREE.MeshBasicMaterial({ color: 0x15171a });
-  const clothGeo = new THREE.PlaneGeometry(0.9, 0.62);
-  clothGeo.translate(0.45, 0.31, 0);                 // (hangs from the tip of the pole, along it)
-  const poleGeo = cylGeo(0.015, 0.015, 1.1, 4, -1.1);   // (carries on past the hand)
+  // the flag: real cloth, a sheet of points that ripples and flaps (the
+  // far marshals' flags share one sheet; the near ones each have their own)
+  const makeCloth = () => { const g = new THREE.PlaneGeometry(0.9, 0.62, 12, 7); g.translate(0.45, 0.31, 0); g.userData.rest = g.attributes.position.array.slice(); return g; };
+  const clothGeo = makeCloth();                     // (hangs from the tip of the pole, along it)
+  const rippleCloth = (g, t, wave, droop) => {
+    const a = g.attributes.position, r = g.userData.rest;
+    for (let i = 0; i < a.count; i++) {
+      const x = r[i * 3], y = r[i * 3 + 1], u = x / 0.9;            // (u: 0 at the pole, 1 at the free end)
+      const flap = Math.sin(x * 7 - t * (6 + wave * 6) + y * 2) * (0.04 + wave * 0.11) * u + Math.sin(x * 13 - t * 9) * 0.015 * u;
+      a.setXYZ(i, x * (1 - droop * 0.25 * u), y - droop * u * u * 0.35, flap);
+    }
+    a.needsUpdate = true; g.computeVertexNormals();
+  };
+  const poleGeo = cylGeo(0.012, 0.016, 1.15, 6, -1.1);   // (carries on past the hand)
+  const gripGeo = cylGeo(0.022, 0.022, 0.16, 8, -1.13);    // (a rubber grip where it's held)
   const armGeo = cylGeo(0.055, 0.05, 0.62, 6, -0.62);
   const panelFaceGeo = new THREE.PlaneGeometry(1.16, 0.86);
 
@@ -222,7 +236,7 @@ export function buildTrackside(scene, { line, kerb, surfaceAt, colliders, corner
     const pole = new THREE.Mesh(poleGeo, dark);
     const cloth = new THREE.Mesh(clothGeo, flagMats.yellow);
     cloth.position.set(0, -1.1, 0);
-    flag.add(pole, cloth);
+    flag.add(pole, new THREE.Mesh(gripGeo, dark), cloth);
     shoulder.add(arm, flag);
     group.add(shoulder);
     return { shoulder, flag, cloth, phase: Math.random() * 6, idx, x, z, ry, y0 };
@@ -306,6 +320,7 @@ export function buildTrackside(scene, { line, kerb, surfaceAt, colliders, corner
   // --- TV cameras: on scaffold towers outside the big stops and on the
   // straights, and low on tripods at the tightest apexes ---
   const umbrellaColours = [0xd8312a, 0x2a62c9, 0xf2c12e, 0x2b9a52, 0xf4f4f0];
+  const ops = [];   // the camera operators (the near ones become real people)
   let umb = 0;
   const cameraTower = (spot) => {
     const y = groundAt(spot.x, spot.z), ry = towardTrack(spot.x, spot.z, spot.i);
@@ -314,6 +329,7 @@ export function buildTrackside(scene, { line, kerb, surfaceAt, colliders, corner
     put('scaffDeck', spot.x, y, spot.z);
     const cx = spot.x + Math.sin(ry) * 0.4, cz = spot.z + Math.cos(ry) * 0.4;
     put('tripod', cx, y + 5.1, cz); put('camBody', cx, y + 6.4, cz, ry); put('camLens', cx, y + 6.4, cz, ry);
+    ops.push({ x: spot.x - Math.sin(ry) * 0.4, y: y + 5.1, z: spot.z - Math.cos(ry) * 0.4, ry, idx: { opBody: parts.get('opBody').list.length, head: parts.get('head').list.length } });
     put('opBody', spot.x - Math.sin(ry) * 0.4, y + 5.1, spot.z - Math.cos(ry) * 0.4, ry);
     put('head', spot.x - Math.sin(ry) * 0.4, y + 5.05, spot.z - Math.cos(ry) * 0.4, ry);
     put('umbPole', spot.x, y + 5.1, spot.z); umbrellas.push([spot.x, y + 5.1, spot.z, umbrellaColours[umb++ % umbrellaColours.length]]);
@@ -324,6 +340,7 @@ export function buildTrackside(scene, { line, kerb, surfaceAt, colliders, corner
     const y = groundAt(spot.x, spot.z), ry = towardTrack(spot.x, spot.z, spot.i);
     put('tripod', spot.x, y, spot.z); put('camBody', spot.x, y + 1.3, spot.z, ry); put('camLens', spot.x, y + 1.3, spot.z, ry);
     const ox = spot.x - Math.sin(ry) * 0.6, oz = spot.z - Math.cos(ry) * 0.6;
+    ops.push({ x: ox, y, z: oz, ry, idx: { opBody: parts.get('opBody').list.length, head: parts.get('head').list.length } });
     put('opBody', ox, y, oz, ry); put('head', ox, y - 0.05, oz, ry);
     put('umbPole', ox + 0.4, y, oz); umbrellas.push([ox + 0.4, y, oz, umbrellaColours[umb++ % umbrellaColours.length]]);
     addSolid(spot.x - 0.5, spot.x + 0.5, spot.z - 0.5, spot.z + 0.5, 'building');
@@ -597,13 +614,14 @@ export function buildTrackside(scene, { line, kerb, surfaceAt, colliders, corner
   // sharply when a car comes off the track near them. Further away the
   // simple standing figures do. ---
   const marshalMats = {
+    look: 'marshal',
     suits: [new THREE.MeshStandardMaterial({ color: 0xff7a12, roughness: 0.75 })],
     helmet: new THREE.MeshStandardMaterial({ color: 0xf2f2ee, roughness: 0.5 }),
     visor: new THREE.MeshStandardMaterial({ color: 0xf2f2ee, roughness: 0.5 }),
     glove: new THREE.MeshStandardMaterial({ color: 0x2a2c30, roughness: 0.8 }),
     boot: new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 }),
   };
-  const LIVE = isMobile ? 2 : 4;
+  const LIVE = isMobile ? 3 : 6;
   const pool = [];
   let liveClock = 0;
   const zero = new THREE.Matrix4().makeScale(0, 0, 0);
@@ -620,18 +638,71 @@ export function buildTrackside(scene, { line, kerb, surfaceAt, colliders, corner
     const person = new Person(marshalMats, 0);
     const flag = new THREE.Group();
     const pole = new THREE.Mesh(poleGeo, dark);
-    const cloth = new THREE.Mesh(clothGeo, flagMats.yellow);
+    const cloth = new THREE.Mesh(makeCloth(), flagMats.yellow);
     cloth.position.set(0, -1.1, 0);
-    flag.add(pole, cloth);
+    flag.add(pole, new THREE.Mesh(gripGeo, dark), cloth);
     flag.rotation.x = -0.4;
     person.handR.add(flag);
     group.add(person.root);
-    return { person, flag, cloth, post: null, k: 0, flinch: 0, look: 0 };
+    return { person, flag, cloth, post: null, k: 0, flinch: 0, look: 0, calm: 0 };
   };
+  let clothClock = 0;
+  // --- CAMERA OPERATORS: the near ones are real people behind their
+  // cameras, hands on the handles, following the cars round ---
+  const opMats = {
+    look: 'camera',
+    suits: [new THREE.MeshStandardMaterial({ color: 0x3b3f45, roughness: 0.85 })],
+    cap: new THREE.MeshStandardMaterial({ color: 0x15171a, roughness: 0.8 }),
+    glove: new THREE.MeshStandardMaterial({ color: 0x2a2c30, roughness: 0.8 }),
+    boot: new THREE.MeshStandardMaterial({ color: 0x3a2a1c, roughness: 0.8 }),
+  };
+  const opPool = [];
+  let opClock = 0;
+  const setOpStatic = (op, show) => {
+    for (const name of ['opBody', 'head']) {
+      const P2 = parts.get(name); if (!P2.mesh) continue;
+      const [x, y, z, ry] = P2.list[op.idx[name]];
+      P2.mesh.setMatrixAt(op.idx[name], show ? mm.compose(pos.set(x, y, z), q.setFromAxisAngle(yAxis, ry), scl.set(1, 1, 1)) : zero);
+      P2.mesh.instanceMatrix.needsUpdate = true;
+    }
+  };
+  function updateOps(dt, state, cx, cz) {
+    opClock -= dt;
+    if (opClock <= 0) {
+      opClock = 0.5;
+      const want = ops.map((o) => ({ o, d: (o.x - cx) ** 2 + (o.z - cz) ** 2 })).filter((e) => e.d < 180 * 180).sort((a, b) => a.d - b.d).slice(0, isMobile ? 1 : 3).map((e) => e.o);
+      for (const op of ops) {
+        const on = want.includes(op);
+        if (on === !!op.live) continue;
+        op.live = on; setOpStatic(op, !on);
+        if (on) {
+          let L = opPool.find((l) => !l.op);
+          if (!L) { L = { person: new Person(opMats, 0) }; group.add(L.person.root); opPool.push(L); }
+          L.op = op; L.person.place(op.x, op.z, op.ry); L.person.want = 'CAMERA'; L.person.root.visible = true; L.ground = () => op.y;
+        } else { const L = opPool.find((l) => l.op === op); if (L) { L.op = null; L.person.root.visible = false; } }
+      }
+    }
+    for (const L of opPool) {
+      if (!L.op) continue;
+      const P2 = L.person, op = L.op;
+      // following the nearest car, the whole body turning with the camera
+      let tgt = null, best = 220;
+      for (const c of state.movers || []) { const d = Math.hypot(c.x - op.x, c.z - op.z); if (d < best) { best = d; tgt = c; } }
+      let d = tgt ? Math.atan2(Math.sin(Math.atan2(tgt.x - op.x, tgt.z - op.z) - op.ry), Math.cos(Math.atan2(tgt.x - op.x, tgt.z - op.z) - op.ry)) : 0;
+      d = Math.max(-1.3, Math.min(1.3, d));
+      P2.face += Math.atan2(Math.sin(op.ry + d - P2.face), Math.cos(op.ry + d - P2.face)) * Math.min(1, dt * 4);
+      P2.lookAt = tgt ? [tgt.x, tgt.z] : null;
+      P2.update(dt, L.ground);
+    }
+  }
   function updateLive(dt, state, cx, cz) {
+    updateOps(dt, state, cx, cz);
+    clothClock -= dt;
+    if (clothClock <= 0) { clothClock = 1 / 20; rippleCloth(clothGeo, time, 0.6, 0.2); }
     liveClock -= dt;
     if (liveClock <= 0) {
       liveClock = 0.5;
+      for (const p of posts) p.d2 = (p.x - cx) ** 2 + (p.z - cz) ** 2;
       const want = posts.slice(1).map((p) => ({ p, d: (p.x - cx) ** 2 + (p.z - cz) ** 2 })).filter((e) => e.d < 260 * 260)
         .sort((a, b) => a.d - b.d).slice(0, LIVE).map((e) => e.p);
       for (const post of posts) {
@@ -657,18 +728,47 @@ export function buildTrackside(scene, { line, kerb, surfaceAt, colliders, corner
       if (!L.post) continue;
       const P = L.person, mar = L.mar, f = L.post.flag;
       const flagNow = L.k === 1 && f !== 'yellow2' ? null : f;
-      // a car off the track and close, at speed (or a crash nearby): step back, sharpish
-      if (!P.busy) {
-        let scare = false;
+      // a car coming: where will it pass him, and when? Straight at him
+      // and close: a dive out of its way (or, too late for that, a duck);
+      // off and near: back, fast, watching it. A crash nearby: he points at
+      // it and waves the others over. Then up, and back to his spot.
+      L.calm -= dt;
+      if (L.calm <= 0 && !(P.busy && P.reacting)) {
+        let act = null;
         for (const c of state.movers || []) {
-          const d = Math.hypot(c.x - mar.x, c.z - mar.z);
-          if ((d < 16 && c.v > 12 && c.off) || (c.crash && d < 35)) { scare = true; break; }
+          const rx = mar.x - c.x, rz = mar.z - c.z, d = Math.hypot(rx, rz);
+          if (d > 60) continue;
+          const vx = c.vx ?? 0, vz = c.vz ?? 0, vv = vx * vx + vz * vz;
+          const tHit = vv > 4 ? (rx * vx + rz * vz) / vv : -1;            // (when it's closest)
+          const miss = tHit > 0 ? Math.hypot(rx - vx * tHit, rz - vz * tHit) : d;
+          if (c.off && tHit > 0 && tHit < 1.6 && miss < 3.2) { act = { kind: tHit < 0.35 ? 'duck' : 'dive', c, vx, vz, miss, rx, rz }; break; }
+          if (c.off && d < 16 && c.v > 10) act = act || { kind: 'back', c };
+          else if (c.crash && d < 45) act = act || { kind: 'crash', c };
         }
-        if (scare) {
-          const bx = mar.x - Math.sin(mar.ry) * 2.4, bz = mar.z - Math.cos(mar.ry) * 2.4;
-          P.run([{ go: [bx, bz], back: true }, { pose: 'SHOCK', t: 1.1 }, { pose: 'STAND' }, { wait: 0.8 }, { go: [mar.x, mar.z] }, { face: mar.ry }]);
+        if (act) {
+          const c = act.c;
+          P.reacting = true; L.calm = 2.5;
+          const done = { fn: () => { P.reacting = false; } };
+          const home = [{ pose: 'STAND' }, { look: null }, { go: [mar.x, mar.z], run: true }, { face: mar.ry }, done];
+          if (act.kind === 'dive' || act.kind === 'duck') {
+            // (away from the car's path: to the side he's already on)
+            const vl = Math.hypot(act.vx, act.vz) || 1, nx = -act.vz / vl, nz = act.vx / vl;
+            const side = (act.rx * nx + act.rz * nz) >= 0 ? 1 : -1;
+            const to = [mar.x + nx * side * 3.4, mar.z + nz * side * 3.4];
+            P.run(act.kind === 'dive'
+              ? [{ look: [c.x, c.z] }, { dive: to }, { wait: 0.9 + Math.random() * 0.6 }, { pose: 'KNEEL', t: 0.5 }, { pose: 'STAND', t: 0.3 }, { look: [c.x, c.z] }, { wait: 0.8 }, ...home]
+              : [{ pose: 'DUCK', t: 1.2 }, { look: [c.x, c.z] }, { pose: 'SHOCK', t: 0.6 }, ...home]);
+          } else if (act.kind === 'back') {
+            const ax = mar.x - c.x, az = mar.z - c.z, ad = Math.hypot(ax, az) || 1;
+            P.run([{ look: [c.x, c.z] }, { go: [mar.x + ax / ad * 3, mar.z + az / ad * 3], run: true, sidestep: true }, { face: [c.x, c.z], quick: true }, { pose: 'SHOCK', t: 0.5 }, { pose: 'STAND', t: 0.6 }, ...home]);
+          } else {
+            // a crash: straight on to it, pointing, then waving the others over
+            P.run([{ face: [c.x, c.z], quick: true }, { look: [c.x, c.z] }, { pose: 'POINT', t: 1.0 }, { pose: 'WAVE', t: 1.6 }, { pose: 'STAND' }, { wait: 1.2 }, { look: null }, { face: mar.ry }, done]);
+            L.calm = 5;
+          }
         }
       }
+      if (!P.busy) P.reacting = false;
       // watching: turn to follow the nearest car (when not busy with a flag or stepping back)
       if (!P.busy) {
         let tgt = null, best = 130;
@@ -682,15 +782,18 @@ export function buildTrackside(scene, { line, kerb, surfaceAt, colliders, corner
         P.face += df * Math.min(1, dt * 3);
         P.want = flagNow ? (WAVED.has(flagNow) ? 'LOLLY_UP' : 'LOLLY') : 'STAND';
       }
-      L.flag.visible = !!flagNow;
+      L.flag.visible = !!flagNow && !P.reacting;
       if (flagNow && L.cloth.material !== flagMats[flagNow]) L.cloth.material = flagMats[flagNow];
       P.update(dt, groundAt);
       // waving: the arm swinging over his head, the flag flapping
-      if (flagNow && WAVED.has(flagNow) && !P.busy) {
+      const waving = flagNow && WAVED.has(flagNow) && !P.busy;
+      if (waving) {
         const t = time * 5.5 + mar.phase;
         P.shR.rotation.z = -Math.sin(t) * 0.6;
-        L.cloth.rotation.y = Math.sin(t * 1.7) * 0.4;
+        L.cloth.rotation.y = Math.sin(t * 1.7 - 0.6) * 0.35;
       } else { P.shR.rotation.z = 0; L.cloth.rotation.y = 0; }
+      // the cloth: flapping hard as it's waved, rippling in the breeze held still
+      if (L.flag.visible && L.post.d2 < 120 * 120) rippleCloth(L.cloth.geometry, time + mar.phase, waving ? 1 : 0.15, waving ? 0.1 : 0.55);
     }
   }
 

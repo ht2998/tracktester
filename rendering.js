@@ -60,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 62;
+const BUILD = 63;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -1203,6 +1203,7 @@ function aimPoint() {
 let heavyPhys = null;
 let heavyMode = false;
 let teleportGrace = 0;     // (just moved by the game, not driven: no crash counts for a moment)
+let driverOut = null, driverDead = false;   // (the driver: out of the car, or killed in it: see THE DRIVER GETS OUT)
 let typedKeys = '';
 const toast = document.createElement('div');
 toast.style.cssText = 'position:fixed;left:50%;top:18%;transform:translateX(-50%);padding:10px 18px;border-radius:10px;background:rgba(20,24,16,0.85);color:#d8e2b8;font:700 18px system-ui,sans-serif;letter-spacing:0.08em;pointer-events:none;opacity:0;transition:opacity 0.4s;z-index:20';
@@ -1318,8 +1319,9 @@ function updateTrackside(dt) {
   const chequered = !!race && (aiField.player.finished || aiField.cars.some((c) => c.finished));
   // who's moving near the marshals (they watch them, and step back from one coming off)
   const movers = [];
-  if (!heavyMode) movers.push({ x: physics.x, z: physics.z, v: speed, off: !onTrackHere(physics.x, physics.z), crash: crashFlash > 0 });
-  for (const c of aiField?.cars || []) if (!c.parked && c.dist < 300) movers.push({ x: c.physics.x, z: c.physics.z, v: Math.abs(c.physics.vx), off: c.full && !onTrackHere(c.physics.x, c.physics.z) });
+  // (with which way they're going, so a marshal can tell if one's coming at him)
+  if (!heavyMode) movers.push({ x: physics.x, z: physics.z, v: speed, vx: carVelocity.x, vz: carVelocity.z, off: !onTrackHere(physics.x, physics.z), crash: crashFlash > 0 });
+  for (const c of aiField?.cars || []) if (!c.parked && c.dist < 300) { const h = c.physics.heading, f = c.physics.vx; movers.push({ x: c.physics.x, z: c.physics.z, v: Math.abs(f), vx: Math.sin(h) * f, vz: Math.cos(h) * f, off: c.full && !onTrackHere(c.physics.x, c.physics.z), crash: c.crashT > 0 }); }
   crashFlash = Math.max(0, crashFlash - dt);
   trackside.setPitExit?.(!(rcRed || (race && race.phase === 'grid')));
   const res = trackside.update(dt, {
@@ -1914,6 +1916,7 @@ tyreLooks.apply(physics.tyreCompound);
 // Where the car starts (and goes back to on reset): at Sepang, on the start straight
 function placeAtStart() {
   teleportGrace = 0.6;
+  if (driverOut || driverDead) clearDriverOut();     // (back in his seat)
   if (!sepang) return;
   physics.x = sepang.start.x;
   physics.z = sepang.start.z;
@@ -2722,6 +2725,7 @@ function collide(now) {
       lastCrashAt = now;
       if (hitSpeed > 12) crashFlash = 1.5;      // (the marshals near it flinch)
       if (hitSpeed > 30 && teleportGrace <= 0 && !physics.damageOff) raceControl?.medical?.({ x: physics.x, z: physics.z });   // (a big one: the medical car's sent)
+      if (teleportGrace <= 0 && !physics.damageOff) noteBigHit(hitSpeed);
       physics.crashHit({ zone, speed: hitSpeed, along, across });
       // Dent the body where it struck (on the bodywork, not the wheel
       // that may have touched first), pushed in the way the wall pushed
@@ -2785,6 +2789,7 @@ function collide(now) {
       && teleportGrace <= 0 && !heavyMode && !physics.damageOff && !physics.wrecked) {
     if (speedBefore >= 180 / 3.6) splitCar();      // (the very biggest: broken in two)
     physics.explode();
+    driverKilled();                                // (with him still in it)
   }
 }
 
@@ -2833,6 +2838,8 @@ const hud = new Hud({
   onAssist: (name, on) => { physics.assists[name] = on; },
   onEngine: (key) => { if (ENGINES[key]) { setCar(carKind, key); showToast(ENGINES[key].name.toUpperCase()); } },
   damageOn,
+  // (only the public codes work here)
+  onCode: (c) => String(c || '').toUpperCase().replace(/\s+/g, '') === 'CATERHAM' && enterCode('CATERHAM'),
   onDamage: (on) => {
     damageOn = on;
     applyDamageSetting();
@@ -3659,7 +3666,11 @@ function explodeCar() {
     flyingParts.push({ obj: cw, v: new THREE.Vector3((Math.random() - 0.5) * 10, 7 + Math.random() * 5, (Math.random() - 0.5) * 10), w: new THREE.Vector3((Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20), rest: false });
   });
   // what's left: burnt black
-  carModel.car.traverse((o) => { if (o.isMesh && !o.isInstancedMesh && !charredFrom.has(o)) { charredFrom.set(o, o.material); o.material = charredMat; } });
+  // (the car, not the driver in it)
+  const him = new Set([...(f1Cockpit?.driverParts || []), ...(carModel.car.userData.f1?.helmet || [])]);
+  cockpit.driver?.traverse((o) => him.add(o));
+  f1Cockpit?.driverParts?.forEach((p) => p.traverse((o) => him.add(o)));
+  carModel.car.traverse((o) => { if (o.isMesh && !o.isInstancedMesh && !charredFrom.has(o) && !him.has(o)) { charredFrom.set(o, o.material); o.material = charredMat; } });
   splitHalf?.obj.traverse((o) => { if (o.isMesh) o.material = charredMat; });
   if (splitHalf) boomScale = 1.6;
   // the fireball
@@ -3712,30 +3723,48 @@ function updateExplosion(dt) {
     }
   }
   updateDriverEscape(dt);
+  updateDeath(dt);
 }
-// THE DRIVER GETS OUT: stopped, and burning (or blown up): he unclips,
-// climbs out, and runs well clear of it, towards the barrier, then turns
-// to watch. The marshals and the ambulance come to him. Reset: back in.
-let driverOut = null;
+// THE DRIVER GETS OUT, as a real one would. Three ways:
+//   - the car's on fire (or blown up round him): he unclips, climbs out
+//     over the side and runs well clear, then turns to watch
+//   - a big hit, the car out of it: out he climbs, jogs clear to the
+//     barrier and sits down by it to get his breath back (head in his
+//     hands for a bit); the medics come and walk him to the ambulance
+//   - a very big hit: he gets out slowly, staggers a few steps and goes
+//     down by the side of the track; the medics put him on a stretcher
+//     and carry him to the ambulance
+// Blown up with him still in it: he doesn't make it.
 const driverMats = {
+  look: 'driver',
   suits: [new THREE.MeshStandardMaterial({ color: 0xc81d25, roughness: 0.85 })],
   helmet: new THREE.MeshPhysicalMaterial({ color: 0xf2f2f2, roughness: 0.25, clearcoat: 1 }),
   visor: new THREE.MeshStandardMaterial({ color: 0x111418, metalness: 0.6, roughness: 0.1 }),
   glove: new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.7 }),
   boot: new THREE.MeshStandardMaterial({ color: 0x18191b, roughness: 0.6 }),
 };
-let burnStill = 0;
+let burnStill = 0, bigHit = 0, bigHitT = 0;
 function driverInCar(show) {
   if (IS_F1) { for (const m of carModel.car.userData.f1?.helmet || []) m.visible = show && cameraMode !== 'cockpit'; for (const m of f1Cockpit?.driverParts || []) m.visible = show; }
   else if (cockpit.driver) cockpit.driver.visible = show;
 }
+// (collide() tells this how hard the last big hit was)
+function noteBigHit(v) { if (v > bigHit || bigHitT > 6) bigHit = v; bigHitT = 0; }
+// the way to go on foot, round things and over barriers (race control knows how)
+const footTo = (from, to, opts) => raceControl?.footPath ? raceControl.footPath(from, to, opts) : [{ go: to, ...opts }];
 function updateDriverEscape(dt) {
-  if (heavyMode || physics.damageOff) return;
-  const still = Math.hypot(physics.vx, physics.vy) < 1;
-  burnStill = (physics.burning || exploded) && still && !(pits && pits.phase !== 'off') ? burnStill + dt : 0;
-  if (!driverOut && burnStill > 1.5) {
-    // out he gets: the side away from the track, then a run for the barrier
-    const seat = carModel.car.localToWorld(new THREE.Vector3(IS_F1 ? 0 : -0.18, 0, IS_F1 ? 0 : -0.4));
+  bigHitT += dt;
+  if (heavyMode || physics.damageOff || driverDead) return;
+  const still = Math.hypot(physics.vx, physics.vy) < 1, inPit = pits && pits.phase !== 'off';
+  burnStill = still && !inPit && !driverOut ? burnStill + dt : 0;
+  const broken = physics.engineDead || physics.tyres.some((t) => t.detached) || physics.wrecked;
+  let how = null;
+  if ((physics.burning || exploded) && burnStill > 1.5) how = 'fire';
+  else if (bigHit >= 40 && bigHitT < 12) { if (burnStill > 3.5) how = 'hurt'; }
+  else if (bigHit >= 26 && bigHitT < 12 && broken && burnStill > 2.5) how = 'shaken';
+  if (!driverOut && how) {
+    // out on the side away from the track
+    const seat = carModel.car.localToWorld(new THREE.Vector3(IS_F1 ? 0 : -0.18, 0, IS_F1 ? -0.1 : -0.45));
     const person = new PersonFigure(driverMats, 0);
     scene.add(person.root);
     let ax = Math.cos(physics.heading), az = -Math.sin(physics.heading);    // (the car's left)
@@ -3744,25 +3773,96 @@ function updateDriverEscape(dt) {
       if (i >= 0) { const p = sepang.line[i]; const ox = seat.x - p.x, oz = seat.z - p.z, d = Math.hypot(ox, oz) || 1; ax = ox / d; az = oz / d; }
     }
     person.place(seat.x, seat.z, Math.atan2(ax, az));
-    person.run([
-      { pose: 'HOLD', t: 0.5 },                                            // unclipping, hands on the sides
-      { go: [seat.x + ax * 1.3, seat.z + az * 1.3] },                      // over the side
-      { go: [seat.x + ax * 16, seat.z + az * 16], run: true },              // and away from the fire
-      { face: [seat.x, seat.z] },
-      { pose: 'STAND' },
-    ]);
-    driverOut = { person, t: 0 };
+    const over = [seat.x + ax * 1.25, seat.z + az * 1.25];
+    const clear = (m) => [seat.x + ax * m, seat.z + az * m];
+    if (how === 'fire') {
+      person.run([
+        { pose: 'HOLD', t: 0.45 },                                            // unclipping, hands on the sides
+        { vault: over, h: 0.55, t: 0.6 },                                     // up and over the side
+        ...footTo(over, clear(17), { run: true, panic: true }),              // and away from the fire, fast
+        { face: [seat.x, seat.z] }, { look: [seat.x, seat.z] },
+        { pose: 'HUNCH', t: 4 }, { pose: 'STAND' },
+      ]);
+    } else if (how === 'shaken') {
+      // the way Leclerc got out at Monza: climbs out, jogs clear, then sits by the barrier
+      person.run([
+        { pose: 'HOLD', t: 1.0 },
+        { vault: over, h: 0.55, t: 0.85 },
+        { wait: 0.4 },
+        ...footTo(over, clear(9), { v: 3.0 }),
+        { face: [seat.x, seat.z] }, { look: [seat.x, seat.z] },
+        { pose: 'HUNCH', t: 1.6 },
+        { pose: 'SIT', t: 3 }, { look: null },
+        { pose: 'SIT_HEAD', t: 4 }, { pose: 'SIT', t: 5 }, { pose: 'SIT_HEAD', t: 3 }, { pose: 'SIT' },
+      ]);
+    } else {
+      // hurt: slowly out, a few unsteady steps, and down
+      person.run([
+        { pose: 'HOLD', t: 2.2 },
+        { vault: over, h: 0.5, t: 1.6 },
+        { pose: 'HUNCH' },
+        { go: clear(4.5), stagger: true },
+        { pose: 'FALL', t: 0.9 },
+        { pose: 'LIE' },
+      ]);
+    }
+    driverOut = { person, t: 0, kind: how };
     driverInCar(false);
     if (cameraMode === 'cockpit' || cameraMode === 'bonnet') { cameraMode = 'chase'; applyCamera(); }
-    showToast('THE DRIVER\'S OUT');
+    showToast(how === 'hurt' ? 'THE DRIVER\'S DOWN: MEDICS ON THEIR WAY' : 'THE DRIVER\'S OUT');
     raceControl?.medical?.({ x: seat.x, z: seat.z });
   }
-  if (driverOut && !driverOut.gone) { driverOut.t += dt; driverOut.person.update(dt, groundAt); }
+  if (driverOut && !driverOut.gone) { driverOut.t += dt; driverOut.person.update(dt, driverOut.ground || groundAt); }
 }
+// the medics with him (race control asks): a stretcher for a hurt one
+const driverHooks = {
+  casualty: () => (driverOut && !driverOut.gone && driverOut.t > 4 ? { person: driverOut.person, hurt: driverOut.kind === 'hurt' } : null),
+  onStretcher: (st) => {
+    if (!driverOut) return;
+    const P = driverOut.person;
+    P.run([{ pose: 'LIE' }]);
+    P.follow = () => [st.position.x, st.position.z, st.rotation.y, 0];
+    driverOut.ground = () => st.position.y - 0.08;
+  },
+  helpUp: (door) => {
+    if (!driverOut) return;
+    const P = driverOut.person;
+    P.run([{ pose: 'HUNCH', t: 0.8 }, { pose: 'STAND', t: 0.5 }, ...footTo([P.x, P.z], door, { v: 1.2 }), { fn: () => { P.root.visible = false; driverOut.gone = true; } }]);
+  },
+  loaded: () => { if (driverOut) { driverOut.person.root.visible = false; driverOut.gone = true; } },
+};
 function clearDriverOut() {
   if (driverOut) { scene.remove(driverOut.person.root); driverOut = null; }
-  burnStill = 0;
+  burnStill = 0; bigHit = 0; driverDead = false;
   driverInCar(true);
+  setDeathScreen(false);
+}
+// DEAD: blown up with him in it. Everything drains to grey, then the word
+// comes up; he's slumped in his seat and doesn't move again until reset.
+const deathBox = document.createElement('div');
+deathBox.style.cssText = 'position:fixed;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;pointer-events:none;z-index:40;background:radial-gradient(ellipse at center, rgba(0,0,0,0) 30%, rgba(0,0,0,0.55) 100%);opacity:0;transition:opacity 1.6s ease';
+deathBox.innerHTML = '<div style="font:900 clamp(48px,11vw,128px)/1 Georgia,\'Times New Roman\',serif;font-style:italic;letter-spacing:0.04em;color:#b3121a;text-shadow:0 3px 0 #2a0204,0 0 30px rgba(0,0,0,0.6);transform:skewX(-6deg)">FATAL</div>'
+  + '<div style="margin-top:14px;font:600 clamp(13px,2.4vw,18px)/1.4 system-ui,sans-serif;color:#e9e4dc;letter-spacing:0.18em;text-transform:uppercase;text-shadow:0 1px 4px #000">The car went up with you still in it</div>'
+  + '<div style="margin-top:8px;font:500 clamp(11px,2vw,14px)/1.4 system-ui,sans-serif;color:#bdb6ac;letter-spacing:0.08em">Reset to go again</div>';
+document.body.appendChild(deathBox);
+let deathT = -1;
+function setDeathScreen(on) {
+  if (on) { deathT = 0; deathBox.style.display = 'flex'; requestAnimationFrame(() => { deathBox.style.opacity = '0'; }); }
+  else { deathT = -1; deathBox.style.display = 'none'; deathBox.style.opacity = '0'; renderer.domElement.style.filter = ''; }
+}
+function updateDeath(dt) {
+  if (deathT < 0) return;
+  deathT += dt;
+  const k = Math.min(1, deathT / 2.2);
+  renderer.domElement.style.filter = `grayscale(${k}) contrast(${1 + 0.15 * k}) brightness(${1 - 0.15 * k})`;
+  if (deathT > 1.2 && deathBox.style.opacity !== '1') deathBox.style.opacity = '1';
+}
+function driverKilled() {
+  if (driverDead || driverOut) return;
+  driverDead = true;
+  if (cameraMode === 'cockpit' || cameraMode === 'bonnet') { cameraMode = 'chase'; applyCamera(); }
+  setDeathScreen(true);
+  if (aiField?.player) aiField.player.dnf = true;
 }
 // THE CAR SPLIT IN TWO (a dead stop from 180 km/h or more): the end with
 // the engine torn off the survival cell and thrown on, both halves in a
@@ -3918,6 +4018,7 @@ let backToTrack = false;
 window.addEventListener('keydown', (e) => { if (e.code === 'KeyB' && !(e.target && e.target.tagName === 'INPUT')) backToTrack = true; });
 function returnToTrack() {
   teleportGrace = 0.6;     // (the game moving the car: never a crash)
+  if (driverOut || driverDead) clearDriverOut();     // (back in his seat)
   let x, z, h;
   if (pits?.holding) pits.reset();
   if (racing) {
@@ -4113,9 +4214,19 @@ raceControl = sepang && aiField && trackside ? new RaceControl(scene, {
   line: sepang.line, trackside, aiField, groundAt, isMobile, pit: SEPANG_PIT, corners: sepang.cornerList || [],
   hooks: {
     driverWaiting: () => !!driverOut && !driverOut.gone,
+    ...driverHooks,
+    blocked: (x, z, r = 0.3) => { for (const c of collidersNear(x, z)) if (x > c.minX - r && x < c.maxX + r && z > c.minZ - r && z < c.maxZ + r) return c; return null; },
     medicsDone: () => { if (driverOut && !driverOut.gone) { scene.remove(driverOut.person.root); driverOut.gone = true; showToast('THE DRIVER\'S BEEN TAKEN TO THE MEDICAL CENTRE: HE\'S OK'); } },
     toast: (t) => { if (t) showToast(t); },
     penalty: (sec, why) => aiField.addPenalty(sec, why),
+    // an extinguisher burst on it: how much fire's left afterwards (0 = out)
+    douse: (kind, amt) => {
+      if (kind === 'car') return physics.douse(amt);
+      if (kind === 'wreck') { wreckBurn = Math.max(0, wreckBurn - amt * 0.8); return wreckBurn; }
+      if (kind === 'block') { engineBlockFire = Math.max(0, engineBlockFire - amt * 1.2); return engineBlockFire; }
+      return 0;
+    },
+    fireLeft: (kind) => kind === 'car' ? physics.fireLeft : kind === 'wreck' ? wreckBurn : kind === 'block' ? engineBlockFire : 0,
     extinguish: (kind) => {
       if (kind === 'car') physics.putOut();
       if (kind === 'wreck') wreckBurn = 0;
@@ -4233,7 +4344,7 @@ renderer.setAnimationLoop(() => {
   // the clutch (X) and you can rev it up ready; touch the throttle without
   // it and the brakes let go: that's a jump start)
   if (aiField?.holdPlayer && !(input.throttle > 0.05 && !input.clutch)) input.brake = 1;
-  if (driverOut) { input.throttle = 0; input.brake = 1; input.steer = 0; }     // (nobody in it)
+  if (driverOut || driverDead) { input.throttle = 0; input.brake = 1; input.steer = 0; }     // (nobody in it, or nobody alive)
   // the pit lane: the limiter, the team guiding you in, the car held on its marks
   const pitHold = pits && !heavyMode ? pits.control(input, dt) : false;
   // Fast cars move in smaller steps, so they can't skip through a thin
@@ -4338,7 +4449,7 @@ renderer.setAnimationLoop(() => {
     f1Cockpit.update(dt, {
       steer: physics.steer, maxSteer: physics.spec.maxSteer, speed: physics.vx, slip: physics.vy,
       bump: Math.abs(physics.ground.rate || 0) * 0.02 + Math.abs(bodyLean.heave) * 2,
-      gear: physics.gearLabel, rpm: physics.rpm, redline: physics.spec.redline, kmh: physics.speedKmh,
+      gear: physics.gearLabel, rpm: physics.rpm, redline: physics.spec.redline, kmh: physics.speedKmh, limp: driverDead,
     });
     scrapeFloor(dt);
     // crushed wings sag and twist before they snap
@@ -4376,11 +4487,12 @@ renderer.setAnimationLoop(() => {
     dieselSmoke.emitFrom('exhaust', heavy.exhaust.getWorldPosition(exhaustWorld), Math.min(1, sooty), carVelocity, dt);
   }
   cockpit.update(dt, {
-    steer: physics.steer, kick: physics.steerKick || 0, gear: physics.gear, transmission: physics.transmission,
+    steer: driverDead ? 0 : physics.steer, kick: driverDead ? 0 : physics.steerKick || 0, gear: physics.gear, transmission: physics.transmission,
     handbrake: !!input.handbrake, rpm: physics.rpm, redline: CATERHAM.redline,
     speedKmh: physics.speedKmh, lean: physics.yawRate * physics.vx,
     throttle: input.throttle, brake: input.brake, clutch: physics.clutchPedal, horn: !!input.horn,
   });
+  if (driverDead && cockpit.head) { cockpit.head.rotation.x = 0.55; cockpit.head.rotation.z = 0.25; }   // (slumped, head down)
   cockpit.drawScreen(dt, {
     speedKmh: physics.speedKmh, rpm: physics.rpm, redline: heavyMode ? 2700 : physics.spec.redline, gearLabel: heavyMode ? heavyPhys.gearLabel : physics.gearLabel,
     limiter: physics.limiter, fuel: physics.fuelLevel, oil: physics.oilLevel, tyres: physics.tyres,

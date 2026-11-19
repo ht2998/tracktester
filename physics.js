@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 21;
+export const BUILD = 22;
 
 const G = 9.81;   // gravity, m/s²
 const RPM_PER_RADS = 60 / (2 * Math.PI);
@@ -839,7 +839,19 @@ export class CarPhysics {
   // anything burning: the engine bay, a brake, or a crash fire
   get burning() { return this.onFire || this.fires.length > 0; }
   // all of it out (the marshals, the pit crew)
-  putOut() { this.onFire = false; this.fireLevel = 0; this.fireSpot = null; this.fireTime = 0; this.fires = []; }
+  putOut() { this.onFire = false; this.fireLevel = 0; this.fireSpot = null; this.fireTime = 0; this.fires = []; this.fireKnock = 0; }
+  // an extinguisher on it: each burst knocks the flames down a bit (bigger
+  // fires take longer), and they creep back between bursts; knocked right
+  // down, it's out. Returns how much fire is left (0-1).
+  douse(amount) {
+    if (!this.burning) return 0;
+    const size = Math.max(this.onFire ? 1 : 0, ...this.fires.map((f) => f.size));
+    this.fireKnock = Math.min(1, (this.fireKnock || 0) + amount / Math.max(0.7, size));
+    this.dousedAgo = 0;
+    if (this.fireKnock >= 1) { this.putOut(); return 0; }
+    return 1 - this.fireKnock;
+  }
+  get fireLeft() { return this.burning ? 1 - (this.fireKnock || 0) : 0; }
 
   // where: a wheel (a brake fire), or the engine bay (no wheel given)
   catchFire(wheel = null) {
@@ -932,6 +944,11 @@ export class CarPhysics {
       f.dead = dying <= 0;
     }
     if (this.fires.some((f) => f.dead)) this.fires = this.fires.filter((f) => !f.dead);
+    // (knocked down by an extinguisher: the flames creep back between bursts)
+    this.dousedAgo = (this.dousedAgo ?? 99) + dt;
+    if (this.fireKnock > 0 && this.dousedAgo > 0.6) this.fireKnock = Math.max(0, this.fireKnock - 0.06 * dt);
+    const knock = 1 - (this.fireKnock || 0) * 0.92;
+    for (const f of this.fires) f.level *= knock;
     if (this.onFire) {
       this.fireTime += dt;
       const fuelLeft = this.fuelLeak > 0 ? Math.min(1, this.fuel / 4) : 1;
@@ -939,6 +956,7 @@ export class CarPhysics {
       this.fireLevel = Math.min(1, this.fireTime / 2) * dying * (0.4 + 0.6 * fuelLeft);
       if (this.fireSpot == null) this.damageEngine(0.07 * this.fireLevel * dt);   // (a brake fire burns at the wheel, not in the engine)
       if (dying <= 0) { this.onFire = false; this.fireLevel = 0; this.fireSpot = null; }
+      this.fireLevel *= knock;
     }
   }
 
