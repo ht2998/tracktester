@@ -7,7 +7,7 @@
 // has several cars dropping down again. Pick one and it fires up: a
 // couple of big revs, then it settles to idle.
 // =====================================================================
-export const BUILD = 6;
+export const BUILD = 7;
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -36,7 +36,7 @@ export const COLLECTION = [
   ] },
   { cat: 'Prototype', cars: [
     { name: 'TTP-70', year: 1970, kind: 'p70', blurb: '4.9 flat-12, long-distance racer' },
-    { name: 'TTP-87', year: 1987, blurb: 'Group C: ground-effect endurance' },
+    { name: 'TTP-91', year: 1991, kind: 'p91', blurb: 'Group C: 2.6 four-rotor' },
     { name: 'TTP-09', year: 2009, blurb: 'LMP1: diesel V12' },
     { name: 'TTP-23', year: 2023, blurb: 'Hypercar: hybrid V6' },
   ] },
@@ -57,6 +57,7 @@ export const CAR_INFO = {
   f05: { name: 'TTF-05', year: 2005, cat: 'Formula', drive: 'Rear-wheel drive' },
   f94: { name: 'TTF-94', year: 1994, cat: 'Formula', drive: 'Rear-wheel drive' },
   p70: { name: 'TTP-70', year: 1970, cat: 'Prototype', drive: 'Rear-wheel drive' },
+  p91: { name: 'TTP-91', year: 1991, cat: 'Prototype', drive: 'Rear-wheel drive' },
   caterham: { name: 'Caterham Seven', year: 2015, cat: 'Road', drive: 'Rear-wheel drive' },
 };
 

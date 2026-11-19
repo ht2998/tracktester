@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 35;
+export const BUILD = 36;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -38,6 +38,12 @@ export const ENGINES = {
   // at 8,300 rpm and a huge spread of torque. Its own sound isn't made yet)
   flat12: { engineInertia: 0.13, name: '4.9 flat-12 (sound unfinished)', cylinders: 12, idleRpm: 1600, redline: 8400, launchRpm: 5000, engineBraking: 55, peakTorque: 570, massDelta: 0,
     torqueCurve: [[1000, 260], [2500, 400], [4000, 490], [5500, 545], [6400, 570], [7400, 545], [8300, 505], [8400, 490], [8700, 180], [8900, 0]], turbo: null },
+  // (the first rotary in the game: a 2.6-litre four-rotor, peripheral
+  // ports, about 700 hp at 9,000 rpm; four rotors fire like an eight, and
+  // a rotary barely holds the car back off the throttle. Its own sound
+  // isn't made yet)
+  rotary4: { engineInertia: 0.1, name: '2.6 four-rotor (sound unfinished)', rotary: true, cylinders: 8, idleRpm: 2000, redline: 9500, launchRpm: 6500, engineBraking: 32, peakTorque: 610, massDelta: 0,
+    torqueCurve: [[1500, 230], [3000, 330], [4500, 430], [6000, 520], [7500, 590], [8500, 610], [9000, 590], [9500, 555], [9800, 200], [10000, 0]], turbo: null },
   turboV6: { engineInertia: 0.08, sound: { tone: 1.15, bass: 1, drive: 1.25, vol: 1.1 }, name: '1.5 turbo V6 (race boost)', cylinders: 6, idleRpm: 3200, redline: 12500, launchRpm: 8500, engineBraking: 60, peakTorque: 420, massDelta: 0,
     torqueCurve: [[2500, 230], [4000, 280], [6000, 330], [8000, 390], [9500, 415], [10500, 420], [11500, 405], [12500, 385], [13000, 160], [13300, 0]],
     turbo: { onRpm: 4500, fullRpm: 8000, lag: 0.6, base: 0.55 } },
@@ -236,14 +242,41 @@ export const P70_CAR = {
   shiftTime: { manual: 0.14, auto: 0.3 },
   fuelCapacity: 120,
 };
-export const STOCK_ENGINE = { caterham: 'duratec', f1: 'turboV6', f05: 'v10x', f94: 'v12', p70: 'flat12' };
-export const specForKind = (kind) => (kind === 'f05' ? F05_CAR : kind === 'f94' ? F94_CAR : kind === 'p70' ? P70_CAR : kind === 'f1' ? F1_CAR : CATERHAM_CAR);
+// THE TTP-91: an original 1991 Group C long-distance car (a tribute to
+// the four-rotor winner of that year, in our own orange and green: no real
+// make, badges or sponsor). Long, low and wide, the rear wheels skirted,
+// a ground-effect floor, a big wing on the tail, the driver on the
+// right, five gears on a lever, about 830 kg
+export const P91_CAR = {
+  ...P70_CAR,
+  name: 'TTP-91',
+  body: 'p91',
+  stockEngine: 'rotary4',
+  baseMass: 830,
+  inertia: 1350,
+  airInertia: { pitch: 1450, yaw: 1500, roll: 440 },
+  cgToFront: 1.3, cgToRear: 1.36,    // 2.66 m between the axles
+  trackHalf: 0.79,
+  frontGrip: 1.42, rearGrip: 1.55,   // (1991 slicks)
+  cgHeight: 0.31,
+  downforce: 1.45,                   // (ground effect: about twice its weight at 300 km/h)
+  downforceFront: 0.42,
+  drag: 0.56,
+  brakeForce: 21000, brakeBias: 0.58,
+  maxSteer: 0.4, steerSpeed: 2.9,
+  frontStiffness: 66000, rearStiffness: 78000,
+  gears: [2.5, 1.78, 1.38, 1.14, 0.97],
+  fuelCapacity: 100,
+};
+export const STOCK_ENGINE = { caterham: 'duratec', f1: 'turboV6', f05: 'v10x', f94: 'v12', p70: 'flat12', p91: 'rotary4' };
+export const specForKind = (kind) => ({ f05: F05_CAR, f94: F94_CAR, p70: P70_CAR, p91: P91_CAR, f1: F1_CAR }[kind] || CATERHAM_CAR);
 // where each single-seater's wheels are: [x, z, width] (left, right; front then back)
 export const WHEEL_LAYOUT = {
   f1: [[0.88, 1.62, 0.3], [-0.88, 1.62, 0.3], [0.88, -1.28, 0.42], [-0.88, -1.28, 0.42]],
   f05: [[0.73, 1.67, 0.28], [-0.73, 1.67, 0.28], [0.73, -1.43, 0.35], [-0.73, -1.43, 0.35]],
   f94: [[0.83, 1.62, 0.3], [-0.83, 1.62, 0.3], [0.83, -1.33, 0.39], [-0.83, -1.33, 0.39]],
   p70: [[0.78, 1.25, 0.26], [-0.78, 1.25, 0.26], [0.76, -1.05, 0.34], [-0.76, -1.05, 0.34]],
+  p91: [[0.79, 1.3, 0.3], [-0.79, 1.3, 0.3], [0.77, -1.36, 0.36], [-0.77, -1.36, 0.36]],
 };
 
 // ---------------------------------------------------------------------
@@ -1053,7 +1086,117 @@ export function buildP70Body(car, addPanel) {
   addTo(wings.rear, new THREE.BoxGeometry(1.1, 0.012, 0.14).rotateX(0.35).translate(0, 0.74, -1.98), MAT.blue);
   return { helmet: [helmet, visor, hstripe], rainMat: MAT.rain, exhaustMat: MAT.exhaust, mats: MAT, wings, mirrors, driver };
 }
-export const bodyForKind = (kind) => (kind === 'f05' ? buildF05Body : kind === 'f94' ? buildF94Body : kind === 'p70' ? buildP70Body : buildF1Body);
+
+// =====================================================================
+// THE TTP-91 AS THE PLAYER'S CAR (and the computer drivers', and the
+// Garage's): the body. A tribute to the 1991 Group C cars: long, low and
+// wide; a sharp low nose with the front wheels' fenders swelling up
+// either side, the headlights under clear covers at its corners; a small
+// cockpit with the driver on the right; long flanks with ducts ahead of
+// the skirted back wheels; a long flat tail with a big wing between its
+// fins. In our own bright orange and green, after the famous scheme of
+// that winner (no sponsor, no names), a white number panel on each door.
+// =====================================================================
+export function buildP91Body(car, addPanel) {
+  const MAT = {
+    blue: new THREE.MeshPhysicalMaterial({ color: 0x2fb54a, roughness: 0.3, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.08 }),     // (the green)
+    yellow: new THREE.MeshPhysicalMaterial({ color: 0xff6a12, roughness: 0.3, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.08 }),   // (the orange)
+    carbon: new THREE.MeshStandardMaterial({ color: 0x16171a, roughness: 0.6, metalness: 0.2 }),
+    glass: new THREE.MeshStandardMaterial({ color: 0x2a3540, roughness: 0.05, metalness: 0.3, transparent: true, opacity: 0.5, side: THREE.DoubleSide }),
+    lens: new THREE.MeshStandardMaterial({ color: 0xdfe6ee, roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.45 }),
+    lamp: new THREE.MeshStandardMaterial({ color: 0xf2f2e8, roughness: 0.2, metalness: 0.6, emissive: 0xfff3d0, emissiveIntensity: 0.2 }),
+    helmet: new THREE.MeshPhysicalMaterial({ color: 0xf4f4f0, roughness: 0.2, clearcoat: 1 }),
+    visor: new THREE.MeshStandardMaterial({ color: 0x101418, roughness: 0.05, metalness: 0.8 }),
+    exhaust: new THREE.MeshStandardMaterial({ color: 0x5a4a40, roughness: 0.5, metalness: 0.8, emissive: 0xff5a10, emissiveIntensity: 0 }),
+    rain: new THREE.MeshStandardMaterial({ color: 0x4a0a0a, emissive: 0xff1a10, emissiveIntensity: 0 }),
+    seat: new THREE.MeshStandardMaterial({ color: 0x24262c, roughness: 0.9 }),
+    suit: new THREE.MeshStandardMaterial({ color: 0x2fb54a, roughness: 0.8 }),
+    dark: new THREE.MeshStandardMaterial({ color: 0x050506, roughness: 0.8 }),
+  };
+  const roofMat = MAT.blue.clone(); roofMat.side = THREE.DoubleSide;
+  const add = (geo, mat, shadow = true) => {
+    const m = new THREE.Mesh(geo, mat); m.castShadow = shadow; m.receiveShadow = true; car.add(m);
+    if (mat === MAT.blue || mat === MAT.yellow || mat === roofMat) addPanel(m);
+    return m;
+  };
+  const ease = (u) => { u = Math.max(0, Math.min(1, u)); return u * u * (3 - 2 * u); };
+  const FZ = 1.3, RZ = -1.36, WR = 0.33;
+  // (the front wheels have open arches; the back ones are skirted)
+  const arch = (z, base) => { const d = z - FZ, r = WR + 0.05; return Math.abs(d) < r ? Math.max(base, WR + Math.sqrt(r * r - d * d)) : base; };
+  const W = curve([[-2.45, 1.92], [-1.36, 2.0], [-0.4, 1.94], [0.4, 1.92], [1.3, 2.0], [2.0, 1.92], [2.36, 1.72]]);
+  const TOP = curve([[-2.45, 0.8], [-1.8, 0.78], [-1.0, 0.75], [-0.6, 0.72], [0.6, 0.6], [1.3, 0.56], [1.9, 0.42], [2.36, 0.2]]);
+  const BOT = (z) => arch(z, z > 2.0 ? 0.1 + (z - 2.0) * 0.12 : 0.1);
+  add(smoothBody(-2.45, 2.36, 90, (z) => ({ w: W(z), top: TOP(z), bot: BOT(z), tuck: 0.12, sq: 7 })), MAT.blue);
+  // the orange: the lower half all round, and the whole nose
+  add(smoothBody(-2.44, 2.37, 90, (z) => { const k = ease((z - 1.2) / 0.6); return { w: W(z) + 0.008, top: 0.38 + (TOP(z) + 0.006 - 0.38) * k, bot: BOT(z) - 0.004, tuck: 0.12, sq: 7 }; }), MAT.yellow);
+  add(new THREE.BoxGeometry(1.3, 0.06, 4.2).translate(0, 0.12, -0.05), MAT.carbon);
+  for (const s of [1, -1]) add(new THREE.CylinderGeometry(WR + 0.05, WR + 0.05, 0.42, 16, 1, true, -Math.PI / 2, Math.PI).rotateZ(Math.PI / 2).translate(s * 0.73, WR, FZ), MAT.dark, false);
+  // the front fenders swelling up either side of the low nose (and back into the body)
+  const FT = curve([[0.55, 0.58], [0.95, 0.68], [1.3, 0.74], [1.75, 0.66], [2.2, 0.36]]);
+  for (const s of [1, -1]) add(smoothBody(0.5, 2.22, 34, (z) => { const e = ease((z - 0.5) / 0.45); return { x: s * (0.73 - 0.12 * (1 - e)), w: (0.54 - Math.max(0, z - 1.8) * 0.5) * (0.3 + 0.7 * e), top: TOP(z) - 0.03 + (FT(z) - TOP(z) + 0.03) * e, bot: Math.max(BOT(z), 0.3 + 0.12 * (1 - e)), tuck: 0.3, sq: 3 }; }), MAT.yellow);
+  // the cockpit: small, a wraparound screen, the roof (green), its pillars
+  const CT = curve([[-0.85, 0.72], [-0.5, 0.93], [-0.05, 0.99], [0.35, 0.93], [0.72, 0.6]]);
+  const CW = curve([[-0.85, 1.1], [-0.2, 1.24], [0.35, 1.28], [0.72, 1.36]]);
+  add(smoothBody(-0.85, 0.72, 30, (z) => ({ w: CW(z), top: CT(z), bot: 0.55, tuck: 0.35, sq: 2.6 })), MAT.glass, false);
+  { const roof = add(smoothBody(-0.8, 0.2, 20, (z) => ({ w: CW(z) * 0.86, top: CT(z) + 0.01, bot: CT(z) - 0.06, tuck: 0.25, sq: 2.6 })), roofMat); roof.castShadow = false; }
+  for (const s of [1, -1]) add(rod([s * 0.62, 0.6, 0.7], [s * 0.52, 0.93, 0.32], 0.025), MAT.blue);
+  // the long tail: the deck, the fins rising either side, the big wing between them
+  const FinT = curve([[-0.9, 0.76], [-1.6, 0.86], [-2.1, 0.98], [-2.45, 1.02]]);
+  for (const s of [1, -1]) add(smoothBody(-2.45, -0.85, 30, (z) => { const e = ease((-0.85 - z) / 0.5); return { x: s * (0.86 - 0.1 * (1 - e)), w: 0.2 * (0.4 + 0.6 * e), top: TOP(z) + (FinT(z) - TOP(z)) * e, bot: TOP(z) - 0.15, tuck: 0.2, sq: 3 }; }), MAT.blue);
+  // the flanks: a duct ahead of each back wheel, the skirt's line
+  for (const s of [1, -1]) {
+    add(new THREE.PlaneGeometry(0.42, 0.16).rotateY(s * Math.PI / 2).translate(s * (W(-0.6) / 2 + 0.006), 0.48, -0.6), MAT.dark, false);
+    add(new THREE.BoxGeometry(0.006, 0.005, 1.4).translate(s * (W(RZ) / 2 + 0.006), 0.2, RZ), MAT.dark, false);
+  }
+  // the white number panel on each door
+  const numMat = new THREE.MeshStandardMaterial({ roughness: 0.4, map: (() => {
+    const c = document.createElement('canvas'); c.width = 160; c.height = 112; const g = c.getContext('2d');
+    g.fillStyle = '#f4f4f0'; g.fillRect(0, 0, 160, 112);
+    g.fillStyle = '#111'; g.font = 'bold 84px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('15', 80, 62);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+  })() });
+  for (const s of [1, -1]) { const d = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.28), numMat); d.position.set(s * (W(0) / 2 + 0.012), 0.5, 0.0); d.rotation.y = s * Math.PI / 2; car.add(d); }
+  // the nose: the headlights at its corners under clear covers, a low mouth
+  for (const s of [1, -1]) {
+    add(new THREE.BoxGeometry(0.22, 0.06, 0.02).rotateX(-0.9).translate(s * 0.6, 0.5, 1.98), MAT.lamp);
+    add(smoothBody(1.86, 2.12, 6, (z) => ({ x: s * 0.6, w: 0.3, top: FT(z) + 0.01, bot: FT(z) - 0.1, sq: 2.5 })), MAT.lens, false);
+  }
+  add(new THREE.BoxGeometry(0.9, 0.06, 0.02).translate(0, 0.15, 2.3), MAT.dark, false);
+  const mirrors = {};
+  for (const s of [1, -1]) {
+    const stalk = add(rod([s * 0.66, 0.62, 0.62], [s * 0.74, 0.72, 0.62], 0.012), MAT.carbon);
+    const pod = new THREE.Group(); car.add(pod);
+    pod.add(add(new THREE.BoxGeometry(0.14, 0.07, 0.05).translate(s * 0.78, 0.74, 0.62), MAT.blue));
+    pod.add(add(new THREE.PlaneGeometry(0.12, 0.055).rotateY(Math.PI).translate(s * 0.78, 0.74, 0.594), MAT.visor));
+    mirrors[s > 0 ? 'l' : 'r'] = { stalk, pod, at: [s * 0.78, 0.74, 0.62] };
+  }
+  // the back: the mesh across it, the lights, the exhausts out in the middle
+  add(new THREE.PlaneGeometry(1.7, 0.5).rotateY(Math.PI).translate(0, 0.45, -2.455), MAT.dark, false);
+  for (const s of [1, -1]) add(new THREE.BoxGeometry(0.2, 0.06, 0.02).translate(s * 0.7, 0.66, -2.46), MAT.rain);
+  for (const s of [1, -1]) add(new THREE.CylinderGeometry(0.06, 0.065, 0.16, 12, 1, true).rotateX(Math.PI / 2).translate(s * 0.12, 0.36, -2.48), MAT.exhaust);
+  // the driver (on the right)
+  const DX = -0.27;
+  add(new THREE.BoxGeometry(0.42, 0.06, 0.42).translate(DX, 0.22, -0.2), MAT.seat, false);
+  add(new THREE.BoxGeometry(0.42, 0.5, 0.06).rotateX(-0.3).translate(DX, 0.45, -0.45), MAT.seat, false);
+  const driver = new THREE.Group(); car.add(driver);
+  const dAdd = (geo, mat) => { const m = new THREE.Mesh(geo, mat); m.castShadow = false; driver.add(m); return m; };
+  dAdd(new THREE.CapsuleGeometry(0.15, 0.14, 4, 10).rotateZ(Math.PI / 2).scale(1, 0.75, 0.8).translate(DX, 0.56, -0.3), MAT.suit);
+  for (const sx of [1, -1]) { dAdd(rod([DX + sx * 0.17, 0.6, -0.27], [DX + sx * 0.15, 0.5, -0.03], 0.04), MAT.suit); dAdd(rod([DX + sx * 0.15, 0.5, -0.03], [DX + sx * 0.12, 0.62, 0.17], 0.035), MAT.suit); }
+  dAdd(new THREE.TorusGeometry(0.16, 0.016, 6, 20).rotateX(-0.6).translate(DX, 0.62, 0.21), MAT.carbon);
+  const helmet = add(new THREE.SphereGeometry(0.135, 20, 16).scale(1, 1.05, 1.1).translate(DX, 0.8, -0.3), MAT.helmet);
+  const visor = add(new THREE.SphereGeometry(0.137, 20, 10, -0.9 + Math.PI / 2, 1.8, 1.1, 0.5).scale(1, 1.05, 1.1).translate(DX, 0.8, -0.3), MAT.visor);
+  const hstripe = add(new THREE.TorusGeometry(0.135, 0.012, 6, 24, Math.PI).rotateY(Math.PI / 2).rotateZ(Math.PI / 2).scale(1, 1.05, 1.1).translate(DX, 0.8, -0.3), MAT.yellow);
+  // "wings": dive planes at the nose's corners, and the big rear wing
+  const wings = { fl: new THREE.Group(), fr: new THREE.Group(), rear: new THREE.Group() };
+  for (const g of Object.values(wings)) car.add(g);
+  const addTo = (g, geo, mat) => { const m = add(geo, mat); g.add(m); return m; };
+  for (const s of [1, -1]) addTo(s > 0 ? wings.fl : wings.fr, new THREE.BoxGeometry(0.2, 0.012, 0.16).rotateZ(-s * 0.2).translate(s * 0.88, 0.36, 2.0), MAT.carbon);
+  addTo(wings.rear, new THREE.BoxGeometry(1.62, 0.03, 0.34).rotateX(0.18).translate(0, 1.0, -2.22), MAT.yellow);
+  addTo(wings.rear, new THREE.BoxGeometry(1.62, 0.018, 0.14).rotateX(0.55).translate(0, 1.07, -2.42), MAT.blue);
+  for (const s of [1, -1]) addTo(wings.rear, new THREE.BoxGeometry(0.02, 0.36, 0.56).translate(s * 0.82, 0.98, -2.25), MAT.blue);
+  return { helmet: [helmet, visor, hstripe], rainMat: MAT.rain, exhaustMat: MAT.exhaust, mats: MAT, wings, mirrors, driver };
+}
+export const bodyForKind = (kind) => ({ f05: buildF05Body, f94: buildF94Body, p70: buildP70Body, p91: buildP91Body }[kind] || buildF1Body);
 
 // a plain F1 rim of the time: a shallow dish with six slim spokes and a
 // big single centre nut (r: its radius, w: its width)
