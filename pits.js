@@ -26,7 +26,7 @@
 // a smashed radiator): the team retire the car. DNF on the standings, and
 // they push it back into the garage.
 // =====================================================================
-export const BUILD = 9;
+export const BUILD = 10;
 
 import * as THREE from 'three';
 
@@ -262,7 +262,7 @@ export class Person {
     const walking = speed > 0 && !this.keyed;
     this.moving += ((walking ? 1 : 0) - this.moving) * Math.min(1, dt * 8);
     const fast = speed > 3;
-    this.phase += dt * (fast ? (this.panic ? 12.5 : 11) : this.stagger ? 5 : 7.5) * (this.back ? -1 : 1);
+    this.phase += dt * (fast ? (this.panic ? 14.5 : 13) : this.stagger ? 5 : 7.5) * (this.back ? -1 : 1);
     const sw = Math.sin(this.phase) * this.moving * (fast ? 0.8 : 0.42);
     const p = this.p, carrying = this.held.length > 0;
     if (!speed) { this.panic = false; this.stagger = false; }
@@ -283,6 +283,29 @@ export class Person {
     this.thL.rotation.x = -(p.thL * legK + sw); this.thR.rotation.x = -(p.thR * legK - sw);
     this.knL.rotation.x = p.knL * legK + Math.max(0, -Math.sin(this.phase)) * (fast ? 1.4 : 0.9) * this.moving;
     this.knR.rotation.x = p.knR * legK + Math.max(0, Math.sin(this.phase)) * (fast ? 1.4 : 0.9) * this.moving;
+    // RUNNING FLAT OUT is its own movement, not a bigger walk: the knee
+    // driven high in front, the heel kicked up behind as the leg comes
+    // through, a push off the toes; arms pumping hard and opposite, elbows
+    // at a right angle, hands from the hip to the chin; up on the balls of
+    // the feet with both off the ground between strides
+    if (fast && !carrying) {
+      const M = this.moving, ph = this.phase;
+      const leg = (thigh, knee, f) => {
+        thigh.rotation.x = thigh.rotation.x * (1 - M) - (0.4 + 0.95 * Math.sin(f)) * M;              // (forward to 1.35, back to -0.55)
+        knee.rotation.x = knee.rotation.x * (1 - M) + (0.2 + 2.0 * Math.pow(Math.max(0, Math.cos(f - 0.5)), 1.3)) * M;   // (heel up as it comes through)
+      };
+      leg(this.thL, this.knL, ph); leg(this.thR, this.knR, ph + Math.PI);
+      const arm = (sh, el, f, sgn) => {
+        sh.rotation.x = sh.rotation.x * (1 - M) - (0.25 + 0.95 * Math.sin(f)) * M;
+        el.rotation.x = el.rotation.x * (1 - M) - (1.55 + 0.25 * Math.sin(f)) * M;
+        sh.rotation.z = sh.rotation.z * (1 - M) + sgn * 0.12 * M;
+      };
+      arm(this.shL, this.elL, ph + Math.PI, 1); arm(this.shR, this.elR, ph, -1);
+      // (the bounce: up in the air between strides, down hard on each foot)
+      this.hips.position.y = 0.95 + (Math.abs(Math.sin(ph)) * 0.07 - 0.04) * M;
+      this.torso.rotation.x = Math.max(this.torso.rotation.x, 0.3) + Math.sin(ph * 2) * 0.03;
+      this.hips.rotation.y = Math.sin(ph) * 0.12 * M;                // (hips and shoulders counter-rotating)
+    } else this.hips.rotation.y = 0;
     this.root.position.set(this.x, groundAt(this.x, this.z) + lift + p.lift, this.z);
     this.root.rotation.set(p.tilt, this.face, p.roll + (this.stagger ? Math.sin(this.t * 2.3) * 0.12 : 0), 'YXZ');
     // (in a panic: hunched, the body twisting with each stride, looking about)

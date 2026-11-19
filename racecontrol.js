@@ -34,7 +34,7 @@ import { Person, makeExtinguisher } from './pits.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 4;
+export const BUILD = 5;
 
 const std = (color, rough = 0.6, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: rough, ...extra });
 const boxAt = (w, h, d, x = 0, y = 0, z = 0) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
@@ -190,6 +190,38 @@ function buildAmbulance() {
 // a low yellow chassis on four big wheels, the cab off to one side, a
 // turntable and a short telescopic boom with a hook, outriggers, and an
 // amber beacon ---
+// --- THE FLATBED: a recovery truck: a cab-over cab, a long flat steel
+// bed with low sides and a ramp end, winch, beacons, twin rear wheels.
+// The crane puts the wreck on it, and it takes it back to the pits ---
+function buildFlatbed() {
+  const g = new THREE.Group();
+  const white = std(0xf1f1ec, 0.4, { metalness: 0.15 }), dark = std(0x24262a, 0.5), glass = std(0x1d2733, 0.08, { metalness: 0.5 });
+  const steel = std(0x8d9298, 0.35, { metalness: 0.8 }), orange = std(0xf07b1a, 0.45), rim = std(0xc8ccd2, 0.3, { metalness: 0.7 });
+  // chassis rails
+  addMesh(g, roundBox(1.0, 0.3, 6.4, 0.05, 0, 0.75, -0.5), dark);
+  // the cab, set over the front wheels
+  addMesh(g, profileBody([[1.55, 0.6], [1.55, 2.45], [1.7, 2.6], [2.55, 2.6], [2.75, 2.35], [2.85, 1.2], [2.85, 0.6]], 2.2, 0.09), white);
+  const ws = new THREE.Mesh(new THREE.PlaneGeometry(1.95, 0.85), glass); ws.position.set(0, 2.0, 2.83); ws.rotation.x = -0.12; g.add(ws);
+  for (const sx of [-1, 1]) { const w = new THREE.Mesh(new THREE.PlaneGeometry(0.85, 0.7), glass); w.position.set(sx * 1.112, 2.05, 2.25); w.rotation.y = sx * Math.PI / 2; g.add(w); addMesh(g, roundBox(0.09, 0.32, 0.18, 0.03, sx * 1.2, 2.0, 2.65), dark, false); }
+  addMesh(g, roundBox(2.25, 0.28, 0.25, 0.06, 0, 0.62, 2.9), dark);
+  for (const sx of [-0.75, 0.75]) addMesh(g, roundBox(0.32, 0.16, 0.06, 0.04, sx, 0.95, 2.9), std(0xe9eef4, 0.1, { emissive: 0x3a3a3a }), false);
+  // the bed: long and flat, slightly tilted at the back like a ramp
+  const BED_Y = 1.08;
+  addMesh(g, roundBox(2.3, 0.12, 5.3, 0.03, 0, BED_Y - 0.06, -1.25), steel);
+  for (const sx of [-1.16, 1.16]) addMesh(g, roundBox(0.06, 0.16, 5.3, 0.02, sx, BED_Y + 0.06, -1.25), orange, false);
+  addMesh(g, roundBox(2.3, 0.08, 0.9, 0.02, 0, BED_Y - 0.25, -4.25).rotateX(0), steel);                 // the ramp end
+  addMesh(g, roundBox(2.3, 0.5, 0.1, 0.03, 0, BED_Y + 0.25, 1.38), orange);                           // headboard
+  addMesh(g, new THREE.CylinderGeometry(0.12, 0.12, 0.6, 12).rotateZ(Math.PI / 2).translate(0, BED_Y + 0.12, 1.15), dark, false);   // winch
+  // beacons on the cab roof
+  const beacons = [];
+  for (const sx of [-0.7, 0.7]) beacons.push(addMesh(g, new THREE.CylinderGeometry(0.09, 0.1, 0.16, 12).translate(sx, 2.7, 2.1), std(0x3a2a08, 0.2, { emissive: 0x000000 }), false).material);
+  // the side stripe
+  for (const sx of [-1, 1]) { const st = new THREE.Mesh(new THREE.PlaneGeometry(1.25, 0.2), blockStripe('#f07b1a', '#f2f2ec', 256, 32)); st.position.set(sx * 1.112, 1.25, 2.2); st.rotation.y = sx * Math.PI / 2; g.add(st); }
+  roadWheels(g, [[-0.98, 2.1], [0.98, 2.1], [-0.98, -2.35], [0.98, -2.35], [-0.98, -3.25], [0.98, -3.25]], 0.48, 0.32, rim);
+  return { group: g, bedY: BED_Y, bedAt: new THREE.Vector3(0, BED_Y, -1.3),
+    flash: (t, on) => beacons.forEach((m, k) => m.emissive.setHex(on && (Math.floor(t * 3) + k) % 2 ? 0xffa010 : 0x000000)) };
+}
+
 function buildCrane() {
   const g = new THREE.Group();
   const yellow = std(0xe8b419, 0.42, { metalness: 0.2 }), dark = std(0x24262a, 0.5), glass = std(0x1d2733, 0.08, { metalness: 0.5 });
@@ -286,7 +318,9 @@ export class RaceControl {
     this.parkAmb = { x: pit.garageX - 3.2, z: pit.z0 + 32 };
     this.sc = { ...buildSafetyCar(), x: this.parkSC.x, z: this.parkSC.z, heading: Math.PI, v: 0, i: 0, lat: 0, state: 'parked', mode: 'free', route: [] };
     this.ambulance = { ...buildAmbulance(), x: this.parkAmb.x, z: this.parkAmb.z, heading: Math.PI, v: 0, i: 0, lat: 2.5, state: 'parked', mode: 'free', route: [] };
-    for (const v of [this.sc, this.ambulance]) { scene.add(v.group); this.place(v); v.flash(0, false); }
+    this.parkTruck = { x: pit.garageX - 3.4, z: pit.z0 + 46 };
+    this.truck = { ...buildFlatbed(), x: this.parkTruck.x, z: this.parkTruck.z, heading: Math.PI, v: 0, i: 0, lat: 0, state: 'parked', mode: 'free', route: [] };
+    for (const v of [this.sc, this.ambulance, this.truck]) { scene.add(v.group); this.place(v); v.flash(0, false); }
     // the cranes: one at each recovery point, beside the marshal post there
     this.cranes = [];
     const want = [0, 3, 8, 14].map((k) => corners[Math.min(k, corners.length - 1)]).filter(Boolean);
@@ -566,7 +600,8 @@ export class RaceControl {
     // stopped on the track: the safety car; off it: the VSC
     if (racing) {
       if (this.phase === 'red') {
-        if (this.phaseT > 20 && !needs.onTrackWreck && !this.crane && !this.repairs.length) this.restart();
+        // (once the track's clear; a crane still busy off the track holds it up for a minute and a half at most)
+        if (this.phaseT > 20 && !needs.onTrackWreck && (!this.crane || this.phaseT > 90) && !this.repairs.length) this.restart();
       } else if (needs.onTrackWreck || needs.fireOnTrack || this.repairs.some((r) => !r.done)) this.setPhase('sc');
       else if (needs.offTrackWreck) { if (this.phase === 'green') this.setPhase('vsc'); }
       else if (this.phase === 'vsc' && this.phaseT > 4 && !this.crane) this.setPhase('green');
@@ -580,6 +615,7 @@ export class RaceControl {
     if (this.phase === 'sc' && this.sc.state === 'parked') this.sendSafetyCar();
     this.updateSafetyCar(dt, needs);
     this.updateAmbulance(dt);
+    this.updateTruck(dt, S);
     for (const c of this.cranes) if (c !== this.crane && c.state !== 'parked') this.updateCrane(dt, S, c);
     this.updateRepairs(dt);
     // fire marshals and sweepers
@@ -589,7 +625,7 @@ export class RaceControl {
     for (const r of this.runners) r.person.update(dt, this.groundAt);
     this.runners = this.runners.filter((r) => { if (r.done) { this.scene.remove(r.person.root); return false; } return true; });
     // nothing solid gets driven through
-    this.bump(S.physics, [...this.cranes, this.ambulance, this.sc].filter(Boolean));
+    this.bump(S.physics, [...this.cranes, this.ambulance, this.sc, this.truck].filter(Boolean));
     // your penalties
     if (racing) this.judge(dt, S);
   }
@@ -600,14 +636,14 @@ export class RaceControl {
     const onTrack = (x, z) => { const i = this.trackside.nearestLine(x, z, 30); if (i < 0) return false; const p = this.line[i]; return Math.hypot(p.x - x, p.z - z) < p.width / 2 + 1.5; };
     const near = (x, z) => this.trackside.nearestLine(x, z, 40) >= 0;
     // you: broken down out on the circuit
-    if (S.playerBroken && S.playerStopped > 6 && !S.inPits && near(S.physics.x, S.physics.z)) {
+    if (S.playerBroken && S.playerStopped > 6 && !S.inPits && this.truck.load?.kind !== 'player' && near(S.physics.x, S.physics.z)) {
       const on = onTrack(S.physics.x, S.physics.z);
       out.wrecks.push({ key: 'player', kind: 'player', x: S.physics.x, z: S.physics.z, obj: S.playerModel, on });
       if (on) out.onTrackWreck = true; else out.offTrackWreck = true;
     }
     // the computer cars that are out of it
     for (const c of this.ai.cars) {
-      if (c.parked || c.recovered || !(c.dnf || c.wrecked)) continue;
+      if (c.parked || c.recovered || c.onTruck || !(c.dnf || c.wrecked)) continue;
       const on = onTrack(c.physics.x, c.physics.z);
       out.wrecks.push({ key: c, kind: 'ai', car: c, x: c.physics.x, z: c.physics.z, obj: c.model.car, on });
       if (on) out.onTrackWreck = true; else out.offTrackWreck = true;
@@ -751,7 +787,7 @@ export class RaceControl {
       c.waiting = false;
       // (the wreck's been moved since it set off: a new way there)
       if (Math.hypot(w.x - c.aimAt[0], w.z - c.aimAt[1]) > 4) { this.sendCraneTo(c, w); }
-      if (this.driveLegs(c, dt, 5.5, 2.2)) { c.state = 'reach'; c.t = 0; }
+      if (this.driveLegs(c, dt, 7, 2.2)) { c.state = "reach"; c.t = 0; }
     } else if (c.state === 'reach') {
       // swing the boom over it, lower the hook
       const local = c.group.worldToLocal(new THREE.Vector3(w.x, c.group.position.y, w.z));
@@ -766,6 +802,16 @@ export class RaceControl {
       c.lift = 1.6 * Math.min(1, c.t / 3);
       if (c.t > 3.2) { c.state = 'carry'; c.t = 0; }
     } else if (c.state === 'carry') {
+      // a car goes on the flatbed (called out now, if it's free); the engine
+      // block, or with the truck busy, over the barrier
+      if (c.useTruck == null) c.useTruck = (w.kind === 'player' || w.kind === 'ai') && this.sendTruck(c);
+      const T = this.truck;
+      if (c.useTruck) {
+        c.lift = Math.min(2.2, c.lift + dt * 0.5);
+        if (T.state !== 'waiting') return this.hang(c, w, obj, S);          // (holding it up, waiting for the truck)
+        T.group.updateMatrixWorld(true);
+        c.dropAt = T.bedAt.clone().applyMatrix4(T.group.matrixWorld);
+      }
       // the boom swings round and lifts it over the barrier, off the track
       if (!c.dropAt) {
         const i = this.trackside.nearestLine(c.x, c.z, 60), lp = this.line[Math.max(0, i)];
@@ -777,22 +823,39 @@ export class RaceControl {
       const yaw = Math.atan2(local.x - c.turntable.position.x, local.z - c.turntable.position.z);
       const dy = Math.atan2(Math.sin(yaw - c.turntable.rotation.y), Math.cos(yaw - c.turntable.rotation.y));
       c.turntable.rotation.y += Math.max(-dt * 0.35, Math.min(dt * 0.35, dy));
-      c.lift = 1.6 + 0.6 * Math.min(1, c.t / 2);                    // (high enough to clear the barrier)
+      if (!c.useTruck) c.lift = 1.6 + 0.6 * Math.min(1, c.t / 2);   // (high enough to clear the barrier)
+      // (and the boom out or in a little, so the hook's over the spot)
+      const reach = Math.hypot(local.x - c.turntable.position.x, local.z - c.turntable.position.z);
+      c.boom.rotation.x += ((reach > 4.9 ? -0.2 : -0.32 - (4.9 - reach) * 0.12) - c.boom.rotation.x) * Math.min(1, dt * 1.2);
       if (Math.abs(dy) < 0.03 && c.t > 2.5) { c.state = 'drop'; c.t = 0; }
     } else if (c.state === 'drop') {
-      c.lift = Math.max(0, 2.2 - c.t * 1.2);
+      c.lift = Math.max(c.useTruck ? this.truck.bedY : 0, 2.2 - c.t * 1.2);
+      if (c.t > 1.6 && c.useTruck) {
+        // on the bed: the truck takes it from here
+        const T = this.truck;
+        T.load = w; T.state = 'carry'; T.carryT = 0;
+        if (w.kind === 'ai') w.car.onTruck = true;
+        c.state = 'home'; c.t = 0; c.lift = 0; c.w = null; c.dropAt = null; c.useTruck = null;
+        c.legs = this.planDrive(c, [c.park.x, c.park.z], { allowBack: true });
+        if (this.crane === c) this.crane = null;
+        return;
+      }
       if (c.t > 1.6) {
         // done: the wreck's dealt with
         if (w.kind === 'player') this.hooks.recoverPlayer?.();
         else if (w.kind === 'ai') { w.car.recovered = true; w.car.parked = true; const k = this.ai.cars.indexOf(w.car); w.car.physics.x = 1e4 + k * 30; w.car.physics.z = 1e4; w.car.full = false; }
         else if (w.kind === 'block') this.hooks.removeBlock?.();
         // and home, empty
-        c.state = 'home'; c.t = 0; c.lift = 0; c.w = null; c.dropAt = null;
+        c.state = 'home'; c.t = 0; c.lift = 0; c.w = null; c.dropAt = null; c.useTruck = null;
         c.legs = this.planDrive(c, [c.park.x, c.park.z], { allowBack: true });
         if (this.crane === c) this.crane = null;
         return;
       }
     }
+    this.hang(c, w, obj, S);
+  }
+  // the wreck hanging from the hook
+  hang(c, w, obj, S) {
     // the wreck hangs from the hook while it's lifted and carried
     if (c.state === 'lift' || c.state === 'carry' || c.state === 'drop') {
       c.hookAt.updateWorldMatrix(true, false);
@@ -805,6 +868,82 @@ export class RaceControl {
       if (w.kind === 'player' && S.physics) { S.physics.x = x; S.physics.z = z; S.physics.vx = S.physics.vy = 0; this.liftedPlayer = c.lift; }
       if (w.kind === 'ai') { w.car.physics.x = x; w.car.physics.z = z; w.car.lift = c.lift; }
     }
+  }
+
+  // ---- the flatbed: out of the pit lane to the crane, then the wreck back to the pits ----
+  sendTruck(c) {
+    const T = this.truck;
+    if (T.state !== 'parked') return false;
+    // where it waits: on the track beside the crane, nose the way the cars go
+    const i = this.trackside.nearestLine(c.x, c.z, 60);
+    if (i < 0) return false;
+    const pr = this.project(c.x, c.z, i), half = this.line[i].width / 2;
+    const lat = Math.sign(pr.lat || 1) * Math.max(0, Math.min(half - 1.6, Math.abs(pr.lat) - 3.6));
+    T.spot = this.pointAt(i + 2, lat); T.spotI = i + 2;
+    T.state = 'leaving'; T.mode = 'free'; T.route = this.exitRoute(); T.v = 0;
+    this.hooks.toast?.(c.w?.kind === 'player' ? 'THE FLATBED\'S ON ITS WAY' : null);
+    return true;
+  }
+  updateTruck(dt, S) {
+    const T = this.truck;
+    if (T.state === 'parked') return;
+    T.flash(this.t, T.state !== 'home' && T.state !== 'unload');
+    const red = this.phase === 'red' || !(this.ai.race && this.ai.race.phase === 'racing');
+    if (T.state === 'leaving') {
+      if (this.followRoute(T, dt, T.route.length > 1 ? 16 : 18)) { T.legs = this.planDrive(T, T.spot, { allowBack: red, latEnd: this.project(T.spot[0], T.spot[1], ((T.spotI % this.m) + this.m) % this.m).lat || 0.01 }); T.state = 'going'; }
+    } else if (T.state === 'going') {
+      if (this.driveLegs(T, dt, 16, 3)) { T.state = 'waiting'; T.v = 0; }
+    } else if (T.state === 'carry') {
+      // on round to the pit entry (the way the cars go), in, and to the box
+      // (the short way back, against the way the cars go, only when nothing's racing or it's a red flag)
+      if (!T.toPits) {
+        const i = this.trackside.nearestLine(T.x, T.z, 60), fwd = ((this.entryI - i) % this.m + this.m) % this.m;
+        const dir = red && this.m - fwd < fwd ? -1 : 1;
+        T.legs = [{ line: dir > 0 ? this.entryI : (this.entryI + 4) % this.m, dir, lat: 0 }];
+        T.toPits = 'track';
+      }
+      if (T.toPits === 'track') {
+        if (this.driveLegs(T, dt, 22, 4)) {
+          T.toPits = 'lane'; T.mode = 'free'; T.heading = T.group.rotation.y;
+          const B = this.pit.box, P = this.pit;
+          T.route = T.load.kind === 'player'
+            ? [[P.laneX - 1, P.entryZ - 15], [P.laneX, P.z1 - 5], [P.laneX, B.z + 16], [B.x, B.z + 7], [B.x, B.z + 2.5]]
+            : [[P.laneX - 1, P.entryZ - 15], [P.laneX, P.z1 - 5], [P.laneX, P.z0 + 60], [this.parkTruck.x, this.parkTruck.z + 6]];
+        }
+      } else if (T.toPits === 'lane') {
+        if (this.followRoute(T, dt, 16)) { T.state = 'unload'; T.t = 0; }
+      }
+    } else if (T.state === 'unload') {
+      // off the back, and the car's dealt with
+      T.t += dt;
+      if (T.t > 2) {
+        const w = T.load;
+        if (w.kind === 'player') this.hooks.recoverPlayer?.();
+        else if (w.kind === 'ai') { w.car.recovered = true; w.car.parked = true; w.car.onTruck = false; const k = this.ai.cars.indexOf(w.car); w.car.physics.x = 1e4 + k * 30; w.car.physics.z = 1e4; w.car.full = false; if (w.obj) w.obj.position.y = 0; }
+        T.load = null; T.toPits = null; T.state = 'home';
+        T.route = [[this.pit.laneX, T.z - 12], [this.pit.laneX, this.parkTruck.z + 14], [this.parkTruck.x, this.parkTruck.z + 4], [this.parkTruck.x, this.parkTruck.z]];
+        return;
+      }
+    } else if (T.state === 'home') {
+      if (this.followRoute(T, dt, 14)) { T.state = 'parked'; T.heading = Math.PI; this.place(T); T.flash(0, false); }
+    }
+    // the load rides on the bed
+    if (T.load) {
+      const w = T.load;
+      T.group.updateMatrixWorld(true);
+      const at = T.bedAt.clone().applyMatrix4(T.group.matrixWorld);
+      w.x = at.x; w.z = at.z;
+      const h = T.group.rotation.y;
+      if (w.obj) { w.obj.position.set(at.x, at.y, at.z); if (w.kind === 'ai') w.obj.rotation.y = h; }
+      if (w.kind === 'player' && S.physics) { S.physics.x = at.x; S.physics.z = at.z; S.physics.vx = S.physics.vy = 0; S.physics.heading = h; this.liftedPlayer = T.bedY; }
+      if (w.kind === 'ai') { w.car.physics.x = at.x; w.car.physics.z = at.z; w.car.physics.heading = h; w.car.lift = this.groundAt(at.x, at.z) * 0 + T.bedY; }
+    }
+  }
+  // how high your car is lifted (on the hook, or on the truck's bed)
+  get playerLift() {
+    if (this.truck?.load?.kind === 'player') return this.truck.bedY;
+    if (this.crane?.w?.kind === 'player') return this.crane.lift;
+    return 0;
   }
 
   // ---- fire marshals: two from the nearest post, at a run ----

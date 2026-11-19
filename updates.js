@@ -21,11 +21,18 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 84;
+export const BUILD = 85;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 73, date: '19 Nov 2026', title: 'The flatbed',
+    items: [
+      ['Onto the flatbed', 'The recovery crane doesn\'t just drop a wrecked car behind the barrier any more. It holds it up while a flatbed truck comes out of the pit lane, swings it across, lowers it onto the bed, and the truck drives it back to the pits (your car to your box). With nothing racing, it takes the short way back', 'new'],
+      ['Real sprinting', 'Running flat out is now its own movement: knees driven high, heels kicked up behind, arms pumping hard from hip to chin, a bounce between strides, hips and shoulders twisting against each other', 'update'],
+    ],
+  },
   {
     id: 72, date: '19 Nov 2026', title: 'Climbing out',
     items: [

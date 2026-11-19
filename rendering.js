@@ -60,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 64;
+const BUILD = 65;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -4447,7 +4447,7 @@ renderer.setAnimationLoop(() => {
       carModel.car.rotation.x -= (pits.lift.f - pits.lift.r) / (FRONT_AXLE - REAR_AXLE);
     }
   }
-  if (raceControl?.crane?.w?.kind === 'player') carModel.car.position.y += raceControl.crane.lift;   // (up on the recovery crane's hook)
+  if (raceControl?.playerLift) carModel.car.position.y += raceControl.playerLift;   // (up on the recovery crane's hook, or on the flatbed)
   updateWheels(physics.steer, physics.wheelSpin);
   if (IS_F1) {
     // the TT-88: the driver's helmet hidden in his own view; exhausts glowing with the revs and boost
