@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 92;
+export const BUILD = 93;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 81, date: '19 Nov 2026', title: 'A smooth climb',
+    items: [
+      ['No more bouncing revs', 'Flat out in the low gears the traction control keeps cutting in and the rear wheels slip and grip, so the revs jumped about by hundreds and the V10 and V12 sounded like they were bouncing. Now the note climbs smoothly through it, and the shifts are still sharp', 'fix'],
+    ],
+  },
   {
     id: 80, date: '19 Nov 2026', title: 'The V12, rebuilt',
     items: [

@@ -11,7 +11,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 23;
+export const BUILD = 24;
 
 // THE VOICED ENGINES (the V10's sound, made for each): bangs a turn, revs,
 // loudness matched to the approved preview, and how much of 3x the crank
@@ -1751,11 +1751,20 @@ export class EngineSound {
       this.heavy.parameters.get('speed').setTargetAtTime(Math.min(40, Math.abs(num(car.vx, 0))), t, 0.1);
     }
     if (this.v10 && this.spec.voice === this.v10Kind) {
-      this.v10.parameters.get('rpm').setTargetAtTime(rpm, t, 0.03);
-      this.v10.parameters.get('load').setTargetAtTime(load, t, loadEase);
+      // (what the V10 and V12 hear: the revs smoothed through the traction
+      // control's cutting and the wheels slipping and gripping, so the note
+      // climbs evenly; a shift still goes straight through)
+      const now = this.ctx.currentTime, gap = Math.min(0.1, Math.max(0.001, now - (this.v10Last || now)));
+      this.v10Last = now;
+      const shiftingNow = car.shiftTimer > 0, sharp = shiftingNow || Math.abs(rpm - (this.v10Rpm ?? rpm)) > 2500;
+      this.v10Rpm = sharp || this.v10Rpm == null ? rpm : this.v10Rpm + (rpm - this.v10Rpm) * (1 - Math.exp(-gap / 0.14));
+      this.v10Load = this.v10Load == null ? load : this.v10Load + (load - this.v10Load) * (1 - Math.exp(-gap / (load > this.v10Load ? 0.05 : 0.18)));
+      const vr = this.v10Rpm, vl = car.tractionControl ? Math.max(this.v10Load, load) : this.v10Load;
+      this.v10.parameters.get('rpm').setTargetAtTime(vr, t, 0.03);
+      this.v10.parameters.get('load').setTargetAtTime(vl, t, loadEase);
       this.v10.parameters.get('limiter').setValueAtTime(car.onLimiter ? 1 : 0, t);
-      this.v10Shape.parameters.get('rpm').setTargetAtTime(rpm, t, 0.03);
-      this.v10Shape.parameters.get('load').setTargetAtTime(load, t, loadEase);
+      this.v10Shape.parameters.get('rpm').setTargetAtTime(vr, t, 0.03);
+      this.v10Shape.parameters.get('load').setTargetAtTime(vl, t, loadEase);
       // (behind the exhaust, in front, or off to the side; and how far)
       if (ear && car.x != null) {
         const dx = ear.x - car.x, dz = ear.z - car.z, d = Math.hypot(dx, dz) || 1;
