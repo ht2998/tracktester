@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 30;
+export const BUILD = 31;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -48,8 +48,10 @@ export const ENGINES = {
   // (seven gears, like the real cars of 2005: each change up lands a little higher)
   v10x: { engineInertia: 0.055, name: '3.0 V10 (19,200 rpm)', voice: 'v10', shiftAt: [17800 / 19200, 18000 / 19200, 18150 / 19200, 18300 / 19200, 18500 / 19200, 18650 / 19200], landAt: [14000, 14500, 15000, 15500, 16000, 16400], autoDownRpm: 16500, cylinders: 10, idleRpm: 4000, redline: 19200, launchRpm: 12000, engineBraking: 90, peakTorque: 365, massDelta: -10,
     torqueCurve: [[3000, 150], [6000, 220], [9000, 280], [12000, 320], [15000, 352], [17000, 365], [18500, 357], [19200, 345], [19500, 150], [19800, 0]], turbo: null },
-  v12: { engineInertia: 0.075, voice: 'v12', shiftAt: [12500 / 13500, 12600 / 13500, 12700 / 13500, 12800 / 13500, 13000 / 13500], landAt: [9850, 10200, 10550, 10900, 11250], sound: { tone: 1.4, bass: 0, drive: 1.15, vol: 1.25 }, name: '3.5 V12', cylinders: 12, idleRpm: 3800, redline: 13500, launchRpm: 9000, engineBraking: 80, peakTorque: 360, massDelta: 30,
-    torqueCurve: [[2500, 160], [5000, 240], [8000, 310], [10000, 345], [11500, 360], [12800, 350], [13500, 335], [14000, 130], [14300, 0]], turbo: null },
+  // (the 3.5 V12 of 1994, the most powerful of the decade's V12s: about
+  // 830 hp at 15,800 rpm, revving to 16,000)
+  v12: { engineInertia: 0.07, voice: 'v12', shiftAt: [15300 / 16000, 15400 / 16000, 15500 / 16000, 15600 / 16000, 15700 / 16000], landAt: [11700, 12100, 12500, 12900, 13300], sound: { tone: 1.4, bass: 0, drive: 1.15, vol: 1.25 }, name: '3.5 V12', cylinders: 12, idleRpm: 4000, redline: 16000, launchRpm: 10500, engineBraking: 82, peakTorque: 382, massDelta: 30,
+    torqueCurve: [[2500, 150], [5000, 230], [8000, 300], [10000, 340], [12000, 368], [13500, 382], [14800, 380], [15800, 374], [16000, 365], [16400, 140], [16700, 0]], turbo: null },
   v8f: { engineInertia: 0.055, name: '2.4 V8 flat-plane (2006 F1-style, 19,000 rpm)', voice: 'v8f', shiftAt: [17600 / 19000, 17800 / 19000, 17950 / 19000, 18100 / 19000, 18300 / 19000, 18450 / 19000], landAt: [13800, 14300, 14800, 15300, 15800, 16200], cylinders: 8, idleRpm: 4000, redline: 19000, launchRpm: 12000, engineBraking: 85, peakTorque: 290, massDelta: -15,
     torqueCurve: [[3000, 120], [6000, 175], [9000, 225], [12000, 260], [15000, 282], [17000, 290], [18300, 284], [19000, 272], [19300, 120], [19600, 0]], turbo: null },
   v8: { engineInertia: 0.22, sound: { tone: 0.8, bass: 6, drive: 1.7, vol: 1.2 }, name: '5.0 V8 (muscle)', cylinders: 8, idleRpm: 750, redline: 7000, launchRpm: 3800, engineBraking: 70, peakTorque: 560, massDelta: 90,
@@ -168,8 +170,42 @@ export const F05_CAR = {
   shiftTime: { manual: 0.05, auto: 0.12 },
   fuelCapacity: 140,
 };
-export const STOCK_ENGINE = { caterham: 'duratec', f1: 'turboV6', f05: 'v10x' };
-export const specForKind = (kind) => (kind === 'f05' ? F05_CAR : kind === 'f1' ? F1_CAR : CATERHAM_CAR);
+// THE TT-94: an original 1994 V12 Formula 1 car (a tribute to the cars of
+// that year: no real make, badges or livery). On slicks, with the
+// stepped floor, a raised nose and a drooping front wing, big sidepods,
+// a tall airbox, the 3.5 V12 at 16,000 rpm through six gears on paddles.
+// More downforce than the TT-88, a lot less than the TT-05; more grip
+// than either (slicks, and wide)
+export const F94_CAR = {
+  ...F1_CAR,
+  name: 'TT-94',
+  body: 'f94',
+  stockEngine: 'v12',
+  baseMass: 570,                     // (about 600 kg with the V12 and the driver)
+  inertia: 930,
+  airInertia: { pitch: 980, yaw: 1000, roll: 270 },
+  cgToFront: 1.62, cgToRear: 1.33,   // 2.95 m between the axles
+  trackHalf: 0.83,
+  wheelRadius: 0.33,
+  frontGrip: 1.5, rearGrip: 1.64,    // (wide slicks)
+  cgHeight: 0.27,
+  downforce: 1.6,
+  downforceFront: 0.43,
+  drag: 0.7,
+  brakeForce: 24000, brakeBias: 0.59,
+  maxSteer: 0.34, steerSpeed: 3.3,
+  frontStiffness: 74000, rearStiffness: 86000,
+  shiftTime: { manual: 0.06, auto: 0.14 },
+  fuelCapacity: 200,
+};
+export const STOCK_ENGINE = { caterham: 'duratec', f1: 'turboV6', f05: 'v10x', f94: 'v12' };
+export const specForKind = (kind) => (kind === 'f05' ? F05_CAR : kind === 'f94' ? F94_CAR : kind === 'f1' ? F1_CAR : CATERHAM_CAR);
+// where each single-seater's wheels are: [x, z, width] (left, right; front then back)
+export const WHEEL_LAYOUT = {
+  f1: [[0.88, 1.62, 0.3], [-0.88, 1.62, 0.3], [0.88, -1.28, 0.42], [-0.88, -1.28, 0.42]],
+  f05: [[0.73, 1.67, 0.28], [-0.73, 1.67, 0.28], [0.73, -1.43, 0.35], [-0.73, -1.43, 0.35]],
+  f94: [[0.83, 1.62, 0.3], [-0.83, 1.62, 0.3], [0.83, -1.33, 0.39], [-0.83, -1.33, 0.39]],
+};
 
 // ---------------------------------------------------------------------
 // THE MODEL
@@ -662,6 +698,156 @@ export function buildF05Body(car, addPanel) {
   addTo(wings.rear, box(0.035, 0.42, 0.06, 0, 0.62, -1.96), MAT.carbon);
   return { helmet: [helmet, visor, stripe], rainMat: MAT.rain, exhaustMat: MAT.exhaust, mats: MAT, wings, mirrors, driver };
 }
+
+// =====================================================================
+// THE TT-94 AS THE PLAYER'S CAR (and the computer drivers', and the
+// Garage's): the body. A tribute to the 1994 V12 cars: a raised nose
+// with the wide front wing drooping under it, a low wraparound screen
+// and lower cockpit sides than later, long sidepods with big oval
+// mouths, a tall airbox over his head and a long engine cover for the
+// V12, a tall rear wing with big endplates, the exhausts low at the
+// back. In racing red with white, our own design.
+// (mats.blue is the main colour and mats.yellow the second, whatever
+// they are: the computer drivers paint their own over them)
+// =====================================================================
+export function buildF94Body(car, addPanel) {
+  const MAT = {
+    blue: new THREE.MeshPhysicalMaterial({ color: 0xd2111c, roughness: 0.28, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.06 }),
+    yellow: new THREE.MeshPhysicalMaterial({ color: 0xf2f3f0, roughness: 0.25, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.08 }),
+    carbon: new THREE.MeshStandardMaterial({ color: 0x111215, roughness: 0.4, metalness: 0.35 }),
+    steel: new THREE.MeshStandardMaterial({ color: 0x8d9096, roughness: 0.35, metalness: 0.9 }),
+    glass: new THREE.MeshStandardMaterial({ color: 0x3a4a52, roughness: 0.05, metalness: 0.3, transparent: true, opacity: 0.45 }),
+    helmet: new THREE.MeshPhysicalMaterial({ color: 0xf4f4f0, roughness: 0.2, clearcoat: 1 }),
+    visor: new THREE.MeshStandardMaterial({ color: 0x101418, roughness: 0.05, metalness: 0.8 }),
+    exhaust: new THREE.MeshStandardMaterial({ color: 0x5a4a40, roughness: 0.5, metalness: 0.8, emissive: 0xff5a10, emissiveIntensity: 0 }),
+    rain: new THREE.MeshStandardMaterial({ color: 0x4a0a0a, emissive: 0xff1a10, emissiveIntensity: 0 }),
+    seat: new THREE.MeshStandardMaterial({ color: 0x24262c, roughness: 0.9 }),
+    suit: new THREE.MeshStandardMaterial({ color: 0xb8121b, roughness: 0.8 }),
+    dark: new THREE.MeshStandardMaterial({ color: 0x050506, roughness: 0.8 }),
+  };
+  const add = (geo, mat, shadow = true) => {
+    const m = new THREE.Mesh(geo, mat); m.castShadow = shadow; m.receiveShadow = true; car.add(m);
+    if (mat === MAT.blue || mat === MAT.yellow) addPanel(m);
+    return m;
+  };
+  const SMOOTH = 0.8;
+  // --- the nose: raised, broad and rounded, down to the tub
+  const nose = [
+    { z: 2.62, w: 0.13, h: 0.1, y: 0.22 },
+    { z: 2.45, w: 0.2, h: 0.14, y: 0.22 },
+    { z: 2.15, w: 0.27, h: 0.2, y: 0.24 },
+    { z: 1.8, w: 0.33, h: 0.26, y: 0.25 },
+    { z: 1.4, w: 0.42, h: 0.33, y: 0.21, top: 0.86 },
+    { z: 1.05, w: 0.54, h: 0.42, y: 0.14, top: 0.8 },
+    { z: 0.75, w: 0.62, h: 0.46, y: 0.12, top: 0.78 },
+  ];
+  add(loft(nose, SMOOTH, 28, 4, true), MAT.blue);
+  // a white band over the nose, swept back along its sides
+  add(loft([{ z: 2.2, w: 0.27, h: 0.02, y: 0.43 }, { z: 1.85, w: 0.3, h: 0.02, y: 0.505 }, { z: 1.5, w: 0.36, h: 0.02, y: 0.53 }], 0.5, 16, 3, true), MAT.yellow);
+  // --- the cockpit: lower sides than later, the driver's shoulders
+  // showing, a little wraparound screen at the front of the opening
+  const pit = [
+    { z: 0.75, w: 0.62, h: 0.46, y: 0.12, top: 0.78 },
+    { z: 0.45, w: 0.68, h: 0.48, y: 0.11, top: 0.76 },
+    { z: 0.0, w: 0.72, h: 0.49, y: 0.1, top: 0.74 },
+    { z: -0.2, w: 0.72, h: 0.5, y: 0.1, top: 0.74 },
+  ];
+  const opening = (z) => (z > 0.4 ? 0.16 + (0.75 - z) / 0.35 * 0.05 : 0.21);
+  const shell = loftOpen(pit, SMOOTH, 3, opening);
+  add(shell, MAT.blue);
+  add(loftOpen(pit, SMOOTH, 3, opening, 0.025, true), MAT.carbon, false);
+  const rimZ = [0.75, 0.55, 0.35, 0.15, 0, -0.2];
+  for (const sx of [1, -1]) for (let i = 0; i < rimZ.length - 1; i++) {
+    const a = shell.userData.edge(rimZ[i]), b = shell.userData.edge(rimZ[i + 1]);
+    add(rod([sx * -a[0], a[1], a[2]], [sx * -b[0], b[1], b[2]], 0.02), MAT.seat, false);
+  }
+  add(new THREE.CylinderGeometry(0.25, 0.25, 0.11, 12, 1, true, -0.95, 1.9).rotateX(-0.3).translate(0, 0.62, 0.5), MAT.glass, false);
+  add(box(0.32, 0.05, 0.34, 0, 0.13, 0.08), MAT.seat, false);
+  add(box(0.34, 0.4, 0.05, 0, 0.33, -0.12, -0.36), MAT.seat, false);
+  for (const sx of [1, -1]) {
+    add(rod([sx * 0.08, 0.2, 0.02], [sx * 0.09, 0.3, 0.55], 0.055), MAT.suit, false);
+    add(rod([sx * 0.09, 0.3, 0.55], [sx * 0.07, 0.24, 1.02], 0.045), MAT.suit, false);
+  }
+  const driver = new THREE.Group();
+  car.add(driver);
+  const dAdd = (geo, mat) => { const m = new THREE.Mesh(geo, mat); m.castShadow = false; driver.add(m); return m; };
+  dAdd(new THREE.CapsuleGeometry(0.15, 0.12, 4, 10).rotateZ(Math.PI / 2).scale(1, 0.7, 0.8).translate(0, 0.48, -0.04), MAT.suit);
+  for (const sx of [1, -1]) { dAdd(rod([sx * 0.17, 0.51, -0.02], [sx * 0.15, 0.43, 0.22], 0.04), MAT.suit); dAdd(rod([sx * 0.15, 0.43, 0.22], [sx * 0.12, 0.54, 0.42], 0.035), MAT.suit); }
+  dAdd(new THREE.BoxGeometry(0.25, 0.12, 0.03).rotateX(-0.45).translate(0, 0.56, 0.46), MAT.carbon);
+  const helmet = add(new THREE.SphereGeometry(0.135, 20, 16).scale(1, 1.05, 1.1).translate(0, 0.71, -0.03), MAT.helmet);
+  const visor = add(new THREE.SphereGeometry(0.137, 20, 10, -0.9 + Math.PI / 2, 1.8, 1.1, 0.5).scale(1, 1.05, 1.1).translate(0, 0.71, -0.03), MAT.visor);
+  const stripe = add(new THREE.TorusGeometry(0.135, 0.012, 6, 24, Math.PI).rotateY(Math.PI / 2).rotateZ(Math.PI / 2).scale(1, 1.05, 1.1).translate(0, 0.71, -0.03), MAT.blue);
+  const mirrors = {};
+  for (const s of [1, -1]) {
+    const stalk = add(rod([s * 0.32, 0.56, 0.5], [s * 0.46, 0.63, 0.52], 0.01), MAT.carbon);
+    const pod = new THREE.Group();
+    car.add(pod);
+    pod.add(add(loft([{ z: 0.55, w: 0.13, h: 0.065, y: 0.605, x: s * 0.49 }, { z: 0.49, w: 0.14, h: 0.075, y: 0.6, x: s * 0.49 }], 0.9, 16, 1, false), MAT.blue));
+    pod.add(add(new THREE.PlaneGeometry(0.115, 0.06).rotateY(Math.PI).translate(s * 0.49, 0.638, 0.485), MAT.visor));
+    mirrors[s > 0 ? 'l' : 'r'] = { stalk, pod, at: [s * 0.49, 0.64, 0.52] };
+  }
+  // --- sidepods: long, with big oval mouths, a gentle taper (the coke
+  // bottle hadn't got tight yet), and a white flash along each
+  for (const s of [1, -1]) {
+    const pod = [
+      { z: 0.7, w: 0.36, h: 0.32, y: 0.16, x: s * 0.6, top: 0.92 },
+      { z: 0.5, w: 0.44, h: 0.37, y: 0.11, x: s * 0.61 },
+      { z: -0.1, w: 0.44, h: 0.37, y: 0.1, x: s * 0.6, top: 0.82 },
+      { z: -0.6, w: 0.38, h: 0.33, y: 0.1, x: s * 0.55, top: 0.8 },
+      { z: -1.0, w: 0.26, h: 0.26, y: 0.1, x: s * 0.45, top: 0.8 },
+      { z: -1.25, w: 0.16, h: 0.18, y: 0.1, x: s * 0.36, top: 0.85 },
+    ];
+    add(loft(pod, 1.1, 28, 4, true), MAT.blue);
+    add(loft([{ z: 0.72, w: 0.3, h: 0.26, y: 0.185, x: s * 0.6 }, { z: 0.66, w: 0.3, h: 0.26, y: 0.185, x: s * 0.6 }], 1.3, 20, 1, false), MAT.dark, false);
+    add(box(0.012, 0.06, 1.3, s * 0.835, 0.3, -0.2, 0, -s * 0.04), MAT.yellow);
+    add(box(0.012, 0.3, 0.38, s * 0.47, 0.18, 1.0, 0, s * 0.15), MAT.carbon);           // bargeboards
+  }
+  // --- the engine cover: a tall airbox over his head, then a long slope over the V12
+  const cover = [
+    { z: -0.18, w: 0.6, h: 0.52, y: 0.1, top: 0.7 },
+    { z: -0.3, w: 0.42, h: 0.93, y: 0.1, top: 0.38 },
+    { z: -0.6, w: 0.46, h: 0.8, y: 0.1, top: 0.45 },
+    { z: -1.05, w: 0.48, h: 0.56, y: 0.1, top: 0.62 },
+    { z: -1.45, w: 0.34, h: 0.38, y: 0.12, top: 0.72 },
+    { z: -1.78, w: 0.22, h: 0.24, y: 0.15, top: 0.8 },
+  ];
+  add(loft(cover, SMOOTH, 28, 4, true), MAT.blue);
+  add(loft(cover.slice(1, 4).map((p) => ({ ...p, w: 0.1, h: 0.025, y: p.y + p.h - 0.012 })), 0.5, 16, 4, true), MAT.yellow);
+  add(loft([{ z: -0.27, w: 0.2, h: 0.15, y: 0.86 }, { z: -0.31, w: 0.2, h: 0.15, y: 0.86 }], 1.3, 20, 1, false), MAT.dark, false);
+  // the gearbox, the rain light, exhausts out low at the back over the diffuser
+  add(box(0.22, 0.2, 0.42, 0, 0.22, -1.92), MAT.carbon);
+  add(box(0.07, 0.04, 0.03, 0, 0.3, -2.14), MAT.rain);
+  for (const s of [1, -1]) add(new THREE.CylinderGeometry(0.05, 0.055, 0.2, 12, 1, true).rotateX(Math.PI / 2 - 0.1).translate(s * 0.2, 0.2, -1.95), MAT.exhaust);
+  // --- the floor (stepped, the plank) and the diffuser
+  add(box(1.5, 0.02, 2.2, 0, 0.045, -0.1), MAT.carbon);
+  add(box(0.3, 0.012, 2.6, 0, 0.03, -0.1), new THREE.MeshStandardMaterial({ color: 0x6b5a3e, roughness: 0.9 }));
+  add(box(0.95, 0.02, 0.62, 0, 0.13, -1.8, -0.32), MAT.carbon);
+  for (const x of [-0.34, -0.12, 0.12, 0.34]) add(box(0.01, 0.15, 0.56, x, 0.12, -1.8), MAT.carbon);
+
+  // --- the front wing: wide, drooping down from the middle under the
+  // raised nose on two pylons; a main plane and a flap; big endplates
+  const wings = { fl: new THREE.Group(), fr: new THREE.Group(), rear: new THREE.Group() };
+  for (const g of Object.values(wings)) car.add(g);
+  const addTo = (g, geo, mat) => { const m = add(geo, mat); g.add(m); return m; };
+  for (const s of [1, -1]) add(box(0.015, 0.15, 0.18, s * 0.06, 0.18, 2.42, 0.2), MAT.carbon);
+  add(box(0.24, 0.02, 0.36, 0, 0.13, 2.48, 0.05), MAT.blue);
+  for (const s of [1, -1]) {
+    const g = s > 0 ? wings.fl : wings.fr;
+    addTo(g, box(0.62, 0.022, 0.36, s * 0.43, 0.1, 2.44, 0.05, -s * 0.03, -s * 0.07), MAT.blue);       // main plane, drooping outward
+    addTo(g, box(0.56, 0.015, 0.18, s * 0.46, 0.15, 2.26, 0.4, -s * 0.03, -s * 0.07), MAT.yellow);     // the flap
+    addTo(g, box(0.015, 0.22, 0.58, s * 0.775, 0.13, 2.38), MAT.blue);                              // endplate
+  }
+  // --- the rear wing: tall, three elements between big endplates; a beam wing below
+  for (const s of [1, -1]) addTo(wings.rear, box(0.02, 0.66, 0.64, s * 0.5, 0.74, -2.0), MAT.blue);
+  for (const s of [1, -1]) addTo(wings.rear, box(0.022, 0.06, 0.64, s * 0.502, 0.42, -2.0), MAT.yellow);
+  addTo(wings.rear, box(0.98, 0.024, 0.26, 0, 0.86, -1.9, 0.14), MAT.carbon);
+  addTo(wings.rear, box(0.98, 0.02, 0.2, 0, 0.95, -2.08, 0.42), MAT.carbon);
+  addTo(wings.rear, box(0.98, 0.018, 0.14, 0, 1.01, -2.22, 0.7), MAT.carbon);
+  add(box(0.8, 0.02, 0.16, 0, 0.46, -1.95, 0.18), MAT.carbon);
+  addTo(wings.rear, box(0.035, 0.45, 0.06, 0, 0.63, -1.98), MAT.carbon);
+  return { helmet: [helmet, visor, stripe], rainMat: MAT.rain, exhaustMat: MAT.exhaust, mats: MAT, wings, mirrors, driver };
+}
+export const bodyForKind = (kind) => (kind === 'f05' ? buildF05Body : kind === 'f94' ? buildF94Body : buildF1Body);
 
 // a plain F1 rim of the time: a shallow dish with six slim spokes and a
 // big single centre nut (r: its radius, w: its width)

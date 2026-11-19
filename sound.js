@@ -11,7 +11,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 27;
+export const BUILD = 28;
 
 // THE VOICED ENGINES (the V10's sound, made for each): bangs a turn, revs,
 // loudness matched to the approved preview, and how much of 3x the crank
@@ -26,7 +26,7 @@ const VOICES = {
   // (the 3.5 V12, rebuilt from its notes: the firing note, the octave
   // below from one bank, the fifth above (the V12's wail), the octave
   // above (the shriek) and the fifth below (warmth))
-  v12: { fire: 6, red: 13500, idle: 3800, norm: 3.4, rest: 0.075,
+  v12: { fire: 6, red: 16000, idle: 4000, norm: 3.4, rest: 0.075,
     mix: [[1, 0.39], [0.5, 0.29], [1.5, 0.295], [2, 0.085], [0.6667, 0.07]],
     idleMix: [[1, 0.33], [0.5, 0.5], [1.5, 0.135], [2, 0.03], [0.6667, 0.205]] },
   v8f: { fire: 4, red: 19000, idle: 4000, norm: 0.1698, three: 0 },

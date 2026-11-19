@@ -23,11 +23,11 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 13;
+export const BUILD = 14;
 
 import * as THREE from 'three';
 import { CarPhysics, CATERHAM } from './physics.js';
-import { buildF1Body, buildF05Body, buildF1RimGeometry } from './f1.js';
+import { bodyForKind, WHEEL_LAYOUT, buildF1RimGeometry } from './f1.js';
 
 const DRIVERS = [
   { name: 'Hamid', colour: 0xc8202a, helmet: 0xffffff },
@@ -141,7 +141,7 @@ const F1_SHARED = {};
 function f1Parts(kind = 'f1') {
   if (F1_SHARED[kind]) return F1_SHARED[kind];
   const g = new THREE.Group();
-  const body = (kind === 'f05' ? buildF05Body : buildF1Body)(g, () => {});
+  const body = bodyForKind(kind)(g, () => {});
   g.updateMatrixWorld(true);
   const byMat = new Map();
   g.traverse((o) => {
@@ -157,9 +157,7 @@ function f1Parts(kind = 'f1') {
     parts.push({ geo: mergeGeos(geos.map((x) => x.toNonIndexed ? x : x)), mat, role });
   }
   const r = 0.33;
-  const wheels = kind === 'f05'
-    ? [[0.73, 1.67, 0.28], [-0.73, 1.67, 0.28], [0.73, -1.43, 0.35], [-0.73, -1.43, 0.35]]
-    : [[0.88, 1.62, 0.3], [-0.88, 1.62, 0.3], [0.88, -1.28, 0.42], [-0.88, -1.28, 0.42]];
+  const wheels = WHEEL_LAYOUT[kind] || WHEEL_LAYOUT.f1;
   const tyre = {}, rim = {};
   for (const [, , w] of wheels) { tyre[w] = tyre[w] || new THREE.CylinderGeometry(r, r, w, 18).rotateZ(Math.PI / 2); rim[w] = rim[w] || buildF1RimGeometry(r * 0.6, w); }
   F1_SHARED[kind] = { parts, r, wheels, tyre, rim };

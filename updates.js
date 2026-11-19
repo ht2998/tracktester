@@ -21,11 +21,18 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 108;
+export const BUILD = 109;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 95, date: '19 Nov 2026', title: 'The TT-94',
+    items: [
+      ['A 1990s Formula car', 'The TT-94 is in the Garage, under Formula: a 1994 V12 car of our own, in racing red and white. A raised nose with a wide drooping front wing, long sidepods with big oval mouths, a tall airbox, a tall three-element rear wing, wide slicks, and paddles behind the wheel', 'new'],
+      ['The 3.5 V12, retuned', 'The 3.5 V12 is retuned to the 1994 figures: about 830 hp at 15,800 rpm, revving to 16,000, through six gears. Same sound, higher up', 'update'],
+    ],
+  },
   {
     id: 94, date: '19 Nov 2026', title: 'French racing blue',
     items: [

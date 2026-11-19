@@ -37,7 +37,7 @@ import { AIField, BUILD as AI_BUILD } from './ai.js';
 import { Garage, BUILD as GARAGE_BUILD } from './garage.js';
 import { PitStop, SEPANG_PIT, Person as PersonFigure, climbOutKeys, BUILD as PITS_BUILD } from './pits.js';
 import { RaceControl, BUILD as RACECONTROL_BUILD } from './racecontrol.js';
-import { buildF1Body, buildF05Body, buildF1Cockpit, buildF1RimGeometry, F1_CAR, CATERHAM_CAR, ENGINES, withEngine, STOCK_ENGINE, specForKind, BUILD as F1_BUILD } from './f1.js';
+import { buildF1Body, buildF05Body, bodyForKind, WHEEL_LAYOUT, buildF1Cockpit, buildF1RimGeometry, F1_CAR, CATERHAM_CAR, ENGINES, withEngine, STOCK_ENGINE, specForKind, BUILD as F1_BUILD } from './f1.js';
 import * as groundFile from './ground.js';
 import * as tyresFile from './tyres.js';
 import * as cockpitFile from './cockpit.js';
@@ -60,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 78;
+const BUILD = 79;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -688,19 +688,23 @@ fenderMat.side = THREE.DoubleSide;
 // WHICH CAR: the Caterham or the TT-88 (f1.js). It's settled when the game
 // starts (picking another car restarts the game), so every part of the
 // game (wheels, brakes, suspension, tyres, damage, cameras) is built for it.
-const CAR_KIND = (() => { try { const c = JSON.parse(localStorage.getItem('tracktester-car') || 'null'); return c && (c.kind === 'f1' || c.kind === 'f05') ? c.kind : 'caterham'; } catch (e) { return 'caterham'; } })();
+const CAR_KIND = (() => { try { const c = JSON.parse(localStorage.getItem('tracktester-car') || 'null'); return c && (c.kind === 'f1' || c.kind === 'f05' || c.kind === 'f94') ? c.kind : 'caterham'; } catch (e) { return 'caterham'; } })();
 const IS_F05 = CAR_KIND === 'f05';        // (the TT-05: the 2005-style V10 car)
-const IS_F1 = CAR_KIND === 'f1' || IS_F05;    // (either single-seater: wings, slicks, the cockpit, the lot)
+const IS_F94 = CAR_KIND === 'f94';        // (the TT-94: the 1994-style V12 car)
+const IS_F1 = CAR_KIND === 'f1' || IS_F05 || IS_F94;    // (any single-seater: wings, slicks, the cockpit, the lot)
+const PADDLES = IS_F05 || IS_F94;          // (these change gear on paddles behind the wheel)
 // THE WASHING MACHINE (the code WASHED): the TT-88 underneath, with the
 // 2003-style V10, and nothing of it to see but a big front-loader; no
 // driver showing; no engine to hear, just its little tune
 const WASHER = IS_F1 && (() => { try { return !!JSON.parse(localStorage.getItem('tracktester-car') || 'null')?.washer; } catch (e) { return false; } })();
 const WHEEL_RADIUS = IS_F1 ? 0.33 : 0.288;   // 195/50 R15 on the Caterham; big slicks on the TT-88 (same as the physics)
 const WHEEL_WIDTH = IS_F1 ? 0.36 : 0.2;      // (the TT-88's fronts are narrower and its rears wider: see WHEEL_WIDTHS)
-const WHEEL_WIDTHS = IS_F05 ? [0.28 / 0.36, 0.28 / 0.36, 0.35 / 0.36, 0.35 / 0.36] : IS_F1 ? [0.3 / 0.36, 0.3 / 0.36, 0.42 / 0.36, 0.42 / 0.36] : [1, 1, 1, 1];
-const TRACK_HALF = IS_F05 ? 0.73 : IS_F1 ? 0.88 : 0.68;   // half the distance between left and right wheels
-const FRONT_AXLE = IS_F05 ? 1.67 : IS_F1 ? 1.62 : 1.1;
-const REAR_AXLE = IS_F05 ? -1.43 : IS_F1 ? -1.28 : -1.1;
+// (each single-seater's own wheels: f1.js WHEEL_LAYOUT)
+const LAYOUT = IS_F1 ? WHEEL_LAYOUT[CAR_KIND] : null;
+const WHEEL_WIDTHS = LAYOUT ? [LAYOUT[0][2] / 0.36, LAYOUT[1][2] / 0.36, LAYOUT[2][2] / 0.36, LAYOUT[3][2] / 0.36] : [1, 1, 1, 1];
+const TRACK_HALF = LAYOUT ? LAYOUT[0][0] : 0.68;   // half the distance between left and right wheels
+const FRONT_AXLE = LAYOUT ? LAYOUT[0][1] : 1.1;
+const REAR_AXLE = LAYOUT ? LAYOUT[2][1] : -1.1;
 
 function part(geometry, material, x, y, z) {
   const mesh = new THREE.Mesh(geometry, material);
@@ -925,7 +929,7 @@ function buildCar() {
   if (IS_F1) {
     // THE TT-88's body (f1.js): every painted panel can be dented
     const panels = [];
-    const body = (IS_F05 ? buildF05Body : buildF1Body)(car, (m) => panels.push(m));
+    const body = bodyForKind(CAR_KIND)(car, (m) => panels.push(m));
     crush = { panels, grille: new THREE.Object3D(), lamps: [], tail: [] };
     headLens = new THREE.MeshStandardMaterial({ color: 0x000000 });          // (no headlights: an F1 car)
     beam = new THREE.SpotLight(0xfff1d6, 0, 60, 0.5, 0.5, 1.3);
@@ -1203,7 +1207,7 @@ const cockpit = new Cockpit(carModel.car, MAT, { isMobile, redline: CATERHAM.red
 if (IS_F1) cockpit.group.visible = false;   // (the TT-88 has its own cockpit:)
 // THE TT-88's COCKPIT (f1.js): the wheel, the lever on the right, the
 // driver's arms fighting the car, his head thrown about
-const f1Cockpit = IS_F1 ? buildF1Cockpit(carModel.car, { paddles: IS_F05 }) : null;     // (the TT-05 changes gear on paddles)
+const f1Cockpit = IS_F1 ? buildF1Cockpit(carModel.car, { paddles: PADDLES }) : null;     // (the TT-05 changes gear on paddles)
 const washerBody = WASHER ? buildWasher(carModel.car) : null;
 // (your TT-88's driver moves with the cockpit's own body and arms: the body's still one is for other cars)
 if (f1Cockpit && carModel.car.userData.f1?.driver) carModel.car.userData.f1.driver.visible = false;
@@ -2345,7 +2349,7 @@ function dentOffset(x, y, z, out) {
   return out;
 }
 let noseCrush = 0;                                     // (m the F1 nose has been pushed back)
-const NOSE_TIP = IS_F05 ? 2.76 : 2.52, NOSE_BASE = IS_F05 ? 1.25 : 1.15;
+const NOSE_TIP = IS_F05 ? 2.76 : IS_F94 ? 2.63 : 2.52, NOSE_BASE = IS_F05 ? 1.25 : IS_F94 ? 1.2 : 1.15;
 const bodyOriginals = new Map();
 function reshapeBody() {
   for (const m of carModel.crush.panels) {
@@ -3757,7 +3761,7 @@ function refreshEngineList() {
   hud.setEngines(list, engineKey);
 }
 function setCar(kind, engine) {
-  kind = kind === 'f1' || kind === 'f05' ? kind : 'caterham';
+  kind = kind === 'f1' || kind === 'f05' || kind === 'f94' ? kind : 'caterham';
   const key = ENGINES[engine] ? engine : STOCK_ENGINE[kind];
   if (kind !== CAR_KIND) {
     // another car: save it and start the game again with it (so everything
