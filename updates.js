@@ -21,11 +21,19 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 111;
+export const BUILD = 112;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 98, date: '19 Nov 2026', title: 'The TTP-70',
+    items: [
+      ['A 1970 long-distance prototype', 'The TTP-70 is in the Garage, under Prototype: a short-tail 1970 endurance car of our own, in light blue with a broad orange stripe. Very low, wide and short, a long low nose with the headlights in the fenders, a bubble cockpit with you sitting on the right, the tail swept up into two fins', 'new'],
+      ['A 4.9 flat-12', 'A new engine: the air-cooled 4.9 flat-12, about 600 hp at 8,300 rpm and a huge spread of pull, through five gears on a lever. Its own sound isn\'t made yet: for now it uses the plain engine sound', 'new'],
+      ['More 1970s cars coming', 'Also coming: the TTF-75 (a 3.0 flat-12 world champion\'s Formula car) and the TT Coupé 72 (a front-engined V8 road car)', 'new'],
+    ],
+  },
   {
     id: 97, date: '19 Nov 2026', title: 'New names, and the 70s',
     items: [

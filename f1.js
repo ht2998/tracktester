@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 32;
+export const BUILD = 33;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -34,6 +34,10 @@ import { CATERHAM } from './physics.js';
 export const ENGINES = {
   duratec: { engineInertia: 0.12, name: '2.0 inline-4 (Caterham)', cylinders: 4, idleRpm: 900, redline: 7600, launchRpm: 4500, engineBraking: 38, peakTorque: 203, massDelta: 0,
     torqueCurve: CATERHAM.torqueCurve, turbo: null },
+  // (the 1970 long-distance flat-12: 4.9 litres, air-cooled, about 600 hp
+  // at 8,300 rpm and a huge spread of torque. Its own sound isn't made yet)
+  flat12: { engineInertia: 0.13, name: '4.9 flat-12 (sound unfinished)', cylinders: 12, idleRpm: 1600, redline: 8400, launchRpm: 5000, engineBraking: 55, peakTorque: 570, massDelta: 0,
+    torqueCurve: [[1000, 260], [2500, 400], [4000, 490], [5500, 545], [6400, 570], [7400, 545], [8300, 505], [8400, 490], [8700, 180], [8900, 0]], turbo: null },
   turboV6: { engineInertia: 0.08, sound: { tone: 1.15, bass: 1, drive: 1.25, vol: 1.1 }, name: '1.5 turbo V6 (race boost)', cylinders: 6, idleRpm: 3200, redline: 12500, launchRpm: 8500, engineBraking: 60, peakTorque: 420, massDelta: 0,
     torqueCurve: [[2500, 230], [4000, 280], [6000, 330], [8000, 390], [9500, 415], [10500, 420], [11500, 405], [12500, 385], [13000, 160], [13300, 0]],
     turbo: { onRpm: 4500, fullRpm: 8000, lag: 0.6, base: 0.55 } },
@@ -198,13 +202,48 @@ export const F94_CAR = {
   shiftTime: { manual: 0.06, auto: 0.14 },
   fuelCapacity: 200,
 };
-export const STOCK_ENGINE = { caterham: 'duratec', f1: 'turboV6', f05: 'v10x', f94: 'v12' };
-export const specForKind = (kind) => (kind === 'f05' ? F05_CAR : kind === 'f94' ? F94_CAR : kind === 'f1' ? F1_CAR : CATERHAM_CAR);
+// THE TTP-70: an original 1970 long-distance prototype (a tribute to the
+// short-tail flat-12 cars of that year, in our own light blue and orange:
+// no real make, badges or sponsor). Low, wide and short, a closed
+// cockpit, the air-cooled flat-12 behind the driver, five gears on a
+// lever, about 800 kg; little downforce, narrow-ish 1970 tyres, very fast
+// in a straight line
+export const P70_CAR = {
+  ...F1_CAR,
+  name: 'TTP-70',
+  body: 'p70',
+  closed: true,                      // (a roof: no open cockpit)
+  rightHand: true,                   // (he sits on the right)
+  wings: true,
+  radiatorSides: false,              // (air-cooled: no radiators)
+  stockEngine: 'flat12',
+  baseMass: 800,
+  inertia: 1250,
+  airInertia: { pitch: 1300, yaw: 1350, roll: 420 },
+  cgToFront: 1.25, cgToRear: 1.05,   // 2.3 m between the axles
+  trackHalf: 0.78,
+  wheelRadius: 0.33,
+  frontGrip: 1.15, rearGrip: 1.28,   // (1970 racing tyres)
+  maxPushShare: 0.85,
+  cgHeight: 0.34,
+  downforce: 0.38,
+  downforceFront: 0.4,
+  drag: 0.44,
+  brakeForce: 15000, brakeBias: 0.57,
+  maxSteer: 0.42, steerSpeed: 2.8,
+  frontStiffness: 52000, rearStiffness: 62000,
+  gears: [2.6, 1.8, 1.38, 1.13, 0.96],
+  shiftTime: { manual: 0.14, auto: 0.3 },
+  fuelCapacity: 120,
+};
+export const STOCK_ENGINE = { caterham: 'duratec', f1: 'turboV6', f05: 'v10x', f94: 'v12', p70: 'flat12' };
+export const specForKind = (kind) => (kind === 'f05' ? F05_CAR : kind === 'f94' ? F94_CAR : kind === 'p70' ? P70_CAR : kind === 'f1' ? F1_CAR : CATERHAM_CAR);
 // where each single-seater's wheels are: [x, z, width] (left, right; front then back)
 export const WHEEL_LAYOUT = {
   f1: [[0.88, 1.62, 0.3], [-0.88, 1.62, 0.3], [0.88, -1.28, 0.42], [-0.88, -1.28, 0.42]],
   f05: [[0.73, 1.67, 0.28], [-0.73, 1.67, 0.28], [0.73, -1.43, 0.35], [-0.73, -1.43, 0.35]],
   f94: [[0.83, 1.62, 0.3], [-0.83, 1.62, 0.3], [0.83, -1.33, 0.39], [-0.83, -1.33, 0.39]],
+  p70: [[0.78, 1.25, 0.26], [-0.78, 1.25, 0.26], [0.76, -1.05, 0.34], [-0.76, -1.05, 0.34]],
 };
 
 // ---------------------------------------------------------------------
@@ -847,7 +886,171 @@ export function buildF94Body(car, addPanel) {
   addTo(wings.rear, box(0.035, 0.45, 0.06, 0, 0.63, -1.98), MAT.carbon);
   return { helmet: [helmet, visor, stripe], rainMat: MAT.rain, exhaustMat: MAT.exhaust, mats: MAT, wings, mirrors, driver };
 }
-export const bodyForKind = (kind) => (kind === 'f05' ? buildF05Body : kind === 'f94' ? buildF94Body : buildF1Body);
+
+// a smooth body from a function of z: f(z) gives { w, top, bot, tuck,
+// sq (how square), x } (as the rescue vehicles' bodies are made)
+function smoothBody(z0, z1, n, f, ring = 32) {
+  const pos = [], idx = [], R = ring + 1;
+  for (let i = 0; i <= n; i++) {
+    const z = z0 + (z1 - z0) * i / n, sct = f(z);
+    const hw = sct.w / 2, mid = (sct.top + sct.bot) / 2, hh = Math.max(0.001, (sct.top - sct.bot) / 2), e = 2 / (sct.sq ?? 4), ox = sct.x || 0;
+    for (let k = 0; k <= ring; k++) {
+      const a = -Math.PI / 2 + k / ring * Math.PI * 2, c = Math.cos(a), sn = Math.sin(a);
+      const yy = Math.sign(sn) * Math.pow(Math.abs(sn), e), xx = Math.sign(c) * Math.pow(Math.abs(c), e);
+      pos.push(ox + xx * hw * (1 - (sct.tuck || 0) * Math.max(0, yy)), mid + yy * hh, z);
+    }
+  }
+  for (let i = 0; i < n; i++) for (let k = 0; k < ring; k++) { const a = i * R + k, b = a + R; idx.push(a, a + 1, b, a + 1, b + 1, b); }
+  for (const [i, dir] of [[0, -1], [n, 1]]) {
+    let cx = 0, cy = 0;
+    for (let k = 0; k < ring; k++) { cx += pos[(i * R + k) * 3]; cy += pos[(i * R + k) * 3 + 1]; }
+    const base = pos.length / 3;
+    pos.push(cx / ring, cy / ring, pos[i * R * 3 + 2]);
+    for (let k = 0; k <= ring; k++) { const j = (i * R + k) * 3; pos.push(pos[j], pos[j + 1], pos[j + 2]); }
+    for (let k = 0; k < ring; k++) dir > 0 ? idx.push(base, base + 1 + k, base + 2 + k) : idx.push(base, base + 2 + k, base + 1 + k);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+function curve(keys) {
+  const n = keys.length;
+  const m = keys.map((k, i) => { const a = keys[Math.max(0, i - 1)], b = keys[Math.min(n - 1, i + 1)]; return (b[1] - a[1]) / ((b[0] - a[0]) || 1); });
+  return (z) => {
+    if (z <= keys[0][0]) return keys[0][1];
+    if (z >= keys[n - 1][0]) return keys[n - 1][1];
+    let i = 0; while (z > keys[i + 1][0]) i++;
+    const [z0, v0] = keys[i], [z1, v1] = keys[i + 1], h = z1 - z0, t = (z - z0) / h, t2 = t * t, t3 = t2 * t;
+    return (2 * t3 - 3 * t2 + 1) * v0 + (t3 - 2 * t2 + t) * h * m[i] + (-2 * t3 + 3 * t2) * v1 + (t3 - t2) * h * m[i + 1];
+  };
+}
+
+// =====================================================================
+// THE TTP-70 AS THE PLAYER'S CAR (and the computer drivers', and the
+// Garage's): the body. A tribute to the 1970 short-tail long-distance
+// cars: very low, wide and short; a long low nose with the front wheels'
+// fenders standing up either side of it and the headlights under clear
+// covers in them; a small bubble cockpit with a wraparound screen, the
+// driver on the right; the rear fenders swelling up over the back
+// wheels; the short tail swept up into two fins, a cooling grille on the
+// deck over the flat-12, a mesh panel across the back. In light blue
+// with a broad orange stripe down the middle, our own design (no
+// sponsor, no badges), a white roundel with a number on each door.
+// =====================================================================
+export function buildP70Body(car, addPanel) {
+  const MAT = {
+    blue: new THREE.MeshPhysicalMaterial({ color: 0x8cc4e8, roughness: 0.3, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.08 }),
+    yellow: new THREE.MeshPhysicalMaterial({ color: 0xf2701e, roughness: 0.3, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.08 }),
+    carbon: new THREE.MeshStandardMaterial({ color: 0x16171a, roughness: 0.6, metalness: 0.2 }),
+    steel: new THREE.MeshStandardMaterial({ color: 0x8d9096, roughness: 0.35, metalness: 0.9 }),
+    glass: new THREE.MeshStandardMaterial({ color: 0x2a3540, roughness: 0.05, metalness: 0.3, transparent: true, opacity: 0.5 }),
+    lens: new THREE.MeshStandardMaterial({ color: 0xdfe6ee, roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.45 }),
+    lamp: new THREE.MeshStandardMaterial({ color: 0xf2f2e8, roughness: 0.2, metalness: 0.6, emissive: 0xfff3d0, emissiveIntensity: 0.2 }),
+    helmet: new THREE.MeshPhysicalMaterial({ color: 0xf4f4f0, roughness: 0.2, clearcoat: 1 }),
+    visor: new THREE.MeshStandardMaterial({ color: 0x101418, roughness: 0.05, metalness: 0.8 }),
+    exhaust: new THREE.MeshStandardMaterial({ color: 0x5a4a40, roughness: 0.5, metalness: 0.8, emissive: 0xff5a10, emissiveIntensity: 0 }),
+    rain: new THREE.MeshStandardMaterial({ color: 0x4a0a0a, emissive: 0xff1a10, emissiveIntensity: 0 }),
+    seat: new THREE.MeshStandardMaterial({ color: 0x24262c, roughness: 0.9 }),
+    suit: new THREE.MeshStandardMaterial({ color: 0xf2f2ee, roughness: 0.8 }),
+    dark: new THREE.MeshStandardMaterial({ color: 0x050506, roughness: 0.8 }),
+  };
+  // (seen from his seat too: the roof and the glass have an inside)
+  MAT.blue.side = MAT.glass.side = THREE.DoubleSide;
+  const add = (geo, mat, shadow = true) => {
+    const m = new THREE.Mesh(geo, mat); m.castShadow = shadow; m.receiveShadow = true; car.add(m);
+    if (mat === MAT.blue || mat === MAT.yellow) addPanel(m);
+    return m;
+  };
+  const FZ = 1.25, RZ = -1.05, WR = 0.33;
+  const arch = (z, base) => { let b = base; for (const wz of [FZ, RZ]) { const d = z - wz, r = WR + 0.05; if (Math.abs(d) < r) b = Math.max(b, WR + Math.sqrt(r * r - d * d)); } return b; };
+  // --- the main body: a low wedge, wide, the middle of the bonnet low
+  // between the fenders, the tail cut off square
+  const W = curve([[-2.0, 1.84], [-1.6, 1.98], [-1.05, 2.02], [0, 1.9], [1.25, 2.0], [1.8, 1.92], [2.13, 1.66]]);
+  const TOP = curve([[-2.0, 0.66], [-1.6, 0.7], [-0.9, 0.7], [-0.4, 0.66], [0.6, 0.6], [1.4, 0.54], [1.9, 0.44], [2.13, 0.3]]);
+  const BOT = (z) => arch(z, z > 1.8 ? 0.12 + (z - 1.8) * 0.15 : 0.12);
+  add(smoothBody(-2.0, 2.13, 80, (z) => ({ w: W(z), top: TOP(z), bot: BOT(z), tuck: 0.12, sq: 6 })), MAT.blue);
+  add(new THREE.BoxGeometry(1.2, 0.08, 3.6).translate(0, 0.14, 0.05), MAT.carbon);           // the floor (no seeing through)
+  for (const wz of [FZ, RZ]) for (const s of [1, -1]) add(new THREE.CylinderGeometry(WR + 0.05, WR + 0.05, 0.4, 16, 1, true, -Math.PI / 2, Math.PI).rotateZ(Math.PI / 2).translate(s * 0.72, WR, wz), MAT.dark, false);
+  // the front fenders standing up either side of the low bonnet, swelling over the wheels
+  const FT = curve([[0.55, 0.6], [0.9, 0.72], [1.25, 0.78], [1.65, 0.72], [2.05, 0.46]]);
+  for (const s of [1, -1]) add(smoothBody(0.5, 2.08, 30, (z) => ({ x: s * 0.72, w: 0.56 - Math.max(0, z - 1.7) * 0.4, top: FT(z), bot: Math.max(BOT(z), 0.3), tuck: 0.3, sq: 3 })), MAT.blue);
+  // the rear fenders, swelling up over the back wheels and running into the fins
+  const RT = curve([[-0.5, 0.66], [-1.05, 0.82], [-1.5, 0.86], [-1.85, 0.92], [-2.0, 0.94]]);
+  for (const s of [1, -1]) add(smoothBody(-2.0, -0.4, 30, (z) => ({ x: s * 0.74, w: 0.54, top: RT(z), bot: Math.max(BOT(z), 0.32), tuck: 0.35, sq: 3 })), MAT.blue);
+  // the broad orange stripe down the middle: nose, roof, tail, edged in blue
+  const stripe = (z0, z1, topFn, w) => add(smoothBody(z0, z1, 40, (z) => ({ w, top: topFn(z) + 0.006, bot: topFn(z) - 0.02, sq: 2.4 })), MAT.yellow);
+  stripe(0.7, 2.11, TOP, 0.62);
+  // --- the cockpit: a small bubble, a wraparound screen, the roof, the window frames
+  const CT = curve([[-0.75, 0.66], [-0.45, 0.86], [-0.05, 0.93], [0.35, 0.88], [0.72, 0.62]]);
+  const CW = curve([[-0.75, 1.1], [-0.2, 1.22], [0.35, 1.26], [0.72, 1.34]]);
+  add(smoothBody(-0.75, 0.72, 30, (z) => ({ w: CW(z), top: CT(z), bot: 0.55, tuck: 0.35, sq: 2.6 })), MAT.glass, false);
+  add(smoothBody(-0.7, 0.18, 20, (z) => ({ w: CW(z) * 0.86, top: CT(z) + 0.01, bot: CT(z) - 0.06, tuck: 0.25, sq: 2.6 })), MAT.blue);
+  stripe(-0.7, 0.18, (z) => CT(z) + 0.012, 0.42);
+  add(smoothBody(-1.98, -0.72, 30, (z) => ({ w: 0.62, top: TOP(z) + 0.006, bot: TOP(z) - 0.02, sq: 2.4 })), MAT.yellow);
+  for (const s of [1, -1]) add(rod([s * 0.6, 0.6, 0.7], [s * 0.5, 0.88, 0.3], 0.025), MAT.blue);        // the screen's pillars
+  // the doors' shut lines, and a white roundel with a number on each
+  const roundel = new THREE.MeshStandardMaterial({ roughness: 0.4, transparent: true, map: (() => {
+    const c = document.createElement('canvas'); c.width = 128; c.height = 128; const g = c.getContext('2d');
+    g.clearRect(0, 0, 128, 128); g.fillStyle = '#f4f4f0'; g.beginPath(); g.arc(64, 64, 60, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#111'; g.font = 'bold 74px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('7', 64, 70);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+  })() });
+  for (const s of [1, -1]) {
+    const d = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.34), roundel);
+    d.position.set(s * (W(0) / 2 + 0.004), 0.42, 0.05); d.rotation.y = s * Math.PI / 2; car.add(d);
+    for (const z of [0.72, -0.62]) add(new THREE.BoxGeometry(0.006, 0.36, 0.006).translate(s * (W(z) / 2 - 0.01), 0.45, z), MAT.dark, false);
+  }
+  // --- the nose: the headlights under clear covers in the fenders, a
+  // low mouth for the oil cooler and the brakes
+  for (const s of [1, -1]) {
+    add(new THREE.CylinderGeometry(0.075, 0.075, 0.03, 16).rotateX(Math.PI / 2 - 0.5).translate(s * 0.7, 0.62, 1.88), MAT.lamp);
+    add(new THREE.CylinderGeometry(0.06, 0.06, 0.03, 16).rotateX(Math.PI / 2 - 0.5).translate(s * 0.52, 0.56, 1.95), MAT.lamp);
+    add(smoothBody(1.78, 2.02, 6, (z) => ({ x: s * 0.62, w: 0.36, top: FT(z) + 0.01, bot: FT(z) - 0.12, sq: 2.5 })), MAT.lens, false);
+  }
+  add(new THREE.BoxGeometry(0.7, 0.08, 0.02).translate(0, 0.2, 2.1), MAT.dark, false);
+  // mirrors: little round ones on the front fenders
+  const mirrors = {};
+  for (const s of [1, -1]) {
+    const stalk = add(rod([s * 0.72, 0.74, 0.85], [s * 0.74, 0.8, 0.85], 0.012), MAT.carbon);
+    const pod = new THREE.Group(); car.add(pod);
+    pod.add(add(new THREE.CylinderGeometry(0.055, 0.055, 0.05, 16).rotateX(Math.PI / 2).translate(s * 0.74, 0.84, 0.85), MAT.blue));
+    pod.add(add(new THREE.CircleGeometry(0.048, 16).rotateY(Math.PI).translate(s * 0.74, 0.84, 0.824), MAT.visor));
+    mirrors[s > 0 ? 'l' : 'r'] = { stalk, pod, at: [s * 0.74, 0.84, 0.85] };
+  }
+  // --- the tail: the deck's cooling grille over the flat-12 (the big fan
+  // under it), the two fins, the mesh across the back, the lights, the exhausts
+  add(new THREE.CylinderGeometry(0.24, 0.24, 0.02, 24).translate(0, 0.705, -1.0), MAT.dark, false);
+  for (let k = -3; k <= 3; k++) add(new THREE.BoxGeometry(0.46, 0.012, 0.02).translate(0, 0.716, -1.0 + k * 0.06), MAT.carbon, false);
+  add(new THREE.PlaneGeometry(1.5, 0.42).rotateY(Math.PI).translate(0, 0.42, -2.005), MAT.dark, false);
+  for (const s of [1, -1]) {
+    add(new THREE.CylinderGeometry(0.05, 0.05, 0.02, 14).rotateX(Math.PI / 2).translate(s * 0.72, 0.62, -2.01), MAT.rain);
+    add(new THREE.CylinderGeometry(0.05, 0.055, 0.16, 12, 1, true).rotateX(Math.PI / 2).translate(s * 0.25, 0.24, -2.02), MAT.exhaust);
+  }
+  // the driver (on the right), his helmet, his body and the wheel (the
+  // computer drivers' and the Garage's; the player's has its own cockpit)
+  const DX = -0.27;
+  add(new THREE.BoxGeometry(0.42, 0.06, 0.42).translate(DX, 0.22, -0.15), MAT.seat, false);
+  add(new THREE.BoxGeometry(0.42, 0.5, 0.06).rotateX(-0.3).translate(DX, 0.45, -0.4), MAT.seat, false);
+  const driver = new THREE.Group(); car.add(driver);
+  const dAdd = (geo, mat) => { const m = new THREE.Mesh(geo, mat); m.castShadow = false; driver.add(m); return m; };
+  dAdd(new THREE.CapsuleGeometry(0.15, 0.14, 4, 10).rotateZ(Math.PI / 2).scale(1, 0.75, 0.8).translate(DX, 0.56, -0.25), MAT.suit);
+  for (const sx of [1, -1]) { dAdd(rod([DX + sx * 0.17, 0.6, -0.22], [DX + sx * 0.15, 0.5, 0.02], 0.04), MAT.suit); dAdd(rod([DX + sx * 0.15, 0.5, 0.02], [DX + sx * 0.12, 0.62, 0.22], 0.035), MAT.suit); }
+  dAdd(new THREE.TorusGeometry(0.17, 0.016, 6, 20).rotateX(-0.6).translate(DX, 0.62, 0.26), MAT.carbon);
+  const helmet = add(new THREE.SphereGeometry(0.135, 20, 16).scale(1, 1.05, 1.1).translate(DX, 0.78, -0.25), MAT.helmet);
+  const visor = add(new THREE.SphereGeometry(0.137, 20, 10, -0.9 + Math.PI / 2, 1.8, 1.1, 0.5).scale(1, 1.05, 1.1).translate(DX, 0.78, -0.25), MAT.visor);
+  const hstripe = add(new THREE.TorusGeometry(0.135, 0.012, 6, 24, Math.PI).rotateY(Math.PI / 2).rotateZ(Math.PI / 2).scale(1, 1.05, 1.1).translate(DX, 0.78, -0.25), MAT.yellow);
+  // the "wings": little canards at the nose's corners, and the spoiler
+  // lip across the tail between the fins (each can be knocked off)
+  const wings = { fl: new THREE.Group(), fr: new THREE.Group(), rear: new THREE.Group() };
+  for (const g of Object.values(wings)) car.add(g);
+  const addTo = (g, geo, mat) => { const m = add(geo, mat); g.add(m); return m; };
+  for (const s of [1, -1]) addTo(s > 0 ? wings.fl : wings.fr, new THREE.BoxGeometry(0.18, 0.012, 0.12).rotateZ(-s * 0.15).translate(s * 0.86, 0.3, 1.95), MAT.carbon);
+  addTo(wings.rear, new THREE.BoxGeometry(1.1, 0.012, 0.14).rotateX(0.35).translate(0, 0.74, -1.98), MAT.blue);
+  return { helmet: [helmet, visor, hstripe], rainMat: MAT.rain, exhaustMat: MAT.exhaust, mats: MAT, wings, mirrors, driver };
+}
+export const bodyForKind = (kind) => (kind === 'f05' ? buildF05Body : kind === 'f94' ? buildF94Body : kind === 'p70' ? buildP70Body : buildF1Body);
 
 // a plain F1 rim of the time: a shallow dish with six slim spokes and a
 // big single centre nut (r: its radius, w: its width)

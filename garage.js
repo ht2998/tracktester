@@ -7,7 +7,7 @@
 // has several cars dropping down again. Pick one and it fires up: a
 // couple of big revs, then it settles to idle.
 // =====================================================================
-export const BUILD = 5;
+export const BUILD = 6;
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -17,7 +17,7 @@ import { bodyForKind, WHEEL_LAYOUT, buildF1RimGeometry } from './f1.js';
 // (made-up names, no real makes)
 export const COLLECTION = [
   { cat: 'Formula', cars: [
-    { name: 'TTF-78', year: 1978, blurb: 'Ground effect, 3.0 V8' },
+    { name: 'TTF-75', year: 1975, blurb: '3.0 flat-12, a world champion\'s car' },
     { name: 'TTF-88', year: 1988, kind: 'f1', blurb: 'Turbo era, 1.5 V6' },
     { name: 'TTF-94', year: 1994, kind: 'f94', blurb: '3.5 V12, 16,000 rpm' },
     { name: 'TTF-05', year: 2005, kind: 'f05', blurb: '3.0 V10, 19,200 rpm' },
@@ -35,7 +35,7 @@ export const COLLECTION = [
     { name: 'TTR-22', year: 2022, blurb: 'Rally1: hybrid boost' },
   ] },
   { cat: 'Prototype', cars: [
-    { name: 'TTP-70', year: 1970, blurb: 'Flat-12 long-distance racer' },
+    { name: 'TTP-70', year: 1970, kind: 'p70', blurb: '4.9 flat-12, long-distance racer' },
     { name: 'TTP-87', year: 1987, blurb: 'Group C: ground-effect endurance' },
     { name: 'TTP-09', year: 2009, blurb: 'LMP1: diesel V12' },
     { name: 'TTP-23', year: 2023, blurb: 'Hypercar: hybrid V6' },
@@ -47,6 +47,7 @@ export const COLLECTION = [
   ] },
   { cat: 'Road', cars: [
     { name: 'TT Roadster 62', year: 1962, blurb: 'Lightweight sports car' },
+    { name: 'TT Coupé 72', year: 1972, blurb: 'Front-engined V8, long bonnet' },
     { name: 'Caterham Seven', year: 2015, kind: 'caterham', blurb: 'The test car', hidden: true },
     { name: 'TT Hatch 86', year: 1986, blurb: 'Front-drive, 1.6' },
   ] },
@@ -55,6 +56,7 @@ export const CAR_INFO = {
   f1: { name: 'TTF-88', year: 1988, cat: 'Formula', drive: 'Rear-wheel drive' },
   f05: { name: 'TTF-05', year: 2005, cat: 'Formula', drive: 'Rear-wheel drive' },
   f94: { name: 'TTF-94', year: 1994, cat: 'Formula', drive: 'Rear-wheel drive' },
+  p70: { name: 'TTP-70', year: 1970, cat: 'Prototype', drive: 'Rear-wheel drive' },
   caterham: { name: 'Caterham Seven', year: 2015, cat: 'Road', drive: 'Rear-wheel drive' },
 };
 
