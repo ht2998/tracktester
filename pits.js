@@ -26,7 +26,7 @@
 // a smashed radiator): the team retire the car. DNF on the standings, and
 // they push it back into the garage.
 // =====================================================================
-export const BUILD = 14;
+export const BUILD = 15;
 
 import * as THREE from 'three';
 
@@ -83,6 +83,10 @@ export const POSES = {
   MEDIC: { drop: 0.45, lean: 0.55, thL: 1.45, knL: 1.45, thR: 0, knR: 1.6, shL: 1.0, shR: 1.1, elL: 0.6, elR: 0.5, head: 0.4 },
   STRETCH: { drop: 0.15, lean: 0.25, shL: 0.35, shR: 0.35, elL: 0.3, elR: 0.3, thL: 0.35, knL: 0.5, thR: 0.35, knR: 0.5 },
   STRETCH_UP: { lean: 0.02, shL: 0.25, shR: 0.25, elL: 0.35, elR: 0.35 },
+  // a trophy held up high in one hand, the other fist clenched
+  TROPHY: { rate: 6, shR: 2.95, elR: 0.25, outR: 0.12, shL: 0.7, elL: 1.6, outL: 0.25, head: -0.25 },
+  // leaning in through a door, one arm reaching in
+  LEANIN: { rate: 7, lean: 0.55, drop: 0.12, shR: 1.45, elR: 0.25, shL: 0.6, elL: 0.6, outL: 0.3, thL: 0.25, knL: 0.3, head: 0.2 },
   // behind a TV camera, hands on its handles
   CAMERA: { shL: 1.1, shR: 1.0, elL: 0.9, elR: 1.0, outL: -0.15, outR: -0.15, lean: 0.12, head: 0.05 },
 };

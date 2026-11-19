@@ -60,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 70;
+const BUILD = 71;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -884,8 +884,14 @@ function buildWasher(car) {
   mesh(new THREE.BoxGeometry(0.2, 0.03, 0.02), grey, -0.65, y0 + H - 0.31, front + 0.05);
   // the door: a chrome ring round a dark glass porthole, the drum and its paddles behind
   const doorY = y0 + H * 0.45;
-  mesh(new THREE.TorusGeometry(0.62, 0.07, 14, 48), chrome, 0, doorY, front + 0.03);
-  mesh(new THREE.CylinderGeometry(0.6, 0.6, 0.02, 48).rotateX(Math.PI / 2), glass, 0, doorY, front + 0.03);
+  // (the door on its hinge, at its left edge, so it swings open)
+  const door = new THREE.Group(); door.position.set(-0.69, doorY, front + 0.03); g.add(door);
+  const dm = (geo, mat, x) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, 0, 0); m.castShadow = true; door.add(m); return m; };
+  dm(new THREE.TorusGeometry(0.62, 0.07, 14, 48), chrome, 0.69);
+  dm(new THREE.CylinderGeometry(0.6, 0.6, 0.02, 48).rotateX(Math.PI / 2), glass, 0.69);
+  dm(new THREE.BoxGeometry(0.06, 0.26, 0.06).translate(0, 0, 0.05), grey, 1.31);
+  // (the round opening behind it, dark inside the rim)
+  mesh(new THREE.TorusGeometry(0.6, 0.04, 10, 40), dark, 0, doorY, front + 0.005);
   const drum = new THREE.Group(); drum.position.set(0, doorY, front - 0.15); g.add(drum);
   const steel = new THREE.MeshStandardMaterial({ color: 0x9aa1a8, roughness: 0.3, metalness: 0.9, side: THREE.DoubleSide });
   const can = new THREE.Mesh(new THREE.CylinderGeometry(0.58, 0.58, 0.25, 32, 1, true).rotateX(Math.PI / 2), steel); drum.add(can);
@@ -893,11 +899,22 @@ function buildWasher(car) {
   // (some laundry in it)
   const cloth = new THREE.MeshStandardMaterial({ color: 0x4a76c8, roughness: 0.9 });
   for (let k = 0; k < 4; k++) { const b = new THREE.Mesh(new THREE.SphereGeometry(0.14 + k * 0.02, 10, 8), k % 2 ? cloth : new THREE.MeshStandardMaterial({ color: [0xe04848, 0xf2f2f2][k % 2 ? 0 : 1], roughness: 0.9 })); b.position.set(Math.sin(k * 1.7) * 0.32, -0.3 + Math.cos(k * 1.3) * 0.12, 0); drum.add(b); }
-  // the door handle, and the feet
-  mesh(new THREE.BoxGeometry(0.06, 0.26, 0.06), grey, 0.62, doorY, front + 0.08);
+  // the feet
   for (const [x, z] of [[-W / 2 + 0.18, D / 2 - 0.2], [W / 2 - 0.18, D / 2 - 0.2], [-W / 2 + 0.18, -D / 2 + 0.2], [W / 2 - 0.18, -D / 2 + 0.2]]) mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.08, 10), dark, x, 0.04, z);
   car.add(g);
-  return { group: g, drum };
+  return { group: g, drum, door, doorAt: new THREE.Vector3(0, doorY, front) };
+}
+// the trophy: a gold cup with two handles on a black base
+function buildTrophy() {
+  const g = new THREE.Group();
+  const gold = new THREE.MeshStandardMaterial({ color: 0xf2c12e, metalness: 1, roughness: 0.22 });
+  const base = new THREE.MeshStandardMaterial({ color: 0x15161a, roughness: 0.4 });
+  const pts = [[0, 0], [0.07, 0], [0.07, 0.02], [0.025, 0.05], [0.02, 0.16], [0.05, 0.19], [0.1, 0.24], [0.115, 0.32], [0.11, 0.36], [0.1, 0.36], [0.095, 0.32], [0, 0.3]].map(([x, y]) => new THREE.Vector2(x, y));
+  const cup = new THREE.Mesh(new THREE.LatheGeometry(pts, 24), gold); cup.position.y = 0.06; g.add(cup);
+  for (const sx of [-1, 1]) { const h = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.009, 8, 16, Math.PI * 1.2), gold); h.position.set(sx * 0.12, 0.34, 0); h.rotation.z = sx > 0 ? -1.2 : Math.PI + 1.2 - Math.PI * 1.2 + Math.PI; g.add(h); }
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.06, 0.13).translate(0, 0.03, 0), base));
+  g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  return g;
 }
 function buildCar() {
   const car = new THREE.Group();
@@ -2548,7 +2565,7 @@ function updateSmoke(dt) {
     // (a bare rim or a missing wheel leaves no rubber; a wet track takes far less)
     const wt = physics.tyres[physicsWheel(p.local.x, p.axle === 'front')];
     const marks = p.onGravel || p.onGrass || wt.rim || wt.detached ? 0 : (p.axle === 'rear' ? rearSkid : frontSkid) * (1 - 0.6 * rain.wetness);
-    skids.update(p.id, skidWorld.x, skidWorld.z, marks);
+    skids.update(p.id, skidWorld.x, skidWorld.z, WASHER ? 0 : marks);    // (the washing machine leaves no marks)
     // In the gravel every rolling tyre leaves a track, heavier when it slides
     const rolling = speed > 0.5 && inGravel(skidWorld.x, skidWorld.z);
     gravelTrails.update(p.id, skidWorld.x, skidWorld.z, rolling ? 0.45 + 0.55 * (p.axle === 'rear' ? rearSkid : frontSkid) : 0);
@@ -2811,9 +2828,10 @@ function collide(now) {
     // A proper hit: the barrier reacts (dents, squashes, cracks)
     if (k.c.hit && -vn > 1.5 && now - (lastHit.get(k.c) ?? -9) > 0.25) {
       lastHit.set(k.c, now);
-      const res = k.c.hit({ x: k.px, z: k.pz }, { x: k.nx, z: k.nz }, -vn);
+      // (the washing machine leaves no marks: it bounces off without denting anything)
+      const res = WASHER ? { absorb: 0.35 } : k.c.hit({ x: k.px, z: k.pz }, { x: k.nx, z: k.nz }, -vn);
       // (a barrier badly hit: race control sends a repair crew, and a safety car or a red flag)
-      if (-vn > 18 && teleportGrace <= 0 && (k.c.kind === 'armco' || k.c.kind === 'tyres' || k.c.kind === 'fence')) raceControl?.barrierHit?.({ x: k.px, z: k.pz }, -vn, k.c.kind);
+      if (!WASHER && -vn > 18 && teleportGrace <= 0 && (k.c.kind === 'armco' || k.c.kind === 'tyres' || k.c.kind === 'fence')) raceControl?.barrierHit?.({ x: k.px, z: k.pz }, -vn, k.c.kind);
       if (res?.absorb) bounce *= 1 - res.absorb;                    // a barrier that gives way bounces you back less
       if (res?.chips) {
         chipVel.set(k.nx * 3, 0, k.nz * 3).addScaledVector(carVelocity, 0.3);
@@ -3373,6 +3391,14 @@ function updateCamera(dt) {
   const gy = vehicleGroundY();   // (follows the car or heavy over the hills and up into the air)
   carPos.set(physics.x, gy, physics.z);
   forward.set(Math.sin(physics.heading), 0, Math.cos(physics.heading));
+  // (the washing machine's win: a camera out front, looking back at it and him)
+  if (washerParty?.cam) {
+    const c = washerParty.cam;
+    desiredCam.set(c.at[0], groundAt(c.at[0], c.at[1]) + 1.7, c.at[1]);
+    camera.position.lerp(desiredCam, Math.min(1, dt * 2));
+    camera.lookAt(c.look[0], groundAt(c.look[0], c.look[1]) + 1.1, c.look[1]);
+    return;
+  }
 
   if (cameraMode === 'chase' || cameraMode === 'close') {
     // Sit behind and above the car, catching up smoothly
@@ -3789,6 +3815,7 @@ function updateExplosion(dt) {
   }
   updateDriverEscape(dt);
   updateDeath(dt);
+  updateWasherParty(dt);
 }
 // THE DRIVER GETS OUT, as a real one would. Three ways:
 //   - the car's on fire (or blown up round him): he unclips, climbs out
@@ -3916,7 +3943,53 @@ const driverHooks = {
   },
   loaded: () => { if (driverOut) { driverOut.person.root.visible = false; driverOut.gone = true; } },
 };
+// THE WASHING MACHINE WINS: once it's stopped, the driver walks over,
+// opens its door, leans in and takes the trophy out, and holds it up
+let washerParty = null;
+function startWasherParty() {
+  if (!washerBody || washerParty) return;
+  washerParty = { state: 'stopping', t: 0 };
+  showToast('THE WASHING MACHINE WINS!');
+}
+function updateWasherParty(dt) {
+  const W = washerParty; if (!W) return;
+  W.t += dt;
+  if (W.state === 'stopping') {
+    if (Math.hypot(physics.vx, physics.vy) > 0.4 && W.t < 20) return;
+    // stopped: he comes from the left of it, round to the door
+    const h = physics.heading, fx = Math.sin(h), fz = Math.cos(h), lx = Math.cos(h), lz = -Math.sin(h);
+    const C = { x: physics.x, z: physics.z };
+    const doorFront = [C.x + fx * 2.25, C.z + fz * 2.25], start = [C.x + lx * 7 + fx * 3, C.z + lz * 7 + fz * 3];
+    const P = new PersonFigure(driverMats, 0); scene.add(P.root);
+    P.place(start[0], start[1], Math.atan2(doorFront[0] - start[0], doorFront[1] - start[1]));
+    const trophy = buildTrophy();
+    W.person = P; W.trophy = trophy; W.state = 'show'; W.t = 0; W.cam = { at: [C.x + fx * 7.5 + lx * 3.5, C.z + fz * 7.5 + lz * 3.5], look: [C.x + fx * 1.2, C.z + fz * 1.2] };
+    P.run([
+      { go: doorFront, v: 1.9 },
+      { face: [C.x, C.z] },
+      { fn: () => { W.opening = true; } },
+      { wait: 0.9 },
+      { pose: 'LEANIN', t: 1.1 },
+      { fn: () => { trophy.position.set(0, -0.12, 0.04); trophy.rotation.set(Math.PI, 0, 0); P.hold(trophy, 'hand'); } },
+      { pose: 'STAND', t: 0.4 },
+      { go: [doorFront[0] + fx * 1.2, doorFront[1] + fz * 1.2], back: true },
+      { face: [W.cam.at[0], W.cam.at[1]] },
+      { pose: 'TROPHY' },
+    ]);
+  }
+  if (W.opening) washerBody.door.rotation.y += (-1.9 - washerBody.door.rotation.y) * Math.min(1, dt * 3);
+  if (W.person) W.person.update(dt, groundAt);
+  // (the trophy upright once it's held up)
+  if (W.trophy && W.person.want === 'TROPHY') W.trophy.rotation.x += (Math.PI - 0.4 - W.trophy.rotation.x) * Math.min(1, dt * 4);
+}
+function clearWasherParty() {
+  if (!washerParty) return;
+  if (washerParty.person) scene.remove(washerParty.person.root);
+  if (washerBody) washerBody.door.rotation.y = 0;
+  washerParty = null;
+}
 function clearDriverOut() {
+  clearWasherParty();
   if (driverOut) { scene.remove(driverOut.person.root); driverOut = null; }
   burnStill = 0; bigHit = 0; driverDead = false;
   driverInCar(true);
@@ -4219,6 +4292,7 @@ const aiField = racing ? new AIField(scene, {
   },
   // a time penalty (a jump start, track limits)
   onPenalty: (sec, why) => showToast(sec === 'drive' ? `${why}: DRIVE-THROUGH PENALTY` : `${why}: ${sec} SECOND TIME PENALTY`),
+  onPlayerFinish: (pos) => { if (WASHER && pos === 1) startWasherParty(); },   // (the washing machine's trophy)
   // the race grid: you go to the back of it, stopped and straightened up
   onPlacePlayer: (x, z, heading) => {
     teleportGrace = 0.6;
@@ -4436,7 +4510,8 @@ renderer.setAnimationLoop(() => {
   // the clutch (X) and you can rev it up ready; touch the throttle without
   // it and the brakes let go: that's a jump start)
   if (aiField?.holdPlayer && !(input.throttle > 0.05 && !input.clutch)) input.brake = 1;
-  if (driverOut || driverDead) { input.throttle = 0; input.brake = 1; input.steer = 0; }     // (nobody in it, or nobody alive)
+  if (driverOut || driverDead || washerParty) { input.throttle = 0; input.brake = 1; input.steer = 0; }     // (nobody in it, or nobody alive, or he's out with his trophy)
+  if (WASHER) physics.damageOff = true;      // (the washing machine can't be hurt)
   // the pit lane: the limiter, the team guiding you in, the car held on its marks
   const pitHold = pits && !heavyMode ? pits.control(input, dt) : false;
   // Fast cars move in smaller steps, so they can't skip through a thin

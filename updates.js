@@ -21,11 +21,18 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 95;
+export const BUILD = 96;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 84, date: '19 Nov 2026', title: 'Penalties on screen',
+    items: [
+      ['Penalties shown', 'Time and drive-through penalties now come up on screen when you get one. They were being given but the message never showed', 'fix'],
+      ['A little something', 'Whatever you\'re driving, win a race and you might be in for a surprise', 'new'],
+    ],
+  },
   {
     id: 83, date: '19 Nov 2026', title: 'Laundry day',
     items: [

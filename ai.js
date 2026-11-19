@@ -23,7 +23,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 11;
+export const BUILD = 12;
 
 import * as THREE from 'three';
 import { CarPhysics, CATERHAM } from './physics.js';
@@ -205,7 +205,7 @@ export class AIField {
   // colliders: the walls, barriers and buildings
   // onPlacePlayer(x, z, heading): put the player's car somewhere (the grid)
   // spec: the car they drive (the player's kind, with its stock engine; the Caterham if none)
-  constructor(scene, { racing, track, start, hooks, colliders, isMobile = false, onPlacePlayer, sound, spec = null }) {
+  constructor(scene, { racing, track, start, hooks, colliders, isMobile = false, onPlacePlayer, onPenalty, onPlayerFinish, sound, spec = null }) {
     this.scene = scene;
     this.spec = spec || CATERHAM;
     this.isF1 = !!this.spec.wings;
@@ -214,6 +214,7 @@ export class AIField {
     this.hooks = hooks;
     this.isMobile = isMobile;
     this.onPlacePlayer = onPlacePlayer;
+    this.onPenalty = onPenalty; this.onPlayerFinish = onPlayerFinish;
     this.sound = sound;
     this.cars = [];
     this.mode = 'off';          // 'off', 'practice', 'race'
@@ -950,6 +951,7 @@ export class AIField {
       this.player.finished = true;
       this.player.finishTime = race.t - race.start + (this.player.penalty || 0);   // (time penalties added on)
       race.done = true;
+      this.onPlayerFinish?.(myPos, field.length);
       this.banner.textContent = `FINISHED  P${myPos} of ${field.length}\n\n` + field.map((f, k) => `${String(k + 1).padStart(2)}.  ${f.name}`).join('\n');
       this.banner.style.display = 'block';
       setTimeout(() => { this.banner.style.display = 'none'; }, 9000);
