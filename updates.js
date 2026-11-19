@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 113;
+export const BUILD = 114;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
@@ -29,7 +29,7 @@ export const UPDATES = [
   {
     id: 99, date: '19 Nov 2026', title: 'The TTP-91',
     items: [
-      ['A 1991 Group C car', 'The TTP-91 is in the Garage, under Prototype: a 1991 long-distance car of our own, in bright orange and green. Long, low and wide, the back wheels skirted, a ground-effect floor, a big wing on the tail, and you on the right', 'new'],
+      ['A 1991 Group C car', 'The TTP-91 is in the Garage, under Prototype: a 1991 long-distance car of our own, in bright orange and green swoops interlocking all over it. Long, low and wide, the back wheels skirted, a ground-effect floor, a big wing on the tail, and you on the right', 'new'],
       ['The first rotary', 'A new kind of engine: a 2.6 four-rotor, about 700 hp at 9,000 rpm, that barely holds the car back off the throttle. Its own sound isn\'t made yet: for now it uses the plain engine sound', 'new'],
     ],
   },
