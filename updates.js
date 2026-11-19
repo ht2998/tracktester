@@ -21,11 +21,18 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 114;
+export const BUILD = 115;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 100, date: '19 Nov 2026', title: 'Lights where there are lights',
+    items: [
+      ['Headlights on the long-distance cars', 'The TTP-70 and TTP-91\'s headlights work now: G (or the button) for auto, dipped and main beam, lighting the road ahead', 'fix'],
+      ['No lights or horn on a single-seater', 'The Formula cars have no headlights and no horn, so the keys do nothing in them and the buttons aren\'t there on a phone. Their rain light still comes on in the wet', 'update'],
+    ],
+  },
   {
     id: 99, date: '19 Nov 2026', title: 'The TTP-91',
     items: [

@@ -16,7 +16,7 @@ import { setTouch, tap } from './input.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 4;
+export const BUILD = 5;
 
 export function isTouchDevice() {
   return window.matchMedia('(pointer: coarse)').matches
@@ -255,7 +255,7 @@ export class TouchControls {
     this.sheet.append(item('Switch camera', 'camera'), this.lightsItem, this.lineItem, item('Reset car', 'reset'), this.soundItem);
 
     // --- Horn, and the lights button beside it ---
-    const horn = this.holdButton('Horn', 't-horn small', 'horn');
+    const horn = this.hornBtn = this.holdButton('Horn', 't-horn small', 'horn');
     this.lightsBtn = this.tapButton('', 't-lights small', 'lights', 'Headlights');
     this.lightsBtn.innerHTML = '<svg width="22" height="16" viewBox="0 0 22 16" aria-hidden="true">'
       + '<path d="M9 2 C3 2 2 5 2 8 s1 6 7 6 Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>'
@@ -290,6 +290,15 @@ export class TouchControls {
     document.addEventListener('visibilitychange', () => { if (document.hidden) releaseAll(); });
   }
 
+  // what the car has: no horn or headlights (a single-seater), no buttons for them
+  setFeatures({ lights = true, horn = true }) {
+    if (this.features && this.features.lights === lights && this.features.horn === horn) return;
+    this.features = { lights, horn };
+    this.lightsBtn.style.display = lights ? '' : 'none';
+    this.lightsItem.style.display = lights ? '' : 'none';
+    this.hornBtn.style.display = horn ? '' : 'none';
+    if (!horn) this.state.horn = false;
+  }
   // A button that's active while a finger is on it (gas, brake, handbrake, clutch, horn)
   holdButton(label, cls, key) {
     const b = document.createElement('div');

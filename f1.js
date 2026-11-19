@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 39;
+export const BUILD = 40;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -998,6 +998,7 @@ export function buildP70Body(car, addPanel) {
     return m;
   };
   const FZ = 1.25, RZ = -1.05, WR = 0.33;
+  const LAMP_AT = [0, 0.6, 1.95];          // (where the headlights shine from)
   const arch = (z, base) => { let b = base; for (const wz of [FZ, RZ]) { const d = z - wz, r = WR + 0.05; if (Math.abs(d) < r) b = Math.max(b, WR + Math.sqrt(r * r - d * d)); } return b; };
   // --- the main body: a low wedge, wide, the middle of the bonnet low
   // between the fenders, the tail cut off square
@@ -1084,7 +1085,7 @@ export function buildP70Body(car, addPanel) {
   const addTo = (g, geo, mat) => { const m = add(geo, mat); g.add(m); return m; };
   for (const s of [1, -1]) addTo(s > 0 ? wings.fl : wings.fr, new THREE.BoxGeometry(0.18, 0.012, 0.12).rotateZ(-s * 0.15).translate(s * 0.86, 0.3, 1.95), MAT.carbon);
   addTo(wings.rear, new THREE.BoxGeometry(1.1, 0.012, 0.14).rotateX(0.35).translate(0, 0.74, -1.98), MAT.blue);
-  return { helmet: [helmet, visor, hstripe], rainMat: MAT.rain, exhaustMat: MAT.exhaust, mats: MAT, wings, mirrors, driver };
+  return { helmet: [helmet, visor, hstripe], rainMat: MAT.rain, exhaustMat: MAT.exhaust, mats: MAT, wings, mirrors, driver, lampMat: MAT.lamp, lampAt: LAMP_AT };
 }
 
 // =====================================================================
@@ -1143,6 +1144,7 @@ export function buildP91Body(car, addPanel) {
   };
   const ease = (u) => { u = Math.max(0, Math.min(1, u)); return u * u * (3 - 2 * u); };
   const FZ = 1.3, RZ = -1.36, WR = 0.33;
+  const LAMP_AT = [0, 0.5, 2.05];          // (where the headlights shine from)
   // (the front wheels have open arches; the back ones are skirted)
   const arch = (z, base) => { const d = z - FZ, r = WR + 0.05; return Math.abs(d) < r ? Math.max(base, WR + Math.sqrt(r * r - d * d)) : base; };
   const W = curve([[-2.45, 1.92], [-1.36, 2.0], [-0.4, 1.94], [0.4, 1.92], [1.3, 2.0], [2.0, 1.92], [2.36, 1.72]]);
@@ -1214,7 +1216,7 @@ export function buildP91Body(car, addPanel) {
   addTo(wings.rear, new THREE.BoxGeometry(1.62, 0.03, 0.34).rotateX(0.18).translate(0, 1.0, -2.22), MAT.yellow);
   addTo(wings.rear, new THREE.BoxGeometry(1.62, 0.018, 0.14).rotateX(0.55).translate(0, 1.07, -2.42), MAT.green);
   for (const s of [1, -1]) addTo(wings.rear, new THREE.BoxGeometry(0.02, 0.36, 0.56).translate(s * 0.82, 0.98, -2.25), MAT.green);
-  return { helmet: [helmet, visor, hstripe], rainMat: MAT.rain, exhaustMat: MAT.exhaust, mats: MAT, wings, mirrors, driver };
+  return { helmet: [helmet, visor, hstripe], rainMat: MAT.rain, exhaustMat: MAT.exhaust, mats: MAT, wings, mirrors, driver, lampMat: MAT.lamp, lampAt: LAMP_AT };
 }
 export const bodyForKind = (kind) => ({ f05: buildF05Body, f94: buildF94Body, p70: buildP70Body, p91: buildP91Body }[kind] || buildF1Body);
 

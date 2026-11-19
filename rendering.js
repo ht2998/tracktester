@@ -60,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 81;
+const BUILD = 82;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -695,7 +695,11 @@ const IS_P70 = CAR_KIND === 'p70';        // (the TTP-70: the 1970 flat-12 proto
 const IS_P91 = CAR_KIND === 'p91';        // (the TTP-91: the 1991 four-rotor Group C car; closed, the driver on the right)
 const CLOSED_RHD = IS_P70 || IS_P91;
 const IS_F1 = CAR_KIND === 'f1' || IS_F05 || IS_F94 || IS_P70 || IS_P91;    // (the race cars built like the single-seaters: wings, slicks, the cockpit, the lot)
-const PADDLES = IS_F05 || IS_F94;          // (these change gear on paddles behind the wheel)
+const PADDLES = IS_F05 || IS_F94;
+// what this car has: the single-seaters have neither headlights nor a horn
+// (their buttons and keys aren't there); the long-distance cars and the road car have both
+const HAS_LIGHTS = !IS_F1 || CAR_KIND === 'p70' || CAR_KIND === 'p91';
+const HAS_HORN = HAS_LIGHTS;          // (these change gear on paddles behind the wheel)
 // THE WASHING MACHINE (the code WASHED): the TT-88 underneath, with the
 // 2003-style V10, and nothing of it to see but a big front-loader; no
 // driver showing; no engine to hear, just its little tune
@@ -934,9 +938,11 @@ function buildCar() {
     const panels = [];
     const body = bodyForKind(CAR_KIND)(car, (m) => panels.push(m));
     crush = { panels, grille: new THREE.Object3D(), lamps: [], tail: [] };
-    headLens = new THREE.MeshStandardMaterial({ color: 0x000000 });          // (no headlights: an F1 car)
+    // (a single-seater has no headlights; the long-distance cars do, in their noses)
+    headLens = body.lampMat || new THREE.MeshStandardMaterial({ color: 0x000000 });
     beam = new THREE.SpotLight(0xfff1d6, 0, 60, 0.5, 0.5, 1.3);
-    beam.visible = false;
+    beam.visible = !!body.lampMat;
+    if (body.lampAt) { beam.position.set(...body.lampAt); beam.target.position.set(0, 0, 14); }
     car.add(beam, beam.target);
     tailLens = body.rainMat;                                                 // the rain light does the braking and lights glow
     car.userData.f1 = body;
@@ -3087,7 +3093,7 @@ info.innerHTML =
   'Space: handbrake · X: clutch · Q / E or , / . : shift<br>' +
   'Reverse: Q from 1st (manual), R (auto, CVT)<br>' +
   'T: gearbox · arrow on the right: gearbox and assists<br>' +
-  'F: horn · G: lights · M: mute · C: camera (drag to look around in the on-car views) · Backspace: reset<br>' +
+  (HAS_LIGHTS ? 'F: horn · G: lights · ' : '') + 'M: mute · C: camera (drag to look around in the on-car views) · Backspace: reset<br>' +
   '<span id="soundhint" style="color:#ffd76a">Press any key or tap for sound</span>';
 const soundHint = document.getElementById('soundhint');
 
@@ -4717,7 +4723,10 @@ renderer.setAnimationLoop(() => {
   if (wasTapped('shiftUp')) physics.shiftUp();
   if (wasTapped('shiftDown')) physics.shiftDown();
   if (wasTapped('mute')) engineSound.setMuted(!engineSound.muted);
-  if (wasTapped('lights')) lightsSetting = (lightsSetting + 1) % 4;
+  const lightsHere = HAS_LIGHTS || heavyMode, hornHere = HAS_HORN || heavyMode;
+  if (wasTapped('lights') && lightsHere) lightsSetting = (lightsSetting + 1) % 4;
+  if (!lightsHere) lightsSetting = 0;
+  touchUI?.setFeatures?.({ lights: lightsHere, horn: hornHere });
   if (wasTapped('racingLine') && racing) {
     racingLineOn = !racingLineOn;
     racing.setVisible(racingLineOn);
@@ -4793,7 +4802,7 @@ renderer.setAnimationLoop(() => {
   aiField?.update(dt, { player: physics, camera, playerMass: heavyMode ? 8720 : physics.spec.mass, wetness: rain.wetness });
   updateTrackside(dt);
   pits?.update(dt, camera);
-  engineSound.setHorn(input.horn);
+  engineSound.setHorn(input.horn && (HAS_HORN || heavyMode));
   // Brake lights: bright while braking, dim red with the lights on
   carModel.tailLens.emissiveIntensity = input.brake > 0.05 ? 2.2 : lightsMode ? 0.6 : 0;
 
