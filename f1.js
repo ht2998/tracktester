@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 33;
+export const BUILD = 34;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -957,7 +957,8 @@ export function buildP70Body(car, addPanel) {
     dark: new THREE.MeshStandardMaterial({ color: 0x050506, roughness: 0.8 }),
   };
   // (seen from his seat too: the roof and the glass have an inside)
-  MAT.blue.side = MAT.glass.side = THREE.DoubleSide;
+  MAT.glass.side = THREE.DoubleSide;
+  const roofMat = MAT.blue.clone(); roofMat.side = THREE.DoubleSide;
   const add = (geo, mat, shadow = true) => {
     const m = new THREE.Mesh(geo, mat); m.castShadow = shadow; m.receiveShadow = true; car.add(m);
     if (mat === MAT.blue || mat === MAT.yellow) addPanel(m);
@@ -986,7 +987,7 @@ export function buildP70Body(car, addPanel) {
   const CT = curve([[-0.75, 0.66], [-0.45, 0.86], [-0.05, 0.93], [0.35, 0.88], [0.72, 0.62]]);
   const CW = curve([[-0.75, 1.1], [-0.2, 1.22], [0.35, 1.26], [0.72, 1.34]]);
   add(smoothBody(-0.75, 0.72, 30, (z) => ({ w: CW(z), top: CT(z), bot: 0.55, tuck: 0.35, sq: 2.6 })), MAT.glass, false);
-  add(smoothBody(-0.7, 0.18, 20, (z) => ({ w: CW(z) * 0.86, top: CT(z) + 0.01, bot: CT(z) - 0.06, tuck: 0.25, sq: 2.6 })), MAT.blue);
+  { const roof = add(smoothBody(-0.7, 0.18, 20, (z) => ({ w: CW(z) * 0.86, top: CT(z) + 0.01, bot: CT(z) - 0.06, tuck: 0.25, sq: 2.6 })), roofMat); roof.castShadow = false; addPanel(roof); }
   stripe(-0.7, 0.18, (z) => CT(z) + 0.012, 0.42);
   add(smoothBody(-1.98, -0.72, 30, (z) => ({ w: 0.62, top: TOP(z) + 0.006, bot: TOP(z) - 0.02, sq: 2.4 })), MAT.yellow);
   for (const s of [1, -1]) add(rod([s * 0.6, 0.6, 0.7], [s * 0.5, 0.88, 0.3], 0.025), MAT.blue);        // the screen's pillars
