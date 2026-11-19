@@ -37,7 +37,7 @@ import { AIField, BUILD as AI_BUILD } from './ai.js';
 import { Garage, BUILD as GARAGE_BUILD } from './garage.js';
 import { PitStop, SEPANG_PIT, Person as PersonFigure, climbOutKeys, BUILD as PITS_BUILD } from './pits.js';
 import { RaceControl, BUILD as RACECONTROL_BUILD } from './racecontrol.js';
-import { buildF1Body, buildF1Cockpit, buildF1RimGeometry, F1_CAR, CATERHAM_CAR, ENGINES, withEngine, STOCK_ENGINE, BUILD as F1_BUILD } from './f1.js';
+import { buildF1Body, buildF05Body, buildF1Cockpit, buildF1RimGeometry, F1_CAR, CATERHAM_CAR, ENGINES, withEngine, STOCK_ENGINE, specForKind, BUILD as F1_BUILD } from './f1.js';
 import * as groundFile from './ground.js';
 import * as tyresFile from './tyres.js';
 import * as cockpitFile from './cockpit.js';
@@ -60,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 73;
+const BUILD = 74;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -688,18 +688,19 @@ fenderMat.side = THREE.DoubleSide;
 // WHICH CAR: the Caterham or the TT-88 (f1.js). It's settled when the game
 // starts (picking another car restarts the game), so every part of the
 // game (wheels, brakes, suspension, tyres, damage, cameras) is built for it.
-const CAR_KIND = (() => { try { const c = JSON.parse(localStorage.getItem('tracktester-car') || 'null'); return c && c.kind === 'f1' ? 'f1' : 'caterham'; } catch (e) { return 'caterham'; } })();
-const IS_F1 = CAR_KIND === 'f1';
+const CAR_KIND = (() => { try { const c = JSON.parse(localStorage.getItem('tracktester-car') || 'null'); return c && (c.kind === 'f1' || c.kind === 'f05') ? c.kind : 'caterham'; } catch (e) { return 'caterham'; } })();
+const IS_F05 = CAR_KIND === 'f05';        // (the TT-05: the 2005-style V10 car)
+const IS_F1 = CAR_KIND === 'f1' || IS_F05;    // (either single-seater: wings, slicks, the cockpit, the lot)
 // THE WASHING MACHINE (the code WASHED): the TT-88 underneath, with the
 // 2003-style V10, and nothing of it to see but a big front-loader; no
 // driver showing; no engine to hear, just its little tune
 const WASHER = IS_F1 && (() => { try { return !!JSON.parse(localStorage.getItem('tracktester-car') || 'null')?.washer; } catch (e) { return false; } })();
 const WHEEL_RADIUS = IS_F1 ? 0.33 : 0.288;   // 195/50 R15 on the Caterham; big slicks on the TT-88 (same as the physics)
 const WHEEL_WIDTH = IS_F1 ? 0.36 : 0.2;      // (the TT-88's fronts are narrower and its rears wider: see WHEEL_WIDTHS)
-const WHEEL_WIDTHS = IS_F1 ? [0.3 / 0.36, 0.3 / 0.36, 0.42 / 0.36, 0.42 / 0.36] : [1, 1, 1, 1];
-const TRACK_HALF = IS_F1 ? 0.88 : 0.68;   // half the distance between left and right wheels
-const FRONT_AXLE = IS_F1 ? 1.62 : 1.1;
-const REAR_AXLE = IS_F1 ? -1.28 : -1.1;
+const WHEEL_WIDTHS = IS_F05 ? [0.28 / 0.36, 0.28 / 0.36, 0.35 / 0.36, 0.35 / 0.36] : IS_F1 ? [0.3 / 0.36, 0.3 / 0.36, 0.42 / 0.36, 0.42 / 0.36] : [1, 1, 1, 1];
+const TRACK_HALF = IS_F05 ? 0.73 : IS_F1 ? 0.88 : 0.68;   // half the distance between left and right wheels
+const FRONT_AXLE = IS_F05 ? 1.67 : IS_F1 ? 1.62 : 1.1;
+const REAR_AXLE = IS_F05 ? -1.43 : IS_F1 ? -1.28 : -1.1;
 
 function part(geometry, material, x, y, z) {
   const mesh = new THREE.Mesh(geometry, material);
@@ -924,7 +925,7 @@ function buildCar() {
   if (IS_F1) {
     // THE TT-88's body (f1.js): every painted panel can be dented
     const panels = [];
-    const body = buildF1Body(car, (m) => panels.push(m));
+    const body = (IS_F05 ? buildF05Body : buildF1Body)(car, (m) => panels.push(m));
     crush = { panels, grille: new THREE.Object3D(), lamps: [], tail: [] };
     headLens = new THREE.MeshStandardMaterial({ color: 0x000000 });          // (no headlights: an F1 car)
     beam = new THREE.SpotLight(0xfff1d6, 0, 60, 0.5, 0.5, 1.3);
@@ -1140,6 +1141,23 @@ function buildCar() {
     new THREE.RingGeometry(RIM_R * 0.99, WHEEL_RADIUS, 32, 1).rotateX(Math.PI / 2).translate(0, -WHEEL_WIDTH / 2, 0),
   ], true);
   tyreGeo.rotateZ(Math.PI / 2);
+  if (IS_F05) {
+    // GROOVED TYRES (the 2005 rules): four grooves round the tread. The
+    // tread's mapped across its width, the sidewalls onto a plain strip
+    const pa = tyreGeo.attributes.position, uvs = new Float32Array(pa.count * 2);
+    for (let i = 0; i < pa.count; i++) {
+      const x = pa.getX(i), y = pa.getY(i), z = pa.getZ(i), r = Math.hypot(y, z);
+      uvs[i * 2] = (Math.atan2(z, y) / (Math.PI * 2) + 1) % 1;
+      uvs[i * 2 + 1] = r > WHEEL_RADIUS - 0.002 ? 0.08 + 0.84 * (x / WHEEL_WIDTH + 0.5) : 0.02;
+    }
+    tyreGeo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    const c = document.createElement('canvas'); c.width = 8; c.height = 256;
+    const g = c.getContext('2d');
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, 8, 256);
+    g.fillStyle = '#3c3c3c'; for (const v of [0.26, 0.42, 0.58, 0.74]) g.fillRect(0, Math.round((1 - v) * 256) - 3, 8, 6);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+    MAT.tyre = MAT.tyre.clone(); MAT.tyre.map = t;
+  }
   const rimGeo = IS_F1 ? buildF1RimGeometry(RIM_R, WHEEL_WIDTH) : buildRimGeometry(RIM_R, WHEEL_WIDTH);
   // (old spokes: kept but hidden, the rim has its own now)
   const spokeGeo = new THREE.BoxGeometry(0.001, 0.001, 0.001);
@@ -3692,7 +3710,7 @@ function refreshEngineList() {
   hud.setEngines(list, engineKey);
 }
 function setCar(kind, engine) {
-  kind = kind === 'f1' ? 'f1' : 'caterham';
+  kind = kind === 'f1' || kind === 'f05' ? kind : 'caterham';
   const key = ENGINES[engine] ? engine : STOCK_ENGINE[kind];
   if (kind !== CAR_KIND) {
     // another car: save it and start the game again with it (so everything
@@ -3704,7 +3722,7 @@ function setCar(kind, engine) {
   carKind = kind;
   engineKey = key;
   refreshEngineList();
-  physics.spec = washerTuned(withEngine(carKind === 'f1' ? F1_CAR : CATERHAM_CAR, engineKey));
+  physics.spec = washerTuned(withEngine(specForKind(carKind), engineKey));
   const x = physics.x, z = physics.z, h = physics.heading;
   repairAll();
   physics.x = x; physics.z = z; physics.heading = h;
@@ -4445,7 +4463,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && isM
 const aiField = racing ? new AIField(scene, {
   racing, track: sepang.line, start: sepang.start, colliders: COLLIDERS, isMobile, sound: engineSound,
   // (they drive what you drive: TT-88s when you're in the TT-88, with its stock engine)
-  spec: IS_F1 ? withEngine(F1_CAR, STOCK_ENGINE.f1) : null,
+  spec: IS_F1 ? withEngine(specForKind(CAR_KIND), STOCK_ENGINE[CAR_KIND]) : null,
   hooks: {
     surfaceGrip: (x, z) => physics.surfaceGrip(x, z), surfaceDrag: (x, z) => physics.surfaceDrag(x, z),
     groundHeight: groundAt, roadHeight: (x, z) => physics.roadHeight(x, z), wearScale: () => physics.wearScale(),

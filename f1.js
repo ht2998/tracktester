@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 24;
+export const BUILD = 25;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -46,7 +46,7 @@ export const ENGINES = {
   // litres, 90 degrees, idling at 4,000, a 19,200 limit, over 900 bhp,
   // under 90 kg (the short-stroke shape of Cosworth's: 95 x 42.3 mm)
   // (seven gears, like the real cars of 2005: each change up lands a little higher)
-  v10x: { engineInertia: 0.055, name: '3.0 V10 (2003 F1-style, 19,200 rpm)', voice: 'v10', shiftAt: [17800 / 19200, 18000 / 19200, 18150 / 19200, 18300 / 19200, 18500 / 19200, 18650 / 19200], landAt: [14000, 14500, 15000, 15500, 16000, 16400], autoDownRpm: 16500, cylinders: 10, idleRpm: 4000, redline: 19200, launchRpm: 12000, engineBraking: 90, peakTorque: 365, massDelta: -10,
+  v10x: { engineInertia: 0.055, name: '3.0 V10 (19,200 rpm)', voice: 'v10', shiftAt: [17800 / 19200, 18000 / 19200, 18150 / 19200, 18300 / 19200, 18500 / 19200, 18650 / 19200], landAt: [14000, 14500, 15000, 15500, 16000, 16400], autoDownRpm: 16500, cylinders: 10, idleRpm: 4000, redline: 19200, launchRpm: 12000, engineBraking: 90, peakTorque: 365, massDelta: -10,
     torqueCurve: [[3000, 150], [6000, 220], [9000, 280], [12000, 320], [15000, 352], [17000, 365], [18500, 357], [19200, 345], [19500, 150], [19800, 0]], turbo: null },
   v12: { engineInertia: 0.075, voice: 'v12', shiftAt: [12500 / 13500, 12600 / 13500, 12700 / 13500, 12800 / 13500, 13000 / 13500], landAt: [9850, 10200, 10550, 10900, 11250], sound: { tone: 1.4, bass: 0, drive: 1.15, vol: 1.25 }, name: '3.5 V12', cylinders: 12, idleRpm: 3800, redline: 13500, launchRpm: 9000, engineBraking: 80, peakTorque: 360, massDelta: 30,
     torqueCurve: [[2500, 160], [5000, 240], [8000, 310], [10000, 345], [11500, 360], [12800, 350], [13500, 335], [14000, 130], [14300, 0]], turbo: null },
@@ -139,7 +139,37 @@ export const F1_CAR = {
 };
 export const CATERHAM_CAR = { ...CATERHAM, name: 'Caterham Seven', baseMass: CATERHAM.mass, stockEngine: 'duratec', keepGears: true };
 // the engine each car comes with
-export const STOCK_ENGINE = { caterham: 'duratec', f1: 'turboV6' };
+// THE TT-05: an original mid-2000s V10 Formula 1 car (a tribute to the
+// cars of 2005: no real make, badges or livery). Long, low and narrow,
+// 3.1 m between the axles, about 605 kg with the driver, a raised nose,
+// waisted sidepods, high cockpit sides, grooved tyres; lots more
+// downforce than the TT-88 and a little less mechanical grip
+export const F05_CAR = {
+  ...F1_CAR,
+  name: 'TT-05',
+  body: 'f05',
+  grooved: true,
+  stockEngine: 'v10x',
+  baseMass: 615,                     // (605 kg once the V10's fitted)
+  inertia: 960,
+  airInertia: { pitch: 1000, yaw: 1030, roll: 250 },
+  cgToFront: 1.67, cgToRear: 1.43,   // 3.1 m between the axles, a little more weight on the back
+  trackHalf: 0.73,                   // (1.46 m: narrow, under the 1.8 m width limit)
+  wheelRadius: 0.33,
+  frontGrip: 1.38, rearGrip: 1.52,   // (grooved tyres: a little less grip than the TT-88's slicks)
+  cgHeight: 0.25,
+  downforce: 1.95,                   // about 2.5 times its weight at 300 km/h
+  downforceFront: 0.44,
+  drag: 0.66,
+  brakeForce: 26000, brakeBias: 0.58,
+  maxSteer: 0.33, steerSpeed: 3.4,
+  frontStiffness: 76000, rearStiffness: 88000,
+  suspension: { ...F1_CAR.suspension, springFront: 190000, springRear: 205000, damperFront: 9800, damperRear: 10400 },
+  shiftTime: { manual: 0.05, auto: 0.12 },
+  fuelCapacity: 140,
+};
+export const STOCK_ENGINE = { caterham: 'duratec', f1: 'turboV6', f05: 'v10x' };
+export const specForKind = (kind) => (kind === 'f05' ? F05_CAR : kind === 'f1' ? F1_CAR : CATERHAM_CAR);
 
 // ---------------------------------------------------------------------
 // THE MODEL
@@ -446,6 +476,188 @@ export function buildF1Body(car, addPanel) {
   add(box(0.7, 0.02, 0.15, 0, 0.42, -1.95, 0.15), MAT.carbon);                // the beam wing (stays)
   addTo(wings.rear, box(0.04, 0.4, 0.06, 0, 0.6, -1.95), MAT.carbon);         // its pillar
 
+  return { helmet: [helmet, visor, stripe], rainMat: MAT.rain, exhaustMat: MAT.exhaust, mats: MAT, wings, mirrors, driver };
+}
+
+// =====================================================================
+// THE TT-05 AS THE PLAYER'S CAR (and the computer drivers', and the
+// Garage's): the body. A tribute to the 2005 cars: a high, narrow nose
+// with the front wing slung under it on two pylons (a spoon in the
+// middle, flaps, tall endplates), bargeboards behind the front wheels,
+// a narrow tub with high cockpit sides round the driver's head, tall
+// waisted sidepods with undercut mouths and a tight coke-bottle taper
+// to the back, chimneys and little flip-ups on them, the exhausts out
+// through the top, the airbox over his head, a narrow rear wing moved
+// forward with a beam wing below. In blue and yellow, our own design.
+// addPanel(mesh): a painted panel that can be dented.
+// =====================================================================
+export function buildF05Body(car, addPanel) {
+  const MAT = {
+    blue: new THREE.MeshPhysicalMaterial({ color: 0x1449a6, roughness: 0.22, metalness: 0.25, clearcoat: 1, clearcoatRoughness: 0.06 }),
+    yellow: new THREE.MeshPhysicalMaterial({ color: 0xf4c419, roughness: 0.22, metalness: 0.1, clearcoat: 1, clearcoatRoughness: 0.06 }),
+    white: new THREE.MeshPhysicalMaterial({ color: 0xf2f3f0, roughness: 0.25, metalness: 0.05, clearcoat: 1, clearcoatRoughness: 0.08 }),
+    carbon: new THREE.MeshStandardMaterial({ color: 0x111215, roughness: 0.4, metalness: 0.35 }),
+    steel: new THREE.MeshStandardMaterial({ color: 0x8d9096, roughness: 0.35, metalness: 0.9 }),
+    glass: new THREE.MeshStandardMaterial({ color: 0x3a4a52, roughness: 0.05, metalness: 0.3, transparent: true, opacity: 0.45 }),
+    helmet: new THREE.MeshPhysicalMaterial({ color: 0xf4f4f0, roughness: 0.2, clearcoat: 1 }),
+    visor: new THREE.MeshStandardMaterial({ color: 0x101418, roughness: 0.05, metalness: 0.8 }),
+    exhaust: new THREE.MeshStandardMaterial({ color: 0x5a4a40, roughness: 0.5, metalness: 0.8, emissive: 0xff5a10, emissiveIntensity: 0 }),
+    rain: new THREE.MeshStandardMaterial({ color: 0x4a0a0a, emissive: 0xff1a10, emissiveIntensity: 0 }),
+    seat: new THREE.MeshStandardMaterial({ color: 0x24262c, roughness: 0.9 }),
+    suit: new THREE.MeshStandardMaterial({ color: 0x1a3a8a, roughness: 0.8 }),
+    dark: new THREE.MeshStandardMaterial({ color: 0x050506, roughness: 0.8 }),
+  };
+  const add = (geo, mat, shadow = true) => {
+    const m = new THREE.Mesh(geo, mat); m.castShadow = shadow; m.receiveShadow = true; car.add(m);
+    if (mat === MAT.blue || mat === MAT.yellow || mat === MAT.white) addPanel(m);
+    return m;
+  };
+  const SMOOTH = 0.85;
+
+  // --- the nose: high and narrow, sloping down to a rounded tip, its
+  // underside well up off the ground (the air goes under it), then the tub
+  const nose = [
+    { z: 2.74, w: 0.1, h: 0.08, y: 0.25 },
+    { z: 2.6, w: 0.16, h: 0.13, y: 0.25 },
+    { z: 2.3, w: 0.23, h: 0.19, y: 0.27 },
+    { z: 1.95, w: 0.29, h: 0.25, y: 0.29 },
+    { z: 1.55, w: 0.36, h: 0.3, y: 0.29 },
+    { z: 1.2, w: 0.46, h: 0.37, y: 0.23, top: 0.86 },
+    { z: 0.9, w: 0.56, h: 0.45, y: 0.15, top: 0.8 },
+    { z: 0.72, w: 0.62, h: 0.49, y: 0.13, top: 0.78 },
+  ];
+  add(loft(nose, SMOOTH, 28, 4, true), MAT.blue);
+  // the yellow tip and a yellow band down the top of the nose, a white pinstripe
+  add(loft([{ z: 2.755, w: 0.105, h: 0.085, y: 0.248 }, { z: 2.6, w: 0.165, h: 0.135, y: 0.248 }, { z: 2.42, w: 0.205, h: 0.17, y: 0.258 }], SMOOTH, 28, 4, true), MAT.yellow);
+  add(loft([{ z: 2.4, w: 0.12, h: 0.02, y: 0.44 }, { z: 1.95, w: 0.16, h: 0.02, y: 0.53 }, { z: 1.4, w: 0.2, h: 0.02, y: 0.6 }, { z: 0.95, w: 0.22, h: 0.02, y: 0.6 }], 0.4, 16, 3, true), MAT.yellow);
+  for (const sx of [1, -1]) add(rod([sx * 0.07, 0.448, 2.38], [sx * 0.11, 0.61, 1.0], 0.005), MAT.white, false);
+  // --- the cockpit: high sides round his head, padded headrest wings,
+  // the tub open on top where he sits, its inside in black
+  const pit = [
+    { z: 0.72, w: 0.62, h: 0.49, y: 0.13, top: 0.78 },
+    { z: 0.45, w: 0.68, h: 0.53, y: 0.11, top: 0.76 },
+    { z: 0.0, w: 0.72, h: 0.55, y: 0.1, top: 0.74 },
+    { z: -0.2, w: 0.72, h: 0.56, y: 0.1, top: 0.74 },
+  ];
+  const opening = (z) => (z > 0.4 ? 0.15 + (0.72 - z) / 0.32 * 0.05 : 0.2);
+  const shell = loftOpen(pit, SMOOTH, 3, opening);
+  add(shell, MAT.blue);
+  add(loftOpen(pit, SMOOTH, 3, opening, 0.025, true), MAT.carbon, false);
+  // the padded rim and the headrest round the back of his head
+  const rimZ = [0.72, 0.55, 0.35, 0.15, 0, -0.2];
+  for (const sx of [1, -1]) for (let i = 0; i < rimZ.length - 1; i++) {
+    const a = shell.userData.edge(rimZ[i]), b = shell.userData.edge(rimZ[i + 1]);
+    add(rod([sx * -a[0], a[1], a[2]], [sx * -b[0], b[1], b[2]], 0.02), MAT.seat, false);
+  }
+  for (const sx of [1, -1]) add(box(0.06, 0.13, 0.4, sx * 0.17, 0.66, -0.06), MAT.seat, false);
+  add(box(0.36, 0.14, 0.08, 0, 0.66, -0.2), MAT.seat, false);
+  // the seat, his legs, his body and the wheel (the computer drivers' and
+  // the Garage's: the player's car has its own moving cockpit)
+  add(box(0.32, 0.05, 0.34, 0, 0.13, 0.08), MAT.seat, false);
+  add(box(0.34, 0.4, 0.05, 0, 0.33, -0.12, -0.38), MAT.seat, false);
+  for (const sx of [1, -1]) {
+    add(rod([sx * 0.08, 0.2, 0.02], [sx * 0.09, 0.32, 0.6], 0.055), MAT.suit, false);
+    add(rod([sx * 0.09, 0.32, 0.6], [sx * 0.07, 0.3, 1.1], 0.045), MAT.suit, false);
+  }
+  const driver = new THREE.Group();
+  car.add(driver);
+  const dAdd = (geo, mat) => { const m = new THREE.Mesh(geo, mat); m.castShadow = false; driver.add(m); return m; };
+  dAdd(new THREE.CapsuleGeometry(0.15, 0.12, 4, 10).rotateZ(Math.PI / 2).scale(1, 0.7, 0.8).translate(0, 0.48, -0.04), MAT.suit);
+  for (const sx of [1, -1]) { dAdd(rod([sx * 0.17, 0.51, -0.02], [sx * 0.15, 0.44, 0.22], 0.04), MAT.suit); dAdd(rod([sx * 0.15, 0.44, 0.22], [sx * 0.12, 0.55, 0.42], 0.035), MAT.suit); }
+  dAdd(new THREE.BoxGeometry(0.26, 0.13, 0.03).rotateX(-0.45).translate(0, 0.57, 0.46), MAT.carbon);       // (a squared-off wheel, as they had by then)
+  // his helmet, just showing over the high sides
+  const helmet = add(new THREE.SphereGeometry(0.135, 20, 16).scale(1, 1.05, 1.1).translate(0, 0.73, -0.02), MAT.helmet);
+  const visor = add(new THREE.SphereGeometry(0.137, 20, 10, -0.9 + Math.PI / 2, 1.8, 1.1, 0.5).scale(1, 1.05, 1.1).translate(0, 0.73, -0.02), MAT.visor);
+  const stripe = add(new THREE.TorusGeometry(0.135, 0.012, 6, 24, Math.PI).rotateY(Math.PI / 2).rotateZ(Math.PI / 2).scale(1, 1.05, 1.1).translate(0, 0.73, -0.02), MAT.yellow);
+  // mirrors: on stalks off the cockpit sides, out over the sidepods
+  const mirrors = {};
+  for (const s of [1, -1]) {
+    const stalk = add(rod([s * 0.32, 0.6, 0.48], [s * 0.47, 0.66, 0.5], 0.01), MAT.carbon);
+    const pod = new THREE.Group();
+    car.add(pod);
+    pod.add(add(loft([{ z: 0.53, w: 0.13, h: 0.06, y: 0.635, x: s * 0.5 }, { z: 0.47, w: 0.14, h: 0.07, y: 0.63, x: s * 0.5 }], 0.9, 16, 1, false), MAT.blue));
+    pod.add(add(new THREE.PlaneGeometry(0.115, 0.055).rotateY(Math.PI).translate(s * 0.5, 0.665, 0.465), MAT.visor));
+    mirrors[s > 0 ? 'l' : 'r'] = { stalk, pod, at: [s * 0.5, 0.665, 0.5] };
+  }
+
+  // --- sidepods: tall, with undercut mouths (cut away low down at the
+  // front), then waisted in hard to the back: the coke bottle
+  for (const s of [1, -1]) {
+    const pod = [
+      { z: 0.64, w: 0.3, h: 0.3, y: 0.24, x: s * 0.56, top: 0.9 },
+      { z: 0.48, w: 0.38, h: 0.37, y: 0.15, x: s * 0.58, top: 0.85 },
+      { z: 0.05, w: 0.4, h: 0.4, y: 0.11, x: s * 0.57, top: 0.78 },
+      { z: -0.4, w: 0.34, h: 0.35, y: 0.11, x: s * 0.51, top: 0.75 },
+      { z: -0.8, w: 0.22, h: 0.27, y: 0.11, x: s * 0.4, top: 0.75 },
+      { z: -1.12, w: 0.12, h: 0.18, y: 0.11, x: s * 0.3, top: 0.8 },
+    ];
+    add(loft(pod, 1.0, 28, 4, true), MAT.blue);
+    // yellow along the top of each pod, a white pinstripe below it
+    add(loft(pod.map((p) => ({ ...p, w: p.w * 0.72, h: 0.035, y: p.y + p.h - 0.02 })), 0.8, 20, 4, true), MAT.yellow);
+    // the radiator mouth: a dark rounded opening, with its lip
+    add(loft([{ z: 0.66, w: 0.25, h: 0.25, y: 0.265, x: s * 0.56 }, { z: 0.6, w: 0.25, h: 0.25, y: 0.265, x: s * 0.56 }], 1.1, 20, 1, false), MAT.dark, false);
+    // a chimney on top (hot air out), and the exhaust coming up through the pod's top
+    add(new THREE.CylinderGeometry(0.045, 0.05, 0.12, 12, 1, true).translate(s * 0.53, 0.56, -0.38), MAT.blue);
+    add(new THREE.CircleGeometry(0.044, 12).rotateX(-Math.PI / 2).translate(s * 0.53, 0.615, -0.38), MAT.dark, false);
+    add(new THREE.CylinderGeometry(0.055, 0.06, 0.1, 12, 1, true).rotateX(-0.6).translate(s * 0.3, 0.44, -1.05), MAT.exhaust);
+    add(new THREE.CircleGeometry(0.052, 12).rotateX(-Math.PI / 2 - 0.6).translate(s * 0.3, 0.48, -1.08), MAT.dark, false);
+    // the flip-ups in front of the back wheels, and a little "horn" winglet by the cockpit
+    add(box(0.16, 0.012, 0.12, s * 0.52, 0.42, -0.98, -0.25), MAT.carbon);
+    add(box(0.012, 0.12, 0.16, s * 0.6, 0.38, -0.98), MAT.carbon);
+    add(box(0.1, 0.01, 0.08, s * 0.4, 0.66, 0.24, -0.35, 0, -s * 0.4), MAT.carbon);
+    // bargeboards: tall curved carbon panels behind the front wheels, ahead of the pods
+    add(box(0.012, 0.3, 0.42, s * 0.46, 0.2, 0.98, 0, s * 0.18), MAT.carbon);
+    add(box(0.012, 0.18, 0.2, s * 0.38, 0.16, 1.25, 0, s * 0.3), MAT.carbon);
+  }
+  // --- engine cover: the airbox over his head (the roll hoop), then down
+  // in a long smooth slope, narrowing tight to the gearbox
+  const cover = [
+    { z: -0.18, w: 0.6, h: 0.56, y: 0.1, top: 0.7 },
+    { z: -0.3, w: 0.38, h: 0.88, y: 0.1, top: 0.35 },
+    { z: -0.55, w: 0.42, h: 0.78, y: 0.1, top: 0.42 },
+    { z: -0.95, w: 0.44, h: 0.56, y: 0.1, top: 0.6 },
+    { z: -1.35, w: 0.32, h: 0.38, y: 0.12, top: 0.72 },
+    { z: -1.72, w: 0.2, h: 0.24, y: 0.15, top: 0.8 },
+  ];
+  add(loft(cover, SMOOTH, 28, 4, true), MAT.yellow);
+  // a blue spine down the middle, the airbox mouth, little camera pods
+  add(loft(cover.slice(1).map((p) => ({ ...p, w: 0.12, h: 0.03, y: p.y + p.h - 0.015 })), 0.5, 16, 4, true), MAT.blue);
+  add(loft([{ z: -0.27, w: 0.16, h: 0.12, y: 0.86 }, { z: -0.31, w: 0.16, h: 0.12, y: 0.86 }], 1.2, 20, 1, false), MAT.dark, false);
+  for (const s of [1, -1]) add(box(0.05, 0.05, 0.12, s * 0.12, 0.94, -0.36), MAT.carbon);
+  // the gearbox at the back, its rain light, the diffuser and its fences
+  add(box(0.2, 0.18, 0.4, 0, 0.22, -1.88), MAT.carbon);
+  add(box(0.07, 0.04, 0.03, 0, 0.27, -2.1), MAT.rain);
+  // --- the floor (the stepped flat bottom, the plank under it) and the diffuser
+  add(box(1.36, 0.02, 2.0, 0, 0.045, -0.15), MAT.carbon);
+  add(box(0.3, 0.012, 2.6, 0, 0.03, -0.1), new THREE.MeshStandardMaterial({ color: 0x6b5a3e, roughness: 0.9 }));
+  add(box(0.86, 0.02, 0.6, 0, 0.12, -1.75, -0.3), MAT.carbon);
+  for (const x of [-0.32, -0.12, 0.12, 0.32]) add(box(0.01, 0.14, 0.55, x, 0.11, -1.75), MAT.carbon);
+
+  // --- the front wing: slung under the nose on two pylons; a spoon in
+  // the middle, a main plane and a flap each side, tall endplates. Each
+  // side, and the rear wing, is its own piece (it can snap off)
+  const wings = { fl: new THREE.Group(), fr: new THREE.Group(), rear: new THREE.Group() };
+  for (const g of Object.values(wings)) car.add(g);
+  const addTo = (g, geo, mat) => { const m = add(geo, mat); g.add(m); return m; };
+  for (const s of [1, -1]) add(box(0.015, 0.16, 0.16, s * 0.06, 0.2, 2.5, 0.25), MAT.carbon);       // the pylons
+  add(loft([{ z: 2.7, w: 0.3, h: 0.02, y: 0.13 }, { z: 2.42, w: 0.3, h: 0.02, y: 0.15 }], 0.3, 12, 2, false), MAT.blue);   // the spoon (middle, raised)
+  for (const s of [1, -1]) {
+    const g = s > 0 ? wings.fl : wings.fr;
+    addTo(g, box(0.56, 0.02, 0.34, s * 0.43, 0.095, 2.55, 0.06, -s * 0.03), MAT.blue);                 // main plane
+    addTo(g, box(0.5, 0.014, 0.17, s * 0.45, 0.16, 2.38, 0.42, -s * 0.05), MAT.yellow);               // the flap above it
+    addTo(g, box(0.36, 0.012, 0.11, s * 0.5, 0.2, 2.27, 0.7, -s * 0.05), MAT.white);                 // a second flap
+    addTo(g, box(0.015, 0.24, 0.52, s * 0.71, 0.17, 2.48, 0, 0, 0), MAT.yellow);                     // endplate
+    addTo(g, box(0.06, 0.012, 0.36, s * 0.69, 0.06, 2.48), MAT.carbon);                              // its foot
+  }
+  // --- the rear wing: narrow, set forward, two elements between tall
+  // endplates; the beam wing below; a pillar down to the gearbox
+  for (const s of [1, -1]) addTo(wings.rear, box(0.018, 0.58, 0.5, s * 0.45, 0.72, -1.95), MAT.yellow);
+  for (const s of [1, -1]) addTo(wings.rear, box(0.02, 0.06, 0.5, s * 0.452, 0.98, -1.95), MAT.blue);
+  addTo(wings.rear, box(0.88, 0.024, 0.26, 0, 0.82, -1.86, 0.18), MAT.blue);
+  addTo(wings.rear, box(0.88, 0.018, 0.2, 0, 0.92, -2.06, 0.5), MAT.blue);
+  addTo(wings.rear, box(0.88, 0.006, 0.02, 0, 0.94, -2.16, 0), MAT.white);
+  add(box(0.72, 0.02, 0.16, 0, 0.44, -1.92, 0.2), MAT.carbon);                // the beam wing (stays)
+  addTo(wings.rear, box(0.035, 0.42, 0.06, 0, 0.62, -1.96), MAT.carbon);
   return { helmet: [helmet, visor, stripe], rainMat: MAT.rain, exhaustMat: MAT.exhaust, mats: MAT, wings, mirrors, driver };
 }
 

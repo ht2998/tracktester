@@ -23,11 +23,11 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 12;
+export const BUILD = 13;
 
 import * as THREE from 'three';
 import { CarPhysics, CATERHAM } from './physics.js';
-import { buildF1Body, buildF1RimGeometry } from './f1.js';
+import { buildF1Body, buildF05Body, buildF1RimGeometry } from './f1.js';
 
 const DRIVERS = [
   { name: 'Hamid', colour: 0xc8202a, helmet: 0xffffff },
@@ -136,11 +136,12 @@ function buildAICar(driver) {
 // THE TT-88 for the computer drivers: the player's TT-88 body, built once
 // and squashed into a few shapes (one per colour), shared by every car;
 // each driver gets his own two paint colours and helmet
-let F1_SHARED = null;
-function f1Parts() {
-  if (F1_SHARED) return F1_SHARED;
+// (the same for the TT-05, if that's what everyone's in)
+const F1_SHARED = {};
+function f1Parts(kind = 'f1') {
+  if (F1_SHARED[kind]) return F1_SHARED[kind];
   const g = new THREE.Group();
-  const body = buildF1Body(g, () => {});
+  const body = (kind === 'f05' ? buildF05Body : buildF1Body)(g, () => {});
   g.updateMatrixWorld(true);
   const byMat = new Map();
   g.traverse((o) => {
@@ -156,16 +157,16 @@ function f1Parts() {
     parts.push({ geo: mergeGeos(geos.map((x) => x.toNonIndexed ? x : x)), mat, role });
   }
   const r = 0.33;
-  F1_SHARED = {
-    parts, r,
-    wheels: [[0.88, 1.62, 0.3], [-0.88, 1.62, 0.3], [0.88, -1.28, 0.42], [-0.88, -1.28, 0.42]],
-    tyre: { 0.3: new THREE.CylinderGeometry(r, r, 0.3, 18).rotateZ(Math.PI / 2), 0.42: new THREE.CylinderGeometry(r, r, 0.42, 18).rotateZ(Math.PI / 2) },
-    rim: { 0.3: buildF1RimGeometry(r * 0.6, 0.3), 0.42: buildF1RimGeometry(r * 0.6, 0.42) },
-  };
-  return F1_SHARED;
+  const wheels = kind === 'f05'
+    ? [[0.73, 1.67, 0.28], [-0.73, 1.67, 0.28], [0.73, -1.43, 0.35], [-0.73, -1.43, 0.35]]
+    : [[0.88, 1.62, 0.3], [-0.88, 1.62, 0.3], [0.88, -1.28, 0.42], [-0.88, -1.28, 0.42]];
+  const tyre = {}, rim = {};
+  for (const [, , w] of wheels) { tyre[w] = tyre[w] || new THREE.CylinderGeometry(r, r, w, 18).rotateZ(Math.PI / 2); rim[w] = rim[w] || buildF1RimGeometry(r * 0.6, w); }
+  F1_SHARED[kind] = { parts, r, wheels, tyre, rim };
+  return F1_SHARED[kind];
 }
-function buildAIF1(driver) {
-  const S = sharedParts(), F = f1Parts();
+function buildAIF1(driver, kind) {
+  const S = sharedParts(), F = f1Parts(kind);
   const car = new THREE.Group();
   const paint = new THREE.MeshStandardMaterial({ color: driver.colour, roughness: 0.3, metalness: 0.2, transparent: true, opacity: 1 });
   const paint2 = new THREE.MeshStandardMaterial({ color: driver.helmet, roughness: 0.3, metalness: 0.1, transparent: true, opacity: 1 });
@@ -366,7 +367,7 @@ export class AIField {
   }
   addCar(k, index, lateral, speed) {
     const driver = this.makeDriver(k);
-    const model = this.isF1 ? buildAIF1(driver) : buildAICar(driver);
+    const model = this.isF1 ? buildAIF1(driver, this.spec.body || 'f1') : buildAICar(driver);
     this.scene.add(model.car);
     const physics = new CarPhysics(this.spec);
     physics.setTransmission('auto');

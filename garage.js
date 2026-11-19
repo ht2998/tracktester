@@ -7,11 +7,11 @@
 // has several cars dropping down again. Pick one and it fires up: a
 // couple of big revs, then it settles to idle.
 // =====================================================================
-export const BUILD = 1;
+export const BUILD = 2;
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { buildF1Body, buildF1RimGeometry } from './f1.js';
+import { buildF1Body, buildF05Body, buildF1RimGeometry } from './f1.js';
 
 // THE COLLECTION. kind: a car you can drive (the rest are coming soon).
 // (made-up names, no real makes)
@@ -19,7 +19,7 @@ export const COLLECTION = [
   { cat: 'Formula', cars: [
     { name: 'TT-88', year: 1988, kind: 'f1', blurb: 'Turbo era, 1.5 V6' },
     { name: 'TT-94', year: 1994, blurb: 'V12 screamer' },
-    { name: 'TT-03', year: 2003, blurb: '19,000 rpm V10' },
+    { name: 'TT-05', year: 2005, kind: 'f05', blurb: '3.0 V10, 19,200 rpm' },
     { name: 'TT-14', year: 2014, blurb: 'Hybrid turbo V6' },
   ] },
   { cat: 'GT3', cars: [
@@ -49,6 +49,7 @@ export const COLLECTION = [
 ];
 export const CAR_INFO = {
   f1: { name: 'TT-88', year: 1988, cat: 'Formula', drive: 'Rear-wheel drive' },
+  f05: { name: 'TT-05', year: 2005, cat: 'Formula', drive: 'Rear-wheel drive' },
   caterham: { name: 'Caterham Seven', year: 2015, cat: 'Road', drive: 'Rear-wheel drive' },
 };
 
@@ -240,14 +241,14 @@ export class Garage {
     this.carLength = len;
   }
 
-  // a display TT-88 for its picture, when you're in another car
-  buildF1Display() {
+  // a display TT-88 (or TT-05) for its picture, when you're in another car
+  buildF1Display(kind = 'f1') {
     const car = new THREE.Group();
-    buildF1Body(car, () => {});
+    (kind === 'f05' ? buildF05Body : buildF1Body)(car, () => {});
     const r = 0.33, tyre = new THREE.MeshStandardMaterial({ color: 0x18181a, roughness: 0.85 });
     const rimM = new THREE.MeshStandardMaterial({ color: 0xc9ccd0, roughness: 0.3, metalness: 0.85 });
     const rimGeo = buildF1RimGeometry(r * 0.6, 0.3);
-    [[0.88, 1.62, 0.3], [-0.88, 1.62, 0.3], [0.88, -1.28, 0.42], [-0.88, -1.28, 0.42]].forEach(([x, z, w]) => {
+    (kind === 'f05' ? [[0.73, 1.67, 0.28], [-0.73, 1.67, 0.28], [0.73, -1.43, 0.35], [-0.73, -1.43, 0.35]] : [[0.88, 1.62, 0.3], [-0.88, 1.62, 0.3], [0.88, -1.28, 0.42], [-0.88, -1.28, 0.42]]).forEach(([x, z, w]) => {
       const t = new THREE.Mesh(new THREE.CylinderGeometry(r, r, w, 32), tyre);
       t.rotation.z = Math.PI / 2; t.position.set(x, r, z); t.castShadow = true;
       const rm = new THREE.Mesh(rimGeo, rimM);
@@ -290,7 +291,7 @@ export class Garage {
     let url = null;
     try { url = localStorage.getItem(THUMB_KEY + kind); } catch (e) { /* storage blocked */ }
     if (!url && kind === this.kind && this.model) url = this.shoot(this.model.clone(true));
-    if (!url && kind === 'f1') url = this.shoot(this.buildF1Display());
+    if (!url && (kind === 'f1' || kind === 'f05')) url = this.shoot(this.buildF1Display(kind));
     if (url) { this.thumbs[kind] = url; try { localStorage.setItem(THUMB_KEY + kind, url); } catch (e) { /* full */ } }
     return url;
   }

@@ -21,11 +21,19 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 100;
+export const BUILD = 101;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 89, date: '19 Nov 2026', title: 'The TT-05',
+    items: [
+      ['A 2000s Formula car', 'The TT-05 is in the Garage, under Formula: a mid-2000s V10 car of our own, in blue and yellow. A high nose with the front wing slung under it, tall waisted sidepods with chimneys and flip-ups, high cockpit sides, a narrow rear wing, and grooved tyres', 'new'],
+      ['2005 numbers', 'About 605 kg, the 3.0 V10 at 19,200 rpm through seven gears, far more downforce than the TT-88 and a little less grip from its grooved tyres. About 345 km/h flat out', 'new'],
+      ['The V10\'s name', 'The 3.0 V10 is just the 3.0 V10 now', 'update'],
+    ],
+  },
   {
     id: 88, date: '19 Nov 2026', title: 'Recovery, rebuilt',
     items: [
