@@ -85,7 +85,7 @@ export const POSES = {
   // behind a TV camera, hands on its handles
   CAMERA: { shL: 1.1, shR: 1.0, elL: 0.9, elR: 1.0, outL: -0.15, outR: -0.15, lean: 0.12, head: 0.05 },
 };
-const KEYS = ['drop', 'lean', 'shL', 'shR', 'elL', 'elR', 'outL', 'outR', 'thL', 'thR', 'knL', 'knR', 'work', 'tilt', 'roll', 'lift', 'head'];
+const KEYS = ['drop', 'lean', 'shL', 'shR', 'elL', 'elR', 'outL', 'outR', 'thL', 'thR', 'knL', 'knR', 'work', 'tilt', 'roll', 'lift', 'head', 'hipRoll'];
 
 const geoCache = {};
 const G = (k, make) => geoCache[k] || (geoCache[k] = make());
@@ -301,6 +301,9 @@ export class Person {
       this.shL.rotation.x -= (0.35 + buckle * 0.6) * S; this.shR.rotation.x -= (0.3 + buckle * 0.5) * S;     // (reaching out as he goes down)
       this.elL.rotation.x -= 0.4 * S; this.elR.rotation.x -= 0.35 * S;
     } else this.torso.rotation.z = 0;
+    // (the legs swung out sideways from the hips, the body kept upright over the hands)
+    this.hips.rotation.z = p.hipRoll || 0;
+    this.torso.rotation.z -= (p.hipRoll || 0) * 0.9;
     // the head: looks at what he's watching, or about him in a panic
     let hy = 0;
     if (this.lookAt) { const a2 = Math.atan2(this.lookAt[0] - this.x, this.lookAt[1] - this.z) - this.face - this.torso.rotation.y; hy = Math.max(-1.2, Math.min(1.2, Math.atan2(Math.sin(a2), Math.cos(a2)))); }
@@ -321,11 +324,11 @@ function vaultKeys(from, to, h) {
   return [
     { t: 0, pose: 'STAND', at: at(-0.55) },
     // the plant: leaning in, both hands down on the top rail, knees bent ready
-    { t: 0.16, pose: { lean: 0.55, drop: 0.12, shL: reach + 0.35, shR: reach + 0.35, elL: 0.15, elR: 0.15, outL: -0.1, outR: -0.1, thL: 0.4, knL: 0.6, thR: 0.4, knR: 0.6, head: 0.2 }, at: at(-0.42) },
+    { t: 0.16, pose: { lean: 0.55, drop: 0.12, hipRoll: 0.15, shL: reach + 0.35, shR: reach + 0.35, elL: 0.15, elR: 0.15, outL: -0.1, outR: -0.1, thL: 0.4, knL: 0.6, thR: 0.4, knR: 0.6, head: 0.2 }, at: at(-0.42) },
     // up on the arms: hips lifting, the legs swinging out to the side, tucked
-    { t: 0.36, pose: { lean: 0.3, roll: 0.55, shL: reach * 0.55, shR: reach * 0.7, elL: 0.05, elR: 0.1, outL: 0.05, outR: 0.15, thL: 1.55, knL: 1.5, thR: 1.35, knR: 1.6, head: 0.1 }, at: at(-0.1), lift: h * 0.62 },
-    // over the top: legs across, the hands pushing off
-    { t: 0.52, pose: { lean: 0.1, roll: 0.75, shL: 0.35, shR: 0.55, elL: 0.0, elR: 0.05, outL: 0.25, outR: 0.3, thL: 1.25, knL: 0.9, thR: 1.0, knR: 0.8 }, at: at(0.2), lift: h * 0.68 },
+    { t: 0.36, pose: { lean: 0.35, hipRoll: 1.15, shL: reach * 0.75, shR: reach * 0.75, elL: 0.05, elR: 0.05, outL: -0.15, outR: -0.15, thL: 1.5, knL: 1.45, thR: 1.3, knR: 1.6, head: 0.15 }, at: at(-0.12), lift: h * 0.66 },
+    // over the top: legs across to the far side, the hands pushing off
+    { t: 0.52, pose: { lean: 0.2, hipRoll: 0.95, shL: 0.45, shR: 0.55, elL: 0.0, elR: 0.05, outL: 0.1, outR: 0.15, thL: 1.1, knL: 0.8, thR: 0.9, knR: 0.7 }, at: at(0.22), lift: h * 0.66 },
     // down on the far side, landing on bent knees, arms out for balance
     { t: 0.7, pose: { lean: 0.25, drop: 0.2, roll: 0.1, shL: 0.9, shR: 0.7, elL: 0.4, elR: 0.5, outL: 0.45, outR: 0.4, thL: 0.55, knL: 0.95, thR: 0.35, knR: 0.7 }, at: at(0.5), lift: 0 },
     { t: 0.85, pose: { lean: 0.3, shL: 0.4, shR: 0.2, elL: 1.2, elR: 1.2, thL: 0.2, knL: 0.3 }, at: at(0.7) },
