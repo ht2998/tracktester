@@ -26,7 +26,7 @@
 // a smashed radiator): the team retire the car. DNF on the standings, and
 // they push it back into the garage.
 // =====================================================================
-export const BUILD = 11;
+export const BUILD = 12;
 
 import * as THREE from 'three';
 
@@ -182,6 +182,12 @@ export class Person {
     this.queue = []; this.held = []; this.follow = null; this.back = false;
     this.anim = null; this.lookAt = null;
   }
+  // the middle of his body on the ground (he's placed by his feet: lying on
+  // his back, the rest of him is behind them)
+  get bodyAt() {
+    const lying = Math.min(1, Math.abs(this.p.tilt || 0) / 1.4), back = (this.p.tilt || 0) < 0 ? -1 : 1;
+    return [this.x + Math.sin(this.face) * 0.85 * lying * back, this.z + Math.cos(this.face) * 0.85 * lying * back];
+  }
   place(x, z, face) { this.x = x; this.z = z; if (face != null) this.face = face; }
   run(list) { this.queue = list.slice(); this.follow = null; this.anim = null; }
   then(list) { this.queue.push(...list); }
@@ -262,7 +268,8 @@ export class Person {
     const walking = speed > 0 && !this.keyed;
     this.moving += ((walking ? 1 : 0) - this.moving) * Math.min(1, dt * 8);
     const fast = speed > 3;
-    this.phase += dt * (fast ? (this.panic ? 12.2 : 11.5) : this.stagger ? 5 : 7.5) * (this.back ? -1 : 1);
+    // (the stride keeps time with the speed, so the feet don't slide)
+    this.phase += dt * (fast ? Math.min(13, 6 + speed * 1.15) : this.stagger ? 3 + speed * 2.5 : Math.min(8.5, 2.2 + speed * 3.4)) * (this.back ? -1 : 1);
     const sw = Math.sin(this.phase) * this.moving * (fast ? 0.8 : 0.42);
     const p = this.p, carrying = this.held.length > 0;
     if (!speed) { this.panic = false; this.stagger = false; }
@@ -345,7 +352,7 @@ function vaultKeys(from, to, h) {
   const at = (m) => [mid[0] + ux * m, mid[1] + uz * m];
   const reach = 0.35 + h * 0.55;                     // (arms down to the top of it)
   return [
-    { t: 0, pose: 'STAND', at: at(-0.55) },
+    { t: 0, pose: 'STAND', at: from },
     // the plant: leaning in, both hands down on the top rail, knees bent ready
     { t: 0.16, pose: { lean: 0.55, drop: 0.12, hipRoll: 0.15, shL: reach + 0.35, shR: reach + 0.35, elL: 0.15, elR: 0.15, outL: -0.1, outR: -0.1, thL: 0.4, knL: 0.6, thR: 0.4, knR: 0.6, head: 0.2 }, at: at(-0.42) },
     // up on the arms: hips lifting, the legs swinging out to the side, tucked

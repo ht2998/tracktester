@@ -34,15 +34,23 @@ import { Person, makeExtinguisher } from './pits.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 6;
+export const BUILD = 7;
 
 const std = (color, rough = 0.6, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: rough, ...extra });
 const boxAt = (w, h, d, x = 0, y = 0, z = 0) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
 function addMesh(parent, geo, mat, shadow = true) { const m = new THREE.Mesh(geo, mat); m.castShadow = shadow; parent.add(m); return m; }
+// each wheel its own pair of groups: the outer turns to steer, the inner rolls
+function wheelGroup(parent, x, z, r) {
+  const steer = new THREE.Group(); steer.position.set(x, r, z); parent.add(steer);
+  const spin = new THREE.Group(); steer.add(spin);
+  (parent.userData.wheels || (parent.userData.wheels = [])).push({ steer, spin, r, front: z > 0 });
+  return spin;
+}
 function wheels(parent, mat, rimMat, positions, r, w) {
   const geo = new THREE.CylinderGeometry(r, r, w, 18).rotateZ(Math.PI / 2);
   const rim = new THREE.CylinderGeometry(r * 0.6, r * 0.6, w + 0.01, 14).rotateZ(Math.PI / 2);
-  for (const [x, z] of positions) { addMesh(parent, geo.clone().translate(x, r, z), mat); addMesh(parent, rim.clone().translate(x, r, z), rimMat, false); }
+  const spoke = new THREE.BoxGeometry(w + 0.02, r * 0.9, 0.05);
+  for (const [x, z] of positions) { const s0 = wheelGroup(parent, x, z, r); addMesh(s0, geo, mat); addMesh(s0, rim, rimMat, false); addMesh(s0, spoke, mat, false); }
 }
 function label(text, bg, fg, w = 256, h = 48) {
   const c = document.createElement('canvas'); c.width = w; c.height = h;
@@ -120,12 +128,15 @@ function roadWheels(parent, positions, r, w, rimMat, { arch = null } = {}) {
   const side = new THREE.CylinderGeometry(r * 0.66, r * 0.66, w * 0.9, 18).rotateZ(Math.PI / 2);
   const dish = new THREE.CylinderGeometry(r * 0.6, r * 0.5, 0.05, 14).rotateZ(Math.PI / 2);
   const hub = new THREE.CylinderGeometry(r * 0.16, r * 0.18, 0.08, 10).rotateZ(Math.PI / 2);
+  const lug = new THREE.BoxGeometry(0.03, r * 0.85, 0.06);
   for (const [x, z] of positions) {
     const o = Math.sign(x) * (w / 2);
-    addMesh(parent, tyre.clone().translate(x, r, z), tyreM);
-    addMesh(parent, side.clone().translate(x, r, z), tyreM, false);
-    addMesh(parent, dish.clone().translate(x + o * 0.9, r, z), rimMat, false);
-    addMesh(parent, hub.clone().translate(x + o, r, z), hubM, false);
+    const s0 = wheelGroup(parent, x, z, r);
+    addMesh(s0, tyre, tyreM);
+    addMesh(s0, side, tyreM, false);
+    addMesh(s0, dish.clone().translate(o * 0.9, 0, 0), rimMat, false);
+    addMesh(s0, hub.clone().translate(o, 0, 0), hubM, false);
+    addMesh(s0, lug.clone().translate(o * 0.95, 0, 0), hubM, false);          // (so you can see it roll)
     if (arch) addMesh(parent, new THREE.CylinderGeometry(r + 0.07, r + 0.07, w + 0.06, 16, 1, true, -Math.PI / 2, Math.PI).rotateZ(Math.PI / 2).translate(x, r, z), arch, false);
   }
 }
@@ -323,9 +334,9 @@ export class RaceControl {
     for (const v of [this.sc, this.ambulance, this.truck]) { scene.add(v.group); this.place(v); v.flash(0, false); }
     // their size (half width, half length, and how far the middle is from
     // the origin) and who gives way to whom (the higher goes first)
-    Object.assign(this.sc, { hw: 0.98, hl: 2.4, mid: 0.1, pri: 4 });
-    Object.assign(this.ambulance, { hw: 1.0, hl: 2.65, mid: 0, pri: 3 });
-    Object.assign(this.truck, { hw: 1.2, hl: 3.7, mid: -0.55, pri: 2 });
+    Object.assign(this.sc, { hw: 0.98, hl: 2.4, mid: 0.1, pri: 4, wb: 2.8 });
+    Object.assign(this.ambulance, { hw: 1.0, hl: 2.65, mid: 0, pri: 3, wb: 3.05 });
+    Object.assign(this.truck, { hw: 1.2, hl: 3.7, mid: -0.55, pri: 2, wb: 4.9 });
     // the cranes: one at each recovery point, beside the marshal post there
     this.cranes = [];
     const want = [0, 3, 8, 14].map((k) => corners[Math.min(k, corners.length - 1)]).filter(Boolean);
@@ -375,7 +386,7 @@ export class RaceControl {
       const ph = line[park.i].heading + Math.PI;
       const c = { ...buildCrane(), x: park.x, z: park.z, heading: ph, park, parkHeading: ph, state: 'parked', t: 0, lift: 0, post: best };
       c.setDrop(0.6);
-      Object.assign(c, { hw: 1.25, hl: 2.6, mid: 0, pri: 1 });
+      Object.assign(c, { hw: 1.25, hl: 2.6, mid: 0, pri: 1, wb: 3.1 });
       scene.add(c.group); this.place(c); c.flash(0, false);
       this.cranes.push(c);
     }
@@ -654,6 +665,8 @@ export class RaceControl {
     this.runners = this.runners.filter((r) => { if (r.done) { this.scene.remove(r.person.root); return false; } return true; });
     // nothing solid gets driven through
     this.separate(S);
+    for (const v of [this.sc, this.ambulance, this.truck, ...this.cranes]) if (v) this.rollWheels(v, dt);
+    this.peopleClear(S);
     this.bump(S.physics, [...this.cranes, this.ambulance, this.sc, this.truck].filter(Boolean));
     // your penalties
     if (racing) this.judge(dt, S);
@@ -787,8 +800,15 @@ export class RaceControl {
     if (d <= stopShort + 0.2) return true;
     const want = Math.atan2(dx, dz);
     let df = want - v.heading; df = Math.atan2(Math.sin(df), Math.cos(df));
-    v.heading += Math.max(-dt * turn, Math.min(dt * turn, df));
-    const step = Math.min(d - stopShort, speed * dt * Math.max(0.2, Math.cos(df)));
+    // (a real vehicle: it can only turn as it rolls, no tighter than full
+    // lock lets it; it slows for a sharp turn rather than pivoting)
+    const step = Math.min(d - stopShort, speed * dt * Math.max(0.35, Math.cos(df)));
+    const L = v.wb || 3, lock = Math.tan(0.6) / L;
+    // (a point inside its turning circle: after a few seconds going round, a
+    // shunt: it gets some extra turn, the way a driver backs and fills)
+    v.orbitT = Math.abs(df) > 1.0 && d < 2 / lock ? (v.orbitT || 0) + dt : 0;
+    const extra = v.orbitT > 2.5 ? dt * 0.6 : 0;
+    v.heading += Math.max(-step * lock - extra, Math.min(step * lock + extra, df));
     v.x += Math.sin(v.heading) * step; v.z += Math.cos(v.heading) * step;
     this.place(v);
     return false;
@@ -805,9 +825,7 @@ export class RaceControl {
     if (c.state === 'back') {
       // boom down, and round to face the way it parks
       c.turntable.rotation.y *= 1 - Math.min(1, dt * 1.5); c.boom.rotation.x *= 1 - Math.min(1, dt * 1.5); c.setDrop(0.6);
-      const df = Math.atan2(Math.sin(c.parkHeading - c.heading), Math.cos(c.parkHeading - c.heading));
-      c.heading += Math.max(-dt * 0.4, Math.min(dt * 0.4, df)); this.place(c);
-      if (Math.abs(df) < 0.02 && c.t > 2) { c.state = 'parked'; c.flash(0, false); c.turntable.rotation.y = 0; c.boom.rotation.x = 0; }
+      if (c.t > 2) { c.state = 'parked'; c.flash(0, false); c.turntable.rotation.y = 0; c.boom.rotation.x = 0; c.parkHeading = c.heading; }
       return;
     }
     const obj = w.obj;
@@ -1153,8 +1171,10 @@ export class RaceControl {
     }
     a.group.updateMatrixWorld(true);
     const back = a.doors.clone().applyMatrix4(a.group.matrixWorld), door = [back.x, back.z];
-    const D = cas.person, at = () => [D.x, D.z];
-    const side = (k) => { const ang = Math.atan2(door[0] - D.x, door[1] - D.z) + (k ? 0.6 : -0.6); return [D.x + Math.sin(ang) * 0.9, D.z + Math.cos(ang) * 0.9]; };
+    const D = cas.person, body = D.bodyAt, at = () => body;
+    // (one each side of him, halfway along, kneeling by his chest)
+    const across = D.face + Math.PI / 2;
+    const side = (k) => [body[0] + Math.sin(across) * (k ? 0.65 : -0.65), body[1] + Math.cos(across) * (k ? 0.65 : -0.65)];
     // the stretcher: a frame with a mattress, carried by its ends
     let stretcher = null;
     if (cas.hurt) {
@@ -1165,7 +1185,7 @@ export class RaceControl {
       stretcher.visible = false; this.scene.add(stretcher);
     }
     let carried = false;
-    const h0 = Math.atan2(door[0] - D.x, door[1] - D.z);
+    const h0 = Math.atan2(door[0] - body[0], door[1] - body[1]);
     for (let k = 0; k < 2; k++) {
       const p = new Person(this.medicMats, 0);
       p.place(door[0] + (k - 0.5) * 0.7, door[1], a.heading + Math.PI);
@@ -1182,9 +1202,9 @@ export class RaceControl {
       if (cas.hurt) {
         // onto the stretcher, lifted, carried to the back doors and in
         list.push(
-          { fn: () => { if (k === 0) { stretcher.visible = true; stretcher.position.set(D.x, this.groundAt(D.x, D.z) + 0.28, D.z); stretcher.rotation.y = h0; } } },
-          { go: [D.x + Math.sin(h0) * (k ? -1.15 : 1.15), D.z + Math.cos(h0) * (k ? -1.15 : 1.15)] },
-          { face: [D.x, D.z] },
+          { fn: () => { if (k === 0) { stretcher.visible = true; stretcher.position.set(body[0], this.groundAt(body[0], body[1]) + 0.28, body[1]); stretcher.rotation.y = h0; } } },
+          { go: [body[0] + Math.sin(h0) * (k ? -1.15 : 1.15), body[1] + Math.cos(h0) * (k ? -1.15 : 1.15)] },
+          { face: body },
           { pose: 'STRETCH', t: 1.2 },
           { fn: () => { if (k === 0) { carried = true; this.hooks.onStretcher?.(stretcher); } } },
           { pose: 'STRETCH_UP', t: 0.6 },
@@ -1194,7 +1214,7 @@ export class RaceControl {
       }
       list.push(
         { until: () => carried || !cas.hurt },
-        { fn: () => { if (cas.hurt) { r.person.follow = () => { const h = stretcher.rotation.y, e = k ? -1.15 : 1.15, sx = stretcher.position.x + Math.sin(h) * e, sz = stretcher.position.z + Math.cos(h) * e; return [sx, sz, k ? h : h + Math.PI, M.moving ? 1.2 : 0]; }; } } },
+        { fn: () => { if (cas.hurt) { r.person.follow = () => { const h = stretcher.rotation.y, e = k ? -1.15 : 1.15, sx = stretcher.position.x + Math.sin(h) * e, sz = stretcher.position.z + Math.cos(h) * e; return [sx, sz, h, M.moving ? 1.2 : 0]; }; } } },
         { until: () => M.loaded || !cas.hurt },
         { fn: () => { r.person.follow = null; } },
         ...(cas.hurt ? [] : this.footPath(there, door, { v: 1.4 })),
@@ -1244,7 +1264,11 @@ export class RaceControl {
         const gap = ahead - A.hl - B.hl - 0.8;
         // (a car, or one higher up the order, or one stopped: ease off for it)
         const yields = B.pri > A.pri || B.v?.state === 'parked' || (B.v && (B.v.v || 0) < 0.5);
-        slow = Math.min(slow, yields ? Math.max(0, Math.min(1, gap / 7)) : Math.max(0.35, Math.min(1, gap / 5)));
+        // (on the track it moves over and goes round, so it only slows to a
+        // crawl, not a stop, unless it's already as far over as it can go)
+        const canPass = A.mode === 'line' && Math.abs(A.latBias || 0) < 3.8;
+        const floor = canPass ? 0.3 : 0;
+        slow = Math.min(slow, yields ? Math.max(floor, Math.min(1, gap / 7)) : Math.max(0.35, Math.min(1, gap / 5)));
         bias += -(Math.sign(side) || 1) * (lane - Math.abs(side)) * Math.max(0, 1 - Math.max(0, gap) / 10);
       }
       // a pair stuck nose to nose for a while: the lower one goes anyway (round it)
@@ -1285,6 +1309,41 @@ export class RaceControl {
         if (o > 0 && d > 1e-4) { c.physics.x += dx / d * o; c.physics.z += dz / d * o; }
       }
     }
+  }
+  // nobody walks through a vehicle, a car, or anyone else: pushed back out
+  // of them (not while being carried, or mid-vault)
+  peopleClear(S) {
+    const people = [...this.runners.map((r) => r.person), ...(this.hooks.people?.() || [])].filter((p) => p && p.root.visible && !p.follow && !p.keyed);
+    const blobs = [];
+    for (const v of [this.sc, this.ambulance, this.truck, ...this.cranes]) if (v) blobs.push(...this.circles(v));
+    const car = (x, z, h) => { const fx = Math.sin(h), fz = Math.cos(h); for (const a of [-1.4, 0, 1.4]) blobs.push([x + fx * a, z + fz * a, 0.95]); };
+    if (S.physics) car(S.physics.x, S.physics.z, S.physics.heading);
+    for (const c of this.ai.cars) if (!c.parked) car(c.physics.x, c.physics.z, c.physics.heading);
+    for (const p of people) {
+      for (const [bx, bz, br] of blobs) {
+        const dx = p.x - bx, dz = p.z - bz, d = Math.hypot(dx, dz), o = br + 0.3 - d;
+        if (o > 0 && d > 1e-4) { p.x += dx / d * o; p.z += dz / d * o; }
+      }
+    }
+    for (let i = 0; i < people.length; i++) for (let j = i + 1; j < people.length; j++) {
+      const a = people[i], b = people[j], dx = a.x - b.x, dz = a.z - b.z, d = Math.hypot(dx, dz), o = 0.55 - d;
+      if (o > 0 && d > 1e-4) { a.x += dx / d * o / 2; a.z += dz / d * o / 2; b.x -= dx / d * o / 2; b.z -= dz / d * o / 2; }
+    }
+  }
+  // the wheels: the front ones turned by how sharply it's turning, all of them rolling
+  rollWheels(v, dt) {
+    const W = v.group.userData.wheels; if (!W) return;
+    const px = v.group.position.x, pz = v.group.position.z, h = v.group.rotation.y;
+    if (v.lastP) {
+      const dx = px - v.lastP[0], dz = pz - v.lastP[1];
+      const along = dx * Math.sin(h) + dz * Math.cos(h);
+      let dh = h - v.lastP[2]; dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+      const L = v.wb || 3;
+      const want = Math.abs(along) > 1e-3 ? Math.max(-0.6, Math.min(0.6, Math.atan(dh * L / along))) : (v.steerA || 0);
+      v.steerA = (v.steerA || 0) + (want - (v.steerA || 0)) * Math.min(1, dt * 6);
+      for (const w of W) { if (w.front) w.steer.rotation.y = v.steerA; w.spin.rotation.x += along / w.r; }
+    }
+    v.lastP = [px, pz, h];
   }
   nudge(v, x, z) {
     if (!x && !z) return;

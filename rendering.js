@@ -60,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 66;
+const BUILD = 67;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -1203,7 +1203,7 @@ function aimPoint() {
 let heavyPhys = null;
 let heavyMode = false;
 let teleportGrace = 0;     // (just moved by the game, not driven: no crash counts for a moment)
-let driverOut = null, driverDead = false;   // (the driver: out of the car, or killed in it: see THE DRIVER GETS OUT)
+let driverOut = null, driverDead = false, burnStill = 0, bigHit = 0, bigHitT = 0;   // (the driver: out of the car, or killed in it: see THE DRIVER GETS OUT)
 let typedKeys = '';
 const toast = document.createElement('div');
 toast.style.cssText = 'position:fixed;left:50%;top:18%;transform:translateX(-50%);padding:10px 18px;border-radius:10px;background:rgba(20,24,16,0.85);color:#d8e2b8;font:700 18px system-ui,sans-serif;letter-spacing:0.08em;pointer-events:none;opacity:0;transition:opacity 0.4s;z-index:20';
@@ -3743,7 +3743,6 @@ const driverMats = {
   glove: new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.7 }),
   boot: new THREE.MeshStandardMaterial({ color: 0x18191b, roughness: 0.6 }),
 };
-let burnStill = 0, bigHit = 0, bigHitT = 0;
 function driverInCar(show) {
   if (IS_F1) { for (const m of carModel.car.userData.f1?.helmet || []) m.visible = show && cameraMode !== 'cockpit'; for (const m of f1Cockpit?.driverParts || []) m.visible = show; }
   else if (cockpit.driver) cockpit.driver.visible = show;
@@ -3809,9 +3808,19 @@ function updateDriverEscape(dt) {
         { go: clear(2.6), stagger: true },
         { pose: 'HUNCH', t: 1.6 },
         { go: clear(4.6), stagger: true },
-        { pose: 'KNEEL', t: 1.1 },
-        { pose: 'FALL', t: 0.9 },
-        { pose: 'LIE' },
+        { keys: [
+          { t: 0, pose: 'HUNCH' },
+          // the knees give way: dropping, a hand going out to the ground
+          { t: 0.45, pose: { drop: 0.32, lean: 0.55, thL: 0.95, knL: 1.7, thR: 0.75, knR: 1.5, shL: 1.05, elL: 0.25, shR: 0.75, elR: 0.5, head: 0.35 } },
+          // on his knees, both hands on the ground
+          { t: 1.0, pose: { drop: 0.5, lean: 0.75, thL: 0.15, knL: 1.65, thR: 0.2, knR: 1.6, shL: 1.15, elL: 0.1, shR: 1.15, elR: 0.1, head: 0.4 } },
+          // a moment there
+          { t: 1.9, pose: { drop: 0.52, lean: 0.7, thL: 0.18, knL: 1.65, thR: 0.2, knR: 1.62, shL: 1.1, elL: 0.12, shR: 1.12, elR: 0.12, head: 0.5 } },
+          // sat back and down to one side, a hand behind him
+          { t: 2.7, pose: { drop: 0.79, lean: -0.1, roll: 0.2, thL: 1.35, knL: 1.2, thR: 1.2, knR: 1.0, shL: -0.4, outL: 0.5, elL: 0.1, shR: 0.4, elR: 0.6, head: 0.2 } },
+          // and slowly back onto the ground
+          { t: 3.9, pose: 'LIE' },
+        ], after: 'LIE' },
       ]);
     }
     driverOut = { person, t: 0, kind: how };
@@ -3824,12 +3833,15 @@ function updateDriverEscape(dt) {
 }
 // the medics with him (race control asks): a stretcher for a hurt one
 const driverHooks = {
-  casualty: () => (driverOut && !driverOut.gone && driverOut.t > 4 ? { person: driverOut.person, hurt: driverOut.kind === 'hurt' } : null),
+  // (the medics come to him once he's settled: lying still, or sat down)
+  casualty: () => (driverOut && !driverOut.gone && driverOut.t > 4 && (driverOut.kind === 'hurt' ? !driverOut.person.busy : /SIT/.test(driverOut.person.want)) ? { person: driverOut.person, hurt: driverOut.kind === 'hurt' } : null),
+  people: () => (driverOut && !driverOut.gone ? [driverOut.person] : []),
   onStretcher: (st) => {
     if (!driverOut) return;
     const P = driverOut.person;
     P.run([{ pose: 'LIE' }]);
-    P.follow = () => [st.position.x, st.position.z, st.rotation.y, 0];
+    // (his feet at the front end, lying back along it: the middle of him in the middle of it)
+    P.follow = () => [st.position.x + Math.sin(st.rotation.y) * 0.85, st.position.z + Math.cos(st.rotation.y) * 0.85, st.rotation.y, 0];
     driverOut.ground = () => st.position.y - 0.08;
   },
   helpUp: (door) => {
@@ -4026,7 +4038,12 @@ let backToTrack = false;
 window.addEventListener('keydown', (e) => { if (e.code === 'KeyB' && !(e.target && e.target.tagName === 'INPUT')) backToTrack = true; });
 function returnToTrack() {
   teleportGrace = 0.6;     // (the game moving the car: never a crash)
+  // (a car that's blown up or burnt out comes back as a fresh one, and the
+  // fire's out: no climbing out of it all over again)
+  if (exploded || physics.wrecked) repairAll();
+  physics.putOut();
   if (driverOut || driverDead) clearDriverOut();     // (back in his seat)
+  bigHit = 0; burnStill = 0;
   let x, z, h;
   if (pits?.holding) pits.reset();
   if (racing) {

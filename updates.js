@@ -21,11 +21,23 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 86;
+export const BUILD = 87;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 75, date: '19 Nov 2026', title: 'Marshal fixes',
+    items: [
+      ['Vehicles that steer', 'The safety car, ambulance, flatbed and cranes steer like real vehicles: front wheels that turn, a turning circle (no spinning on the spot), wheels that roll, and a shunt when a turn\'s too tight', 'update'],
+      ['Nobody walks through anything', 'Marshals, medics and the driver can\'t walk through the vehicles, the cars or each other any more', 'fix'],
+      ['No sliding, no jumps', 'Their steps now keep time with how fast they\'re going, so feet don\'t slide, and a vault no longer starts with a hop backwards', 'fix'],
+      ['Medics at his side', 'The medics wait until the driver\'s settled, then kneel either side of his chest, not by his feet, and the stretcher goes under his body', 'fix'],
+      ['A proper fall', 'The hurt driver\'s knees give way, he goes down onto them with his hands on the ground, sits back, and slowly lies back. No more half squat and jump', 'fix'],
+      ['Back on Track after a blow-up', 'Back on Track after the car\'s exploded or burnt out gives you a fresh car with the fire out, instead of the wreck with the driver climbing out of it again', 'fix'],
+      ['Getting past', 'Emergency vehicles stuck behind slow cars move over and get past instead of stopping dead behind them', 'fix'],
+    ],
+  },
   {
     id: 74, date: '19 Nov 2026', title: 'Onto the truck',
     items: [
