@@ -33,6 +33,7 @@ export const UPDATES = [
       ['Solid vehicles', 'The safety car, ambulance, flatbed and cranes are solid: they can\'t drive through each other or the cars, and each one looks ahead and eases off for anything in its way, moving over on the track to get round it. The lower one gives way (cranes to the flatbed, the flatbed to the ambulance, the ambulance to the safety car)', 'new'],
       ['Cranes on the verge', 'The cranes now park on the grass between the track and the barrier, clear of everything, so they never go through a barrier to get out', 'fix'],
       ['Barrier repairs you can see', 'The repair crew stand on the track side of the barrier, facing it, and while they work the dents in the armco straighten out, the tyre stacks go back into line and the fence pulls flat', 'fix'],
+      ['Your car first', 'With your car sat broken near its knocked-out engine block, the crane could go for the loose block and leave your car. Now your car comes first, and the bits after', 'fix'],
       ['A calmer run', 'Toned the sprint down: a real athletic run, not a cartoon one. Less knee lift and heel kick, arms swinging as far back as forward, and no more twisting and looking about', 'fix'],
     ],
   },

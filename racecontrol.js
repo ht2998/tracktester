@@ -681,7 +681,10 @@ export class RaceControl {
     const B = S.engineBlock;
     if (B?.obj?.parent && B.rest && near(B.obj.position.x, B.obj.position.z)) {
       const on = onTrack(B.obj.position.x, B.obj.position.z);
-      if (!B.fire) { out.wrecks.push({ key: 'block', kind: 'block', x: B.obj.position.x, z: B.obj.position.z, obj: B.obj, on }); if (on) out.onTrackWreck = true; }
+      // (your car first: while it's sat there near the block, the crane's for the car, not the bits)
+      const carNear = S.physics && S.playerStopped > 0.5 && !S.inPits && this.truck.load?.kind !== 'player' && Math.hypot(S.physics.x - B.obj.position.x, S.physics.z - B.obj.position.z) < 35;
+      if (!B.fire && !carNear) { out.wrecks.push({ key: 'block', kind: 'block', x: B.obj.position.x, z: B.obj.position.z, obj: B.obj, on }); if (on) out.onTrackWreck = true; }
+      else if (on) out.onTrackWreck = true;
     }
     // fires: your car (stopped), the wreck, the block
     if (S.playerFire && S.playerStopped > 1.5 && !S.inPits) out.fires.push({ key: 'fire-car', kind: 'car', x: S.physics.x, z: S.physics.z });
