@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 97;
+export const BUILD = 98;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 86, date: '19 Nov 2026', title: 'Howling into corners',
+    items: [
+      ['V10 automatic changes down early', 'On the automatic, the V10 used to wait until the revs had dropped to about 8,000 before changing down. Now, lifting off or braking, it changes down a gear at a time as soon as the next one lands at about 15,000-16,000, so you hear it blip and howl all the way down into the corner', 'update'],
+    ],
+  },
   {
     id: 85, date: '19 Nov 2026', title: 'Glued down',
     items: [

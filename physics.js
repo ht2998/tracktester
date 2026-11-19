@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 22;
+export const BUILD = 23;
 
 const G = 9.81;   // gravity, m/s²
 const RPM_PER_RADS = 60 / (2 * Math.PI);
@@ -1232,7 +1232,22 @@ export class CarPhysics {
     const upScale = throttle > 0.5 ? 1 : 0.65;
     const downScale = throttle > 0.5 ? 0.75 : 0.5;
     let g = clamp(this.gear, 1, ups.length + 1);
-    if (g <= ups.length && kmh > ups[g - 1] * upScale) return g + 1;
+    const S = this.spec, downRpm = S.autoDownRpm;
+    // (an engine that wants it kept on the boil, like the V10: off the
+    // throttle it changes down as soon as the next gear down would land at
+    // about downRpm (it settles a little under that, as the rear
+    // wheels slow under braking), a blip at a time, for that howl into every corner. And
+    // it only changes up near the limit, so it never hunts)
+    if (downRpm) {
+      if (g <= ups.length && kmh > ups[g - 1]) return g + 1;
+      if (throttle <= 0.5) {
+        const rpmIn = (k) => this.rpm * S.gears[k - 1] / S.gears[this.gear - 1];   // (from the revs it's really doing: braking, the rear wheels turn a little slower than the car's going)
+        if (g > 1 && rpmIn(g - 1) <= downRpm) g -= 1;
+        // (falling far behind under hard braking: catch up)
+        while (g > 1 && rpmIn(g - 1) <= downRpm * 0.8) g -= 1;
+        return g;
+      }
+    } else if (g <= ups.length && kmh > ups[g - 1] * upScale) return g + 1;
     // Downshifts can skip gears, so hard braking doesn't leave it in too tall a gear
     while (g > 1 && kmh < ups[g - 2] * downScale) g -= 1;
     return g;
@@ -1415,7 +1430,7 @@ export class CarPhysics {
       if (g !== this.gear) {
         const up = g > this.gear;
         this.startShift(g, up ? 'up' : 'down');
-        this.autoShiftCooldown = up ? 0.6 : 0.3;
+        this.autoShiftCooldown = up ? 0.6 : this.spec.autoDownRpm ? 0.18 : 0.3;
       }
     }
 
