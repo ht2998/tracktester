@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 34;
+export const BUILD = 35;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -976,10 +976,12 @@ export function buildP70Body(car, addPanel) {
   for (const wz of [FZ, RZ]) for (const s of [1, -1]) add(new THREE.CylinderGeometry(WR + 0.05, WR + 0.05, 0.4, 16, 1, true, -Math.PI / 2, Math.PI).rotateZ(Math.PI / 2).translate(s * 0.72, WR, wz), MAT.dark, false);
   // the front fenders standing up either side of the low bonnet, swelling over the wheels
   const FT = curve([[0.55, 0.6], [0.9, 0.72], [1.25, 0.78], [1.65, 0.72], [2.05, 0.46]]);
-  for (const s of [1, -1]) add(smoothBody(0.5, 2.08, 30, (z) => ({ x: s * 0.72, w: 0.56 - Math.max(0, z - 1.7) * 0.4, top: FT(z), bot: Math.max(BOT(z), 0.3), tuck: 0.3, sq: 3 })), MAT.blue);
+  // (each swelling grows smoothly out of the body and back into it: no ends sticking out)
+  const ease = (u) => { u = Math.max(0, Math.min(1, u)); return u * u * (3 - 2 * u); };
+  for (const s of [1, -1]) add(smoothBody(0.45, 2.08, 34, (z) => { const e = ease((z - 0.45) / 0.45); return { x: s * (0.72 - 0.12 * (1 - e)), w: (0.56 - Math.max(0, z - 1.7) * 0.4) * (0.3 + 0.7 * e), top: TOP(z) - 0.03 + (FT(z) - TOP(z) + 0.03) * e, bot: Math.max(BOT(z), 0.3 + 0.12 * (1 - e)), tuck: 0.3, sq: 3 }; }), MAT.blue);
   // the rear fenders, swelling up over the back wheels and running into the fins
   const RT = curve([[-0.5, 0.66], [-1.05, 0.82], [-1.5, 0.86], [-1.85, 0.92], [-2.0, 0.94]]);
-  for (const s of [1, -1]) add(smoothBody(-2.0, -0.4, 30, (z) => ({ x: s * 0.74, w: 0.54, top: RT(z), bot: Math.max(BOT(z), 0.32), tuck: 0.35, sq: 3 })), MAT.blue);
+  for (const s of [1, -1]) add(smoothBody(-2.0, -0.35, 34, (z) => { const e = ease((-0.35 - z) / 0.45); return { x: s * (0.74 - 0.12 * (1 - e)), w: 0.54 * (0.3 + 0.7 * e), top: TOP(z) - 0.03 + (RT(z) - TOP(z) + 0.03) * e, bot: Math.max(BOT(z), 0.32 + 0.12 * (1 - e)), tuck: 0.35, sq: 3 }; }), MAT.blue);
   // the broad orange stripe down the middle: nose, roof, tail, edged in blue
   const stripe = (z0, z1, topFn, w) => add(smoothBody(z0, z1, 40, (z) => ({ w, top: topFn(z) + 0.006, bot: topFn(z) - 0.02, sq: 2.4 })), MAT.yellow);
   stripe(0.7, 2.11, TOP, 0.62);
