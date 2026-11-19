@@ -22,7 +22,7 @@ import { groundAt } from './ground.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 7;
+export const BUILD = 8;
 
 const m4 = new THREE.Matrix4();
 const q = new THREE.Quaternion();
@@ -548,7 +548,7 @@ function buildArmco(scene, runs) {
     r.boxes = [];
     for (let i0 = 0; i0 < r.n - 1; i0 += 4) {
       const c = { i0, i1: Math.min(r.n - 1, i0 + 4) };
-      c.collider = addCollider(0, 0, 0, 0, 'armco', { hit: (pt, nrm, v) => dentAt(r, pt, nrm, v) });
+      c.collider = addCollider(0, 0, 0, 0, 'armco', { hit: (pt, nrm, v) => dentAt(r, pt, nrm, v), repair: (pt, k) => straightenAt(r, pt, k), part: r });
       r.boxes.push(c);
     }
     draw(r);
@@ -580,6 +580,19 @@ function buildArmco(scene, runs) {
     draw(r);
     finish();
     return { absorb: 0.5 };
+  };
+  // Repaired (by the marshals): the rail pulled straight bit by bit, k of
+  // the way each time, within a few metres of the point
+  const straightenAt = (r, point, k) => {
+    const s0 = runPos(r, point);
+    let left = 0;
+    RAILS.forEach((rail, j) => {
+      const dent = r.dent[j];
+      for (let i = 0; i < r.n; i++) { if (Math.abs(r.s[i] - s0) > 4) continue; dent[i] *= 1 - k; if (Math.abs(dent[i]) < 0.004) dent[i] = 0; left = Math.max(left, Math.abs(dent[i])); }
+    });
+    draw(r);
+    finish();
+    return left;
   };
   return list.map((r) => {
     const bx = r.ax + r.u.x * r.len, bz = r.az + r.u.z * r.len;
@@ -634,7 +647,7 @@ function buildTyreWalls(scene, runs) {
     c.collider.minX = Math.min(...xs) - ax; c.collider.maxX = Math.max(...xs) + ax;
     c.collider.minZ = Math.min(...zs) - az; c.collider.maxZ = Math.max(...zs) + az;
   };
-  for (const c of columns) { c.collider = addCollider(0, 0, 0, 0, 'tyres', { hit: (pt, n, v) => squashAt(pt, n, v) }); colBox(c); }
+  for (const c of columns) { c.collider = addCollider(0, 0, 0, 0, 'tyres', { hit: (pt, n, v) => squashAt(pt, n, v), repair: (pt, k) => restackAt(pt, k), part: columns }); colBox(c); }
   const squashAt = (point, normal, speed) => {
     if (speed < 1.5) return null;
     for (const c of columns) {
@@ -662,8 +675,31 @@ function buildTyreWalls(scene, runs) {
       const tx = t.x + a.x * shift + t.jx, tz = t.z + a.z * shift + t.jz;
       tyres.setMatrixAt(i, m4.compose(pos.set(tx, groundAt(t.x, t.z) + t.y, tz), q, scl.set(1, 1.15 * (1 - Math.abs(shift) * 0.25 * row), 1)));
     });
-    tyres.instanceMatrix.needsUpdate = true;
+    redrawTyres();
     return { absorb: 0.7 };
+  };
+  function redrawTyres() {
+    spots.forEach((t, i) => {
+      const a = across(t.col.angle);
+      const row = Math.hypot(t.x - t.col.x, t.z - t.col.z) > 0.1 ? 0.6 : 1;
+      const shift = t.col.push * row;
+      q.setFromAxisAngle(UP, t.spin).premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(Math.sin(t.col.angle), 0, Math.cos(t.col.angle)), t.tilt * Math.sign(t.col.push || 1)));
+      tyres.setMatrixAt(i, m4.compose(pos.set(t.x + a.x * shift + t.jx, groundAt(t.x, t.z) + t.y, t.z + a.z * shift + t.jz), q, scl.set(1, 1.15 * (1 - Math.abs(shift) * 0.25 * row), 1)));
+    });
+    tyres.instanceMatrix.needsUpdate = true;
+  }
+  // Repaired: the stacks pushed back into line and the tyres straightened
+  const restackAt = (point, k) => {
+    let left = 0;
+    for (const c of columns) {
+      if (Math.hypot(point.x - c.x, point.z - c.z) > 4) continue;
+      c.push *= 1 - k;
+      for (const t of c.tyres) { t.jx *= 1 - k; t.jz *= 1 - k; t.tilt *= 1 - k; }
+      left = Math.max(left, Math.abs(c.push));
+      colBox(c);
+    }
+    redrawTyres();
+    return left;
   };
   return runs.map(([ax, az, bx, bz]) => box(Math.min(ax, bx) - R, 0, Math.min(az, bz) - R,
     Math.max(ax, bx) + R + STEP, HIGH * 0.22, Math.max(az, bz) + R + STEP, 0.2));
@@ -813,7 +849,7 @@ function buildFences(scene, runs) {
     r.boxes = [];
     for (let i0 = 0; i0 < r.n - 1; i0 += 2) {
       const c = { i0, i1: Math.min(r.n - 1, i0 + 2) };
-      c.collider = addCollider(0, 0, 0, 0, 'fence', { hit: (pt, nrm, v) => caveAt(r, pt, nrm, v) });
+      c.collider = addCollider(0, 0, 0, 0, 'fence', { hit: (pt, nrm, v) => caveAt(r, pt, nrm, v), repair: (pt, k) => mendAt(r, pt, k), part: r });
       r.boxes.push(c);
     }
     draw(r);
@@ -840,6 +876,18 @@ function buildFences(scene, runs) {
     draw(r);
     finish();
     return { absorb: 0.6 };
+  };
+  // Repaired: the mesh pulled back flat round the point
+  const mendAt = (r, point, k) => {
+    const s0 = runPos(r, point);
+    let left = 0;
+    for (let i = 0; i < r.n; i++) {
+      if (Math.abs(r.s[i] - s0) > 4) continue;
+      for (let j = 0; j < ROWS; j++) { const q2 = i * ROWS + j; r.raw[q2] *= 1 - k; left = Math.max(left, Math.abs(r.raw[q2])); }
+    }
+    draw(r);
+    finish();
+    return left;
   };
   // Mesh lets most sound through: only a faint, rattly reflection
   return list.map((r) => {

@@ -26,7 +26,7 @@
 // a smashed radiator): the team retire the car. DNF on the standings, and
 // they push it back into the garage.
 // =====================================================================
-export const BUILD = 10;
+export const BUILD = 11;
 
 import * as THREE from 'three';
 
@@ -262,11 +262,11 @@ export class Person {
     const walking = speed > 0 && !this.keyed;
     this.moving += ((walking ? 1 : 0) - this.moving) * Math.min(1, dt * 8);
     const fast = speed > 3;
-    this.phase += dt * (fast ? (this.panic ? 14.5 : 13) : this.stagger ? 5 : 7.5) * (this.back ? -1 : 1);
+    this.phase += dt * (fast ? (this.panic ? 12.2 : 11.5) : this.stagger ? 5 : 7.5) * (this.back ? -1 : 1);
     const sw = Math.sin(this.phase) * this.moving * (fast ? 0.8 : 0.42);
     const p = this.p, carrying = this.held.length > 0;
     if (!speed) { this.panic = false; this.stagger = false; }
-    const runLean = fast ? (this.panic ? 0.36 : 0.22) : this.stagger ? 0.25 : 0;
+    const runLean = fast ? (this.panic ? 0.2 : 0.16) : this.stagger ? 0.25 : 0;
     this.hips.position.y = 0.95 - p.drop * (1 - this.moving) + Math.abs(Math.cos(this.phase)) * (fast ? 0.05 : 0.025) * this.moving;
     this.torso.rotation.x = p.lean * (1 - this.moving * 0.6) + runLean;
     const wob = p.work ? Math.sin(this.t * 22) * 0.12 * p.work : 0;
@@ -291,25 +291,25 @@ export class Person {
     if (fast && !carrying) {
       const M = this.moving, ph = this.phase;
       const leg = (thigh, knee, f) => {
-        thigh.rotation.x = thigh.rotation.x * (1 - M) - (0.4 + 0.95 * Math.sin(f)) * M;              // (forward to 1.35, back to -0.55)
-        knee.rotation.x = knee.rotation.x * (1 - M) + (0.2 + 2.0 * Math.pow(Math.max(0, Math.cos(f - 0.5)), 1.3)) * M;   // (heel up as it comes through)
+        thigh.rotation.x = thigh.rotation.x * (1 - M) - (0.22 + 0.72 * Math.sin(f)) * M;             // (forward to about 0.95, back to -0.5)
+        knee.rotation.x = knee.rotation.x * (1 - M) + (0.25 + 1.3 * Math.pow(Math.max(0, Math.cos(f - 0.6)), 1.6)) * M;   // (heel up as it comes through)
       };
       leg(this.thL, this.knL, ph); leg(this.thR, this.knR, ph + Math.PI);
       const arm = (sh, el, f, sgn) => {
-        sh.rotation.x = sh.rotation.x * (1 - M) - (0.25 + 0.95 * Math.sin(f)) * M;
-        el.rotation.x = el.rotation.x * (1 - M) - (1.55 + 0.25 * Math.sin(f)) * M;
-        sh.rotation.z = sh.rotation.z * (1 - M) + sgn * 0.12 * M;
+        sh.rotation.x = sh.rotation.x * (1 - M) - (0.05 + 0.62 * Math.sin(f)) * M;              // (as far back as forward)
+        el.rotation.x = el.rotation.x * (1 - M) - (1.35 + 0.15 * Math.sin(f)) * M;
+        sh.rotation.z = sh.rotation.z * (1 - M) + sgn * 0.06 * M;
       };
       arm(this.shL, this.elL, ph + Math.PI, 1); arm(this.shR, this.elR, ph, -1);
       // (the bounce: up in the air between strides, down hard on each foot)
-      this.hips.position.y = 0.95 + (Math.abs(Math.sin(ph)) * 0.07 - 0.04) * M;
-      this.torso.rotation.x = Math.max(this.torso.rotation.x, 0.3) + Math.sin(ph * 2) * 0.03;
-      this.hips.rotation.y = Math.sin(ph) * 0.12 * M;                // (hips and shoulders counter-rotating)
+      this.hips.position.y = 0.95 + (Math.abs(Math.sin(ph)) * 0.035 - 0.025) * M;
+      this.torso.rotation.x = 0.16 + Math.sin(ph * 2) * 0.012;
+      this.hips.rotation.y = Math.sin(ph) * 0.06 * M;                // (hips and shoulders counter-rotating, a little)
     } else this.hips.rotation.y = 0;
     this.root.position.set(this.x, groundAt(this.x, this.z) + lift + p.lift, this.z);
     this.root.rotation.set(p.tilt, this.face, p.roll + (this.stagger ? Math.sin(this.t * 2.3) * 0.12 : 0), 'YXZ');
     // (in a panic: hunched, the body twisting with each stride, looking about)
-    this.torso.rotation.y = this.panic ? Math.sin(this.phase) * 0.18 : 0;
+    this.torso.rotation.y = 0;
     // stumbling: bent over, arms out wide for balance and grabbing at the
     // air, the knees buckling now and then, his head hanging and lolling
     this.stagK = (this.stagK || 0) + ((this.stagger ? 1 : 0) - (this.stagK || 0)) * Math.min(1, dt * 4);
@@ -330,9 +330,9 @@ export class Person {
     // the head: looks at what he's watching, or about him in a panic
     let hy = 0;
     if (this.lookAt) { const a2 = Math.atan2(this.lookAt[0] - this.x, this.lookAt[1] - this.z) - this.face - this.torso.rotation.y; hy = Math.max(-1.2, Math.min(1.2, Math.atan2(Math.sin(a2), Math.cos(a2)))); }
-    else if (this.panic) hy = Math.sin(this.t * 3.4) * 0.5;
+    else if (this.panic) hy = Math.sin(this.t * 1.3) * 0.15;
     const S2 = this.stagK || 0;
-    this.head.rotation.set(-(p.head || 0) - (fast ? 0.15 : 0) * this.moving - (0.35 + 0.15 * Math.sin(this.t * 1.7)) * S2, this.head.rotation.y + (hy - this.head.rotation.y) * Math.min(1, dt * 8), Math.sin(this.t * 1.3) * 0.2 * S2);
+    this.head.rotation.set((p.head || 0) - (fast ? 0.12 : 0) * this.moving - (0.35 + 0.15 * Math.sin(this.t * 1.7)) * S2, this.head.rotation.y + (hy - this.head.rotation.y) * Math.min(1, dt * 8), Math.sin(this.t * 1.3) * 0.2 * S2);
   }
 }
 

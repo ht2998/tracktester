@@ -34,7 +34,7 @@ import { Person, makeExtinguisher } from './pits.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 5;
+export const BUILD = 6;
 
 const std = (color, rough = 0.6, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: rough, ...extra });
 const boxAt = (w, h, d, x = 0, y = 0, z = 0) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
@@ -318,9 +318,14 @@ export class RaceControl {
     this.parkAmb = { x: pit.garageX - 3.2, z: pit.z0 + 32 };
     this.sc = { ...buildSafetyCar(), x: this.parkSC.x, z: this.parkSC.z, heading: Math.PI, v: 0, i: 0, lat: 0, state: 'parked', mode: 'free', route: [] };
     this.ambulance = { ...buildAmbulance(), x: this.parkAmb.x, z: this.parkAmb.z, heading: Math.PI, v: 0, i: 0, lat: 2.5, state: 'parked', mode: 'free', route: [] };
-    this.parkTruck = { x: pit.garageX - 3.4, z: pit.z0 + 46 };
+    this.parkTruck = { x: pit.garageX - 3.4, z: pit.z0 + 50 };
     this.truck = { ...buildFlatbed(), x: this.parkTruck.x, z: this.parkTruck.z, heading: Math.PI, v: 0, i: 0, lat: 0, state: 'parked', mode: 'free', route: [] };
     for (const v of [this.sc, this.ambulance, this.truck]) { scene.add(v.group); this.place(v); v.flash(0, false); }
+    // their size (half width, half length, and how far the middle is from
+    // the origin) and who gives way to whom (the higher goes first)
+    Object.assign(this.sc, { hw: 0.98, hl: 2.4, mid: 0.1, pri: 4 });
+    Object.assign(this.ambulance, { hw: 1.0, hl: 2.65, mid: 0, pri: 3 });
+    Object.assign(this.truck, { hw: 1.2, hl: 3.7, mid: -0.55, pri: 2 });
     // the cranes: one at each recovery point, beside the marshal post there
     this.cranes = [];
     const want = [0, 3, 8, 14].map((k) => corners[Math.min(k, corners.length - 1)]).filter(Boolean);
@@ -346,10 +351,31 @@ export class RaceControl {
     }
     for (const best of spots) {
       const lp = line[best.i], ax = best.x - lp.x, az = best.z - lp.z, ad = Math.hypot(ax, az) || 1;
-      const tx = Math.sin(lp.heading), tz = Math.cos(lp.heading);
-      const park = { x: best.x + tx * 6 + ax / ad * 1.5, z: best.z + tz * 6 + az / ad * 1.5 };
-      const c = { ...buildCrane(), x: park.x, z: park.z, heading: Math.atan2(-ax, -az), park, parkHeading: Math.atan2(-ax, -az), state: 'parked', t: 0, lift: 0, post: best };
+      // its spot: on the verge between the track and the barrier (so it
+      // never has to go through the barrier to get out), clear of
+      // everything, as far off the tarmac as there's room for; or the
+      // other side of the track; or, with no room either side, behind the post
+      let park = null, side = 1;
+      for (const sg of [1, -1]) {
+        for (let k = 0; k < 7 && !park; k++) {
+          const j = (best.i + k * 3 * (k % 2 ? 1 : -1) + this.m) % this.m, q = line[j];
+          const sx = Math.sign((best.x - q.x) * q.lx + (best.z - q.z) * q.lz) * sg || sg;
+          for (let off = 10; off >= 3.2; off -= 0.6) {
+            const lat = sx * (q.width / 2 + off), px = q.x + q.lx * lat, pz = q.z + q.lz * lat;
+            const edge = [q.x + q.lx * sx * q.width / 2, q.z + q.lz * sx * q.width / 2];
+            if (this.hooks.blocked?.(px, pz, 2.2)) continue;
+            if (!this.clearLine(edge, [px, pz], 1.6)) continue;
+            park = { x: px, z: pz, i: j }; side = sx; break;
+          }
+        }
+        if (park) break;
+      }
+      if (!park) park = { x: best.x + Math.sin(lp.heading) * 6 + ax / ad * 1.5, z: best.z + Math.cos(lp.heading) * 6 + az / ad * 1.5, i: best.i };
+      // (parked along the track, facing the way the cars come)
+      const ph = line[park.i].heading + Math.PI;
+      const c = { ...buildCrane(), x: park.x, z: park.z, heading: ph, park, parkHeading: ph, state: 'parked', t: 0, lift: 0, post: best };
       c.setDrop(0.6);
+      Object.assign(c, { hw: 1.25, hl: 2.6, mid: 0, pri: 1 });
       scene.add(c.group); this.place(c); c.flash(0, false);
       this.cranes.push(c);
     }
@@ -551,13 +577,13 @@ export class RaceControl {
     // along the track
     if (v.mode !== 'line') this.startLine(v, leg);
     const left = ((leg.line - v.i) * leg.dir % this.m + this.m) % this.m * 2;
-    const want = Math.min(vLine, this.vMax[Math.floor(v.i) % this.m] * 0.9, Math.sqrt(2 * 2.5 * Math.max(0, left - 2)) + 1);
+    const want = Math.min(vLine, this.vMax[Math.floor(v.i) % this.m] * 0.9, Math.sqrt(2 * 2.5 * Math.max(0, left - 2)) + 1) * (v.slow ?? 1);
     v.v += Math.max(-5 * dt, Math.min(2 * dt, want - v.v));
     v.i = ((v.i + leg.dir * v.v * dt / 2) % this.m + this.m) % this.m;
     v.latV = (leg.lat - v.lat) * Math.min(1, dt * 0.4) / Math.max(dt, 1e-3);
     v.lat += (leg.lat - v.lat) * Math.min(1, dt * 0.4);
     v.dir = leg.dir;
-    this.placeOnLine(v, v.i, v.lat);
+    this.placeOnLine(v, v.i, v.lat + (v.latBias || 0));
     if (left < 3) { v.legs.shift(); v.mode = 'free'; v.heading = v.group.rotation.y; v.dir = 1; }
     return false;
   }
@@ -579,9 +605,10 @@ export class RaceControl {
       want = Math.min(want, Math.sqrt(2 * 4 * Math.max(0, left - 1)));
       if (left < 2 && veh.v < 1) { veh.v = 0; return true; }
     }
+    want *= veh.slow ?? 1;
     veh.v += Math.max(-8 * dt, Math.min(3.5 * dt, want - veh.v));
     veh.i = (veh.i + veh.v * dt / 2) % m;
-    this.placeOnLine(veh, veh.i, veh.lat);
+    this.placeOnLine(veh, veh.i, veh.lat + (veh.latBias || 0));
     return false;
   }
 
@@ -613,6 +640,7 @@ export class RaceControl {
     if (this.crane?.state === 'go') { const nw = needs.wrecks.find((x) => x.key === this.crane.w.key); if (nw) { this.crane.w.x = nw.x; this.crane.w.z = nw.z; } }
     if (this.crane) this.updateCrane(dt, S, this.crane);
     if (this.phase === 'sc' && this.sc.state === 'parked') this.sendSafetyCar();
+    this.avoid(dt, S);
     this.updateSafetyCar(dt, needs);
     this.updateAmbulance(dt);
     this.updateTruck(dt, S);
@@ -625,6 +653,7 @@ export class RaceControl {
     for (const r of this.runners) r.person.update(dt, this.groundAt);
     this.runners = this.runners.filter((r) => { if (r.done) { this.scene.remove(r.person.root); return false; } return true; });
     // nothing solid gets driven through
+    this.separate(S);
     this.bump(S.physics, [...this.cranes, this.ambulance, this.sc, this.truck].filter(Boolean));
     // your penalties
     if (racing) this.judge(dt, S);
@@ -750,6 +779,7 @@ export class RaceControl {
   }
   place(v) { v.group.position.set(v.x, this.groundAt(v.x, v.z), v.z); v.group.rotation.y = v.heading; }
   steerTo(v, tx, tz, speed, dt, stopShort = 0, turn = 0.9) {
+    speed *= v.slow ?? 1;
     const dx = tx - v.x, dz = tz - v.z, d = Math.hypot(dx, dz);
     if (d <= stopShort + 0.2) return true;
     const want = Math.atan2(dx, dz);
@@ -830,7 +860,8 @@ export class RaceControl {
       if (Math.abs(dy) < 0.03 && c.t > 2.5) { c.state = 'drop'; c.t = 0; }
     } else if (c.state === 'drop') {
       c.lift = Math.max(c.useTruck ? this.truck.bedY : 0, 2.2 - c.t * 1.2);
-      if (c.t > 1.6 && c.useTruck) {
+      if (c.t > 1.7 && c.useTruck) {
+        this.hookLift = null;
         // on the bed: the truck takes it from here
         const T = this.truck;
         T.load = w; T.state = 'carry'; T.carryT = 0;
@@ -840,7 +871,7 @@ export class RaceControl {
         if (this.crane === c) this.crane = null;
         return;
       }
-      if (c.t > 1.6) {
+      if (c.t > 1.6 && !c.useTruck) {
         // done: the wreck's dealt with
         if (w.kind === 'player') this.hooks.recoverPlayer?.();
         else if (w.kind === 'ai') { w.car.recovered = true; w.car.parked = true; const k = this.ai.cars.indexOf(w.car); w.car.physics.x = 1e4 + k * 30; w.car.physics.z = 1e4; w.car.full = false; }
@@ -862,11 +893,24 @@ export class RaceControl {
       const h = c.hookAt.getWorldPosition(new THREE.Vector3());
       if (c.state === 'lift' && c.t < 0.1) c.offset = new THREE.Vector3(w.x - h.x, 0, w.z - h.z);
       const k = c.state === 'lift' ? 1 - Math.min(1, c.t / 2) : 0;
-      const x = h.x + (c.offset?.x || 0) * k, z = h.z + (c.offset?.z || 0) * k;
+      let x = h.x + (c.offset?.x || 0) * k, z = h.z + (c.offset?.z || 0) * k, lift = c.lift;
+      // lowering it onto the truck: guided across onto the middle of the bed
+      // (the marshals steadying it), turned to lie along it, and set down
+      if (c.state === 'drop' && c.useTruck) {
+        const T = this.truck; T.group.updateMatrixWorld(true);
+        const bed = T.bedAt.clone().applyMatrix4(T.group.matrixWorld);
+        const e = Math.min(1, c.t / 1.4), ee = e * e * (3 - 2 * e);
+        x += (bed.x - x) * ee; z += (bed.z - z) * ee;
+        lift = (2.2 - (2.2 - T.bedY) * ee) + (this.groundAt(bed.x, bed.z) - this.groundAt(x, z)) * ee;
+        const want = T.group.rotation.y, h0 = w.h0 ?? (w.h0 = (w.kind === 'player' ? S.physics?.heading : w.kind === 'ai' ? w.car.physics.heading : 0) ?? 0);
+        const hh = h0 + Math.atan2(Math.sin(want - h0), Math.cos(want - h0)) * ee;
+        if (w.kind === 'player' && S.physics) S.physics.heading = hh;
+        if (w.kind === 'ai') { w.car.physics.heading = hh; if (obj) obj.rotation.y = hh; }
+      }
       w.x = x; w.z = z;
-      if (obj) { obj.position.x = x; obj.position.z = z; obj.position.y = this.groundAt(x, z) + c.lift; }
-      if (w.kind === 'player' && S.physics) { S.physics.x = x; S.physics.z = z; S.physics.vx = S.physics.vy = 0; this.liftedPlayer = c.lift; }
-      if (w.kind === 'ai') { w.car.physics.x = x; w.car.physics.z = z; w.car.lift = c.lift; }
+      if (obj) { obj.position.x = x; obj.position.z = z; obj.position.y = this.groundAt(x, z) + lift; }
+      if (w.kind === 'player' && S.physics) { S.physics.x = x; S.physics.z = z; S.physics.vx = S.physics.vy = 0; this.liftedPlayer = lift; this.hookLift = lift; }
+      if (w.kind === 'ai') { w.car.physics.x = x; w.car.physics.z = z; w.car.lift = lift; }
     }
   }
 
@@ -942,7 +986,7 @@ export class RaceControl {
   // how high your car is lifted (on the hook, or on the truck's bed)
   get playerLift() {
     if (this.truck?.load?.kind === 'player') return this.truck.bedY;
-    if (this.crane?.w?.kind === 'player') return this.crane.lift;
+    if (this.crane?.w?.kind === 'player') return this.hookLift ?? this.crane.lift;
     return 0;
   }
 
@@ -1062,18 +1106,21 @@ export class RaceControl {
     if (!post) return;
     const i = this.trackside.nearestLine(at.x, at.z, 40), lp = this.line[Math.max(0, i)];
     const tx = Math.sin(lp?.heading || 0), tz = Math.cos(lp?.heading || 0);
+    // (they stand on the track side of it, just off it, facing it)
+    let nx = lp ? lp.x - at.x : 1, nz = lp ? lp.z - at.z : 0; const nd = Math.hypot(nx, nz) || 1; nx /= nd; nz /= nd;
     for (let k = 0; k < 3; k++) {
       const r = this.newRunner(post, 'repair');
       const off = (k - 1) * 1.6;
+      const on = [at.x + tx * off, at.z + tz * off], stand = [on[0] + nx * 0.85, on[1] + nz * 0.85];
       r.person.run([
         { wait: k * 0.5 },
         { go: r.hut.corner, run: true },
-        ...this.footPath(r.hut.corner, [at.x + tx * off - (lp ? (lp.x - at.x) : 0) * -0.08, at.z + tz * off - (lp ? (lp.z - at.z) : 0) * -0.08], { run: true }),
-        { face: [at.x + tx * off + (lp ? lp.x - at.x : 0), at.z + tz * off + (lp ? lp.z - at.z : 0)] },
+        ...this.footPath(r.hut.corner, stand, { run: true }),
+        { face: on, quick: true }, { look: on },
         { pose: k === 1 ? 'BOLT' : 'WORK' },
         { until: () => rep.done },
-        { pose: 'STAND' },
-        ...this.footPath([at.x + tx * off, at.z + tz * off], r.hut.corner),
+        { pose: 'STAND' }, { look: null },
+        ...this.footPath(stand, r.hut.corner),
         { go: r.hut.behind },
         { fn: () => { r.done = true; } },
       ]);
@@ -1084,8 +1131,12 @@ export class RaceControl {
     for (const rep of this.repairs) {
       if (rep.done) continue;
       // (they start once they're all there)
-      if (rep.crew.every((r) => r.person.want === 'WORK' || r.person.want === 'BOLT' || r.done)) rep.t += dt;
-      if (rep.t > rep.need) { rep.done = true; this.hooks.barrierFixed?.(rep); this.hooks.toast?.('BARRIER REPAIRED'); }
+      if (rep.crew.every((r) => r.person.want === 'WORK' || r.person.want === 'BOLT' || r.done)) {
+        rep.t += dt;
+        // (and it shows: the dents pulled out a bit at a time while they work)
+        this.hooks.repairBarrier?.(rep, Math.min(1, dt * 3 / rep.need));
+      }
+      if (rep.t > rep.need) { rep.done = true; this.hooks.repairBarrier?.(rep, 1); this.hooks.barrierFixed?.(rep); this.hooks.toast?.('BARRIER REPAIRED'); }
     }
     this.repairs = this.repairs.filter((r) => !r.done || r.crew.some((c) => !c.done));
   }
@@ -1161,6 +1212,83 @@ export class RaceControl {
   sprays() { const out = []; for (const r of this.runners) { const s = r.sprayAt?.(); if (s) out.push(s); } return out; }
 
   // ---- solid vehicles: you don't drive through them ----
+  // ---- keeping out of each other's way ----
+  // each one looks ahead along its way: anything in its path (another of
+  // them, a car) and it eases off, and (on the track) moves over to pass
+  // it, the one lower down the order giving way. A stuck pair: the lower
+  // one backs off and lets the other through.
+  circles(v) {
+    const h = v.group.rotation.y, fx = Math.sin(h), fz = Math.cos(h), out = [], r = v.hw + 0.05;
+    const n = Math.max(2, Math.ceil(v.hl / v.hw));
+    for (let k = 0; k < n; k++) { const a = v.mid - v.hl + r + (2 * (v.hl - r)) * k / (n - 1); out.push([v.group.position.x + fx * a, v.group.position.z + fz * a, r]); }
+    return out;
+  }
+  avoid(dt, S) {
+    const V = [this.sc, this.ambulance, this.truck, ...this.cranes].filter(Boolean);
+    const others = [...V.map((v) => ({ x: v.group.position.x, z: v.group.position.z, hw: v.hw, hl: v.hl, pri: v.pri, v })),
+      ...this.ai.cars.filter((c) => !c.parked).map((c) => ({ x: c.physics.x, z: c.physics.z, hw: 1, hl: 2.3, pri: 9 }))];
+    if (S.physics) others.push({ x: S.physics.x, z: S.physics.z, hw: 1, hl: 2.3, pri: 9 });
+    for (const A of V) {
+      if (A.state === 'parked') { A.slow = 1; continue; }
+      const h = A.group.rotation.y, fx = Math.sin(h), fz = Math.cos(h), lx = Math.cos(h), lz = -Math.sin(h);
+      let slow = 1, bias = 0;
+      for (const B of others) {
+        if (B.v === A) continue;
+        const rx = B.x - A.group.position.x, rz = B.z - A.group.position.z;
+        const ahead = rx * fx + rz * fz, side = rx * lx + rz * lz;
+        const lane = A.hw + B.hw + 0.7;
+        if (ahead <= 0 || ahead > 16 || Math.abs(side) > lane) continue;
+        const gap = ahead - A.hl - B.hl - 0.8;
+        // (a car, or one higher up the order, or one stopped: ease off for it)
+        const yields = B.pri > A.pri || B.v?.state === 'parked' || (B.v && (B.v.v || 0) < 0.5);
+        slow = Math.min(slow, yields ? Math.max(0, Math.min(1, gap / 7)) : Math.max(0.35, Math.min(1, gap / 5)));
+        bias += -(Math.sign(side) || 1) * (lane - Math.abs(side)) * Math.max(0, 1 - Math.max(0, gap) / 10);
+      }
+      // a pair stuck nose to nose for a while: the lower one goes anyway (round it)
+      A.stuckT = slow < 0.05 ? (A.stuckT || 0) + dt : 0;
+      if (A.stuckT > 3) { slow = 0.3; bias *= 1.5; }
+      A.slow = (A.slow ?? 1) + (slow - (A.slow ?? 1)) * Math.min(1, dt * 6);
+      // (moving over, on the track: the bias across it)
+      if (A.mode === 'line') {
+        const p = this.line[Math.floor(A.i) % this.m];
+        const want = Math.max(-4, Math.min(4, bias * (lx * p.lx + lz * p.lz)));
+        A.latBias = (A.latBias || 0) + (want - (A.latBias || 0)) * Math.min(1, dt * 1.5);
+      } else A.latBias = (A.latBias || 0) * Math.max(0, 1 - dt * 2);
+    }
+  }
+  // and nothing goes through anything: overlapping ones pushed apart (the
+  // one lower down the order, or stopped, moves; one parked never does)
+  separate(S) {
+    const V = [this.sc, this.ambulance, this.truck, ...this.cranes].filter(Boolean);
+    for (let i = 0; i < V.length; i++) for (let j = i + 1; j < V.length; j++) {
+      const A = V[i], B = V[j];
+      if (A.state === 'parked' && B.state === 'parked') continue;
+      if (Math.hypot(A.group.position.x - B.group.position.x, A.group.position.z - B.group.position.z) > A.hl + B.hl + 2) continue;
+      let px = 0, pz = 0;
+      for (const [ax, az, ar] of this.circles(A)) for (const [bx, bz, br] of this.circles(B)) {
+        const dx = ax - bx, dz = az - bz, d = Math.hypot(dx, dz), o = ar + br - d;
+        if (o > 0 && d > 1e-4) { px += dx / d * o; pz += dz / d * o; }
+      }
+      if (!px && !pz) continue;
+      const aFixed = A.state === 'parked', bFixed = B.state === 'parked';
+      const kA = aFixed ? 0 : bFixed ? 1 : A.pri < B.pri ? 1 : A.pri > B.pri ? 0 : 0.5;
+      this.nudge(A, px * kA * 0.5, pz * kA * 0.5); this.nudge(B, -px * (1 - kA) * 0.5, -pz * (1 - kA) * 0.5);
+    }
+    // the computer cars out of them too
+    for (const c of this.ai.cars) {
+      if (c.parked || c.onTruck) continue;
+      for (const v of V) for (const [cx, cz, r] of this.circles(v)) {
+        const dx = c.physics.x - cx, dz = c.physics.z - cz, d = Math.hypot(dx, dz), o = r + 0.95 - d;
+        if (o > 0 && d > 1e-4) { c.physics.x += dx / d * o; c.physics.z += dz / d * o; }
+      }
+    }
+  }
+  nudge(v, x, z) {
+    if (!x && !z) return;
+    if (v.mode === 'line') { const p = this.line[Math.floor(v.i) % this.m]; v.lat += x * p.lx + z * p.lz; this.placeOnLine(v, v.i, v.lat + (v.latBias || 0)); }
+    else { v.x += x; v.z += z; v.group.position.x += x; v.group.position.z += z; }
+  }
+
   bump(P, vehicles) {
     if (!P) return;
     for (const v of vehicles) {

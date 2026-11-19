@@ -21,11 +21,21 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 85;
+export const BUILD = 86;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 74, date: '19 Nov 2026', title: 'Onto the truck',
+    items: [
+      ['Really onto the flatbed', 'The crane was still dropping wrecks the old way and never handing them to the truck. Now it holds the car up until the flatbed\'s beside it, swings it across, turns it to lie along the bed and sets it down on it', 'fix'],
+      ['Solid vehicles', 'The safety car, ambulance, flatbed and cranes are solid: they can\'t drive through each other or the cars, and each one looks ahead and eases off for anything in its way, moving over on the track to get round it. The lower one gives way (cranes to the flatbed, the flatbed to the ambulance, the ambulance to the safety car)', 'new'],
+      ['Cranes on the verge', 'The cranes now park on the grass between the track and the barrier, clear of everything, so they never go through a barrier to get out', 'fix'],
+      ['Barrier repairs you can see', 'The repair crew stand on the track side of the barrier, facing it, and while they work the dents in the armco straighten out, the tyre stacks go back into line and the fence pulls flat', 'fix'],
+      ['A calmer run', 'Toned the sprint down: a real athletic run, not a cartoon one. Less knee lift and heel kick, arms swinging as far back as forward, and no more twisting and looking about', 'fix'],
+    ],
+  },
   {
     id: 73, date: '19 Nov 2026', title: 'The flatbed',
     items: [
