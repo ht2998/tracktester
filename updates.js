@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 105;
+export const BUILD = 106;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 94, date: '19 Nov 2026', title: 'French racing blue',
+    items: [
+      ['The TT-05 in French racing blue', 'The TT-05\'s blue is now French racing blue, still with its yellow', 'update'],
+    ],
+  },
   {
     id: 93, date: '19 Nov 2026', title: 'Noses that fold',
     items: [

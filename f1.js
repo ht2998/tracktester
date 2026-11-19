@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 27;
+export const BUILD = 28;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -493,7 +493,7 @@ export function buildF1Body(car, addPanel) {
 // =====================================================================
 export function buildF05Body(car, addPanel) {
   const MAT = {
-    blue: new THREE.MeshPhysicalMaterial({ color: 0x1449a6, roughness: 0.22, metalness: 0.25, clearcoat: 1, clearcoatRoughness: 0.06 }),
+    blue: new THREE.MeshPhysicalMaterial({ color: 0x0055a4, roughness: 0.22, metalness: 0.25, clearcoat: 1, clearcoatRoughness: 0.06 }),
     yellow: new THREE.MeshPhysicalMaterial({ color: 0xf4c419, roughness: 0.22, metalness: 0.1, clearcoat: 1, clearcoatRoughness: 0.06 }),
     white: new THREE.MeshPhysicalMaterial({ color: 0xf2f3f0, roughness: 0.25, metalness: 0.05, clearcoat: 1, clearcoatRoughness: 0.08 }),
     carbon: new THREE.MeshStandardMaterial({ color: 0x111215, roughness: 0.4, metalness: 0.35 }),
