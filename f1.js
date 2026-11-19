@@ -517,20 +517,20 @@ export function buildF05Body(car, addPanel) {
   // --- the nose: high and narrow, sloping down to a rounded tip, its
   // underside well up off the ground (the air goes under it), then the tub
   const nose = [
-    { z: 2.74, w: 0.1, h: 0.08, y: 0.25 },
-    { z: 2.6, w: 0.16, h: 0.13, y: 0.25 },
-    { z: 2.3, w: 0.23, h: 0.19, y: 0.27 },
-    { z: 1.95, w: 0.29, h: 0.25, y: 0.29 },
-    { z: 1.55, w: 0.36, h: 0.3, y: 0.29 },
-    { z: 1.2, w: 0.46, h: 0.37, y: 0.23, top: 0.86 },
-    { z: 0.9, w: 0.56, h: 0.45, y: 0.15, top: 0.8 },
+    { z: 2.74, w: 0.1, h: 0.09, y: 0.31 },
+    { z: 2.6, w: 0.16, h: 0.14, y: 0.31 },
+    { z: 2.3, w: 0.23, h: 0.2, y: 0.32 },
+    { z: 1.95, w: 0.29, h: 0.26, y: 0.33 },
+    { z: 1.55, w: 0.36, h: 0.31, y: 0.32 },
+    { z: 1.2, w: 0.46, h: 0.39, y: 0.25, top: 0.86 },
+    { z: 0.9, w: 0.56, h: 0.47, y: 0.16, top: 0.8 },
     { z: 0.72, w: 0.62, h: 0.49, y: 0.13, top: 0.78 },
   ];
   add(loft(nose, SMOOTH, 28, 4, true), MAT.blue);
   // the yellow tip and a yellow band down the top of the nose, a white pinstripe
-  add(loft([{ z: 2.755, w: 0.105, h: 0.085, y: 0.248 }, { z: 2.6, w: 0.165, h: 0.135, y: 0.248 }, { z: 2.42, w: 0.205, h: 0.17, y: 0.258 }], SMOOTH, 28, 4, true), MAT.yellow);
-  add(loft([{ z: 2.4, w: 0.12, h: 0.02, y: 0.44 }, { z: 1.95, w: 0.16, h: 0.02, y: 0.53 }, { z: 1.4, w: 0.2, h: 0.02, y: 0.6 }, { z: 0.95, w: 0.22, h: 0.02, y: 0.6 }], 0.4, 16, 3, true), MAT.yellow);
-  for (const sx of [1, -1]) add(rod([sx * 0.07, 0.448, 2.38], [sx * 0.11, 0.61, 1.0], 0.005), MAT.white, false);
+  add(loft([{ z: 2.755, w: 0.105, h: 0.095, y: 0.308 }, { z: 2.6, w: 0.165, h: 0.145, y: 0.308 }, { z: 2.42, w: 0.205, h: 0.18, y: 0.313 }], SMOOTH, 28, 4, true), MAT.yellow);
+  add(loft([{ z: 2.4, w: 0.12, h: 0.02, y: 0.505 }, { z: 1.95, w: 0.16, h: 0.02, y: 0.58 }, { z: 1.4, w: 0.2, h: 0.02, y: 0.635 }, { z: 0.95, w: 0.22, h: 0.02, y: 0.625 }], 0.4, 16, 3, true), MAT.yellow);
+  for (const sx of [1, -1]) add(rod([sx * 0.07, 0.51, 2.38], [sx * 0.11, 0.64, 1.0], 0.005), MAT.white, false);
   // --- the cockpit: high sides round his head, padded headrest wings,
   // the tub open on top where he sits, its inside in black
   const pit = [
@@ -613,8 +613,8 @@ export function buildF05Body(car, addPanel) {
   // in a long smooth slope, narrowing tight to the gearbox
   const cover = [
     { z: -0.18, w: 0.6, h: 0.56, y: 0.1, top: 0.7 },
-    { z: -0.3, w: 0.38, h: 0.88, y: 0.1, top: 0.35 },
-    { z: -0.55, w: 0.42, h: 0.78, y: 0.1, top: 0.42 },
+    { z: -0.3, w: 0.38, h: 0.98, y: 0.1, top: 0.35 },
+    { z: -0.55, w: 0.42, h: 0.84, y: 0.1, top: 0.42 },
     { z: -0.95, w: 0.44, h: 0.56, y: 0.1, top: 0.6 },
     { z: -1.35, w: 0.32, h: 0.38, y: 0.12, top: 0.72 },
     { z: -1.72, w: 0.2, h: 0.24, y: 0.15, top: 0.8 },
@@ -622,8 +622,8 @@ export function buildF05Body(car, addPanel) {
   add(loft(cover, SMOOTH, 28, 4, true), MAT.yellow);
   // a blue spine down the middle, the airbox mouth, little camera pods
   add(loft(cover.slice(1).map((p) => ({ ...p, w: 0.12, h: 0.03, y: p.y + p.h - 0.015 })), 0.5, 16, 4, true), MAT.blue);
-  add(loft([{ z: -0.27, w: 0.16, h: 0.12, y: 0.86 }, { z: -0.31, w: 0.16, h: 0.12, y: 0.86 }], 1.2, 20, 1, false), MAT.dark, false);
-  for (const s of [1, -1]) add(box(0.05, 0.05, 0.12, s * 0.12, 0.94, -0.36), MAT.carbon);
+  add(loft([{ z: -0.27, w: 0.17, h: 0.13, y: 0.94 }, { z: -0.31, w: 0.17, h: 0.13, y: 0.94 }], 1.2, 20, 1, false), MAT.dark, false);
+  for (const s of [1, -1]) add(box(0.05, 0.05, 0.12, s * 0.12, 1.04, -0.36), MAT.carbon);
   // the gearbox at the back, its rain light, the diffuser and its fences
   add(box(0.2, 0.18, 0.4, 0, 0.22, -1.88), MAT.carbon);
   add(box(0.07, 0.04, 0.03, 0, 0.27, -2.1), MAT.rain);
@@ -639,7 +639,7 @@ export function buildF05Body(car, addPanel) {
   const wings = { fl: new THREE.Group(), fr: new THREE.Group(), rear: new THREE.Group() };
   for (const g of Object.values(wings)) car.add(g);
   const addTo = (g, geo, mat) => { const m = add(geo, mat); g.add(m); return m; };
-  for (const s of [1, -1]) add(box(0.015, 0.16, 0.16, s * 0.06, 0.2, 2.5, 0.25), MAT.carbon);       // the pylons
+  for (const s of [1, -1]) add(box(0.015, 0.22, 0.16, s * 0.06, 0.22, 2.5, 0.2), MAT.carbon);       // the pylons
   add(loft([{ z: 2.7, w: 0.3, h: 0.02, y: 0.13 }, { z: 2.42, w: 0.3, h: 0.02, y: 0.15 }], 0.3, 12, 2, false), MAT.blue);   // the spoon (middle, raised)
   for (const s of [1, -1]) {
     const g = s > 0 ? wings.fl : wings.fr;
