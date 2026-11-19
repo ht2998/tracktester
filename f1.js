@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 31;
+export const BUILD = 32;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -103,7 +103,7 @@ export function withEngine(car, key) {
 // The TT-88's own physics (with the turbo V6 fitted)
 export const F1_CAR = {
   ...CATERHAM,
-  name: 'TT-88',
+  name: 'TTF-88',
   stockEngine: 'turboV6',
   antiStall: true,          // (anti-stall: the clutch opens itself before the engine dies)
   radiatorSides: true,      // (its radiators are in the sidepods, not the nose)
@@ -148,7 +148,7 @@ export const CATERHAM_CAR = { ...CATERHAM, name: 'Caterham Seven', baseMass: CAT
 // downforce than the TT-88 and a little less mechanical grip
 export const F05_CAR = {
   ...F1_CAR,
-  name: 'TT-05',
+  name: 'TTF-05',
   body: 'f05',
   grooved: true,
   stockEngine: 'v10x',
@@ -178,7 +178,7 @@ export const F05_CAR = {
 // than either (slicks, and wide)
 export const F94_CAR = {
   ...F1_CAR,
-  name: 'TT-94',
+  name: 'TTF-94',
   body: 'f94',
   stockEngine: 'v12',
   baseMass: 570,                     // (about 600 kg with the V12 and the driver)

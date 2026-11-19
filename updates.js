@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 109;
+export const BUILD = 110;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 96, date: '19 Nov 2026', title: 'TTF',
+    items: [
+      ['Formula cars renamed', 'The Formula cars are TTF now: the TTF-88, TTF-94, TTF-05 and (coming) TTF-14. TT for Track Tester, F for Formula, and the year', 'update'],
+    ],
+  },
   {
     id: 95, date: '19 Nov 2026', title: 'The TT-94',
     items: [

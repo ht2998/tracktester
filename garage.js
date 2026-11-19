@@ -7,7 +7,7 @@
 // has several cars dropping down again. Pick one and it fires up: a
 // couple of big revs, then it settles to idle.
 // =====================================================================
-export const BUILD = 3;
+export const BUILD = 4;
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -17,10 +17,10 @@ import { bodyForKind, WHEEL_LAYOUT, buildF1RimGeometry } from './f1.js';
 // (made-up names, no real makes)
 export const COLLECTION = [
   { cat: 'Formula', cars: [
-    { name: 'TT-88', year: 1988, kind: 'f1', blurb: 'Turbo era, 1.5 V6' },
-    { name: 'TT-94', year: 1994, kind: 'f94', blurb: '3.5 V12, 16,000 rpm' },
-    { name: 'TT-05', year: 2005, kind: 'f05', blurb: '3.0 V10, 19,200 rpm' },
-    { name: 'TT-14', year: 2014, blurb: 'Hybrid turbo V6' },
+    { name: 'TTF-88', year: 1988, kind: 'f1', blurb: 'Turbo era, 1.5 V6' },
+    { name: 'TTF-94', year: 1994, kind: 'f94', blurb: '3.5 V12, 16,000 rpm' },
+    { name: 'TTF-05', year: 2005, kind: 'f05', blurb: '3.0 V10, 19,200 rpm' },
+    { name: 'TTF-14', year: 2014, blurb: 'Hybrid turbo V6' },
   ] },
   { cat: 'GT3', cars: [
     { name: 'GT3 Coupé R', year: 2012, blurb: 'Front-engined V8' },
@@ -48,9 +48,9 @@ export const COLLECTION = [
   ] },
 ];
 export const CAR_INFO = {
-  f1: { name: 'TT-88', year: 1988, cat: 'Formula', drive: 'Rear-wheel drive' },
-  f05: { name: 'TT-05', year: 2005, cat: 'Formula', drive: 'Rear-wheel drive' },
-  f94: { name: 'TT-94', year: 1994, cat: 'Formula', drive: 'Rear-wheel drive' },
+  f1: { name: 'TTF-88', year: 1988, cat: 'Formula', drive: 'Rear-wheel drive' },
+  f05: { name: 'TTF-05', year: 2005, cat: 'Formula', drive: 'Rear-wheel drive' },
+  f94: { name: 'TTF-94', year: 1994, cat: 'Formula', drive: 'Rear-wheel drive' },
   caterham: { name: 'Caterham Seven', year: 2015, cat: 'Road', drive: 'Rear-wheel drive' },
 };
 
