@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 25;
+export const BUILD = 26;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -871,7 +871,7 @@ export function buildF1() {
 // and harder it's going and over bumps), the right hand going to the lever
 // for every gear change. His head is shaken about with it (the camera).
 // =====================================================================
-export function buildF1Cockpit(car) {
+export function buildF1Cockpit(car, { paddles = false } = {}) {
   const group = new THREE.Group();
   car.add(group);
   const M = {
@@ -905,6 +905,7 @@ export function buildF1Cockpit(car) {
   add(new THREE.CylinderGeometry(0.018, 0.018, 0.2, 10).rotateX(Math.PI / 2).translate(0, 0, 0.1), M.steel, column);
   const wheel = new THREE.Group();
   column.add(wheel);
+  const paddleMeshes = [];                         // (right: up, left: down)
   {
     // the plate: a rounded rectangle, a little wider at the top
     const W = 0.135, Ht = 0.07, Hb = 0.06, r = 0.022;
@@ -916,7 +917,7 @@ export function buildF1Cockpit(car) {
     // the grips: chunky rubber, a little proud of the plate at each side
     for (const sx of [1, -1]) add(new THREE.BoxGeometry(0.042, 0.115, 0.045).translate(sx * 0.125, -0.002, -0.004), M.grip, wheel);
     // the paddles behind (up on the right, down on the left)
-    for (const sx of [1, -1]) add(new THREE.BoxGeometry(0.06, 0.05, 0.006).translate(sx * 0.075, 0.035, 0.022), M.steel, wheel);
+    for (const sx of [1, -1]) paddleMeshes.push(add(new THREE.BoxGeometry(0.06, 0.05, 0.006).translate(sx * 0.075, 0.035, 0.022), M.steel, wheel));
     // rotary knobs and buttons round the screen
     const KNOBS = [[-0.075, -0.035, 0xd8312a], [0.075, -0.035, 0x2a62c9], [-0.045, -0.048, 0xf2c12e], [0.045, -0.048, 0x2b9a52]];
     for (const [x, y, c] of KNOBS) add(new THREE.CylinderGeometry(0.011, 0.011, 0.012, 10).rotateX(Math.PI / 2).translate(x, y, -0.016), new THREE.MeshStandardMaterial({ color: c, roughness: 0.4 }), wheel);
@@ -932,7 +933,9 @@ export function buildF1Cockpit(car) {
   group.add(lever);
   add(new THREE.CylinderGeometry(0.008, 0.008, 0.14, 8).translate(0, 0.07, 0), M.steel, lever);
   const knob = add(new THREE.SphereGeometry(0.022, 12, 10).translate(0, 0.145, 0), M.knob, lever);
-  add(box(0.05, 0.02, 0.1, -0.2, 0.42, 0.3), M.carbon);              // its gate
+  const gate = add(box(0.05, 0.02, 0.1, -0.2, 0.42, 0.3), M.carbon);              // its gate
+  // (the TT-05 has none: it changes gear on paddles behind the wheel)
+  if (paddles) lever.visible = gate.visible = false;
   // the driver: shoulders and chest just under the rim, arms to the wheel
   // (sat back in the tub, not hunched over the wheel: his back against the
   // seat, leaning back, shoulders square and his head up against the headrest)
@@ -1004,12 +1007,22 @@ export function buildF1Cockpit(car) {
       headV.addScaledVector(headAim.sub(head), Math.min(1, dt * 60)).multiplyScalar(Math.exp(-dt * 14));
       head.addScaledVector(headV, Math.min(1, dt * 30));
       { const l = head.length(); if (l > 0.02) head.multiplyScalar(0.02 / l); }
-      // hands on the grips (the right one away to the lever during a change)
+      // hands on the grips (the right one away to the lever during a change;
+      // with paddles, his fingers just flick the paddle behind the wheel:
+      // the right one up, the left one down, and the hands never leave it)
       group.updateMatrixWorld(true);
+      if (paddles) {
+        if (shift < 1) shift = Math.min(1, shift + dt / 0.18);
+        const pull = shift < 1 ? Math.sin(Math.PI * shift) : 0;
+        paddleMeshes.forEach((m, k) => { m.position.z = (k === 0) === (shiftDir > 0) ? -0.012 * pull : 0; });
+      }
       for (let i = 0; i < 2; i++) {
         wheel.localToWorld(gripPt.set(i === 0 ? -0.125 : 0.125, 0, -0.03));
         group.worldToLocal(gripPt);
-        if (i === 0 && shift < 1) {
+        if (paddles) {
+          // (the hand on the side being pulled closes a little, toward the paddle)
+          if (shift < 1 && (i === 0) === (shiftDir > 0)) { wheel.localToWorld(knobPt.set(i === 0 ? -0.1 : 0.1, 0.02, -0.005)); group.worldToLocal(knobPt); gripPt.lerp(knobPt, Math.sin(Math.PI * shift) * 0.6); }
+        } else if (i === 0 && shift < 1) {
           shift = Math.min(1, shift + dt / 0.5);
           const out = shift < 0.3 ? shift / 0.3 : shift > 0.7 ? (1 - shift) / 0.3 : 1;
           const throwL = shift > 0.3 && shift < 0.7 ? Math.sin(Math.PI * (shift - 0.3) / 0.4) : 0;
@@ -1017,7 +1030,7 @@ export function buildF1Cockpit(car) {
           lever.updateMatrixWorld(true);
           knob.getWorldPosition(knobPt); group.worldToLocal(knobPt);
           gripPt.lerp(knobPt, Math.min(1, out));
-        } else if (i === 0) lever.rotation.x = 0;
+        } else if (i === 0 && !paddles) lever.rotation.x = 0;
         if (limp) gripPt.set(i === 0 ? -0.1 : 0.1, 0.36, 0.12);          // (hands fallen off the wheel, into his lap)
         reach(i, gripPt, POLE[i]);
       }

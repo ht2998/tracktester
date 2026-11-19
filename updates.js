@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 101;
+export const BUILD = 102;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 90, date: '19 Nov 2026', title: 'Paddles',
+    items: [
+      ['Paddle shifts in the TT-05', 'The TT-05 has no gear lever: it changes on paddles behind the wheel, the right one up and the left one down. His hands stay on the wheel and his fingers flick the paddle', 'fix'],
+    ],
+  },
   {
     id: 89, date: '19 Nov 2026', title: 'The TT-05',
     items: [
