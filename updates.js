@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 94;
+export const BUILD = 95;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 83, date: '19 Nov 2026', title: 'Laundry day',
+    items: [
+      ['A new code', 'There\'s a new code to find, and something rather different to drive. Try your luck', 'new'],
+    ],
+  },
   {
     id: 82, date: '19 Nov 2026', title: 'Smooth through lag',
     items: [

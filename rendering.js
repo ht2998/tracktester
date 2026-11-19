@@ -60,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 69;
+const BUILD = 70;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -690,6 +690,10 @@ fenderMat.side = THREE.DoubleSide;
 // game (wheels, brakes, suspension, tyres, damage, cameras) is built for it.
 const CAR_KIND = (() => { try { const c = JSON.parse(localStorage.getItem('tracktester-car') || 'null'); return c && c.kind === 'f1' ? 'f1' : 'caterham'; } catch (e) { return 'caterham'; } })();
 const IS_F1 = CAR_KIND === 'f1';
+// THE WASHING MACHINE (the code WASHED): the TT-88 underneath, with the
+// 2003-style V10, and nothing of it to see but a big front-loader; no
+// driver showing; no engine to hear, just its little tune
+const WASHER = IS_F1 && (() => { try { return !!JSON.parse(localStorage.getItem('tracktester-car') || 'null')?.washer; } catch (e) { return false; } })();
 const WHEEL_RADIUS = IS_F1 ? 0.33 : 0.288;   // 195/50 R15 on the Caterham; big slicks on the TT-88 (same as the physics)
 const WHEEL_WIDTH = IS_F1 ? 0.36 : 0.2;      // (the TT-88's fronts are narrower and its rears wider: see WHEEL_WIDTHS)
 const WHEEL_WIDTHS = IS_F1 ? [0.3 / 0.36, 0.3 / 0.36, 0.42 / 0.36, 0.42 / 0.36] : [1, 1, 1, 1];
@@ -843,6 +847,58 @@ function softBox(w, h, d, r, segs) {
   return g;
 }
 
+// THE WASHING MACHINE's body: a big front-loader over the car (all of the
+// car hidden under it: wheels, driver and all). White, slightly rounded
+// box; on the front, a round chrome-ringed door with a dark glass
+// porthole and the drum's paddles behind it; a control panel along the
+// top with a big dial, a little display and buttons; a detergent drawer
+function buildWasher(car) {
+  for (const c of car.children) c.visible = false;
+  // (and anything later made visible inside it stays hidden: the machine's a separate group, the rest stays off)
+  const g = new THREE.Group(); g.name = 'washer';
+  const W = 2.1, H = 2.0, D = 2.3, y0 = 0.08;
+  const white = new THREE.MeshStandardMaterial({ color: 0xf2f3f1, roughness: 0.35, metalness: 0.05 });
+  const grey = new THREE.MeshStandardMaterial({ color: 0xc9ccd0, roughness: 0.4, metalness: 0.3 });
+  const chrome = new THREE.MeshStandardMaterial({ color: 0xe0e3e8, roughness: 0.15, metalness: 0.95 });
+  const glass = new THREE.MeshPhysicalMaterial({ color: 0x1a2430, roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.82, clearcoat: 1 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x2a2d31, roughness: 0.5 });
+  const blue = new THREE.MeshStandardMaterial({ color: 0x5fb8ff, emissive: 0x2a7fd0, emissiveIntensity: 0.8, roughness: 0.3 });
+  const mesh = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; g.add(m); return m; };
+  // the cabinet, its corners rounded
+  const r = 0.12, sh = new THREE.Shape();
+  sh.moveTo(-W / 2 + r, 0); sh.lineTo(W / 2 - r, 0); sh.quadraticCurveTo(W / 2, 0, W / 2, r); sh.lineTo(W / 2, H - r); sh.quadraticCurveTo(W / 2, H, W / 2 - r, H);
+  sh.lineTo(-W / 2 + r, H); sh.quadraticCurveTo(-W / 2, H, -W / 2, H - r); sh.lineTo(-W / 2, r); sh.quadraticCurveTo(-W / 2, 0, -W / 2 + r, 0);
+  const cab = new THREE.ExtrudeGeometry(sh, { depth: D - 0.1, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.04, bevelSegments: 3, curveSegments: 6 });
+  cab.translate(0, y0, -D / 2 + 0.05);
+  mesh(cab, white, 0, 0, 0);
+  const front = D / 2 + 0.06;
+  // the control panel along the top: a grey strip, the dial, the display, the buttons
+  mesh(new THREE.BoxGeometry(W - 0.16, 0.34, 0.03), grey, 0, y0 + H - 0.26, front);
+  const dial = mesh(new THREE.CylinderGeometry(0.13, 0.14, 0.07, 28).rotateX(Math.PI / 2), chrome, 0.35, y0 + H - 0.26, front + 0.04);
+  mesh(new THREE.BoxGeometry(0.03, 0.09, 0.02), dark, 0.35, y0 + H - 0.2, front + 0.08);
+  mesh(new THREE.BoxGeometry(0.34, 0.13, 0.015), dark, -0.12, y0 + H - 0.26, front + 0.02);
+  mesh(new THREE.BoxGeometry(0.22, 0.06, 0.01), blue, -0.12, y0 + H - 0.26, front + 0.03);
+  for (let k = 0; k < 4; k++) mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.03, 14).rotateX(Math.PI / 2), grey, 0.62 + k * 0.1, y0 + H - 0.26, front + 0.03);
+  // the detergent drawer, top left
+  mesh(new THREE.BoxGeometry(0.5, 0.2, 0.04), white, -0.65, y0 + H - 0.26, front + 0.02);
+  mesh(new THREE.BoxGeometry(0.2, 0.03, 0.02), grey, -0.65, y0 + H - 0.31, front + 0.05);
+  // the door: a chrome ring round a dark glass porthole, the drum and its paddles behind
+  const doorY = y0 + H * 0.45;
+  mesh(new THREE.TorusGeometry(0.62, 0.07, 14, 48), chrome, 0, doorY, front + 0.03);
+  mesh(new THREE.CylinderGeometry(0.6, 0.6, 0.02, 48).rotateX(Math.PI / 2), glass, 0, doorY, front + 0.03);
+  const drum = new THREE.Group(); drum.position.set(0, doorY, front - 0.15); g.add(drum);
+  const steel = new THREE.MeshStandardMaterial({ color: 0x9aa1a8, roughness: 0.3, metalness: 0.9, side: THREE.DoubleSide });
+  const can = new THREE.Mesh(new THREE.CylinderGeometry(0.58, 0.58, 0.25, 32, 1, true).rotateX(Math.PI / 2), steel); drum.add(can);
+  for (let k = 0; k < 3; k++) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.18, 0.22), steel); p.position.set(Math.sin(k * 2.094) * 0.5, Math.cos(k * 2.094) * 0.5, 0); p.rotation.z = -k * 2.094; drum.add(p); }
+  // (some laundry in it)
+  const cloth = new THREE.MeshStandardMaterial({ color: 0x4a76c8, roughness: 0.9 });
+  for (let k = 0; k < 4; k++) { const b = new THREE.Mesh(new THREE.SphereGeometry(0.14 + k * 0.02, 10, 8), k % 2 ? cloth : new THREE.MeshStandardMaterial({ color: [0xe04848, 0xf2f2f2][k % 2 ? 0 : 1], roughness: 0.9 })); b.position.set(Math.sin(k * 1.7) * 0.32, -0.3 + Math.cos(k * 1.3) * 0.12, 0); drum.add(b); }
+  // the door handle, and the feet
+  mesh(new THREE.BoxGeometry(0.06, 0.26, 0.06), grey, 0.62, doorY, front + 0.08);
+  for (const [x, z] of [[-W / 2 + 0.18, D / 2 - 0.2], [W / 2 - 0.18, D / 2 - 0.2], [-W / 2 + 0.18, -D / 2 + 0.2], [W / 2 - 0.18, -D / 2 + 0.2]]) mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.08, 10), dark, x, 0.04, z);
+  car.add(g);
+  return { group: g, drum };
+}
 function buildCar() {
   const car = new THREE.Group();
 
@@ -1113,6 +1169,7 @@ if (IS_F1) cockpit.group.visible = false;   // (the TT-88 has its own cockpit:)
 // THE TT-88's COCKPIT (f1.js): the wheel, the lever on the right, the
 // driver's arms fighting the car, his head thrown about
 const f1Cockpit = IS_F1 ? buildF1Cockpit(carModel.car) : null;
+const washerBody = WASHER ? buildWasher(carModel.car) : null;
 // (your TT-88's driver moves with the cockpit's own body and arms: the body's still one is for other cars)
 if (f1Cockpit && carModel.car.userData.f1?.driver) carModel.car.userData.f1.driver.visible = false;
 
@@ -1389,6 +1446,13 @@ function enterCode(code) {
     try { localStorage.setItem('tracktester-caterham', '1'); } catch (e) { /* storage blocked */ }   // (it shows in the garage from now on)
     setCar('caterham', STOCK_ENGINE.caterham);
     showToast('CATERHAM SEVEN');
+    return true;
+  }
+  if (code === 'WASHED') {
+    if (heavyMode) enterCode('SWAP');
+    // (in: the TT-88 with the V10, as a washing machine; again: back to the plain TT-88)
+    try { localStorage.setItem('tracktester-car', JSON.stringify(WASHER ? { kind: 'f1', engine: 'v10x' } : { kind: 'f1', engine: 'v10x', washer: true })); } catch (e) { /* storage blocked */ }
+    location.reload();
     return true;
   }
   if (code === 'SWAP') {
@@ -2800,6 +2864,7 @@ function collide(now) {
 // back as echoes (see EchoSystem in sound.js).
 // ---------------------------------------------------------------------
 const engineSound = new EngineSound(CATERHAM);
+if (WASHER) engineSound.setWasher?.(true);     // (the washing machine: its tune, not an engine)
 // (If the browser is still using an older saved sound.js, skip the echoes
 // rather than stopping the game; they'll work after a refresh)
 if (typeof engineSound.echo.addBox === 'function') {
@@ -2839,7 +2904,7 @@ const hud = new Hud({
   onEngine: (key) => { if (ENGINES[key]) { setCar(carKind, key); showToast(ENGINES[key].name.toUpperCase()); } },
   damageOn,
   // (only the public codes work here)
-  onCode: (c) => String(c || '').toUpperCase().replace(/\s+/g, '') === 'CATERHAM' && enterCode('CATERHAM'),
+  onCode: (c) => { const k = String(c || '').toUpperCase().replace(/\s+/g, ''); return (k === 'CATERHAM' || k === 'WASHED') && enterCode(k); },
   onDamage: (on) => {
     damageOn = on;
     applyDamageSetting();
@@ -3487,7 +3552,7 @@ function setCar(kind, engine) {
   { let w = 0; for (const [r, nm] of physics.spec.torqueCurve) w = Math.max(w, nm * r * Math.PI / 30); setThrottleFeel(w / 745.7 / (physics.spec.mass / 1000)); }
   // (the TT-88 runs on racing slicks: if road tyres were fitted, it gets Racing Mediums)
   if (IS_F1 && TYRES[physics.tyreCompound]?.kind === 'road') { physics.setTyres('RM'); tyreLooks.apply('RM'); }
-  try { localStorage.setItem('tracktester-car', JSON.stringify({ kind: carKind, engine: engineKey })); } catch (e) { /* storage blocked */ }
+  try { localStorage.setItem('tracktester-car', JSON.stringify(WASHER ? { kind: carKind, engine: engineKey, washer: true } : { kind: carKind, engine: engineKey })); } catch (e) { /* storage blocked */ }
   if (carPicker) carPicker.value = carKind;
 }
 // THE GARAGE button in the side panel (the garage itself is set up
@@ -3744,7 +3809,7 @@ const driverMats = {
   boot: new THREE.MeshStandardMaterial({ color: 0x18191b, roughness: 0.6 }),
 };
 function driverInCar(show) {
-  if (IS_F1) { for (const m of carModel.car.userData.f1?.helmet || []) m.visible = show && cameraMode !== 'cockpit'; for (const m of f1Cockpit?.driverParts || []) m.visible = show; }
+  if (IS_F1) { for (const m of carModel.car.userData.f1?.helmet || []) m.visible = show && cameraMode !== 'cockpit' && !WASHER; for (const m of f1Cockpit?.driverParts || []) m.visible = show && !WASHER; }
   else if (cockpit.driver) cockpit.driver.visible = show;
 }
 // (collide() tells this how hard the last big hit was)
@@ -4472,7 +4537,13 @@ renderer.setAnimationLoop(() => {
   if (IS_F1) {
     // the TT-88: the driver's helmet hidden in his own view; exhausts glowing with the revs and boost
     const F = carModel.car.userData.f1;
-    for (const m of F.helmet) m.visible = cameraMode !== 'cockpit' && !driverOut;     // (and not there at all once he's out)
+    for (const m of F.helmet) m.visible = cameraMode !== 'cockpit' && !driverOut && !WASHER;     // (and not there at all once he's out)
+    if (washerBody) {
+      // (the machine is all there is to see: anything of the car a repair put back stays hidden under it)
+      for (const c of carModel.car.children) if (c !== washerBody.group) c.visible = false;
+      // the drum turns as you go
+      washerBody.drum.rotation.z -= physics.vx * dt * 0.6;
+    }
     F.exhaustMat.emissiveIntensity = Math.max(0, physics.rpm / physics.spec.redline - 0.55) * 3 * (0.5 + (physics.boost || 0));
     f1Cockpit.update(dt, {
       steer: physics.steer, maxSteer: physics.spec.maxSteer, speed: physics.vx, slip: physics.vy,

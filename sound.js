@@ -11,7 +11,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 25;
+export const BUILD = 26;
 
 // THE VOICED ENGINES (the V10's sound, made for each): bangs a turn, revs,
 // loudness matched to the approved preview, and how much of 3x the crank
@@ -38,6 +38,26 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 // The engine "voice". This runs on the browser's audio thread so it can
 // build the sound one sample at a time without slowing the game down.
 // ---------------------------------------------------------------------
+// THE LAUNDRY TUNE: the opening of Schubert's 'Die Forelle' (1817), in
+// little flat beeps from a cheap speaker, a beat's rest, round again
+function makeBeepTune(ctx) {
+  const sr = ctx.sampleRate, q = 0.28;
+  const mel = [[67, 1], [72, 1], [72, 1], [76, 1], [76, 1], [72, 1], [67, 2], [67, 1], [69, 1], [71, 1], [72, 1], [74, 1], [76, 3], [76, 1],
+    [77, 1], [77, 1], [74, 1], [74, 1], [71, 1], [67, 2], [67, 1], [72, 1], [71, 1], [69, 1], [67, 1], [65, 1], [62, 1], [60, 4]];
+  const beats = mel.reduce((a, [, d]) => a + d, 0) + 4;               // (and a rest before it goes round again)
+  const n = Math.ceil(sr * beats * q), buf = ctx.createBuffer(1, n, sr), out = buf.getChannelData(0);
+  let t0 = 0;
+  for (const [m, d] of mel) {
+    const f = 440 * Math.pow(2, (m - 69) / 12) * 2, L = Math.floor(sr * (d * q - 0.035)), i0 = Math.floor(t0 * sr);
+    for (let i = 0; i < L && i0 + i < n; i++) {
+      const t = i / sr, env = Math.min(1, t / 0.003) * Math.min(1, (L / sr - t) / 0.004);
+      out[i0 + i] += Math.tanh(6 * Math.sin(2 * Math.PI * f * t)) * env * 0.25;
+    }
+    t0 += d * q;
+  }
+  return buf;
+}
+
 export const ENGINE_WORKLET = `
 class EnginePulses extends AudioWorkletProcessor {
   static get parameterDescriptors() {
@@ -1212,6 +1232,7 @@ export class EngineSound {
     squealNoise.connect(this.squealBand).connect(squealNoiseGain).connect(this.squealGain);
     this.squealTone.connect(squealToneGain).connect(this.squealGain);
     this.squealGain.connect(this.carBus);
+    if (this.washerOn) this.setWasher(true);           // (the washing machine: its tune from the start)
 
     // --- Puncture hiss: air escaping from a tyre (quiet; the engine covers it) ---
     const hissSrc = ctx.createBufferSource();
@@ -2180,6 +2201,24 @@ export class EngineSound {
 
   // Gear change sound: a sharp mechanical clack for the manual (sequential),
   // a soft thump for the automatic, and nothing at all for the CVT.
+  // THE WASHING MACHINE: no engine (or tyres) to hear at all, just its
+  // tune, a little softer, round and round
+  setWasher(on) {
+    this.washerOn = on;
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.carBus.gain.setTargetAtTime(on ? 0 : 1, t, 0.05);
+    if (on && !this.tuneSrc) {
+      const src = this.ctx.createBufferSource(); src.buffer = makeBeepTune(this.ctx); src.loop = true;
+      // (a cheap little speaker: no bass, boxy)
+      const hp = this.ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 600;
+      const lp = this.ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 6000;
+      const g = this.ctx.createGain(); g.gain.value = 0.38;
+      src.connect(hp).connect(lp).connect(g).connect(this.out);
+      src.start();
+      this.tuneSrc = src;
+    } else if (!on && this.tuneSrc) { this.tuneSrc.stop(); this.tuneSrc = null; }
+  }
   // the V10's upshift (approved preview): a few cylinders drop out for 8
   // ms (the split chop), then the sparks are cut for 20-40 ms (the gearbox
   // whine and the exhaust's rasp through it), then the unburnt fuel goes
