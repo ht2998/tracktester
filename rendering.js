@@ -60,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 72;
+const BUILD = 73;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -2715,6 +2715,7 @@ function findContact() {
   const bottom = physics.air ? physics.pose.y - 0.25 : -Infinity;
   for (const c of collidersNear(cx, cz)) {
     if (c.maxX < cx - 2.2 || c.minX > cx + 2.2 || c.maxZ < cz - 2.2 || c.minZ > cz + 2.2) continue;
+    if (heavyMode && CRUSHABLE[c.kind]) continue;          // (it just rolls over them: see crushUnder)
     if (bottom > -Infinity && bottom > groundAt((c.minX + c.maxX) / 2, (c.minZ + c.maxZ) / 2) + (BARRIER_TOP[c.kind] ?? 50)) continue;
     // Corners and edges of the car inside the box: pushed out through the
     // nearest face that's on the car's side of the box
@@ -2753,6 +2754,111 @@ function vehicleGroundY() {
   return physics.air ? physics.pose.y : physics.ground.y;
 }
 
+// ---- KNOCKED OVER: trees falling, signs flung, people knocked flying ----
+// what the heavy just rolls over (flattening it), and what it can't
+const CRUSHABLE = { tree: true, fence: true, armco: true, tyres: true, concrete: true, bollard: true, billboard: true };
+const crushedAt = new Map();
+function crushUnder(now) {
+  const cx = physics.x, cz = physics.z, h = physics.heading;
+  const fx = Math.sin(h), fz = Math.cos(h), lx = Math.cos(h), lz = -Math.sin(h);
+  const speed = Math.max(4, Math.abs(heavyPhys?.speed ?? Math.hypot(physics.vx, physics.vy)));
+  for (const c of collidersNear(cx, cz)) {
+    if (!CRUSHABLE[c.kind] || c.maxX < cx - 5 || c.minX > cx + 5 || c.maxZ < cz - 5 || c.minZ > cz + 5) continue;
+    // under its footprint? (the box's middle or nearest point inside the hull's outline)
+    const px = Math.max(c.minX, Math.min(c.maxX, cx)), pz = Math.max(c.minZ, Math.min(c.maxZ, cz));
+    const rx = px - cx, rz = pz - cz, along = rx * fx + rz * fz, side = rx * lx + rz * lz;
+    if (along > CAR_FRONT + 0.2 || along < -CAR_REAR - 0.2 || Math.abs(side) > CAR_HALF_W + 0.2) continue;
+    if (c.kind === 'tree') { fellTree(c, fx, fz, 0.5); engineSound.playClunk?.(); shake = Math.max(shake, 0.12); continue; }
+    if (now - (crushedAt.get(c) ?? -9) < 0.4) continue;
+    crushedAt.set(c, now);
+    // the barrier flattened under the tracks (pushed down the way it's going)
+    let nx = -(px - cx), nz = -(pz - cz); const nd = Math.hypot(nx, nz) || 1; nx /= nd; nz /= nd;
+    const res = c.hit?.({ x: px, z: pz }, { x: nx, z: nz }, 45);
+    if (res?.fling) flingAway(res.fling, fx, fz, speed * 0.6 + 2);
+    if (res?.chips) for (let i = 0; i < res.chips; i++) chips.spawn({ x: px, z: pz }, chipVel.set(fx * 3, 1, fz * 3), 1);
+    shake = Math.max(shake, 0.08);
+  }
+}
+// a tree, pushed over: it leans, then goes faster and faster, crashes
+// down, bounces a little and lies there
+const fallingTrees = [];
+const _tq = new THREE.Quaternion(), _tq2 = new THREE.Quaternion(), _tm = new THREE.Matrix4(), _tp = new THREE.Vector3(), _ts = new THREE.Vector3(), _ta = new THREE.Vector3();
+function fellTree(c, dx, dz, kick = 0.3) {
+  const T = c.tree;
+  c.minX = c.maxX = c.minZ = c.maxZ = 1e6;               // (no longer in the way)
+  if (!T || T.down) return;
+  T.down = true;
+  const d = Math.hypot(dx, dz) || 1;
+  fallingTrees.push({ T, ax: dz / d, az: -dx / d, dx: dx / d, dz: dz / d, th: 0, w: 0.12 + kick, gy: groundAt(T.x, T.z), bounced: 0 });
+}
+function updateFallingTrees(dt) {
+  for (let i = fallingTrees.length - 1; i >= 0; i--) {
+    const f = fallingTrees[i], T = f.T;
+    f.w += 2.4 * Math.sin(f.th + 0.04) * dt;
+    f.th += f.w * dt;
+    const end = Math.PI / 2 - 0.07;
+    let done = false;
+    if (f.th >= end) {
+      f.th = end;
+      if (!f.bounced) {
+        // the crash as it hits the ground: dust and leaves all along it
+        const len = 9 * T.sy;
+        for (let k = 0; k < 16; k++) { const u = Math.random() * len; dust.spawn(fxP.set(T.x + f.dx * u, f.gy + 0.3, T.z + f.dz * u), 1, fxV.set((Math.random() - 0.5) * 3, 1 + Math.random() * 2, (Math.random() - 0.5) * 3)); }
+        engineSound.playClunk?.();
+        shake = Math.max(shake, 0.25 / (1 + camera.position.distanceTo(fxP.set(T.x, f.gy, T.z)) / 20));
+      }
+      f.bounced++;
+      f.w = -f.w * 0.2;
+      if (Math.abs(f.w) < 0.06 || f.bounced > 3) { f.w = 0; done = true; }
+    }
+    _tq.setFromAxisAngle(_ta.set(f.ax, 0, f.az), f.th).multiply(_tq2.copy(T.q));
+    _tm.compose(_tp.set(T.x, f.gy, T.z), _tq, _ts.set(T.s, T.sy, T.s));
+    for (const mesh of T.meshes) { mesh.setMatrixAt(T.i, _tm); mesh.instanceMatrix.needsUpdate = true; }
+    if (done) fallingTrees.splice(i, 1);
+  }
+}
+// something thrown loose (a sign off its post, a board off its legs): it
+// flies, tumbles, lands and comes to rest lying flat
+function flingAway(obj, dx, dz, speed) {
+  if (!obj || obj.userData.flung) return;
+  obj.userData.flung = true;
+  obj.updateMatrixWorld(true);
+  scene.attach(obj);
+  const d = Math.hypot(dx, dz) || 1;
+  const v = new THREE.Vector3(dx / d * speed + (Math.random() - 0.5) * 2, 2 + speed * 0.35 + Math.random() * 2, dz / d * speed + (Math.random() - 0.5) * 2);
+  flyingParts.push({ obj, v, w: new THREE.Vector3((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 8), rest: false, flat: true });
+}
+// everyone out there (marshals, crews, medics, camera crews), this frame
+const peopleHere = [];
+const _pw = new THREE.Vector3(), _pv = new THREE.Vector3();
+function gatherPeople() {
+  peopleHere.length = 0;
+  for (const p of PersonFigure.all) {
+    if (!p.root.parent || !p.root.visible) continue;
+    let o = p.root, shown = true; while (o) { if (!o.visible) { shown = false; break; } o = o.parent; }
+    if (!shown) continue;
+    p.root.getWorldPosition(_pw);
+    peopleHere.push({ p, x: _pw.x, y: _pw.y, z: _pw.z });
+  }
+}
+function personAt(pt) {
+  for (const h of peopleHere) {
+    const dx = pt.x - h.x, dz = pt.z - h.z;
+    if (dx * dx + dz * dz > (h.p.ragdolled ? 0.6 : 0.12)) continue;
+    if (pt.y < h.y - 0.2 || pt.y > h.y + (h.p.ragdolled ? 0.5 : 1.85)) continue;
+    return h;
+  }
+  return null;
+}
+// knock someone flying (v: the push, in the world)
+function knockPerson(h, vx, vy, vz) {
+  // (into his own surroundings' terms: some people stand in a group that's moved or turned)
+  const par = h.p.root.parent;
+  _pv.set(vx, vy, vz);
+  if (par) { par.updateMatrixWorld(); const a = par.worldToLocal(_pw.set(h.x, h.y, h.z)).clone(); _pv.copy(par.worldToLocal(_pw.set(h.x + vx, h.y + vy, h.z + vz))).sub(a); }
+  h.p.knock(_pv.x, _pv.y, _pv.z);
+}
+
 let hardestHit = 0;
 let sweptFromX = null, sweptFromZ = null;
 // how tall each kind of barrier is (m): fly higher than that and you clear it
@@ -2762,6 +2868,7 @@ function collide(now) {
   const fromX = sweptFromX, fromZ = sweptFromZ;
   sweptFromX = toX; sweptFromZ = toZ;
   if (physics.air && physics.airHeight > 6) return;     // (high up, clear of everything)
+  if (heavyMode) crushUnder(now);
   const speedBefore = Math.hypot(physics.vx, physics.vy);
   hardestHit = 0;
   // Fast: the car can move most of a metre in one frame, and a tyre wall's
@@ -2792,7 +2899,7 @@ function collide(now) {
     const vn = pvx * k.nx + pvz * k.nz;
     if (vn >= 0) continue;                                          // already moving away
     // A bollard just gets knocked flat: it doesn't stop the car
-    if (k.c.kind === 'bollard') { k.c.hit?.({ x: k.px, z: k.pz }, { x: k.nx, z: k.nz }, -vn); continue; }
+    if (k.c.kind === 'bollard') { const res = k.c.hit?.({ x: k.px, z: k.pz }, { x: k.nx, z: k.nz }, -vn); if (res?.fling) flingAway(res.fling, -k.nx, -k.nz, -vn * 0.6); continue; }
     const props = HIT[k.c.kind] || HIT.building;
     let bounce = props.bounce;
     // Which part of the car hit: the push from the wall in the car's own
@@ -2830,6 +2937,7 @@ function collide(now) {
       lastHit.set(k.c, now);
       // (the washing machine leaves no marks: it bounces off without denting anything)
       const res = WASHER ? { absorb: 0.35 } : k.c.hit({ x: k.px, z: k.pz }, { x: k.nx, z: k.nz }, -vn);
+      if (res?.fling) flingAway(res.fling, -k.nx, -k.nz, -vn * 0.5);
       // (a barrier badly hit: race control sends a repair crew, and a safety car or a red flag)
       if (!WASHER && -vn > 18 && teleportGrace <= 0 && (k.c.kind === 'armco' || k.c.kind === 'tyres' || k.c.kind === 'fence')) raceControl?.barrierHit?.({ x: k.px, z: k.pz }, -vn, k.c.kind);
       if (res?.absorb) bounce *= 1 - res.absorb;                    // a barrier that gives way bounces you back less
@@ -3097,7 +3205,18 @@ function updateCoax(dt) {
       b.v.y -= 9.81 * h;
       b.p.addScaledVector(b.v, h);
       b.t += h;
-      if (b.t > 0.005 && shellHit(b.p)) hit = true;
+      if (b.t > 0.005) {
+        // someone hit: knocked off their feet, the way the round was going
+        const who = personAt(b.p);
+        if (who) { const sp = Math.hypot(b.v.x, b.v.z) || 1; knockPerson(who, b.v.x / sp * 4.5, 1.8, b.v.z / sp * 4.5); hit = true; break; }
+        // a sign: shot off its post
+        for (const c of collidersNear(b.p.x, b.p.z)) {
+          if ((c.kind !== 'bollard' && c.kind !== 'billboard') || b.p.x < c.minX || b.p.x > c.maxX || b.p.z < c.minZ || b.p.z > c.maxZ) continue;
+          const res = c.hit?.({ x: b.p.x, z: b.p.z }, { x: -b.v.x, z: -b.v.z }, 10);
+          if (res?.fling) flingAway(res.fling, b.v.x, b.v.z, 4);
+        }
+        if (shellHit(b.p)) hit = true;
+      }
     }
     if (b.tracer) { b.tracer.position.copy(b.p); b.tracer.lookAt(fxP.copy(b.p).add(b.v)); }
     if (hit || b.t > 2.5) {
@@ -3151,8 +3270,23 @@ function explode(at) {
     for (let k = 0; k < (power > 0.6 ? 3 : 1); k++) {
       const off = (k - 1) * 1.2;
       const res = c.hit({ x: cx + nz * off, z: cz - nx * off }, { x: nx, z: nz }, 12 + 30 * power);
+      if (res?.fling) flingAway(res.fling, -nx, -nz, 6 + 14 * power);
       if (res?.chips) for (let i = 0; i < res.chips + 4; i++) chips.spawn({ x: cx, z: cz }, chipVel.set(-nx * 8, 0, -nz * 8), 1);
     }
+  }
+  // trees close by are blown over, away from the blast
+  for (const c of COLLIDERS) {
+    if (c.kind !== 'tree' || !c.tree || c.tree.down) continue;
+    const dx = c.tree.x - at.x, dz = c.tree.z - at.z, dd = Math.hypot(dx, dz);
+    if (dd < 6) fellTree(c, dx || 1, dz, 0.4 + (1 - dd / 6) * 1.2);
+  }
+  // and anyone near is knocked flying (the closer, the harder)
+  gatherPeople();
+  for (const h of peopleHere) {
+    const dx = h.x - at.x, dz = h.z - at.z, dd = Math.hypot(dx, dz);
+    if (dd > 11) continue;
+    const pw = 1 - dd / 11, sp = 3 + 15 * pw;
+    knockPerson(h, dx / (dd || 1) * sp, 2 + 8 * pw, dz / (dd || 1) * sp);
   }
   // AI cars nearby are flung into the air, tumbling (ai.js)
   aiField?.blast(at, 9);
@@ -3166,6 +3300,7 @@ function shellHit(p) {
   const gy = groundAt(p.x, p.z);
   if (p.y <= gy + 0.05) { p.y = gy + 0.05; return true; }
   if (aiField?.hitTest(p)) return true;          // (an AI car)
+  if (personAt(p)) return true;                  // (someone standing there)
   if (p.y - gy > 12) return false;
   for (const c of COLLIDERS) {
     if (p.x < c.minX || p.x > c.maxX || p.z < c.minZ || p.z > c.maxZ) continue;
@@ -3175,6 +3310,7 @@ function shellHit(p) {
 }
 
 function updateGun(dt) {
+  if (shells.length || bullets.length) gatherPeople();
   updateCoax(dt);
   GUN.reload = Math.max(0, GUN.reload - dt);
   muzzleLight.intensity *= Math.exp(-dt * 30);
@@ -3657,8 +3793,9 @@ function snapWing(part) {
   engineSound.playClunk?.();
   showToast(part === 'rear' ? 'REAR WING GONE' : 'FRONT WING DAMAGED');
 }
-const _q = new THREE.Quaternion(), _wv = new THREE.Vector3();
+const _q = new THREE.Quaternion(), _wv = new THREE.Vector3(), _q0 = new THREE.Quaternion(), _fb = new THREE.Box3(), _fa = new THREE.Vector3(), _fc = new THREE.Vector3();
 function updateFlyingParts(dt) {
+  updateFallingTrees(dt);
   for (const p of flyingParts) {
     if (p.rest) continue;
     p.v.y -= 9.81 * dt;
@@ -3666,6 +3803,22 @@ function updateFlyingParts(dt) {
     _wv.copy(p.w).multiplyScalar(dt);
     _q.setFromAxisAngle(_wv.clone().normalize(), _wv.length() || 0);
     if (_wv.lengthSq() > 0) p.obj.quaternion.premultiply(_q);
+    if (p.flat) {
+      // (a board or a sign: it lands on its face, resting on the ground, not sunk in it)
+      _fb.setFromObject(p.obj);
+      const g0 = groundAt(p.obj.position.x, p.obj.position.z);
+      if (_fb.min.y < g0) {
+        p.obj.position.y += g0 - _fb.min.y;
+        if (p.v.y < 0) p.v.y = -p.v.y * 0.2;
+        p.v.x *= 0.8; p.v.z *= 0.8; p.w.multiplyScalar(0.7);
+        // tipping onto its broadest side
+        _fa.set(0, 0, 1).applyQuaternion(p.obj.quaternion);
+        _q.setFromUnitVectors(_fa, _fc.set(0, Math.sign(_fa.y) || 1, 0));
+        p.obj.quaternion.premultiply(_q.slerp(_q0, 1 - Math.min(1, dt * 4)));
+        if (p.v.length() < 0.3 && p.w.length() < 0.4) { p.rest = true; p.obj.position.y = p.obj.position.y + 0.01; }
+      }
+      continue;
+    }
     const gy = groundAt(p.obj.position.x, p.obj.position.z) + 0.05;
     if (p.obj.position.y < gy) {
       // hits the ground: bounces a little, skids, slows down, and stops

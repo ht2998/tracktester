@@ -35,7 +35,7 @@ import { Person } from './pits.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 5;
+export const BUILD = 6;
 
 export const FLAG_NAMES = {
   green: 'GREEN FLAG', yellow: 'YELLOW FLAG', yellow2: 'DOUBLE YELLOW', red: 'RED FLAG', blue: 'BLUE FLAG',
@@ -417,7 +417,7 @@ export function buildTrackside(scene, { line, kerb, surfaceAt, colliders, corner
       boards.push(b);
       // (knock one and it goes flying off its post)
       const col = addSolid(x - 0.15, x + 0.15, z - 0.15, z + 0.15, 'bollard', {
-        hit: () => { b.visible = false; col.minX = col.maxX = col.minZ = col.maxZ = 1e6; return { absorb: 0.9 }; },
+        hit: () => { col.minX = col.maxX = col.minZ = col.maxZ = 1e6; return { absorb: 0.9, fling: b }; },
       });
     }
   }
@@ -449,10 +449,14 @@ export function buildTrackside(scene, { line, kerb, surfaceAt, colliders, corner
     b.castShadow = true;
     group.add(b);
     bills.push(b);
+    // (its legs: hit one hard, or blast it, and the board's knocked off them)
+    const legs = [];
     for (const k of [-3.5, 3.5]) {
       const lx = spot.x + Math.cos(ry) * k, lz = spot.z - Math.sin(ry) * k;
       put('billLeg', lx, y, lz);
-      addSolid(lx - 0.15, lx + 0.15, lz - 0.15, lz + 0.15, 'building');
+      legs.push(addSolid(lx - 0.15, lx + 0.15, lz - 0.15, lz + 0.15, 'billboard', {
+        hit: (pt, n, v) => { if (v < 8 || b.userData.flung) return { absorb: 0.1 }; return { absorb: 0.3, fling: b }; },
+      }));
     }
   }
 

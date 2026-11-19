@@ -26,7 +26,7 @@
 // a smashed radiator): the team retire the car. DNF on the standings, and
 // they push it back into the garage.
 // =====================================================================
-export const BUILD = 15;
+export const BUILD = 16;
 
 import * as THREE from 'three';
 
@@ -100,6 +100,7 @@ export class Person {
   //   look: 'crew' (pit crew: helmets), 'driver' (helmet), 'marshal' (face,
   //   cap, hi-vis bands), 'medic' (face, no cap), 'camera' (face, cap, headphones)
   constructor(mats, colour) {
+    Person.all.add(this);
     const root = this.root = new THREE.Group();
     const suit = mats.suits[colour] || mats.suits[0];
     const look = mats.look || 'crew';
@@ -193,6 +194,7 @@ export class Person {
   }
   // the middle of his body on the ground (he's placed by his feet: lying on
   // his back, the rest of him is behind them)
+  static all = new Set();          // (everyone, for blasts and the like to find)
   get bodyAt() {
     const lying = Math.min(1, Math.abs(this.p.tilt || 0) / 1.4), back = (this.p.tilt || 0) < 0 ? -1 : 1;
     return [this.x + Math.sin(this.face) * 0.85 * lying * back, this.z + Math.cos(this.face) * 0.85 * lying * back];
@@ -204,7 +206,98 @@ export class Person {
   hold(obj, where = 'front') { (where === 'hand' ? this.handR : where === 'handL' ? this.handL : where === 'root' ? this.root : this.front).add(obj); this.held.push(obj); }
   release(obj) { this.held = this.held.filter((o) => o !== obj); }
 
+  // KNOCKED FLYING (a blast, a hit): a ragdoll. Flung through the air
+  // tumbling, arms and legs flailing, he lands, bounces, slides, and lies
+  // there limp; after a while he gets himself back up and carries on with
+  // whatever he was doing. (v: the push, in the world, m/s)
+  knock(vx, vy, vz) {
+    const r = this.rag;
+    if (r && r.up > 0) { r.up = 0; }
+    const f = vx * Math.sin(this.face) + vz * Math.cos(this.face), s = vx * Math.cos(this.face) - vz * Math.sin(this.face);
+    const R = Math.random;
+    if (!r) {
+      this.rag = { hx: this.x, hy: null, hz: this.z, ax: this.p.tilt || 0, az: this.p.roll || 0, vx, vy, vz, wx: f * 1.6 + (R() - 0.5) * 3, wz: -s * 1.6 + (R() - 0.5) * 3,
+        t: 0, rest: 0, up: 0, seed: R() * 10, j: {} };
+    } else { r.vx += vx; r.vy += vy; r.vz += vz; r.wx += f * 1.6; r.wz -= s * 1.6; r.rest = 0; r.t = 0; }
+    this.anim = null;
+  }
+  get ragdolled() { return !!this.rag; }
+  updateRag(dt, groundAt) {
+    const r = this.rag, root = this.root;
+    r.t += dt;
+    const gy = groundAt(r.hx, r.hz);
+    if (r.hy == null) r.hy = gy + 0.95 + (this.p.lift || 0);
+    const lying = Math.abs(Math.sin(r.ax)) > 0.8 || Math.abs(Math.sin(r.az)) > 0.8;
+    if (r.up > 0) {
+      // getting up: rolls over, pushes up off the ground, stands
+      r.up += dt / 1.6;
+      const e = Math.min(1, r.up), ee = e * e * (3 - 2 * e);
+      r.ax = r.ax0 * (1 - ee); r.az = r.az0 * (1 - ee); r.hy = r.hy0 + (0.95 - r.hy0) * ee;
+      for (const [k, v] of Object.entries(r.j)) { const j = this[k]; j.rotation.set(v[0] * (1 - ee), 0, v[2] * (1 - ee)); }
+      if (e >= 1) {
+        this.rag = null; this.p.tilt = 0; this.p.roll = 0;
+        return false;
+      }
+    } else {
+      // the body: thrown, falling, tumbling, then on the ground
+      r.vy -= 9.81 * dt;
+      r.hx += r.vx * dt; r.hy += r.vy * dt; r.hz += r.vz * dt;
+      r.ax += r.wx * dt; r.az += r.wz * dt;
+      // the lowest of him: his feet, his head, or his hips if he's flat
+      const feetY = r.hy - 0.95 * Math.cos(r.ax) * Math.cos(r.az), headY = r.hy + 0.8 * Math.cos(r.ax) * Math.cos(r.az);
+      const low = Math.min(feetY, headY, r.hy - 0.12);
+      if (low < gy) {
+        r.hy += gy - low;
+        if (r.vy < 0) r.vy = -r.vy * (r.vy < -4 ? 0.3 : 0);
+        r.vx *= Math.exp(-dt * 6); r.vz *= Math.exp(-dt * 6);
+        r.wx *= Math.exp(-dt * 5); r.wz *= Math.exp(-dt * 5);
+        // gravity lays him down: on his back or front, whichever's nearer
+        const onSide = Math.abs(Math.sin(r.az)) > 0.8;
+        if (!onSide) {
+          let tx = r.ax, best = Infinity;
+          for (const c0 of [Math.PI / 2, -Math.PI / 2]) { const c1 = c0 + Math.round((r.ax - c0) / (2 * Math.PI)) * 2 * Math.PI; if (Math.abs(c1 - r.ax) < best) { best = Math.abs(c1 - r.ax); tx = c1; } }
+          r.ax += (tx - r.ax) * Math.min(1, dt * 3);
+          r.az += (Math.round(r.az / Math.PI) * Math.PI - r.az) * Math.min(1, dt * 3);
+        }
+        const slow = Math.hypot(r.vx, r.vz) < 0.3 && Math.abs(r.vy) < 0.5;
+        if (slow && lying) r.rest += dt;
+      }
+      // the arms and legs: flailing in the air, flopping limp on the ground
+      const air = low > gy + 0.05;
+      const fl = (k, i) => Math.sin(r.t * (7 + i * 1.3) + r.seed + i * 2.1);
+      const want = air ? {
+        shL: [-1.2 + fl(0, 0) * 1.4, 0, 0.9 + fl(0, 1) * 0.6], shR: [-1.2 + fl(0, 2) * 1.4, 0, -0.9 + fl(0, 3) * 0.6],
+        elL: [-0.6 - Math.abs(fl(0, 4)), 0, 0], elR: [-0.6 - Math.abs(fl(0, 5)), 0, 0],
+        thL: [-0.6 + fl(0, 6) * 0.8, 0, 0.2], thR: [-0.4 + fl(0, 7) * 0.8, 0, -0.2], knL: [0.6 + Math.abs(fl(0, 8)), 0, 0], knR: [0.5 + Math.abs(fl(0, 9)), 0, 0],
+        head: [fl(0, 10) * 0.5, 0, fl(0, 11) * 0.4],
+      } : {
+        shL: [-0.2 + Math.sin(r.seed) * 0.6, 0, 1.15 + Math.sin(r.seed * 2) * 0.3], shR: [-0.3 + Math.sin(r.seed * 3) * 0.6, 0, -1.1 - Math.sin(r.seed * 5) * 0.3],
+        elL: [-0.3 - Math.abs(Math.sin(r.seed * 7)) * 0.6, 0, 0], elR: [-0.25 - Math.abs(Math.sin(r.seed * 11)) * 0.6, 0, 0],
+        thL: [-0.15 - Math.abs(Math.sin(r.seed * 13)) * 0.4, 0, 0.18], thR: [0.05, 0, -0.12], knL: [0.25 + Math.abs(Math.sin(r.seed * 17)) * 0.6, 0, 0], knR: [0.1, 0, 0],
+        head: [Math.sin(r.seed * 19) * 0.3, 0, Math.sin(r.seed * 23) * 0.6],
+      };
+      const k = Math.min(1, dt * (air ? 10 : 6));
+      for (const [name, v] of Object.entries(want)) {
+        const j = this[name], cur = r.j[name] || [j.rotation.x, 0, j.rotation.z];
+        cur[0] += (v[0] - cur[0]) * k; cur[2] += (v[2] - cur[2]) * k; r.j[name] = cur;
+        j.rotation.set(cur[0], 0, cur[2]);
+      }
+      this.torso.rotation.set(0, 0, 0); this.hips.rotation.set(0, 0, 0);
+      // lain there a while: up he gets
+      if (r.rest > 3.5) { r.up = 1e-6; r.ax0 = r.ax; r.az0 = r.az; r.hy0 = r.hy; }
+    }
+    // placed by his hips: the feet are wherever the tilt puts them
+    root.rotation.set(r.ax, this.face, r.az, 'YXZ');
+    root.updateMatrix();
+    const off = new THREE.Vector3(0, 0.95, 0).applyEuler(root.rotation);
+    root.position.set(r.hx - off.x, r.hy - off.y, r.hz - off.z);
+    this.x = root.position.x; this.z = root.position.z;
+    this.moving = 0;
+    return true;
+  }
+
   update(dt, groundAt, ctx) {
+    if (this.rag && this.updateRag(dt, groundAt)) return;
     this.t += dt;
     let speed = 0, lift = 0;
     // work through the list of things to do

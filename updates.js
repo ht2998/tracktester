@@ -21,11 +21,20 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 99;
+export const BUILD = 100;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 88, date: '19 Nov 2026', title: 'Recovery, rebuilt',
+    items: [
+      ['Detailed rescue vehicles', 'The safety car, the ambulance, the recovery crane and the flatbed are all rebuilt in far more detail: properly shaped bodies, real-looking wheels and brakes, lights, mirrors, handles and hinges, light bars with LED modules, and insides you can see through the glass', 'new'],
+      ['A working crane', 'The crane puts its legs out before it lifts, its boom runs out in sections one after the other, and the hook always hangs straight down on its cables with slings to the car', 'new'],
+      ['Right on the bed', 'If the flatbed\'s out of reach, the crane drives over to it with your car on the hook, sets up again, and lowers it exactly onto the middle of the bed, lined up with the truck', 'fix'],
+      ['Knocked flying', 'Anyone caught by a blast is thrown off their feet, tumbles, lies there a moment and gets back up. A blast brings down trees and throws signs off their posts', 'new'],
+    ],
+  },
   {
     id: 87, date: '19 Nov 2026', title: 'No more crackle',
     items: [

@@ -16,7 +16,7 @@
 // area gets broadleaf trees and conifers round its edges.
 import * as THREE from 'three';
 
-export const BUILD = 3;
+export const BUILD = 4;
 
 // The same random numbers every time (so the forest is always the same)
 function seeded(seed) {
@@ -295,7 +295,8 @@ export function buildFlora(scene, { isMobile = false, style = 'tropical', area, 
       }
       if (isTree && colliders) {
         const r = kind.trunkR * s;
-        colliders.push({ minX: x - r, maxX: x + r, minZ: z - r, maxZ: z + r, kind: 'tree' });
+        // (and which tree it is, so it can be knocked over)
+        colliders.push({ minX: x - r, maxX: x + r, minZ: z - r, maxZ: z + r, kind: 'tree', tree: { meshes, i: placed, x, z, s, sy: s * (0.9 + r3 * 0.2), q: q.clone() } });
       }
       placed++;
     }
