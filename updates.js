@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 87;
+export const BUILD = 88;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 76, date: '19 Nov 2026', title: 'Garage button',
+    items: [
+      ['Easier to read', 'The Garage button in the side panel now has white text, so it shows up against the dark button', 'fix'],
+    ],
+  },
   {
     id: 75, date: '19 Nov 2026', title: 'Marshal fixes',
     items: [

@@ -60,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 67;
+const BUILD = 68;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -3504,7 +3504,7 @@ let carPicker = null;
     const b = document.createElement('button');
     b.type = 'button';
     b.id = 'garage-open';
-    b.style.cssText = 'display:flex;align-items:center;gap:8px;width:100%;padding:9px 12px;border-radius:9px;border:1px solid rgba(255,255,255,0.16);background:#1d2127;color:inherit;font:inherit;font-weight:600;letter-spacing:0.05em;cursor:pointer';
+    b.style.cssText = 'display:flex;align-items:center;gap:8px;width:100%;padding:9px 12px;border-radius:9px;border:1px solid rgba(255,255,255,0.16);background:#1d2127;color:#fff;font:inherit;font-weight:600;letter-spacing:0.05em;cursor:pointer';
     b.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="7.5" cy="12" r="4"/><path d="M11.5 12H21M17.5 12v3M20.5 12v2.4"/></svg>Garage';
     b.addEventListener('click', () => { b.blur(); document.getElementById('sidepanel')?.classList.remove('open'); openGarage(); });
     box.appendChild(b);
