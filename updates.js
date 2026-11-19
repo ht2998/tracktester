@@ -21,11 +21,18 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 110;
+export const BUILD = 111;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 97, date: '19 Nov 2026', title: 'New names, and the 70s',
+    items: [
+      ['Every car named for the game', 'All the cars in the Garage carry the game\'s name now: TTF for Formula, TTG for GT3, TTR for Rally, TTP for Prototype, TTS for Touring, and TT and a word for road cars, each with its year', 'update'],
+      ['The 1970s, coming', 'Coming soon: a 1978 ground-effect Formula car, a 1974 Group 4 rally car, a 1970 flat-12 long-distance prototype and a 1973 Group 2 touring coupé', 'new'],
+    ],
+  },
   {
     id: 96, date: '19 Nov 2026', title: 'TTF',
     items: [

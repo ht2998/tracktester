@@ -7,7 +7,7 @@
 // has several cars dropping down again. Pick one and it fires up: a
 // couple of big revs, then it settles to idle.
 // =====================================================================
-export const BUILD = 4;
+export const BUILD = 5;
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -17,34 +17,38 @@ import { bodyForKind, WHEEL_LAYOUT, buildF1RimGeometry } from './f1.js';
 // (made-up names, no real makes)
 export const COLLECTION = [
   { cat: 'Formula', cars: [
+    { name: 'TTF-78', year: 1978, blurb: 'Ground effect, 3.0 V8' },
     { name: 'TTF-88', year: 1988, kind: 'f1', blurb: 'Turbo era, 1.5 V6' },
     { name: 'TTF-94', year: 1994, kind: 'f94', blurb: '3.5 V12, 16,000 rpm' },
     { name: 'TTF-05', year: 2005, kind: 'f05', blurb: '3.0 V10, 19,200 rpm' },
     { name: 'TTF-14', year: 2014, blurb: 'Hybrid turbo V6' },
   ] },
   { cat: 'GT3', cars: [
-    { name: 'GT3 Coupé R', year: 2012, blurb: 'Front-engined V8' },
-    { name: 'GT3 Berlinetta', year: 2016, blurb: 'Mid-engined V8 turbo' },
-    { name: 'GT3 Evo', year: 2023, blurb: 'Flat-six' },
+    { name: 'TTG-12', year: 2012, blurb: 'Front-engined V8 coupé' },
+    { name: 'TTG-16', year: 2016, blurb: 'Mid-engined V8 turbo' },
+    { name: 'TTG-23', year: 2023, blurb: 'Flat-six' },
   ] },
   { cat: 'Rally', cars: [
-    { name: 'Group B Turbo', year: 1985, blurb: '4WD, 500 bhp, gravel' },
-    { name: 'Group A 4WD', year: 1995, blurb: 'Turbo four, anti-lag' },
-    { name: 'Rally1 Hybrid', year: 2022, blurb: 'Hybrid boost' },
+    { name: 'TTR-74', year: 1974, blurb: 'Group 4, mid-engined V6' },
+    { name: 'TTR-85', year: 1985, blurb: 'Group B: 4WD, 500 bhp, gravel' },
+    { name: 'TTR-95', year: 1995, blurb: 'Group A: turbo four, anti-lag' },
+    { name: 'TTR-22', year: 2022, blurb: 'Rally1: hybrid boost' },
   ] },
   { cat: 'Prototype', cars: [
-    { name: 'Group C', year: 1987, blurb: 'Ground-effect endurance' },
-    { name: 'LMP1', year: 2009, blurb: 'Diesel V12' },
-    { name: 'Hypercar', year: 2023, blurb: 'Hybrid V6' },
+    { name: 'TTP-70', year: 1970, blurb: 'Flat-12 long-distance racer' },
+    { name: 'TTP-87', year: 1987, blurb: 'Group C: ground-effect endurance' },
+    { name: 'TTP-09', year: 2009, blurb: 'LMP1: diesel V12' },
+    { name: 'TTP-23', year: 2023, blurb: 'Hypercar: hybrid V6' },
   ] },
   { cat: 'Touring', cars: [
-    { name: 'Super Touring', year: 1997, blurb: '2.0 saloon' },
-    { name: 'TCR', year: 2019, blurb: 'Front-drive turbo' },
+    { name: 'TTS-73', year: 1973, blurb: 'Group 2: straight-six coupé' },
+    { name: 'TTS-97', year: 1997, blurb: 'Super Touring: 2.0 saloon' },
+    { name: 'TTS-19', year: 2019, blurb: 'TCR: front-drive turbo' },
   ] },
   { cat: 'Road', cars: [
-    { name: 'Roadster 60', year: 1962, blurb: 'Lightweight sports car' },
+    { name: 'TT Roadster 62', year: 1962, blurb: 'Lightweight sports car' },
     { name: 'Caterham Seven', year: 2015, kind: 'caterham', blurb: 'The test car', hidden: true },
-    { name: 'Hot Hatch', year: 1986, blurb: 'Front-drive, 1.6' },
+    { name: 'TT Hatch 86', year: 1986, blurb: 'Front-drive, 1.6' },
   ] },
 ];
 export const CAR_INFO = {
