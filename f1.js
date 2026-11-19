@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 26;
+export const BUILD = 27;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -936,6 +936,24 @@ export function buildF1Cockpit(car, { paddles = false } = {}) {
   const gate = add(box(0.05, 0.02, 0.1, -0.2, 0.42, 0.3), M.carbon);              // its gate
   // (the TT-05 has none: it changes gear on paddles behind the wheel)
   if (paddles) lever.visible = gate.visible = false;
+  // THE PEDALS, down in the footwell under the scuttle, his feet on them:
+  // the TT-88 has three (clutch, brake, throttle: his right foot goes
+  // across from the throttle to the brake); the TT-05 two (the left foot
+  // brakes, the right one on the throttle; the clutch is on the wheel)
+  const pedalZ = paddles ? 1.18 : 1.08, pedalY = paddles ? 0.27 : 0.19;
+  const pedalAt = paddles ? { brake: 0.07, throttle: -0.07 } : { clutch: 0.1, brake: 0.0, throttle: -0.09 };
+  const pedals = {};
+  add(box(0.34, 0.02, 0.22, 0, pedalY - 0.05, pedalZ), M.carbon);                   // the pedal box floor
+  for (const [k, x] of Object.entries(pedalAt)) {
+    const pv = new THREE.Group(); pv.position.set(x, pedalY - 0.04, pedalZ); group.add(pv);
+    add(new THREE.CylinderGeometry(0.008, 0.008, 0.1, 6).translate(0, 0.05, 0), M.steel, pv);
+    add(new THREE.BoxGeometry(k === 'throttle' ? 0.05 : 0.065, 0.075, 0.012).translate(0, 0.1, 0.005), k === 'brake' ? M.steel : M.carbon, pv);
+    pv.rotation.x = 0.35;                              // (leaning back toward his feet)
+    pedals[k] = pv;
+  }
+  // his feet: racing boots, resting on the pedals
+  const feet = [0, 1].map(() => { const f = add(new THREE.CapsuleGeometry(0.035, 0.11, 4, 10).rotateX(Math.PI / 2 - 0.35), M.boot || M.suit); return f; });
+  const footPt = new THREE.Vector3();
   // the driver: shoulders and chest just under the rim, arms to the wheel
   // (sat back in the tub, not hunched over the wheel: his back against the
   // seat, leaning back, shoulders square and his head up against the headrest)
@@ -977,17 +995,35 @@ export function buildF1Cockpit(car, { paddles = false } = {}) {
   };
   const POLE = [new THREE.Vector3(-1, -0.6, -0.3), new THREE.Vector3(1, -0.6, -0.3)];
   const head = new THREE.Vector3();
+  const pedalPress = { throttle: 0, brake: 0, clutch: 0, across: 0 };
   let t = 0, shift = 1, shiftDir = 0, fight = 0, panelClock = 0, wheelAngle = 0, bumpS = 0;
   const headV = new THREE.Vector3(), headAim = new THREE.Vector3();
   const gripPt = new THREE.Vector3(), knobPt = new THREE.Vector3();
   return {
     group,
-    driverParts: [chest, back, neck, ...arms.flatMap((a) => [a.upper, a.fore, a.elbow, a.hand])],   // (him, without the wheel: for climbing out)
+    driverParts: [chest, back, neck, ...feet, ...arms.flatMap((a) => [a.upper, a.fore, a.elbow, a.hand])],   // (him, without the wheel: for climbing out)
     head,                                          // how far his head is thrown about (car's frame): add to the eye
     // a gear change: his right hand goes to the lever
     onShift(direction) { shift = 0; shiftDir = direction > 0 ? 1 : -1; },
-    update(dt, { steer = 0, maxSteer = 0.36, speed = 0, slip = 0, bump = 0, gear = 'N', rpm = 0, redline = 12500, kmh = 0, limp = false }) {
+    update(dt, { steer = 0, maxSteer = 0.36, speed = 0, slip = 0, bump = 0, gear = 'N', rpm = 0, redline = 12500, kmh = 0, limp = false, throttle = 0, brake = 0, clutch = 0 }) {
       t += dt;
+      // the pedals pressed as far as he's pressing them, his feet on them
+      // (the right foot across to the brake in the TT-88, back to the throttle after)
+      if (limp) { throttle = 0; brake = 0; clutch = 0; }
+      pedalPress.throttle += (throttle - pedalPress.throttle) * Math.min(1, dt * 18);
+      pedalPress.brake += (brake - pedalPress.brake) * Math.min(1, dt * 18);
+      pedalPress.clutch += (clutch - pedalPress.clutch) * Math.min(1, dt * 18);
+      pedalPress.across += ((brake > 0.05 && !paddles ? 1 : 0) - pedalPress.across) * Math.min(1, dt * 10);
+      for (const [k, pv] of Object.entries(pedals)) pv.rotation.x = 0.35 + 0.45 * pedalPress[k];
+      for (let i = 0; i < 2; i++) {
+        // i 0: right foot, 1: left foot
+        const k = i === 1 ? (paddles ? 'brake' : 'clutch') : 'throttle';
+        let x = pedalAt[k], press = pedalPress[k];
+        if (i === 0 && !paddles) { x += (pedalAt.brake - pedalAt.throttle) * pedalPress.across; press = press * (1 - pedalPress.across) + pedalPress.brake * pedalPress.across; }
+        const a = 0.35 + 0.45 * press;
+        footPt.set(x, pedalY - 0.04 + Math.cos(a) * 0.1, pedalZ + Math.sin(a) * 0.1 - 0.06);
+        feet[i].position.copy(footPt); feet[i].rotation.x = a - 0.35;
+      }
       if (limp) { steer = 0; speed = 0; slip = 0; bump = 0; shift = 1; }
       // how hard he's fighting it: the speed, how much it's sliding, the bumps.
       // Only while it's moving: stopped (or wrecked and still), his hands just rest on the wheel

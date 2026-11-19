@@ -60,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 75;
+const BUILD = 76;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -4822,6 +4822,7 @@ renderer.setAnimationLoop(() => {
       steer: physics.steer, maxSteer: physics.spec.maxSteer, speed: physics.vx, slip: physics.vy,
       bump: Math.abs(physics.ground.rate || 0) * 0.02 + Math.abs(bodyLean.heave) * 2,
       gear: physics.gearLabel, rpm: physics.rpm, redline: physics.spec.redline, kmh: physics.speedKmh, limp: driverDead,
+      throttle: input.throttle || 0, brake: input.brake || 0, clutch: input.clutch ? 1 : 0,
     });
     scrapeFloor(dt);
     // crushed wings sag and twist before they snap

@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 102;
+export const BUILD = 103;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 91, date: '19 Nov 2026', title: 'Pedals',
+    items: [
+      ['Pedals in the F1 cars', 'Both F1 cars have pedals in the footwell now, with his feet on them, moving as you press. The TT-88 has three: his right foot goes across from the throttle to the brake. The TT-05 has two, braked with the left foot; its clutch is on the wheel', 'new'],
+    ],
+  },
   {
     id: 90, date: '19 Nov 2026', title: 'Paddles',
     items: [
