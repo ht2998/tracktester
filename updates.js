@@ -21,11 +21,18 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 144;
+export const BUILD = 145;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 118, date: '24 Nov 2026', title: 'TTF-05 grips like a 2005 car',
+    items: [
+      ['Much more grip', 'The TTF-05 had far too little grip for a 2005 Formula car: about 2.2 g in fast corners where the real cars pulled 3 g and more, so it slid wide through the quick ones like Sepang\'s Turn 3. More downforce (about 3.2 times its weight at 300 km/h) and grippier tyres: around 2.7 g at 250 km/h now. Turn 3 goes at around 240 km/h; Turn 4 is still a big stop, as it was for the real cars', 'fix'],
+      ['Racing tyres from the start', 'Racing cars now start on Racing Medium slicks instead of the road cars\' Sports Medium', 'fix'],
+    ],
+  },
   {
     id: 117, date: '24 Nov 2026', title: 'Tidier on phones',
     items: [

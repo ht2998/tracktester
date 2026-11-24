@@ -60,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 93;
+const BUILD = 94;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -1598,6 +1598,8 @@ function openVehicleMenu() {
 // Each kind of tyre has its own look: F1-style coloured bands, tread
 // patterns, knobbly dirt tyres, snow chains (tyres.js)
 const tyreLooks = new TyreLooks(carModel.car, carModel.tyres, { radius: WHEEL_RADIUS, width: WHEEL_WIDTH, grooves: IS_F05 ? 4 : 0 });
+// (racing cars start on racing tyres: the road compounds are for road cars)
+if (IS_F1 && TYRES[physics.tyreCompound]?.kind === 'road') physics.setTyres('RM');
 
 // HEADLIGHTS: G cycles off -> auto -> dipped -> main beam. Dipped lights
 // the road close ahead; main beam reaches much further. Auto (the default)

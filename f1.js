@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 69;
+export const BUILD = 70;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -168,9 +168,9 @@ export const F05_CAR = {
   cgToFront: 1.67, cgToRear: 1.43,   // 3.1 m between the axles, a little more weight on the back
   trackHalf: 0.73,                   // (1.46 m: narrow, under the 1.8 m width limit)
   wheelRadius: 0.33,
-  frontGrip: 1.38, rearGrip: 1.52,   // (grooved tyres: a little less grip than the TT-88's slicks)
+  frontGrip: 1.5, rearGrip: 1.64,    // (grooved tyres, but the soft compounds of the tyre war: grippy)
   cgHeight: 0.25,
-  downforce: 1.95,                   // about 2.5 times its weight at 300 km/h
+  downforce: 2.7,                    // about 3.2 times its weight at 300 km/h (the cars of 2005 cornered at 4 g)
   downforceFront: 0.44,
   drag: 0.66,
   brakeForce: 26000, brakeBias: 0.58,
