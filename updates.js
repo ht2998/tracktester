@@ -21,11 +21,20 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 120;
+export const BUILD = 121;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 104, date: '24 Nov 2026', title: 'TTF-05 details',
+    items: [
+      ['Shaped wings', 'The front endplates are cut to the real curved outline, and the rear endplates are tall and square-topped with the front cut away over the tyre', 'update'],
+      ['Bargeboards', 'Proper bargeboards behind the front wheels: tall at the front, sweeping down to the sidepod mouths, with a slot cut in them', 'update'],
+      ['Raised-nose suspension', 'The front wishbones now start high on the sides of the nose and angle down to the wheels, like the real car', 'update'],
+      ['Sitting on the body', 'The chimneys and exhausts now sit right on the bodywork instead of hovering above it', 'update'],
+    ],
+  },
   {
     id: 103, date: '24 Nov 2026', title: 'TTF-05: one body',
     items: [

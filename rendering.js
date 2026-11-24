@@ -60,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 83;
+const BUILD = 84;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -1093,13 +1093,15 @@ function buildCar() {
       // THE TT-88: long thin wishbones from the narrow tub out to the wheels,
       // pushrods up to the rockers on the tub, track rods, driveshafts
       const ux = s * (TRACK_HALF - 0.13), rx = s * (TRACK_HALF - 0.15);
-      rod(arms, [s * 0.2, 0.14, F + 0.22], [ux, 0.2, F], 0.012, fw, 0, 1);
-      rod(arms, [s * 0.22, 0.13, F - 0.27], [ux, 0.2, F], 0.012, fw, 0, 1);
-      rod(arms, [s * 0.2, 0.32, F + 0.2], [ux, 0.4, F], 0.011, fw, 0, 1);
-      rod(arms, [s * 0.22, 0.3, F - 0.24], [ux, 0.4, F], 0.011, fw, 0, 1);
+      // (the TT-05's raised nose: the wishbones start high on its sides and angle down to the wheel)
+      const nx = IS_F05 ? 0.15 : 0.2, ly = IS_F05 ? 0.34 : 0.14, uy = IS_F05 ? 0.52 : 0.32;
+      rod(arms, [s * nx, ly, F + 0.22], [ux, 0.2, F], 0.012, fw, 0, 1);
+      rod(arms, [s * (nx + 0.02), ly - 0.01, F - 0.27], [ux, 0.2, F], 0.012, fw, 0, 1);
+      rod(arms, [s * nx, uy, F + 0.2], [ux, 0.4, F], 0.011, fw, 0, 1);
+      rod(arms, [s * (nx + 0.02), uy - 0.02, F - 0.24], [ux, 0.4, F], 0.011, fw, 0, 1);
       rod(arms, [ux, 0.2, F], [ux, 0.4, F], 0.02, fw, 1, 1);                          // upright
-      rod(arms, [s * 0.2, 0.26, F - 0.1], [ux, 0.28, F - 0.1], 0.009, fw, 0, 1, true);  // track rod
-      rod(dampers, [ux * 0.92, 0.21, F + 0.01], [s * 0.2, 0.46, F - 0.05], 0.011, fw, 0.9, 0);   // pushrod
+      rod(arms, [s * nx, IS_F05 ? 0.4 : 0.26, F - 0.1], [ux, 0.28, F - 0.1], 0.009, fw, 0, 1, true);  // track rod
+      rod(dampers, [ux * 0.92, 0.21, F + 0.01], [s * (IS_F05 ? 0.1 : 0.2), IS_F05 ? 0.6 : 0.46, F - 0.05], 0.011, fw, 0.9, 0);   // pushrod
       rod(arms, [s * 0.2, 0.12, R + 0.32], [rx, 0.18, R], 0.012, rw, 0, 1);
       rod(arms, [s * 0.3, 0.12, R - 0.3], [rx, 0.18, R], 0.012, rw, 0, 1);
       rod(arms, [s * 0.2, 0.3, R + 0.28], [rx, 0.4, R], 0.011, rw, 0, 1);

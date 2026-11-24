@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 49;
+export const BUILD = 50;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -722,6 +722,11 @@ export function buildF05Body(car, addPanel) {
     return out;
   };
   const upper = (z) => sample(z > 0.67 ? secA(z) : secB(z)).map((p) => [p[0], p[1], z]);
+  // (the height of the skin's top at x across, at z along: so parts sit right on it)
+  const surfY = (z, x) => { let b = null; for (const p of upper(z)) if (p[1] > ycr(z) + 0.04 && (!b || Math.abs(p[0] - x) < Math.abs(b[0] - x))) b = p; return b ? b[1] : 0.5; };
+  // (a flat plate cut to an outline drawn from the side: [z, y] points; at x across)
+  const plate = (pts, x, t = 0.012) => { const sh = new THREE.Shape(); sh.moveTo(pts[0][0], pts[0][1]); for (const q of pts.slice(1)) sh.lineTo(q[0], q[1]);
+    return new THREE.ExtrudeGeometry(sh, { depth: t, bevelEnabled: false, curveSegments: 4 }).translate(0, 0, -t / 2).rotateY(-Math.PI / 2).translate(x, 0, 0); };
   // the paint of each strip: 0 yellow, 1 light blue, 2 navy, 3 carbon, 4 dark
   const PAINT = [MAT.yellow, MAT.blue, MAT.navy, MAT.carbon, MAT.dark];
   const paintA = (seg, z) => (z > 2.62 ? 1 : seg === 6 ? 3 : 0);
@@ -782,10 +787,10 @@ export function buildF05Body(car, addPanel) {
       add(mirrorX(box(0.13, 0.006, 0.03, x, y, z, 0, 0, slope), s), MAT.dark, false);
     }
     // the chimney on the crown, and the exhaust out through the top further back
-    { const z = -0.4, x = xc(z) - 0.04, y = yc(z);
+    { const z = -0.4, x = xc(z) - 0.04, y = surfY(z, x) - 0.03;
       add(mirrorX(new THREE.CylinderGeometry(0.045, 0.055, 0.12, 14, 1, true).translate(x, y + 0.04, z), s), MAT.blue);
       add(mirrorX(new THREE.CircleGeometry(0.044, 14).rotateX(-Math.PI / 2).translate(x, y + 0.1, z), s), MAT.dark, false); }
-    { const z = -1.12, x = (xc(z) + x1(z)) / 2, y = (yc(z) + y1(z)) / 2;
+    { const z = -1.12, x = (xc(z) + CW(z)) / 2, y = surfY(z, x) - 0.03;
       add(mirrorX(new THREE.CylinderGeometry(0.05, 0.058, 0.08, 14, 1, true).rotateX(-0.6).translate(x, y + 0.02, z), s), MAT.exhaust);
       add(mirrorX(new THREE.CircleGeometry(0.048, 14).rotateX(-Math.PI / 2 - 0.6).translate(x, y + 0.05, z - 0.02), s), MAT.dark, false); }
     // the flip-up: where the crease runs out, ahead of the back wheel
@@ -798,8 +803,11 @@ export function buildF05Body(car, addPanel) {
       add(mirrorX(box(0.012, 0.12, 0.12, x, y + 0.06, z), s), MAT.carbon);
       add(mirrorX(box(0.14, 0.01, 0.08, x + 0.06, y + 0.12, z, -0.35, 0, -0.3), s), MAT.carbon); }
     // bargeboards: tall curved carbon panels behind the front wheels, on the floor
-    add(mirrorX(box(0.012, 0.3, 0.42, 0.47, 0.2, 0.98, 0, 0.18), s), MAT.carbon);
-    add(mirrorX(box(0.012, 0.18, 0.2, 0.39, 0.14, 1.25, 0, 0.3), s), MAT.carbon);
+    // (the big one: tall at the front, its top sweeping down and back to the pod's mouth, a slot cut in it)
+    add(mirrorX(plate([[1.22, 0.11], [1.24, 0.3], [1.16, 0.4], [1.0, 0.43], [0.84, 0.36], [0.74, 0.22], [0.72, 0.11]], 0.46), s), MAT.carbon);
+    add(mirrorX(box(0.016, 0.012, 0.22, 0.462, 0.27, 0.98, 0.35), s), MAT.dark, false);
+    // (the smaller one ahead of it, under the nose)
+    add(mirrorX(plate([[1.42, 0.11], [1.44, 0.22], [1.36, 0.28], [1.26, 0.24], [1.24, 0.11]], 0.3), s), MAT.carbon);
     // turning vanes, from the nose's underside down toward the floor
     add(mirrorX(box(0.008, 0.16, 0.34, 0.15, 0.25, 1.75, 0, 0.08, 0), s), MAT.carbon);
     // mirrors: on stalks off the cockpit's walls, out over the pods, a winglet on each stalk
@@ -850,12 +858,13 @@ export function buildF05Body(car, addPanel) {
     addTo(g, box(0.56, 0.022, 0.36, s * 0.43, 0.095, 2.55, 0.06, -s * 0.03), MAT.blue);
     addTo(g, box(0.5, 0.015, 0.18, s * 0.45, 0.16, 2.37, 0.42, -s * 0.05), MAT.blue);
     addTo(g, box(0.36, 0.012, 0.11, s * 0.5, 0.2, 2.27, 0.7, -s * 0.05), MAT.navy);
-    addTo(g, box(0.014, 0.26, 0.54, s * 0.715, 0.17, 2.48), MAT.navy);          // the big navy endplate
+    addTo(g, plate([[2.76, 0.04], [2.78, 0.16], [2.72, 0.27], [2.6, 0.31], [2.38, 0.3], [2.24, 0.24], [2.2, 0.1], [2.24, 0.04]], s * 0.715, 0.014), MAT.navy);   // the big navy endplate
     addTo(g, box(0.06, 0.012, 0.4, s * 0.695, 0.05, 2.48), MAT.carbon);
   }
   // --- THE REAR WING: set well forward, navy endplates, dark planes,
   // a white lip on the top flap; the beam wing below; louvres in the plates
-  for (const s of [1, -1]) addTo(wings.rear, box(0.014, 0.46, 0.42, s * 0.47, 0.64, -1.76), MAT.navy);
+  // (the rear endplates: tall, square at the top, their front cut away low down over the tyre)
+  for (const s of [1, -1]) addTo(wings.rear, plate([[-1.6, 0.56], [-1.55, 0.66], [-1.55, 0.86], [-1.6, 0.885], [-1.97, 0.885], [-1.99, 0.86], [-1.99, 0.42], [-1.78, 0.41], [-1.7, 0.5]], s * 0.47, 0.014), MAT.navy);
   addTo(wings.rear, box(0.92, 0.024, 0.24, 0, 0.74, -1.66, 0.18), MAT.carbon);
   addTo(wings.rear, box(0.92, 0.018, 0.18, 0, 0.82, -1.85, 0.5), MAT.navy);
   addTo(wings.rear, box(0.92, 0.006, 0.02, 0, 0.845, -1.95, 0), MAT.white);
