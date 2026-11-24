@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 61;
+export const BUILD = 62;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -917,17 +917,46 @@ export function buildF05Body(car, addPanel) {
   // surfaces (laid on the skin, following its curves): big on the pods'
   // navy flanks, on the nose's sides, the wings' endplates
   if (typeof document !== 'undefined') {
+    // each sponsor's badge, drawn in a square of side d at (x, y) (its top
+    // left), in its own colours (ink: the lettering's colour on this panel)
+    const LOGO = {
+      // a mobile network: three swept arcs, like a signal on the wind
+      ZEPHRA: (g, x, y, d, ink) => { g.lineCap = 'round'; [['#29c4f6', 0.18], [ink, 0.3], [ink, 0.42]].forEach(([c, r], i) => { g.strokeStyle = c; g.lineWidth = d * 0.09; g.beginPath(); g.arc(x + d * 0.2, y + d * 0.8, d * r * 1.6, -1.25, -0.25); g.stroke(); }); g.fillStyle = '#29c4f6'; g.beginPath(); g.arc(x + d * 0.2, y + d * 0.8, d * 0.08, 0, 7); g.fill(); },
+      // shipping: a slanted block with a K cut out of it, a wave under it
+      KORVANE: (g, x, y, d, ink) => { g.fillStyle = '#e8462a'; g.beginPath(); g.moveTo(x + d * 0.25, y + d * 0.1); g.lineTo(x + d, y + d * 0.1); g.lineTo(x + d * 0.75, y + d * 0.72); g.lineTo(x, y + d * 0.72); g.closePath(); g.fill();
+        g.fillStyle = '#ffffff'; g.font = `italic 900 ${d * 0.56}px Arial, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('K', x + d * 0.5, y + d * 0.43); g.textAlign = 'left';
+        g.strokeStyle = ink; g.lineWidth = d * 0.06; g.beginPath(); for (let k = 0; k <= 20; k++) { const u = k / 20; g.lineTo(x + u * d, y + d * 0.88 + Math.sin(u * 12) * d * 0.04); } g.stroke(); },
+      // fuel: a red drop with a flame of orange and yellow inside it
+      HALDEN: (g, x, y, d) => { const drop = (s, c) => { g.fillStyle = c; g.beginPath(); g.moveTo(x + d / 2, y + d * (0.5 - 0.48 * s)); g.bezierCurveTo(x + d / 2 + d * 0.42 * s, y + d * (0.5 - 0.05 * s), x + d / 2 + d * 0.38 * s, y + d * (0.52 + 0.45 * s), x + d / 2, y + d * (0.52 + 0.45 * s)); g.bezierCurveTo(x + d / 2 - d * 0.38 * s, y + d * (0.52 + 0.45 * s), x + d / 2 - d * 0.42 * s, y + d * (0.5 - 0.05 * s), x + d / 2, y + d * (0.5 - 0.48 * s)); g.fill(); };
+        drop(1, '#d81e1e'); g.save(); g.translate(0, d * 0.12); drop(0.55, '#ff9a14'); drop(0.3, '#ffe14a'); g.restore(); },
+      // electronics: a hexagon round a chevron
+      VELTRIS: (g, x, y, d, ink) => { g.strokeStyle = ink; g.lineWidth = d * 0.08; g.beginPath(); for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2 + Math.PI / 6; g.lineTo(x + d / 2 + Math.cos(a) * d * 0.44, y + d / 2 + Math.sin(a) * d * 0.44); } g.closePath(); g.stroke();
+        g.fillStyle = '#1f8fd6'; g.beginPath(); g.moveTo(x + d * 0.27, y + d * 0.32); g.lineTo(x + d * 0.5, y + d * 0.72); g.lineTo(x + d * 0.73, y + d * 0.32); g.lineTo(x + d * 0.6, y + d * 0.32); g.lineTo(x + d * 0.5, y + d * 0.52); g.lineTo(x + d * 0.4, y + d * 0.32); g.closePath(); g.fill(); },
+      // a bank: a globe, banded
+      TERAVO: (g, x, y, d, ink) => { g.save(); g.beginPath(); g.arc(x + d / 2, y + d / 2, d * 0.44, 0, 7); g.clip(); g.fillStyle = ink; g.fillRect(x, y, d, d); g.fillStyle = '#f6c51a'; for (let k = 0; k < 3; k++) g.fillRect(x, y + d * (0.27 + k * 0.2), d, d * 0.07); g.restore(); g.strokeStyle = '#f6c51a'; g.lineWidth = d * 0.05; g.beginPath(); g.ellipse(x + d / 2, y + d / 2, d * 0.16, d * 0.44, 0, 0, 7); g.stroke(); },
+      // computing: a Q, a ring with a red square for its tail
+      QUANTEX: (g, x, y, d, ink) => { g.strokeStyle = ink; g.lineWidth = d * 0.12; g.beginPath(); g.arc(x + d * 0.45, y + d * 0.45, d * 0.32, 0, Math.PI * 2); g.stroke(); g.fillStyle = '#d8312a'; g.fillRect(x + d * 0.66, y + d * 0.66, d * 0.24, d * 0.24); },
+      // watches: a four-pointed star in a ring
+      NOVIK: (g, x, y, d, ink) => { g.strokeStyle = ink; g.lineWidth = d * 0.05; g.beginPath(); g.arc(x + d / 2, y + d / 2, d * 0.45, 0, 7); g.stroke(); g.fillStyle = ink; g.beginPath(); for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2 - Math.PI / 2, r = k % 2 ? d * 0.1 : d * 0.36; g.lineTo(x + d / 2 + Math.cos(a) * r, y + d / 2 + Math.sin(a) * r); } g.closePath(); g.fill(); },
+      // an energy drink: two flames, red over orange
+      ARDENTA: (g, x, y, d) => { const f = (s, ox, c) => { g.fillStyle = c; g.beginPath(); g.moveTo(x + d * ox, y + d * 0.95); g.quadraticCurveTo(x + d * (ox - 0.3 * s), y + d * 0.5, x + d * (ox + 0.05), y + d * (1 - 0.95 * s)); g.quadraticCurveTo(x + d * (ox + 0.35 * s), y + d * 0.55, x + d * ox, y + d * 0.95); g.fill(); }; f(1, 0.45, '#ff9a14'); f(0.75, 0.55, '#d81e1e'); },
+      // a satellite network: a tilted orbit round a planet
+      ORBIXA: (g, x, y, d, ink) => { g.fillStyle = '#29c4f6'; g.beginPath(); g.arc(x + d / 2, y + d / 2, d * 0.22, 0, 7); g.fill(); g.strokeStyle = ink; g.lineWidth = d * 0.06; g.beginPath(); g.ellipse(x + d / 2, y + d / 2, d * 0.46, d * 0.17, -0.5, 0, 7); g.stroke(); g.fillStyle = ink; g.beginPath(); g.arc(x + d * 0.88, y + d * 0.3, d * 0.06, 0, 7); g.fill(); },
+      // the tyres: a tread-ringed wheel, in yellow
+      VALCOR: (g, x, y, d) => { g.strokeStyle = '#f6c51a'; g.lineWidth = d * 0.14; g.beginPath(); g.arc(x + d / 2, y + d / 2, d * 0.36, 0, 7); g.stroke(); g.fillStyle = '#f6c51a'; for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2; g.save(); g.translate(x + d / 2 + Math.cos(a) * d * 0.45, y + d / 2 + Math.sin(a) * d * 0.45); g.rotate(a); g.fillRect(-d * 0.04, -d * 0.05, d * 0.08, d * 0.1); g.restore(); } g.beginPath(); g.arc(x + d / 2, y + d / 2, d * 0.1, 0, 7); g.fill(); },
+    };
+    const SUB = { HALDEN: 'PETROLEUM', KORVANE: 'LOGISTICS', VALCOR: 'TYRES', ZEPHRA: 'MOBILE', TERAVO: 'BANK' };
     const decal = (text, ink, badge, w = 1024, h = 256) => {
       const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d');
       g.clearRect(0, 0, w, h);
-      const B = h * 0.34;
-      // the badge: a ring with a slash through it, or a diamond
-      g.fillStyle = ink; g.strokeStyle = ink; g.lineWidth = h * 0.07;
-      if (badge === 'ring') { g.beginPath(); g.arc(B + 10, h / 2, B * 0.8, 0, Math.PI * 2); g.stroke(); g.beginPath(); g.moveTo(10 + B * 0.3, h / 2 + B * 0.6); g.lineTo(10 + B * 1.7, h / 2 - B * 0.6); g.stroke(); }
-      else { g.beginPath(); g.moveTo(B + 10, h / 2 - B); g.lineTo(2 * B + 10, h / 2); g.lineTo(B + 10, h / 2 + B); g.lineTo(10, h / 2); g.closePath(); g.fill(); }
-      let fs = h * 0.62; g.font = `italic 900 ${fs}px Arial, Helvetica, sans-serif`;
-      const room = w - 2 * B - 50; while (g.measureText(text).width > room && fs > 20) { fs -= 4; g.font = `italic 900 ${fs}px Arial, Helvetica, sans-serif`; }
-      g.textBaseline = 'middle'; g.fillText(text, 2 * B + 40, h / 2 + h * 0.03);
+      const d = h * 0.78, x0 = h * 0.08;
+      (LOGO[text] || LOGO.NOVIK)(g, x0, (h - d) / 2, d, ink);
+      const sub = SUB[text], tx = x0 + d + h * 0.14, room = w - tx - h * 0.06;
+      let fs = h * (sub ? 0.52 : 0.62); g.font = `italic 900 ${fs}px Arial, Helvetica, sans-serif`;
+      while (g.measureText(text).width > room && fs > 16) { fs -= 4; g.font = `italic 900 ${fs}px Arial, Helvetica, sans-serif`; }
+      g.fillStyle = ink; g.textBaseline = 'middle';
+      g.fillText(text, tx, h / 2 - (sub ? h * 0.1 : -h * 0.03));
+      if (sub) { g.font = `700 ${h * 0.17}px Arial, Helvetica, sans-serif`; g.fillStyle = text === 'HALDEN' ? '#d81e1e' : ink; const tw = g.measureText(text).width; g.fillText(sub.split('').join(String.fromCharCode(8202)), tx + 4, h / 2 + h * 0.27); }
       const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
       return new THREE.MeshStandardMaterial({ map: t, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, roughness: 0.3, side: THREE.DoubleSide });
     };
@@ -952,6 +981,7 @@ export function buildF05Body(car, addPanel) {
       onSkin(secA, 1.5, 0.95, 3 * S, 4 * S, nose, sx);                     // (the nose's side)
       // the wings' endplates, flat on their outsides
       const rp = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.2).rotateY(sx * Math.PI / 2).translate(sx * 0.479, 0.74, -1.77), plate); rp.renderOrder = 2; wingDecals.push([rp, 'rear']);
+      const tp = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.1).rotateY(sx * Math.PI / 2).translate(sx * 0.479, 0.5, -1.86), decal('VALCOR', '#ffffff', '', 768, 256)); tp.renderOrder = 2; wingDecals.push([tp, 'rear']);
       const fp = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.15).rotateY(sx * Math.PI / 2).translate(sx * 0.724, 0.19, 2.46), decal('VELTRIS', '#ffffff', 'diamond', 512, 256)); fp.renderOrder = 2; wingDecals.push([fp, sx > 0 ? 'fl' : 'fr']);
     }
     // and the rest of them: the title sponsor along the engine cover and

@@ -21,11 +21,18 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 135;
+export const BUILD = 136;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 113, date: '24 Nov 2026', title: 'Sponsors with proper logos',
+    items: [
+      ['Real-looking logos', 'Every TTF-05 sponsor has its own badge now: ZEPHRA mobile\'s swept signal arcs, KORVANE logistics\' red K block over a wave, HALDEN petroleum\'s red fuel drop with a flame inside, VELTRIS\'s hexagon, TERAVO bank\'s banded globe, QUANTEX\'s Q, NOVIK\'s star, ARDENTA\'s twin flames, ORBIXA\'s orbit', 'update'],
+      ['A tyre maker', 'VALCOR tyres: the name runs round every tyre\'s sidewall, and its yellow badge is on the TTF-05\'s rear wing endplates', 'new'],
+    ],
+  },
   {
     id: 112, date: '24 Nov 2026', title: 'Horns and sponsors',
     items: [

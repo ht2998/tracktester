@@ -16,7 +16,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 3;
+export const BUILD = 4;
 
 // Sidewall band colour by compound (null = plain black sidewall)
 const BAND = {
@@ -170,34 +170,24 @@ function paintTread(kind) {
 // The sidewall: black rubber, a coloured band near the edge (if any), and
 // faint raised lettering round it
 function paintSidewall(band) {
-  const S = 256;
+  const S = 512;
   const [cv, g] = canvas(S, S);
   g.fillStyle = '#1a1a1b';
   g.fillRect(0, 0, S, S);
   const R = S / 2;
   if (band) {
     g.strokeStyle = band;
-    g.lineWidth = S * 0.06;
-    g.beginPath(); g.arc(R, R, R * 0.86, 0, Math.PI * 2); g.stroke();
-    // the brand-style text block in the band colour, twice round
-    g.fillStyle = band;
-    for (const a of [0, Math.PI]) {
-      for (let k = 0; k < 7; k++) {
-        const t = a - 0.45 + k * 0.13;
-        g.save(); g.translate(R + Math.cos(t) * R * 0.75, R + Math.sin(t) * R * 0.75); g.rotate(t + Math.PI / 2);
-        g.fillRect(-5, -6, 10, 12); g.restore();
-      }
-    }
-  } else {
-    // plain sidewall: grey lettering dashes
-    g.fillStyle = 'rgba(200,200,200,0.22)';
-    for (let k = 0; k < 40; k++) {
-      const t = k / 40 * Math.PI * 2;
-      if (k % 10 > 6) continue;
-      g.save(); g.translate(R + Math.cos(t) * R * 0.8, R + Math.sin(t) * R * 0.8); g.rotate(t + Math.PI / 2);
-      g.fillRect(-3, -5, 6, 10); g.restore();
-    }
+    g.lineWidth = S * 0.035;
+    g.beginPath(); g.arc(R, R, R * 0.935, 0, Math.PI * 2); g.stroke();
   }
+  // the tyre maker's name, twice round, in big letters along the sidewall
+  { const word = 'VALCOR', col = band || '#f2f2ee';
+    g.fillStyle = col; g.font = `italic 900 ${S * 0.075}px Arial, Helvetica, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    for (const a0 of [-Math.PI / 2, Math.PI / 2]) for (let k = 0; k < word.length; k++) {
+      const a = a0 + (k - (word.length - 1) / 2) * 0.17;
+      g.save(); g.translate(R + Math.cos(a) * R * 0.77, R + Math.sin(a) * R * 0.77); g.rotate(a + Math.PI / 2); g.fillText(word[k], 0, 0); g.restore();
+    }
+    g.textAlign = 'left'; }
   g.strokeStyle = 'rgba(255,255,255,0.06)';      // the rim line
   g.lineWidth = 3;
   g.beginPath(); g.arc(R, R, R * 0.66, 0, Math.PI * 2); g.stroke();
