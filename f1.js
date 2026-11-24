@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 43;
+export const BUILD = 44;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -639,6 +639,7 @@ export function buildF05Body(car, addPanel) {
     blue: new THREE.MeshPhysicalMaterial({ color: 0x078bc9, roughness: 0.28, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.06 }),
     yellow: new THREE.MeshPhysicalMaterial({ color: 0xf4c419, roughness: 0.22, metalness: 0.1, clearcoat: 1, clearcoatRoughness: 0.06 }),
     white: new THREE.MeshPhysicalMaterial({ color: 0xf2f3f0, roughness: 0.25, metalness: 0.05, clearcoat: 1, clearcoatRoughness: 0.08 }),
+    navy: new THREE.MeshPhysicalMaterial({ color: 0x14204a, roughness: 0.26, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.06 }),
     carbon: new THREE.MeshStandardMaterial({ color: 0x111215, roughness: 0.4, metalness: 0.35 }),
     steel: new THREE.MeshStandardMaterial({ color: 0x8d9096, roughness: 0.35, metalness: 0.9 }),
     glass: new THREE.MeshStandardMaterial({ color: 0x3a4a52, roughness: 0.05, metalness: 0.3, transparent: true, opacity: 0.45 }),
@@ -652,7 +653,7 @@ export function buildF05Body(car, addPanel) {
   };
   const add = (geo, mat, shadow = true) => {
     const m = new THREE.Mesh(geo, mat); m.castShadow = shadow; m.receiveShadow = true; car.add(m);
-    if (mat === MAT.blue || mat === MAT.yellow || mat === MAT.white) addPanel(m);
+    if (mat === MAT.blue || mat === MAT.yellow || mat === MAT.white || mat === MAT.navy) addPanel(m);
     return m;
   };
   const SMOOTH = 0.85;
@@ -735,6 +736,8 @@ export function buildF05Body(car, addPanel) {
       { z: -1.12, w: 0.12, h: 0.17, y: 0.11, x: s * 0.31, top: 0.8 },
     ];
     add(loft(pod, 1.9, 40, 8, true), MAT.blue);      // (squarer in section: a sculpted pod, not a tube)
+    // navy along the lower half of each pod, as the real car had
+    add(loft(pod.map((q) => ({ ...q, w: q.w + 0.012, h: q.h * 0.5 + 0.004, y: q.y - 0.004 })), 1.9, 40, 8, true), MAT.navy);
     // yellow along the top of each pod, a white pinstripe below it
     add(loft(pod.map((p) => ({ ...p, w: p.w * 0.72, h: 0.035, y: p.y + p.h - 0.02 })), 0.8, 20, 4, true), MAT.yellow);
     // the radiator mouth: a dark rounded opening, with its lip
@@ -760,7 +763,7 @@ export function buildF05Body(car, addPanel) {
     for (let k = 0; k < 5; k++) {
       const z = -0.08 - k * 0.1, x = s * (0.75 - k * 0.025);
       add(box(0.012, 0.15, 0.05, x - s * 0.004, 0.33, z, 0, s * 0.35, 0), MAT.dark, false);
-      add(box(0.014, 0.16, 0.012, x + s * 0.004, 0.33, z + 0.03, 0, s * 0.35, 0), MAT.blue);
+      add(box(0.014, 0.16, 0.012, x + s * 0.004, 0.33, z + 0.03, 0, s * 0.35, 0), MAT.navy);
     }
     // a winglet on the mirror stalk, another low on the cockpit side
     add(box(0.12, 0.008, 0.06, s * 0.42, 0.64, 0.49, 0, 0, -s * 0.15), MAT.carbon);
@@ -814,7 +817,7 @@ export function buildF05Body(car, addPanel) {
   add(loft([{ z: 2.7, w: 0.3, h: 0.02, y: 0.13 }, { z: 2.42, w: 0.3, h: 0.02, y: 0.15 }], 0.3, 12, 2, false), MAT.blue);   // the spoon (middle, raised)
   for (const s of [1, -1]) {
     const g = s > 0 ? wings.fl : wings.fr;
-    addTo(g, box(0.56, 0.02, 0.34, s * 0.43, 0.095, 2.55, 0.06, -s * 0.03), MAT.blue);                 // main plane
+    addTo(g, box(0.56, 0.02, 0.34, s * 0.43, 0.095, 2.55, 0.06, -s * 0.03), MAT.navy);                 // main plane
     addTo(g, box(0.5, 0.014, 0.17, s * 0.45, 0.16, 2.38, 0.42, -s * 0.05), MAT.yellow);               // the flap above it
     addTo(g, box(0.36, 0.012, 0.11, s * 0.5, 0.2, 2.27, 0.7, -s * 0.05), MAT.white);                 // a second flap
     addTo(g, box(0.01, 0.14, 0.36, s * 0.71, 0.13, 2.52), MAT.blue);                                // endplate (low and slim, as they were)
@@ -825,8 +828,8 @@ export function buildF05Body(car, addPanel) {
   // (as the real ones were: set well forward, its trailing edge about half a
   // metre behind the rear axle, the endplates from 0.43 m up to 0.86 m)
   for (const s of [1, -1]) addTo(wings.rear, box(0.014, 0.44, 0.4, s * 0.47, 0.645, -1.76), MAT.yellow);
-  for (const s of [1, -1]) addTo(wings.rear, box(0.016, 0.04, 0.4, s * 0.472, 0.86, -1.76), MAT.blue);
-  addTo(wings.rear, box(0.92, 0.024, 0.24, 0, 0.74, -1.66, 0.18), MAT.blue);
+  for (const s of [1, -1]) addTo(wings.rear, box(0.016, 0.12, 0.4, s * 0.472, 0.82, -1.76), MAT.navy);
+  addTo(wings.rear, box(0.92, 0.024, 0.24, 0, 0.74, -1.66, 0.18), MAT.navy);
   addTo(wings.rear, box(0.92, 0.018, 0.18, 0, 0.82, -1.85, 0.5), MAT.blue);
   addTo(wings.rear, box(0.92, 0.006, 0.02, 0, 0.845, -1.95, 0), MAT.white);
   add(box(0.72, 0.02, 0.16, 0, 0.44, -1.92, 0.2), MAT.carbon);                // the beam wing (stays)
