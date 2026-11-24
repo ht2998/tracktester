@@ -60,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 84;
+const BUILD = 86;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -1152,23 +1152,7 @@ function buildCar() {
   const RIM_R = WHEEL_RADIUS * (IS_F1 ? 0.6 : 0.66);   // 15-inch rim on the Caterham; 13-inch in a tall slick on the TT-88
   // (a real tyre's shape: rounded shoulders, bulging sidewalls)
   const tyreGeo = tyreGeometry(WHEEL_RADIUS, WHEEL_WIDTH, RIM_R * 0.99);
-  if (IS_F05) {
-    // GROOVED TYRES (the 2005 rules): four grooves round the tread. The
-    // tread's mapped across its width, the sidewalls onto a plain strip
-    const pa = tyreGeo.attributes.position, uvs = new Float32Array(pa.count * 2);
-    for (let i = 0; i < pa.count; i++) {
-      const x = pa.getX(i), y = pa.getY(i), z = pa.getZ(i), r = Math.hypot(y, z);
-      uvs[i * 2] = (Math.atan2(z, y) / (Math.PI * 2) + 1) % 1;
-      uvs[i * 2 + 1] = r > WHEEL_RADIUS - 0.002 ? 0.08 + 0.84 * (x / WHEEL_WIDTH + 0.5) : 0.02;
-    }
-    tyreGeo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
-    const c = document.createElement('canvas'); c.width = 8; c.height = 256;
-    const g = c.getContext('2d');
-    g.fillStyle = '#ffffff'; g.fillRect(0, 0, 8, 256);
-    g.fillStyle = '#3c3c3c'; for (const v of [0.26, 0.42, 0.58, 0.74]) g.fillRect(0, Math.round((1 - v) * 256) - 3, 8, 6);
-    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
-    MAT.tyre = MAT.tyre.clone(); MAT.tyre.map = t;
-  }
+  // (the TT-05's grooves: painted by the tyre compounds, see tyres.js and the TyreLooks below)
   const rimGeo = IS_F1 ? buildF1RimGeometry(RIM_R, WHEEL_WIDTH) : buildRimGeometry(RIM_R, WHEEL_WIDTH);
   // (old spokes: kept but hidden, the rim has its own now)
   const spokeGeo = new THREE.BoxGeometry(0.001, 0.001, 0.001);
@@ -1613,7 +1597,7 @@ function openVehicleMenu() {
 }
 // Each kind of tyre has its own look: F1-style coloured bands, tread
 // patterns, knobbly dirt tyres, snow chains (tyres.js)
-const tyreLooks = new TyreLooks(carModel.car, carModel.tyres, { radius: WHEEL_RADIUS, width: WHEEL_WIDTH });
+const tyreLooks = new TyreLooks(carModel.car, carModel.tyres, { radius: WHEEL_RADIUS, width: WHEEL_WIDTH, grooves: IS_F05 ? 4 : 0 });
 
 // HEADLIGHTS: G cycles off -> auto -> dipped -> main beam. Dipped lights
 // the road close ahead; main beam reaches much further. Auto (the default)
@@ -1820,7 +1804,7 @@ function updateWheels(steer, spin) {
         const outer = WHEEL_RADIUS * shrink;
         const hubUp = Math.max(WHEEL_RADIUS * 0.64, Math.min(outer, tyreHub[pi]));
         const tall = (hubUp + outer) / (2 * WHEEL_RADIUS);
-        squashMatrix.makeScale((1 + bulge * 0.35) * (tyre.blown ? 1 + (Math.random() - 0.5) * 0.06 : 1),
+        squashMatrix.makeScale(WHEEL_WIDTHS[i] * (1 + bulge * 0.35) * (tyre.blown ? 1 + (Math.random() - 0.5) * 0.06 : 1),
           tall, (1 + bulge * 0.6) * shrink).multiply(spinMatrix);
         squashMatrix.setPosition(x, wheelPos.y + (outer - hubUp) / 2, z);
         carModel.tyres.setMatrixAt(i, squashMatrix);
@@ -2337,7 +2321,9 @@ function dentOffset(x, y, z, out) {
     const dx = x - d.x, dy = y - d.y, dz = z - d.z;
     const f = Math.exp(-(dx * dx + dy * dy + dz * dz) / (d.r * d.r));
     if (f < 0.01) continue;
-    const wrinkle = 1 + 0.45 * Math.sin(x * 41 + d.seed) * Math.sin(y * 33 + d.seed * 1.7) * Math.sin(z * 37 + d.seed * 0.6);
+    // (a broad, gentle unevenness over the dent, a few tens of cm across: the
+    // smooth bodies are finely meshed, and a fine ripple turned them into spikes)
+    const wrinkle = 1 + 0.15 * Math.sin(x * 9 + d.seed) * Math.sin(y * 7 + d.seed * 1.7) * Math.sin(z * 8 + d.seed * 0.6);
     out.x += d.dx * d.depth * f * wrinkle;
     out.y += d.dy * d.depth * f * wrinkle - 0.25 * d.depth * f * f;      // the crumple sags a little
     out.z += d.dz * d.depth * f * wrinkle;
@@ -2352,8 +2338,8 @@ function dentOffset(x, y, z, out) {
     const k = Math.min(1, (z - NOSE_BASE) / (NOSE_TIP - NOSE_BASE)), c = Math.min(noseCrush, (NOSE_TIP - NOSE_BASE) * 0.85);
     const crumple = Math.min(1, c / 0.25) * Math.sin(Math.PI * k);
     out.z -= c * k * k * (3 - 2 * k) * 0.6 + c * k * 0.4;
-    out.y += (Math.sin(z * 47 + 1.3) * 0.018 + Math.sin(x * 61) * 0.008) * crumple - 0.03 * c * k;
-    out.x += x * 0.35 * crumple * Math.min(1, c) + Math.sin(z * 53 + y * 29) * 0.012 * crumple;
+    out.y += Math.sin(z * 16 + 1.3) * 0.014 * crumple - 0.03 * c * k;               // (folds a hand's width apart)
+    out.x += x * 0.35 * crumple * Math.min(1, c) + Math.sin(z * 16 + 0.4) * 0.006 * crumple * Math.sign(x);
   }
   return out;
 }

@@ -16,7 +16,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 2;
+export const BUILD = 3;
 
 // Sidewall band colour by compound (null = plain black sidewall)
 const BAND = {
@@ -249,7 +249,8 @@ function chainGeometry(radius, width) {
 
 export class TyreLooks {
   // tyres: the car's InstancedMesh of 4 tyres (a cylinder along x)
-  constructor(car, tyres, { radius, width }) {
+  constructor(car, tyres, { radius, width, grooves = 0 }) {
+    this.grooves = grooves;          // (the 1998-2008 rule: grooves cut round the tread)
     this.tyres = tyres;
     this.radius = radius;
     this.width = width;
@@ -271,9 +272,14 @@ export class TyreLooks {
   materials(id) {
     if (this.cache[id]) return this.cache[id];
     const kind = TREAD[id] || 'sport';
-    const key = kind + (BAND[id] || '');
+    const key = kind + (BAND[id] || '') + (this.grooves ? 'g' + this.grooves : '');
     if (this.cache[key]) return (this.cache[id] = this.cache[key]);
     const paint = paintTread(kind);
+    // the era's grooves, evenly across the tread: dark, and cut down in the height picture
+    for (let k = 1; k <= this.grooves; k++) for (const [cv, st] of [[paint.colour, '#0b0b0c'], [paint.height, '#000000']]) {
+      const g = cv.getContext('2d'), y = TH * (0.12 + 0.76 * k / (this.grooves + 1));
+      g.fillStyle = st; g.fillRect(0, y - 3, TW, 6);
+    }
     const tex = (cv, srgb) => {
       const t = new THREE.CanvasTexture(cv);
       if (srgb) t.colorSpace = THREE.SRGBColorSpace;

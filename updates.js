@@ -21,11 +21,21 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 122;
+export const BUILD = 124;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 106, date: '24 Nov 2026', title: 'Grooves and gills',
+    items: [
+      ['Grooved tyres on the TTF-05', 'Four grooves round every tyre, as the rules of its era required; the other cars keep their slicks', 'update'],
+      ['Wider rears', 'On the single-seaters the rear tyres are now drawn wider than the fronts, as on the real cars (they already were in the physics)', 'fix'],
+      ['Tread patterns the right way round', 'The tread pattern of each tyre compound is laid round the tyre and across it properly again, on both sides of the car', 'fix'],
+      ['Smooth crumples', 'Crash damage now dents the bodywork smoothly instead of raising a bed of little spikes, and a crushed nose folds in broad wrinkles', 'fix'],
+      ['Gills that follow the body', 'The TTF-05\'s gills are cut along the curve of the sidepods instead of poking half into them; the stump on each sidepod is gone', 'update'],
+    ],
+  },
   {
     id: 105, date: '24 Nov 2026', title: 'Tyres are back',
     items: [

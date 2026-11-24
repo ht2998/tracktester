@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 51;
+export const BUILD = 52;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -443,6 +443,14 @@ export function tyreGeometry(r, w, rimR = r * 0.62, seg = 40) {
       const j = Math.min(ix[t] % n, ix[t + 1] % n, ix[t + 2] % n);
       parts[j >= 2 && j < n - 3 ? 0 : j < 2 ? 1 : 2].push(ix[t], ix[t + 1], ix[t + 2]);
     }
+    // (UVs as on a plain cylinder: the tread round and across, each sidewall a disc)
+    const P = g.attributes.position, uv = new Float32Array(P.count * 2);
+    for (let v = 0; v < P.count; v++) {
+      const j = v % n, x = P.getX(v), y = P.getY(v), z = P.getZ(v);
+      if (j >= 2 && j <= n - 3) { uv[v * 2] = Math.floor(v / n) / seg; uv[v * 2 + 1] = Math.max(0, Math.min(1, x / w + 0.5)); }
+      else { uv[v * 2] = y / (2 * r) + 0.5; uv[v * 2 + 1] = z / (2 * r) + 0.5; }
+    }
+    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
     const all = [].concat(...parts);
     g.setIndex(all); g.clearGroups();
     let at = 0; parts.forEach((q, m) => { g.addGroup(at, q.length, m); at += q.length; });
@@ -796,15 +804,17 @@ export function buildF05Body(car, addPanel) {
 
   for (const s of [1, -1]) {
     // the gills: slotted into the upper rear of the pod, between its crown and the crease
+    // (each one a dark slot laid along the skin itself, over the pod's
+    // crown and down its shoulder, just proud of the surface)
     for (let k = 0; k < 6; k++) {
-      const z = -0.5 - k * 0.09, t = 0.45, x = xc(z) + (xo(z) - xc(z)) * t, y = yc(z) + (ycr(z) - yc(z)) * t + 0.01;
-      const slope = Math.atan2(yc(z) - ycr(z), xo(z) - xc(z));
-      add(mirrorX(box(0.13, 0.006, 0.03, x, y, z, 0, 0, slope), s), MAT.dark, false);
+      const z = -0.5 - k * 0.09, u = upper(z), pts = [];
+      for (let i = 3 * S + 1; i <= 4 * S + 2; i++) {
+        const a = u[i - 1], b = u[i + 1], tx = b[0] - a[0], ty = b[1] - a[1], l = Math.hypot(tx, ty) || 1;
+        pts.push([u[i][0] - ty / l * 0.004, u[i][1] + tx / l * 0.004, z]);
+      }
+      for (let i = 0; i < pts.length - 1; i++) add(mirrorX(rod(pts[i], pts[i + 1], 0.009), s), MAT.dark, false);
     }
-    // the chimney on the crown, and the exhaust out through the top further back
-    { const z = -0.4, x = xc(z) - 0.04, y = surfY(z, x) - 0.03;
-      add(mirrorX(new THREE.CylinderGeometry(0.045, 0.055, 0.12, 14, 1, true).translate(x, y + 0.04, z), s), MAT.blue);
-      add(mirrorX(new THREE.CircleGeometry(0.044, 14).rotateX(-Math.PI / 2).translate(x, y + 0.1, z), s), MAT.dark, false); }
+    // the exhaust out through the top, toward the back
     { const z = -1.12, x = (xc(z) + CW(z)) / 2, y = surfY(z, x) - 0.03;
       add(mirrorX(new THREE.CylinderGeometry(0.05, 0.058, 0.08, 14, 1, true).rotateX(-0.6).translate(x, y + 0.02, z), s), MAT.exhaust);
       add(mirrorX(new THREE.CircleGeometry(0.048, 14).rotateX(-Math.PI / 2 - 0.6).translate(x, y + 0.05, z - 0.02), s), MAT.dark, false); }
