@@ -26,7 +26,7 @@
 // a smashed radiator): the team retire the car. DNF on the standings, and
 // they push it back into the garage.
 // =====================================================================
-export const BUILD = 19;
+export const BUILD = 21;
 
 import * as THREE from 'three';
 
@@ -108,19 +108,46 @@ export class Person {
     const shad = (m) => { m.castShadow = true; return m; };
     const box = (w, h, d, mat, y = -h / 2) => shad(new THREE.Mesh(G(`b${w},${h},${d},${y}`, () => new THREE.BoxGeometry(w, h, d).translate(0, y, 0)), mat));
     // a rounded limb hanging from its joint: len long, r thick
-    const cap = (r, len, mat, sx = 1, sz = 1) => shad(new THREE.Mesh(G(`c${r},${len},${sx},${sz}`, () => new THREE.CapsuleGeometry(r, Math.max(0.01, len - r * 1.2), 4, 10).translate(0, -len / 2, 0).scale(sx, 1, sz)), mat));
+    // (a limb: a turned shape, fuller near its top like a thigh or upper arm,
+    // slimming toward the joint below, with a soft bulge partway (a calf or
+    // forearm) and rounded ends)
+    const cap = (r, len, mat, sx = 1, sz = 1, bulge = 0.35) => shad(new THREE.Mesh(G(`t${r},${len},${sx},${sz},${bulge}`, () => {
+      const pts = [], N = 14;
+      for (let k = 0; k <= N; k++) {
+        const t = k / N, y = -t * len;
+        const end = Math.sin(Math.min(1, Math.min(t, 1 - t) * len / (r * 1.1)) * Math.PI / 2);     // (rounded ends)
+        const rad = r * (1.12 - 0.32 * t + 0.14 * Math.exp(-(((t - bulge) / 0.18) ** 2))) * (0.62 + 0.38 * end);
+        pts.push(new THREE.Vector2(Math.max(0.002, rad), y));
+      }
+      return new THREE.LatheGeometry(pts, 12).scale(sx, 1, sz);
+    }), mat));
     const hips = this.hips = new THREE.Group(); hips.position.y = 0.95; root.add(hips);
-    hips.add(shad(new THREE.Mesh(G('pelvis', () => new THREE.CapsuleGeometry(0.12, 0.12, 4, 10).rotateZ(Math.PI / 2).scale(1, 1, 0.8)), suit)));
+    hips.add(shad(new THREE.Mesh(G('pelvis2', () => new THREE.CapsuleGeometry(0.115, 0.1, 4, 12).rotateZ(Math.PI / 2).scale(1, 0.95, 0.78).translate(0, -0.01, -0.01)), suit)));
     const torso = this.torso = new THREE.Group(); hips.add(torso);
     // chest and belly: one rounded shape, broader at the shoulders
-    const chest = shad(new THREE.Mesh(G('chest', () => {
-      const g = new THREE.CapsuleGeometry(0.15, 0.3, 6, 12);
+    // (turned from a side-on outline: hips, a narrower waist, the ribcage
+    // and chest filling out to the shoulders, which slope in to the neck;
+    // wider than it is deep, the chest a little forward of the back)
+    const chest = shad(new THREE.Mesh(G('chest2', () => {
+      const prof = [[0.0, 0.01], [0.135, 0.0], [0.145, 0.06], [0.132, 0.17], [0.15, 0.27], [0.165, 0.37], [0.17, 0.45], [0.15, 0.51], [0.1, 0.555], [0.055, 0.575], [0.001, 0.58]];
+      const g = new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y)), 18);
       const a = g.attributes.position;
-      for (let i = 0; i < a.count; i++) { const y = a.getY(i), wide = 1.05 + Math.max(0, y) * 0.55; a.setX(i, a.getX(i) * wide); a.setZ(i, a.getZ(i) * 0.72); }
+      for (let i = 0; i < a.count; i++) {
+        const y = a.getY(i), x = a.getX(i), z = a.getZ(i);
+        const wide = 1.08 + Math.max(0, (y - 0.3) / 0.2) * 0.32 * (y < 0.52 ? 1 : 0.6);      // (the shoulders' breadth)
+        a.setX(i, x * wide);
+        a.setZ(i, z * (z > 0 ? 0.68 + 0.08 * Math.exp(-(((y - 0.4) / 0.1) ** 2)) : 0.6));     // (the chest a touch fuller than the back)
+      }
       g.computeVertexNormals();
-      return g.translate(0, 0.3, 0);
+      return g;
     }), suit));
     torso.add(chest);
+    // the overalls: a collar round the neck, a zip down the front, a belt
+    if (look !== 'driver') {
+      torso.add(new THREE.Mesh(G('collar', () => new THREE.TorusGeometry(0.068, 0.018, 6, 16).rotateX(Math.PI / 2).scale(1.1, 1, 0.9).translate(0, 0.565, 0)), suit));
+      torso.add(new THREE.Mesh(G('zip', () => new THREE.BoxGeometry(0.008, 0.36, 0.006).translate(0, 0.34, 0.118)), sk.dark));
+      torso.add(new THREE.Mesh(G('belt', () => new THREE.CylinderGeometry(0.146, 0.146, 0.035, 18, 1, true).scale(1.08, 1, 0.62).translate(0, 0.05, 0)), sk.dark));
+    }
     if (look === 'marshal' || look === 'medic') {
       // hi-vis bands round the chest
       const band = new THREE.Mesh(G('band', () => new THREE.CylinderGeometry(0.205, 0.2, 0.045, 16, 1, true).scale(1, 1, 0.74)), sk.reflect);
@@ -136,6 +163,9 @@ export class Person {
     } else {
       // a face: head, ears, nose, hair
       head.add(shad(new THREE.Mesh(G('skull', () => new THREE.SphereGeometry(0.105, 16, 12).scale(0.92, 1.12, 1).translate(0, 0.07, 0)), sk.skin)));
+      head.add(new THREE.Mesh(G('jaw', () => new THREE.SphereGeometry(0.075, 12, 8).scale(1, 0.75, 1.05).translate(0, 0.012, 0.02)), sk.skin));
+      for (const sx of [-1, 1]) head.add(new THREE.Mesh(G('brow' + sx, () => new THREE.BoxGeometry(0.035, 0.008, 0.01).rotateZ(sx * -0.12).translate(sx * 0.037, 0.107, 0.094)), sk.hair));
+      head.add(new THREE.Mesh(G('mouth', () => new THREE.BoxGeometry(0.035, 0.006, 0.006).translate(0, 0.028, 0.094)), sk.eye));
       head.add(new THREE.Mesh(G('nose', () => new THREE.ConeGeometry(0.018, 0.04, 6).rotateX(Math.PI / 2).translate(0, 0.06, 0.105)), sk.skin));
       for (const sx of [-1, 1]) head.add(new THREE.Mesh(G('ear' + sx, () => new THREE.SphereGeometry(0.022, 8, 6).scale(0.5, 1, 0.8).translate(sx * 0.097, 0.07, 0)), sk.skin));
       head.add(new THREE.Mesh(G('hair', () => new THREE.SphereGeometry(0.108, 14, 8, 0, Math.PI * 2, 0, 1.35).scale(0.94, 1.1, 1.02).translate(0, 0.075, -0.008)), sk.hair));
@@ -152,15 +182,13 @@ export class Person {
     }
     // arms: shoulder, upper arm, elbow, forearm, glove with a thumb
     const limb = (parent, x, y, len, r, mat, sx, sz) => {
+      // (just the joints: the arm or leg itself is one smooth skin over them, below)
       const j = new THREE.Group(); j.position.set(x, y, 0); parent.add(j);
-      j.add(cap(r, len, mat, sx, sz));
       const k = new THREE.Group(); k.position.y = -len; j.add(k);
       return [j, k];
     };
     [this.shL, this.elL] = limb(torso, 0.235, 0.5, 0.29, 0.052, suit);
     [this.shR, this.elR] = limb(torso, -0.235, 0.5, 0.29, 0.052, suit);
-    for (const sh of [this.shL, this.shR]) sh.add(shad(new THREE.Mesh(G('delt', () => new THREE.SphereGeometry(0.065, 10, 8)), suit)));
-    this.elL.add(cap(0.045, 0.27, suit)); this.elR.add(cap(0.045, 0.27, suit));
     const hand = (side) => {
       const h = new THREE.Group(); h.position.y = -0.29;
       const gl = look === 'marshal' || look === 'camera' ? sk.skin : mats.glove;
@@ -175,10 +203,56 @@ export class Person {
     [this.thL, this.knL] = limb(hips, 0.1, -0.02, 0.45, 0.075, suit);
     [this.thR, this.knR] = limb(hips, -0.1, -0.02, 0.45, 0.075, suit);
     for (const k of [this.knL, this.knR]) {
-      k.add(cap(0.06, 0.44, suit));
       if (look === 'marshal' || look === 'medic') { const b = new THREE.Mesh(G('shinband', () => new THREE.CylinderGeometry(0.064, 0.062, 0.035, 12, 1, true).translate(0, -0.3, 0)), sk.reflect); k.add(b); }
-      const f = shad(new THREE.Mesh(G('boot', () => { const g = new THREE.CapsuleGeometry(0.055, 0.15, 3, 8).rotateX(Math.PI / 2).scale(1, 0.75, 1); return g.translate(0, -0.455, 0.055); }), mats.boot));
+      const f = shad(new THREE.Mesh(G('boot2', () => { const g = new THREE.CapsuleGeometry(0.048, 0.16, 4, 10).rotateX(Math.PI / 2).scale(1.05, 0.8, 1); return g.translate(0, -0.45, 0.06); }), mats.boot));
       k.add(f);
+      k.add(new THREE.Mesh(G('sole', () => new THREE.BoxGeometry(0.1, 0.018, 0.26).translate(0, -0.488, 0.06)), sk.dark));
+    }
+    // THE ARMS AND LEGS: one smooth skin each, from the shoulder to the
+    // wrist and from the hip to the ankle, bending softly at the elbow and
+    // knee as the joints underneath move (no balls or seams at the joints)
+    {
+      root.updateMatrixWorld(true);
+      const bones = [torso, this.shL, this.elL, this.shR, this.elR, hips, this.thL, this.knL, this.thR, this.knR];
+      const geo = G('limbskin', () => {
+        const pos = [], si = [], sw = [], idx = [], SEG = 12;
+        // (a tube down from (x, y0): [drop, radius] keys; bone a above the bend at 'bend', b below it)
+        const tube = (x, y0, keys, a, b, bend, sz) => {
+          const R = (d) => { for (let k = 1; k < keys.length; k++) if (d <= keys[k][0]) { const [d0, r0] = keys[k - 1], [d1, r1] = keys[k], t = (d - d0) / (d1 - d0); return r0 + (r1 - r0) * (t * t * (3 - 2 * t)); } return keys[keys.length - 1][1]; };
+          const total = keys[keys.length - 1][0], rows = 22, v0 = pos.length / 3;
+          for (let i = 0; i <= rows; i++) {
+            const d = total * i / rows, rr = R(d), end = i === 0 || i === rows ? 0.5 : 1;
+            const w = Math.min(1, Math.max(0, (d - bend + 0.05) / 0.1)), wb = w * w * (3 - 2 * w);       // (blending across the bend)
+            for (let k = 0; k < SEG; k++) {
+              const ang = k / SEG * Math.PI * 2;
+              pos.push(x + Math.cos(ang) * rr * end, y0 - d, Math.sin(ang) * rr * end * sz);
+              si.push(a, b, 0, 0); sw.push(1 - wb, wb, 0, 0);
+            }
+          }
+          for (let i = 0; i < rows; i++) for (let k = 0; k < SEG; k++) {
+            const p0 = v0 + i * SEG + k, p1 = v0 + i * SEG + (k + 1) % SEG;
+            idx.push(p0, p1, p0 + SEG, p1, p1 + SEG, p0 + SEG);
+          }
+        };
+        const SH = 0.95 + 0.5, HIP = 0.95 - 0.02;
+        // (arms: from inside the shoulder down past the wrist into the glove)
+        const arm = [[0, 0.03], [0.04, 0.058], [0.12, 0.056], [0.25, 0.046], [0.29, 0.043], [0.36, 0.047], [0.5, 0.036], [0.61, 0.031]];
+        tube(0.235, SH + 0.03, arm, 1, 2, 0.29 + 0.03, 0.9); tube(-0.235, SH + 0.03, arm, 3, 4, 0.32, 0.9);
+        // (legs: from up inside the hip down to the ankle, in the boot)
+        const leg = [[0, 0.06], [0.06, 0.094], [0.2, 0.085], [0.42, 0.064], [0.47, 0.06], [0.58, 0.067], [0.78, 0.048], [0.93, 0.042]];
+        tube(0.1, HIP + 0.06, leg, 6, 7, 0.45 + 0.06, 0.92); tube(-0.1, HIP + 0.06, leg, 8, 9, 0.51, 0.92);
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        g.setAttribute('skinIndex', new THREE.BufferAttribute(new Uint16Array(si), 4));
+        g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
+        g.setIndex(idx); g.computeVertexNormals();
+        return g;
+      });
+      const skin = new THREE.SkinnedMesh(geo, suit);
+      skin.castShadow = true; skin.frustumCulled = false;
+      root.add(skin);
+      skin.bind(new THREE.Skeleton(bones));
+      this.skin = skin;
     }
     // the front of the body: where a carried wheel, wing or churn sits
     this.front = new THREE.Group(); this.front.position.set(0, 0.12, 0.42); torso.add(this.front);

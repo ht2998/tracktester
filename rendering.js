@@ -60,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 95;
+const BUILD = 96;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -2782,6 +2782,30 @@ function findContact() {
     if (c.maxX < cx - 2.2 || c.minX > cx + 2.2 || c.maxZ < cz - 2.2 || c.minZ > cz + 2.2) continue;
     if (heavyMode && CRUSHABLE[c.kind]) continue;          // (it just rolls over them: see crushUnder)
     if (bottom > -Infinity && bottom > groundAt((c.minX + c.maxX) / 2, (c.minZ + c.maxZ) / 2) + (BARRIER_TOP[c.kind] ?? 50)) continue;
+    // A turned box (a wall or barrier at an angle): tested in its own frame,
+    // so it's hit exactly where it stands
+    if (c.ob) {
+      const o = c.ob, ax = o.ux, az = o.uz, bx = o.uz, bz = -o.ux;                 // (along it, across it)
+      const ccA = (cx - o.x) * ax + (cz - o.z) * az, ccB = (cx - o.x) * bx + (cz - o.z) * bz;
+      for (const [px, pz] of CAR_POINTS) {
+        const wx = cx + fx * pz + lx * px, wz = cz + fz * pz + lz * px;
+        const la = (wx - o.x) * ax + (wz - o.z) * az, lb = (wx - o.x) * bx + (wz - o.z) * bz;
+        if (Math.abs(la) >= o.hl || Math.abs(lb) >= o.hw) continue;
+        const faces = [[o.hw - lb, bx, bz, ccB > o.hw], [lb + o.hw, -bx, -bz, ccB < -o.hw], [o.hl - la, ax, az, ccA > o.hl], [la + o.hl, -ax, -az, ccA < -o.hl]];
+        const facing = faces.filter((f) => f[3]);
+        const pick = (facing.length ? facing : faces).reduce((p1, p2) => (p2[0] < p1[0] ? p2 : p1));
+        consider(pick[0], pick[1], pick[2], wx, wz, c);
+      }
+      for (const [sa, sb] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) {
+        const bxw = o.x + ax * sa * o.hl + bx * sb * o.hw, bzw = o.z + az * sa * o.hl + bz * sb * o.hw;
+        const rx = bxw - cx, rz = bzw - cz, along = rx * fx + rz * fz, side = rx * lx + rz * lz;
+        if (along >= CAR_FRONT || along <= -CAR_REAR || Math.abs(side) >= CAR_HALF_W) continue;
+        const edges = [[CAR_FRONT - along, -fx, -fz], [along + CAR_REAR, fx, fz], [CAR_HALF_W - side, -lx, -lz], [side + CAR_HALF_W, lx, lz]];
+        const e = edges.reduce((p1, p2) => (p2[0] < p1[0] ? p2 : p1));
+        consider(e[0], e[1], e[2], bxw, bzw, c);
+      }
+      continue;
+    }
     // Corners and edges of the car inside the box: pushed out through the
     // nearest face that's on the car's side of the box
     for (const [px, pz] of CAR_POINTS) {
@@ -2850,7 +2874,7 @@ const fallingTrees = [];
 const _tq = new THREE.Quaternion(), _tq2 = new THREE.Quaternion(), _tm = new THREE.Matrix4(), _tp = new THREE.Vector3(), _ts = new THREE.Vector3(), _ta = new THREE.Vector3();
 function fellTree(c, dx, dz, kick = 0.3) {
   const T = c.tree;
-  c.minX = c.maxX = c.minZ = c.maxZ = 1e6;               // (no longer in the way)
+  c.minX = c.maxX = c.minZ = c.maxZ = 1e6; c.ob = null;  // (no longer in the way)
   if (!T || T.down) return;
   T.down = true;
   const d = Math.hypot(dx, dz) || 1;

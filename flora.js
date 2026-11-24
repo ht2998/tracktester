@@ -16,7 +16,7 @@
 // area gets broadleaf trees and conifers round its edges.
 import * as THREE from 'three';
 
-export const BUILD = 4;
+export const BUILD = 5;
 
 // The same random numbers every time (so the forest is always the same)
 function seeded(seed) {
@@ -80,26 +80,38 @@ function lumpyBall(rand, detail = 1) {
 const col = (hex) => new THREE.Color(hex);
 const shade = (base, y, lo, hi, dark = 0.55) => base.clone().multiplyScalar(dark + (1 - dark) * Math.min(1, Math.max(0, (y - lo) / (hi - lo))));
 
-// Broadleaf tree: a trunk, a few branches and a crown of several blobs
+// Broadleaf tree: a trunk flaring at its roots, kinking as it climbs, its
+// boughs reaching out and up into a domed crown of leafy clumps (each its
+// own shade of green, darker underneath and inside, lit on top)
 function broadleaf(rand, { height = 9, leaf = 0x3f6b2a, simple = false } = {}) {
   const trunkB = new Builder(), leafB = new Builder();
   const bark = col(0x5a4632);
-  const trunkH = height * 0.45;
-  trunkB.add(new THREE.CylinderGeometry(0.22, 0.34, trunkH, 8, 1), M(0, trunkH / 2, 0), (x, y) => shade(bark, y, 0, trunkH, 0.75));
-  for (let k = 0; k < (simple ? 0 : 3); k++) {
-    const a = rand() * Math.PI * 2;
-    trunkB.add(new THREE.CylinderGeometry(0.07, 0.13, height * 0.3, 6, 1),
-      M(Math.sin(a) * 0.5, trunkH + height * 0.08, Math.cos(a) * 0.5, 1, 1, 1, Math.cos(a) * 0.6, 0, -Math.sin(a) * 0.6), () => bark);
-  }
+  const trunkH = height * 0.42;
+  const lean = (rand() - 0.5) * 0.12, lean2 = (rand() - 0.5) * 0.12;
+  // the root flare, then the trunk in two pieces with a slight kink
+  trunkB.add(new THREE.CylinderGeometry(0.3, 0.52, 0.5, 9, 1), M(0, 0.25, 0), () => shade(bark, 0, 0, 1, 0.7));
+  trunkB.add(new THREE.CylinderGeometry(0.25, 0.32, trunkH * 0.55, 9, 1), M(0, trunkH * 0.27 + 0.2, 0, 1, 1, 1, lean, 0, lean2), (x, y) => shade(bark, y, 0, trunkH, 0.75));
+  const kx = Math.sin(lean2) * -trunkH * 0.5, kz = Math.sin(lean) * trunkH * 0.5;
+  trunkB.add(new THREE.CylinderGeometry(0.18, 0.25, trunkH * 0.55, 8, 1), M(kx * 0.7, trunkH * 0.75 + 0.1, kz * 0.7, 1, 1, 1, -lean * 0.6, 0, -lean2 * 0.6), (x, y) => shade(bark, y, 0, trunkH, 0.75));
   const green = col(leaf);
-  const crownY = trunkH + height * 0.25, crownR = height * 0.3;
-  const blobs = simple ? 3 : 4 + Math.floor(rand() * 2);
+  const crownY = trunkH + height * 0.24, crownR = height * 0.33;
+  const blobs = simple ? 4 : 7 + Math.floor(rand() * 3);
+  const tones = [green, green.clone().lerp(col(0x9ab04a), 0.14), green.clone().multiplyScalar(0.82), green.clone().lerp(col(0x6f9a2a), 0.2)];
   for (let k = 0; k < blobs; k++) {
-    const a = (k / blobs) * Math.PI * 2 + rand();
-    const r = crownR * (0.55 + rand() * 0.3);
-    const off = k === 0 ? 0 : crownR * 0.55;
-    leafB.add(lumpyBall(rand, simple ? 0 : 1), M(Math.sin(a) * off, crownY + (k === 0 ? crownR * 0.25 : (rand() - 0.3) * crownR * 0.5), Math.cos(a) * off, r, r * 0.8, r),
-      (x, y) => shade(green, y, crownY - crownR, crownY + crownR, 0.5));
+    const a = (k / blobs) * Math.PI * 2 + rand() * 0.8;
+    const up = k === 0 ? 1 : rand();                                  // (some clumps high in the dome, some round its rim)
+    const off = k === 0 ? 0 : crownR * (0.5 + 0.35 * (1 - up));
+    const r = crownR * (k === 0 ? 0.7 : 0.42 + rand() * 0.22);
+    const bx = Math.sin(a) * off, by = crownY + (k === 0 ? crownR * 0.25 : (up - 0.35) * crownR * 0.8), bz = Math.cos(a) * off;
+    const tone = tones[k % tones.length];
+    leafB.add(lumpyBall(rand, simple ? 0 : 1), M(bx, by, bz, r, r * 0.78, r, 0, rand() * 6, 0),
+      (x, y, z) => { const inner = Math.min(1, Math.hypot(x, z) / (crownR * 1.1)); return shade(tone, y, crownY - crownR * 0.9, crownY + crownR, 0.42 + 0.18 * inner); });
+    // a bough from the trunk's top out to this clump (inside the leaves, so none stick out)
+    if (!simple && k > 0 && k <= 4) {
+      const sx = kx * 1.2, sy = trunkH, sz = kz * 1.2, dx = bx * 0.75 - sx, dy = by - r * 0.4 - sy, dz = bz * 0.75 - sz, L = Math.hypot(dx, dy, dz);
+      const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(dx, dy, dz).normalize());
+      trunkB.add(new THREE.CylinderGeometry(0.05, 0.13, L, 6, 1).translate(0, L / 2, 0), new THREE.Matrix4().compose(new THREE.Vector3(sx, sy, sz), q, new THREE.Vector3(1, 1, 1)), () => bark);
+    }
   }
   return { trunk: trunkB.build(), leaves: leafB.build() };
 }
@@ -144,11 +156,18 @@ function palm(rand, { height = 8, simple = false } = {}) {
       const w0 = 0.45 * (1 - t0 * 0.8), w1 = 0.45 * (1 - t1 * 0.8);
       const dx = Math.sin(a) * Math.cos(pitch) * segLen, dy = Math.sin(pitch) * segLen, dz = Math.cos(a) * Math.cos(pitch) * segLen;
       const sx = Math.cos(a), sz = -Math.sin(a);       // across the frond
+      // (each side of the rib folded down a little, like a real frond's
+      // leaflets hanging either side of it; the edge cut ragged)
+      const fold = 0.32, rag = (t) => 0.75 + 0.25 * Math.abs(Math.sin(t * 37 + f));
       const quad = new THREE.BufferGeometry();
-      const v = [
-        px - sx * w0, py, pz - sz * w0, px + sx * w0, py, pz + sz * w0, px + dx + sx * w1, py + dy, pz + dz + sz * w1,
-        px - sx * w0, py, pz - sz * w0, px + dx + sx * w1, py + dy, pz + dz + sz * w1, px + dx - sx * w1, py + dy, pz + dz - sz * w1,
-      ];
+      const v = [];
+      for (const side of [-1, 1]) {
+        const e0 = w0 * rag(t0), e1 = w1 * rag(t1);
+        const ax = px, ay = py, az = pz, bx = px + dx, by = py + dy, bz = pz + dz;
+        const cx = ax + side * sx * e0, cy = ay - e0 * fold, cz = az + side * sz * e0;
+        const ex = bx + side * sx * e1, ey = by - e1 * fold, ez = bz + side * sz * e1;
+        v.push(ax, ay, az, cx, cy, cz, ex, ey, ez, ax, ay, az, ex, ey, ez, bx, by, bz);
+      }
       quad.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
       quad.computeVertexNormals?.();
       leafB.add(quad, new THREE.Matrix4(), () => shade(green, s, 0, pieces, 0.7));
@@ -162,13 +181,15 @@ function palm(rand, { height = 8, simple = false } = {}) {
 function shrub(rand, { size = 1.2, leaf = 0x3d6a2c, flowers = null } = {}) {
   const b = new Builder();
   const green = col(leaf), pink = flowers ? col(flowers) : null;
-  const n = 3 + Math.floor(rand() * 3);
+  const n = 5 + Math.floor(rand() * 3);
+  const tones = [green, green.clone().lerp(col(0x9ab04a), 0.16), green.clone().multiplyScalar(0.8)];
   for (let k = 0; k < n; k++) {
-    const a = rand() * Math.PI * 2, d = rand() * size * 0.5;
-    const r = size * (0.4 + rand() * 0.3);
+    const a = rand() * Math.PI * 2, d = rand() * size * 0.55;
+    const r = size * (0.3 + rand() * 0.24);
+    const tone = tones[k % 3];
     b.add(lumpyBall(rand, 0), M(Math.sin(a) * d, r * 0.7, Math.cos(a) * d, r, r * 0.75, r), (x, y, z) => {   // (simpler blobs: there are thousands)
       if (pink && Math.sin(x * 9.1) * Math.sin(z * 8.3) * Math.sin(y * 7.7) > 0.25) return pink;   // patches of flowers
-      return shade(green, y, 0, size * 1.1, 0.5);
+      return shade(tone, y, 0, size * 1.1, 0.45);
     });
   }
   return b.build();
@@ -178,16 +199,21 @@ function shrub(rand, { size = 1.2, leaf = 0x3d6a2c, flowers = null } = {}) {
 function tallGrass(rand) {
   const b = new Builder();
   const base = col(0x8a9a4e), tip = col(0xc9c48a);
-  const blades = 14;
+  const blades = 22;
   for (let k = 0; k < blades; k++) {
-    const a = rand() * Math.PI * 2, lean = 0.15 + rand() * 0.35;
-    const h = 0.5 + rand() * 0.5, w = 0.025;
-    const r0 = rand() * 0.12;
+    const a = rand() * Math.PI * 2, lean = 0.15 + rand() * 0.4;
+    const h = 0.45 + rand() * 0.6, w = 0.022 + rand() * 0.01;
+    const r0 = rand() * 0.14;
     const x0 = Math.sin(a) * r0, z0 = Math.cos(a) * r0;
-    const x1 = x0 + Math.sin(a) * lean * h, z1 = z0 + Math.cos(a) * lean * h;
+    // (up, then curving over toward its tip)
+    const xm = x0 + Math.sin(a) * lean * h * 0.35, zm = z0 + Math.cos(a) * lean * h * 0.35, hm = h * 0.6;
+    const x1 = x0 + Math.sin(a) * lean * h * 1.3, z1 = z0 + Math.cos(a) * lean * h * 1.3, h1 = h * 0.92;
     const sx = Math.cos(a) * w, sz = -Math.sin(a) * w;
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute([x0 - sx, 0, z0 - sz, x0 + sx, 0, z0 + sz, x1, h, z1], 3));
+    g.setAttribute('position', new THREE.Float32BufferAttribute([
+      x0 - sx, 0, z0 - sz, x0 + sx, 0, z0 + sz, xm + sx * 0.7, hm, zm + sz * 0.7,
+      x0 - sx, 0, z0 - sz, xm + sx * 0.7, hm, zm + sz * 0.7, xm - sx * 0.7, hm, zm - sz * 0.7,
+      xm - sx * 0.7, hm, zm - sz * 0.7, xm + sx * 0.7, hm, zm + sz * 0.7, x1, h1, z1], 3));
     g.computeVertexNormals?.();
     b.add(g, new THREE.Matrix4(), (x, y) => base.clone().lerp(tip, Math.min(1, y / 0.9)));
   }

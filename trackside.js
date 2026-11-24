@@ -35,7 +35,7 @@ import { Person } from './pits.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 6;
+export const BUILD = 7;
 
 export const FLAG_NAMES = {
   green: 'GREEN FLAG', yellow: 'YELLOW FLAG', yellow2: 'DOUBLE YELLOW', red: 'RED FLAG', blue: 'BLUE FLAG',
@@ -810,7 +810,35 @@ export function buildTrackside(scene, { line, kerb, surfaceAt, colliders, corner
     const roofMat = new THREE.MeshStandardMaterial({ color: 0xe9e9e4, roughness: 0.6, side: THREE.DoubleSide });
     const steelM = new THREE.MeshStandardMaterial({ color: 0x9a9ea3, roughness: 0.45, metalness: 0.6 });
     const shirts = [0xd8312a, 0x2a62c9, 0xf2c12e, 0x2b9a52, 0xf4f4f0, 0x15171a, 0xff7a12, 0x7c1f8f];
-    const personGeo = new THREE.BoxGeometry(0.42, 0.75, 0.32).translate(0, 0.38, 0);
+    // (a seated fan, in two parts: his shirt and arms, tinted each his own
+    // colour; and his head, hair, and legs in trousers, tinted his skin)
+    const merge = (parts) => {
+      const pos = [], nor = [], colr = [], c = new THREE.Color();
+      for (const [geo, hex] of parts) {
+        const g = geo.index ? geo.toNonIndexed() : geo; const P = g.attributes?.position, N = g.attributes?.normal;
+        if (!P?.array) continue;
+        c.setHex(hex);
+        for (let i = 0; i < P.count; i++) { pos.push(P.array[i * 3], P.array[i * 3 + 1], P.array[i * 3 + 2]); if (N?.array) nor.push(N.array[i * 3], N.array[i * 3 + 1], N.array[i * 3 + 2]); colr.push(c.r, c.g, c.b); }
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); if (nor.length) g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+      g.setAttribute('color', new THREE.Float32BufferAttribute(colr, 3));
+      return g;
+    };
+    const shirtGeo = merge([
+      [new THREE.CylinderGeometry(0.17, 0.15, 0.46, 8).scale(1, 1, 0.62).translate(0, 0.52, -0.04), 0xffffff],                 // (his body)
+      [new THREE.CylinderGeometry(0.05, 0.045, 0.3, 6).rotateZ(0.25).translate(0.2, 0.58, 0.0), 0xffffff],                     // (his arms, down to his lap)
+      [new THREE.CylinderGeometry(0.05, 0.045, 0.3, 6).rotateZ(-0.25).translate(-0.2, 0.58, 0.0), 0xffffff],
+    ]);
+    const restGeo = merge([
+      [new THREE.IcosahedronGeometry(0.105, 1).scale(0.92, 1.08, 1).translate(0, 0.9, -0.02), 0xffffff],                       // (his head)
+      [new THREE.SphereGeometry(0.108, 8, 5, 0, Math.PI * 2, 0, 1.3).scale(0.95, 1.05, 1.02).translate(0, 0.915, -0.03), 0x3a2a1e],   // (hair)
+      [new THREE.CylinderGeometry(0.045, 0.05, 0.08, 6).translate(0, 0.79, -0.03), 0xffffff],                                  // (neck)
+      [new THREE.BoxGeometry(0.13, 0.12, 0.42).translate(0.09, 0.3, 0.14), 0x2e3440], [new THREE.BoxGeometry(0.13, 0.12, 0.42).translate(-0.09, 0.3, 0.14), 0x2e3440],   // (thighs, forward on the seat)
+      [new THREE.BoxGeometry(0.11, 0.38, 0.12).translate(0.09, 0.08, 0.32), 0x2e3440], [new THREE.BoxGeometry(0.11, 0.38, 0.12).translate(-0.09, 0.08, 0.32), 0x2e3440],  // (shins, down to the step)
+    ]);
+    const skins = [0xd9a07a, 0xb57a52, 0x8a5a3a, 0xe8b896, 0xc68e64];
+    const personGeo = shirtGeo;
     const stand = (spot, len, rows, roof) => {
       const g = new THREE.Group();
       const y = groundAt(spot.x, spot.z), ry = towardTrack(spot.x, spot.z, spot.i);
@@ -828,20 +856,27 @@ export function buildTrackside(scene, { line, kerb, surfaceAt, colliders, corner
       // the people: a crowd of simple figures in bright shirts
       const per = isMobile ? 0.35 : 0.8;
       const n = Math.floor(len * rows * per);
-      const mesh = new THREE.InstancedMesh(personGeo, new THREE.MeshStandardMaterial({ roughness: 0.8 }), n);
+      const mesh = new THREE.InstancedMesh(personGeo, new THREE.MeshStandardMaterial({ roughness: 0.8, vertexColors: true }), n);
+      const rest = new THREE.InstancedMesh(restGeo, new THREE.MeshStandardMaterial({ roughness: 0.75, vertexColors: true }), n);
       const seats = [];
       const col = new THREE.Color();
       for (let k = 0; k < n; k++) {
         const r = Math.floor(Math.random() * rows), x = (Math.random() - 0.5) * (len - 1);
-        seats.push([x, 0.45 + r * 0.45, -r * 0.85 + 0.1, Math.random() * 6]);
+        seats.push([x, 0.45 + r * 0.45 - 0.245, -r * 0.85 + 0.1, Math.random() * 6]);   // (sat on the step, legs over its front)
         mesh.setColorAt?.(k, col.setHex(shirts[k % shirts.length]));
+        rest.setColorAt?.(k, col.setHex(skins[k % skins.length]));
       }
-      g.add(mesh);
+      mesh.castShadow = rest.castShadow = !isMobile;
+      g.add(mesh, rest);
       group.add(g);
-      const C = { g, mesh, seats, cheer: 0, x: spot.x, z: spot.z };
+      const C = { g, mesh, rest, seats, cheer: 0, x: spot.x, z: spot.z };
       setCrowd(C, 0, 0);
       crowds.push(C);
-      { const r = len * 0.36; addSolid(spot.x - r, spot.x + r, spot.z - r, spot.z + r, 'building'); }
+      // its hit box: the stand's own footprint, turned with it
+      { const D = rows * 0.85 + 0.6, ax = Math.cos(ry), az = -Math.sin(ry), bx = Math.sin(ry), bz = Math.cos(ry);
+        const cx = spot.x + bx * (0.4 - D / 2), cz = spot.z + bz * (0.4 - D / 2), hl = len / 2, hw = D / 2;
+        const ex = Math.abs(ax) * hl + Math.abs(bx) * hw, ez = Math.abs(az) * hl + Math.abs(bz) * hw;
+        const c = addSolid(cx - ex, cx + ex, cz - ez, cz + ez, 'building'); c.ob = { x: cx, z: cz, ux: ax, uz: az, hl, hw }; }
     };
     const S = [[1, 40, 10, true], [2, 30, 8, false], [4, 26, 6, false], [15, 46, 12, true]];
     for (const [n, len, rows, roof] of S) {
@@ -855,9 +890,10 @@ export function buildTrackside(scene, { line, kerb, surfaceAt, colliders, corner
     const mm2 = new THREE.Matrix4(), p2 = new THREE.Vector3(), s2 = new THREE.Vector3(1, 1, 1), q2 = new THREE.Quaternion();
     C.seats.forEach(([x, y, z, ph], k) => {
       const up = cheer * (0.25 + 0.2 * Math.max(0, Math.sin(t * 9 + ph)));
-      C.mesh.setMatrixAt(k, mm2.compose(p2.set(x, y + up, z), q2, s2.set(1, 1 + cheer * 0.25, 1)));
+      mm2.compose(p2.set(x, y + up, z), q2, s2.set(1, 1, 1));
+      C.mesh.setMatrixAt(k, mm2); C.rest.setMatrixAt(k, mm2);
     });
-    C.mesh.instanceMatrix.needsUpdate = true;
+    C.mesh.instanceMatrix.needsUpdate = true; C.rest.instanceMatrix.needsUpdate = true;
   }
   function updateCrowds(dt, state, cx, cz) {
     const P = state.player;

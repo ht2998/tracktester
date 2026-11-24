@@ -21,11 +21,19 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 146;
+export const BUILD = 147;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 120, date: '24 Nov 2026', title: 'People, plants and barriers',
+    items: [
+      ['People, not robots', 'Marshals, mechanics, medics and photographers have smooth arms and legs now: one continuous skin from shoulder to wrist and hip to ankle that bends softly at the elbows and knees, with no balls or segments at the joints. Better shaped bodies too (a waist, shoulders, a chest), faces with a jaw, brows and a mouth, a collar, zip and belt on the overalls, and proper shoes with soles', 'update'],
+      ['Trees and plants', 'Trees have roots flaring at the base, a trunk that kinks as it climbs, boughs reaching into a domed crown of leafy clumps in different greens; palm fronds hang their leaflets either side of the rib; bushes are fuller; clumps of grass have more blades that curve over', 'update'],
+      ['Barriers', 'Concrete walls are cast to the real shape: a broad foot sloping in, a straight face, the top edge taken off, the red and white paint round the foot. The steel barrier\'s rails have a rounder W, on steel channel posts with caps', 'update'],
+    ],
+  },
   {
     id: 119, date: '24 Nov 2026', title: 'Fix: racing cars load again',
     items: [

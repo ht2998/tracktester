@@ -22,7 +22,7 @@ import { groundAt } from './ground.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 8;
+export const BUILD = 9;
 
 const m4 = new THREE.Matrix4();
 const q = new THREE.Quaternion();
@@ -73,6 +73,10 @@ function pieceBox(c, x, z, angle, len, thick) {
   const bx = Math.cos(angle) * thick / 2, bz = -Math.sin(angle) * thick / 2; // across
   const ex = Math.abs(ax) + Math.abs(bx), ez = Math.abs(az) + Math.abs(bz);
   c.minX = x - ex; c.maxX = x + ex; c.minZ = z - ez; c.maxZ = z + ez;
+  // (and the box itself, turned with the piece: what the car actually hits,
+  // so a wall at an angle stops the car where you see it, not at the
+  // square around it)
+  c.ob = { x, z, ux: Math.sin(angle), uz: Math.cos(angle), hl: len / 2, hw: thick / 2 };
   return c;
 }
 const across = (angle) => ({ x: Math.cos(angle), z: -Math.sin(angle) });   // sideways to a run
@@ -380,14 +384,22 @@ function buildConcreteWalls(scene, runs) {
     g.fillStyle = 'rgba(0,0,0,0.25)';             // the joint at each block's end
     g.fillRect(0, 0, 2, h);
   });
+  // (each block cast to the real shape: a broad foot that slopes in, the
+  // straight face above it, the top edge taken off)
+  const block = (pts, out = 0) => {
+    const sh = new THREE.Shape(); pts.forEach(([x, y], i) => (i ? sh.lineTo(x + Math.sign(x) * out, y) : sh.moveTo(x + Math.sign(x) * out, y)));
+    return new THREE.ExtrudeGeometry(sh, { depth: STEP - 0.02, bevelEnabled: false }).translate(0, -H / 2, -(STEP - 0.02) / 2);
+  };
+  const half = T / 2, prof = [[-0.33, 0], [0.33, 0], [0.33, 0.07], [half, 0.42], [half, H - 0.05], [half - 0.04, H], [-half + 0.04, H], [-half, H - 0.05], [-half, 0.42], [-0.33, 0.07]];
+  concrete.wrapS = concrete.wrapT = THREE.RepeatWrapping; concrete.repeat?.set(1 / STEP, 1 / H);
   const walls = new THREE.InstancedMesh(
-    new THREE.BoxGeometry(T, H, STEP - 0.02),
+    block(prof),
     new THREE.MeshStandardMaterial({ map: concrete, roughness: 0.9 }),
     pieces.length
   );
-  // A painted stripe along the bottom, alternating red and white per block
+  // A painted stripe along the bottom, alternating red and white per block (round its sloping foot)
   const stripe = new THREE.InstancedMesh(
-    new THREE.BoxGeometry(T + 0.02, 0.25, STEP - 0.02),
+    block([[-0.335, 0], [0.335, 0], [0.335, 0.07], [0.318, 0.25], [-0.318, 0.25], [-0.335, 0.07]]).translate(0, H / 2 - 0.125, 0),
     new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 }),
     pieces.length
   );
@@ -442,7 +454,7 @@ function buildConcreteWalls(scene, runs) {
     return { chips: Math.min(14, Math.round(speed * 0.8)) };
   };
   // one hit box per block, so walls at any angle fit snugly
-  for (const p of pieces) pieceBox(addCollider(0, 0, 0, 0, 'concrete', { hit: crackAt }), p.x, p.z, p.angle, p.len, T);
+  for (const p of pieces) pieceBox(addCollider(0, 0, 0, 0, 'concrete', { hit: crackAt }), p.x, p.z, p.angle, p.len, 0.62);    // (as wide as its foot)
   return runs.map(([ax, az, bx, bz]) => box(Math.min(ax, bx) - T / 2, 0, Math.min(az, bz) - T / 2,
     Math.max(ax, bx) + T / 2, H, Math.max(az, bz) + T / 2, 0.55));
 }
@@ -472,7 +484,7 @@ function buildArmco(scene, runs) {
   const SP = 0.25, POST_EVERY = 8;                     // posts every 2 m
   const RAILS = [{ y: 0.55, give: 1 }, { y: 0.82, give: 0.6 }];
   // The W profile (across, up) of each rail, relative to its centre
-  const PROFILE = [[0, 0.155], [0.035, 0.08], [0.005, 0], [0.035, -0.08], [0, -0.155]];
+  const PROFILE = [[0, 0.155], [0.012, 0.135], [0.03, 0.1], [0.036, 0.075], [0.028, 0.045], [0.008, 0.012], [0.004, 0], [0.008, -0.012], [0.028, -0.045], [0.036, -0.075], [0.03, -0.1], [0.012, -0.135], [0, -0.155]];
   const list = runs.map(([ax, az, bx, bz]) => makeRun(ax, az, bx, bz, SP));
   let verts = 0, posts = 0;
   for (const r of list) {
@@ -503,7 +515,18 @@ function buildArmco(scene, runs) {
   const railMesh = new THREE.Mesh(geo, steel);
   railMesh.castShadow = railMesh.receiveShadow = true;
   railMesh.frustumCulled = false;
-  const postMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.12, 0.85, 0.12),
+  // (each post a steel channel)
+  const postGeo = (() => {
+    // (a channel: its web across the run, its two flanges along it; the rails bolt through its middle, a cap on top)
+    const parts = [new THREE.BoxGeometry(0.1, 0.85, 0.012), new THREE.BoxGeometry(0.012, 0.85, 0.11).translate(0.05, 0, 0), new THREE.BoxGeometry(0.012, 0.85, 0.11).translate(-0.05, 0, 0),
+      new THREE.BoxGeometry(0.11, 0.012, 0.12).translate(0, 0.43, 0)];
+    const pos = [], nor = [];
+    for (const g of parts) { const n = g.index ? g.toNonIndexed() : g; const P = n.attributes?.position, N = n.attributes?.normal; if (P?.array) pos.push(...P.array); if (N?.array) nor.push(...N.array); }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    return g;
+  })();
+  const postMesh = new THREE.InstancedMesh(postGeo,
     new THREE.MeshStandardMaterial({ color: 0x6b7178, roughness: 0.6, metalness: 0.5 }), posts);
   postMesh.castShadow = true;
   scene.add(railMesh, postMesh);
@@ -541,7 +564,7 @@ function buildArmco(scene, runs) {
       let d = 0;
       for (let i = c.i0; i <= c.i1; i++) if (Math.abs(r.dent[0][i]) > Math.abs(d)) d = r.dent[0][i];
       const sm = (r.s[c.i0] + r.s[c.i1]) / 2;
-      pieceBox(c.collider, r.ax + r.u.x * sm + r.a.x * d, r.az + r.u.z * sm + r.a.z * d, r.angle, r.s[c.i1] - r.s[c.i0], 0.22);
+      pieceBox(c.collider, r.ax + r.u.x * sm + r.a.x * d, r.az + r.u.z * sm + r.a.z * d, r.angle, r.s[c.i1] - r.s[c.i0], 0.16);
     }
   };
   for (const r of list) {
@@ -646,6 +669,8 @@ function buildTyreWalls(scene, runs) {
     const ax = Math.abs(Math.sin(c.angle)) * R, az = Math.abs(Math.cos(c.angle)) * R;
     c.collider.minX = Math.min(...xs) - ax; c.collider.maxX = Math.max(...xs) + ax;
     c.collider.minZ = Math.min(...zs) - az; c.collider.maxZ = Math.max(...zs) + az;
+    const mid = (near + far) / 2;
+    c.collider.ob = { x: c.x + a.x * mid, z: c.z + a.z * mid, ux: Math.sin(c.angle), uz: Math.cos(c.angle), hl: R, hw: (far - near) / 2 };
   };
   for (const c of columns) { c.collider = addCollider(0, 0, 0, 0, 'tyres', { hit: (pt, n, v) => squashAt(pt, n, v), repair: (pt, k) => restackAt(pt, k), part: columns }); colBox(c); }
   const squashAt = (point, normal, speed) => {
