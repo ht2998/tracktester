@@ -16,7 +16,7 @@ import { setTouch, tap } from './input.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 5;
+export const BUILD = 6;
 
 export function isTouchDevice() {
   return window.matchMedia('(pointer: coarse)').matches
@@ -60,10 +60,10 @@ const STYLE = `
 /* Steering slider, bottom left */
 #touch .t-steer {
   position: absolute;
-  left: calc(18px + env(safe-area-inset-left));
-  bottom: calc(22px + env(safe-area-inset-bottom));
-  width: min(42vw, 380px);
-  height: 72px;
+  left: calc(6px + env(safe-area-inset-left));                 /* (tucked in at the edge) */
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  width: min(30vw, 260px);
+  height: 58px;
   pointer-events: auto;
   touch-action: none;
 }
@@ -91,9 +91,9 @@ const STYLE = `
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 56px;
-  height: 56px;
-  margin: -28px 0 0 -28px;
+  width: 44px;
+  height: 44px;
+  margin: -22px 0 0 -22px;
   border-radius: 50%;
   background: rgba(21, 24, 28, 0.7);
   border: 2px solid rgba(242, 239, 230, 0.55);
@@ -125,8 +125,8 @@ const STYLE = `
 /* Horn, just above the steering slider on the left */
 #touch .t-horn {
   position: absolute;
-  left: calc(18px + env(safe-area-inset-left));
-  bottom: calc(104px + env(safe-area-inset-bottom));
+  left: calc(6px + env(safe-area-inset-left));
+  bottom: calc(86px + env(safe-area-inset-bottom));
   width: 64px;
   height: 38px;
 }
@@ -134,8 +134,8 @@ const STYLE = `
 /* Lights, beside the horn: the headlight symbol and what they're set to */
 #touch .t-lights {
   position: absolute;
-  left: calc(90px + env(safe-area-inset-left));
-  bottom: calc(104px + env(safe-area-inset-bottom));
+  left: calc(78px + env(safe-area-inset-left));
+  bottom: calc(86px + env(safe-area-inset-bottom));
   width: 82px;
   height: 38px;
   padding: 0 6px;

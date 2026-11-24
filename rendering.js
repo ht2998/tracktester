@@ -60,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 92;
+const BUILD = 93;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -3081,6 +3081,13 @@ info.innerHTML =
   '<span id="soundhint" style="color:#ffd76a">Press any key or tap for sound</span>';
 const soundHint = document.getElementById('soundhint');
 
+// PHONES AND TABLETS: the menus and the timing drawn smaller, so they
+// don't fill the screen (the dash and the driving controls keep their size)
+{ const st = document.createElement('style');
+  st.textContent = `@media (pointer: coarse) {
+    #sidepanel, #lap-panel, #pause-screen > *, #garage > *, #updates > *, #info { zoom: 0.74; }
+  }`;
+  document.head.appendChild(st); }
 // Phones and tablets: on-screen controls, and no keyboard guide
 const touchMode = isTouchDevice();
 const touchUI = touchMode ? new TouchControls() : null;

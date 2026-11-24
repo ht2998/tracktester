@@ -21,11 +21,18 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 143;
+export const BUILD = 144;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 117, date: '24 Nov 2026', title: 'Tidier on phones',
+    items: [
+      ['Smaller menus and timing', 'On phones and tablets the settings panel, the lap timing, the Garage, the news and the pause screen are drawn about a quarter smaller, so they take less of the screen. The dash and the driving controls keep their size', 'update'],
+      ['Steering slider', 'The steering slider is shorter and tucked in right by the left edge of the screen, with the horn and lights buttons just above it', 'update'],
+    ],
+  },
   {
     id: 116, date: '24 Nov 2026', title: 'Legs to the pedals',
     items: [
