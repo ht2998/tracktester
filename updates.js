@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 139;
+export const BUILD = 140;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
@@ -29,7 +29,7 @@ export const UPDATES = [
   {
     id: 114, date: '24 Nov 2026', title: 'Open intakes',
     items: [
-      ['A V10 inside', 'The TTF-05 now has its engine modelled in the bay behind the driver: a 3-litre V10, two banks of five at 72 degrees, cam covers, ten polished intake trumpets standing open in the V, the exhaust headers curling back, the oil reservoir and the bellhousing. It\'s hidden under the cover for now, ready for later', 'new'],
+      ['A V10 inside', 'The TTF-05 now has its engine modelled in the bay behind the driver: a 3-litre V10, two banks of five at 72 degrees, cam covers, ten polished intake trumpets under the plenum, the exhaust headers curling back, the oil reservoir and the bellhousing. It\'s hidden under the cover for now, ready for later', 'new'],
       ['Hollow sidepods', 'The TTF-05\'s sidepod mouths are open now: a dark duct runs back into each pod, narrowing as it goes, with the radiator\'s fins at the back of it, instead of a flat black panel', 'update'],
     ],
   },

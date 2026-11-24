@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 65;
+export const BUILD = 66;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -1108,7 +1108,9 @@ export function buildF05Body(car, addPanel) {
       // the collector, and the tail pipe on toward the exhaust's exit
       e(new THREE.CylinderGeometry(0.035, 0.04, 0.22, 12).rotateX(Math.PI / 2 - 0.2).translate(sx * 0.16, cy + 0.07, Z1 - 0.4), E.pipe);
     }
-    // (no plenum box over them: the ten polished trumpets stand open in the V, the airbox's duct feeding down over them)
+    // the plenum over the trumpets (the ten of them sit under it), fed by the airbox above
+    e(new THREE.BoxGeometry(0.2, 0.08, L * 0.95).translate(0, cy + 0.31, zc), E.carbon);
+    e(new THREE.CylinderGeometry(0.08, 0.1, 0.16, 16).translate(0, cy + 0.42, Z0 - 0.08), E.carbon);
     // the front: the timing cover, the oil reservoir between it and his back, the pumps along the bottom
     e(new THREE.BoxGeometry(0.3, 0.26, 0.04).translate(0, cy + 0.06, Z0 + 0.02), E.dark);
     e(new THREE.CylinderGeometry(0.09, 0.09, 0.22, 16).translate(0, cy + 0.08, Z0 + 0.1), E.carbon);
