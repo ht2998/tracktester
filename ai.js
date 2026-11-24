@@ -23,11 +23,11 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 14;
+export const BUILD = 15;
 
 import * as THREE from 'three';
 import { CarPhysics, CATERHAM } from './physics.js';
-import { bodyForKind, WHEEL_LAYOUT, buildF1RimGeometry } from './f1.js';
+import { bodyForKind, WHEEL_LAYOUT, buildF1RimGeometry, tyreGeometry } from './f1.js';
 
 const DRIVERS = [
   { name: 'Hamid', colour: 0xc8202a, helmet: 0xffffff },
@@ -159,7 +159,7 @@ function f1Parts(kind = 'f1') {
   const r = 0.33;
   const wheels = WHEEL_LAYOUT[kind] || WHEEL_LAYOUT.f1;
   const tyre = {}, rim = {};
-  for (const [, , w] of wheels) { tyre[w] = tyre[w] || new THREE.CylinderGeometry(r, r, w, 18).rotateZ(Math.PI / 2); rim[w] = rim[w] || buildF1RimGeometry(r * 0.6, w); }
+  for (const [, , w] of wheels) { tyre[w] = tyre[w] || tyreGeometry(r, w, r * 0.6, 24); rim[w] = rim[w] || buildF1RimGeometry(r * 0.6, w); }
   F1_SHARED[kind] = { parts, r, wheels, tyre, rim };
   return F1_SHARED[kind];
 }

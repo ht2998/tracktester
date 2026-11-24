@@ -21,11 +21,19 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 115;
+export const BUILD = 116;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 101, date: '24 Nov 2026', title: 'Closer to the real thing',
+    items: [
+      ['Real tyres', 'Every car\'s tyres are shaped like real ones now: rounded shoulders and bulging sidewalls instead of plain cylinders', 'update'],
+      ['No more sharp edges', 'Wings, endplates, mirrors and all the small parts have rounded edges, and the bodies are smoother', 'update'],
+      ['The TTF-05, to the blueprint', 'Reshaped against the real car\'s drawings: the rear wing set further forward and lower, the airbox right over the driver, sculpted sidepods, slimmer endplates. And the details of the time: shark gills down the sidepods, a fin on the engine cover, winglets, turning vanes under the nose, louvred endplates, a monkey seat over the diffuser', 'update'],
+    ],
+  },
   {
     id: 100, date: '19 Nov 2026', title: 'Lights where there are lights',
     items: [

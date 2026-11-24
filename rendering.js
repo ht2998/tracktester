@@ -37,7 +37,7 @@ import { AIField, BUILD as AI_BUILD } from './ai.js';
 import { Garage, BUILD as GARAGE_BUILD } from './garage.js';
 import { PitStop, SEPANG_PIT, Person as PersonFigure, climbOutKeys, BUILD as PITS_BUILD } from './pits.js';
 import { RaceControl, BUILD as RACECONTROL_BUILD } from './racecontrol.js';
-import { buildF1Body, buildF05Body, bodyForKind, WHEEL_LAYOUT, buildF1Cockpit, buildF1RimGeometry, F1_CAR, CATERHAM_CAR, ENGINES, withEngine, STOCK_ENGINE, specForKind, BUILD as F1_BUILD } from './f1.js';
+import { buildF1Body, buildF05Body, bodyForKind, WHEEL_LAYOUT, buildF1Cockpit, buildF1RimGeometry, tyreGeometry, F1_CAR, CATERHAM_CAR, ENGINES, withEngine, STOCK_ENGINE, specForKind, BUILD as F1_BUILD } from './f1.js';
 import * as groundFile from './ground.js';
 import * as tyresFile from './tyres.js';
 import * as cockpitFile from './cockpit.js';
@@ -60,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 82;
+const BUILD = 83;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -1148,12 +1148,8 @@ function buildCar() {
   // open-spoked alloy rim, so you can see the brake disc and caliper
   // behind the spokes.
   const RIM_R = WHEEL_RADIUS * (IS_F1 ? 0.6 : 0.66);   // 15-inch rim on the Caterham; 13-inch in a tall slick on the TT-88
-  const tyreGeo = mergeGeos([
-    new THREE.CylinderGeometry(WHEEL_RADIUS, WHEEL_RADIUS, WHEEL_WIDTH, 32, 1, true),   // tread
-    new THREE.RingGeometry(RIM_R * 0.99, WHEEL_RADIUS, 32, 1).rotateX(-Math.PI / 2).translate(0, WHEEL_WIDTH / 2, 0),   // sidewalls
-    new THREE.RingGeometry(RIM_R * 0.99, WHEEL_RADIUS, 32, 1).rotateX(Math.PI / 2).translate(0, -WHEEL_WIDTH / 2, 0),
-  ], true);
-  tyreGeo.rotateZ(Math.PI / 2);
+  // (a real tyre's shape: rounded shoulders, bulging sidewalls)
+  const tyreGeo = tyreGeometry(WHEEL_RADIUS, WHEEL_WIDTH, RIM_R * 0.99);
   if (IS_F05) {
     // GROOVED TYRES (the 2005 rules): four grooves round the tread. The
     // tread's mapped across its width, the sidewalls onto a plain strip

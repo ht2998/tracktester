@@ -7,11 +7,11 @@
 // has several cars dropping down again. Pick one and it fires up: a
 // couple of big revs, then it settles to idle.
 // =====================================================================
-export const BUILD = 7;
+export const BUILD = 8;
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { bodyForKind, WHEEL_LAYOUT, buildF1RimGeometry } from './f1.js';
+import { bodyForKind, WHEEL_LAYOUT, buildF1RimGeometry, tyreGeometry } from './f1.js';
 
 // THE COLLECTION. kind: a car you can drive (the rest are coming soon).
 // (made-up names, no real makes)
@@ -257,7 +257,7 @@ export class Garage {
     const rimM = new THREE.MeshStandardMaterial({ color: 0xc9ccd0, roughness: 0.3, metalness: 0.85 });
     const rimGeo = buildF1RimGeometry(r * 0.6, 0.3);
     (WHEEL_LAYOUT[kind] || WHEEL_LAYOUT.f1).forEach(([x, z, w]) => {
-      const t = new THREE.Mesh(new THREE.CylinderGeometry(r, r, w, 32), tyre);
+      const t = new THREE.Mesh(tyreGeometry(r, w, r * 0.6).rotateZ(-Math.PI / 2), tyre);      // (built round x: turned back to the old upright cylinder's axis, which is turned below)
       t.rotation.z = Math.PI / 2; t.position.set(x, r, z); t.castShadow = true;
       const rm = new THREE.Mesh(rimGeo, rimM);
       rm.position.set(x, r, z); rm.scale.set(w / 0.36, 1, 1);

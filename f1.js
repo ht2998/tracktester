@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 40;
+export const BUILD = 43;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -401,8 +401,41 @@ function mergeAll(geos) {
   out.setIndex(idx);
   return out;
 }
+// A box with its edges and corners rounded off (nothing on a real car has
+// knife edges: a wing's leading edge, an endplate's rim, a mirror)
+function roundedBox(w, h, d, r = Math.min(0.02, Math.min(w, h, d) * 0.4)) {
+  const g = new THREE.BoxGeometry(w, h, d, 3, 3, 3);
+  const P = g.attributes.position, N = g.attributes.normal;
+  if (!(P && P.count > 0)) return g;
+  const hx = w / 2 - r, hy = h / 2 - r, hz = d / 2 - r, n = new THREE.Vector3();
+  for (let i = 0; i < P.count; i++) {
+    const x = P.getX(i), y = P.getY(i), z = P.getZ(i);
+    const ix = Math.max(-hx, Math.min(hx, x)), iy = Math.max(-hy, Math.min(hy, y)), iz = Math.max(-hz, Math.min(hz, z));
+    n.set(x - ix, y - iy, z - iz);
+    if (n.lengthSq() < 1e-12) continue;
+    n.normalize();
+    P.setXYZ(i, ix + n.x * r, iy + n.y * r, iz + n.z * r);
+    N.setXYZ(i, n.x, n.y, n.z);
+  }
+  return g;
+}
+// A TYRE as it really is: a rounded shoulder into a bulging sidewall, down
+// to the rim, not a can. (Built round the x axis; r: its radius, w: its
+// width, rimR: where the rim starts)
+export function tyreGeometry(r, w, rimR = r * 0.62, seg = 40) {
+  const sh = Math.min(w * 0.24, (r - rimR) * 0.45), hw = w / 2, prof = [];
+  prof.push(new THREE.Vector2(rimR, -hw + 0.012));
+  prof.push(new THREE.Vector2(rimR + (r - rimR) * 0.35, -hw - 0.004));
+  prof.push(new THREE.Vector2(r - sh, -hw - 0.002));
+  for (let k = 1; k <= 6; k++) { const a = -Math.PI / 2 + k / 6 * Math.PI / 2; prof.push(new THREE.Vector2(r - sh + Math.cos(a) * sh, -hw + sh + Math.sin(a) * sh)); }
+  for (let k = 0; k <= 6; k++) { const a = k / 6 * Math.PI / 2; prof.push(new THREE.Vector2(r - sh + Math.cos(a) * sh, hw - sh + Math.sin(a) * sh)); }
+  prof.push(new THREE.Vector2(r - sh, hw + 0.002));
+  prof.push(new THREE.Vector2(rimR + (r - rimR) * 0.35, hw + 0.004));
+  prof.push(new THREE.Vector2(rimR, hw - 0.012));
+  return new THREE.LatheGeometry(prof, seg).rotateZ(Math.PI / 2);
+}
 const box = (w, h, d, x, y, z, rx = 0, ry = 0, rz = 0) => {
-  const g = new THREE.BoxGeometry(w, h, d);
+  const g = roundedBox(w, h, d);
   if (rz) g.rotateZ(rz);
   if (rx) g.rotateX(rx);
   if (ry) g.rotateY(ry);
@@ -411,7 +444,7 @@ const box = (w, h, d, x, y, z, rx = 0, ry = 0, rz = 0) => {
 const rod = (a, b, r = 0.012) => {
   const A = new THREE.Vector3(...a), B = new THREE.Vector3(...b);
   const len = A.distanceTo(B);
-  const g = new THREE.CylinderGeometry(r, r, len, 6);
+  const g = new THREE.CylinderGeometry(r, r, len, 10);
   const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), B.clone().sub(A).normalize());
   g.applyQuaternion(q);
   const m = A.add(B).multiplyScalar(0.5);
@@ -636,9 +669,9 @@ export function buildF05Body(car, addPanel) {
     { z: 0.9, w: 0.56, h: 0.47, y: 0.16, top: 0.8 },
     { z: 0.72, w: 0.62, h: 0.49, y: 0.13, top: 0.78 },
   ];
-  add(loft(nose, SMOOTH, 28, 4, true), MAT.blue);
+  add(loft(nose, SMOOTH, 40, 8, true), MAT.blue);
   // the yellow tip and a yellow band down the top of the nose, a white pinstripe
-  add(loft([{ z: 2.755, w: 0.105, h: 0.095, y: 0.308 }, { z: 2.6, w: 0.165, h: 0.145, y: 0.308 }, { z: 2.42, w: 0.205, h: 0.18, y: 0.313 }], SMOOTH, 28, 4, true), MAT.yellow);
+  add(loft([{ z: 2.755, w: 0.105, h: 0.095, y: 0.308 }, { z: 2.6, w: 0.165, h: 0.145, y: 0.308 }, { z: 2.42, w: 0.205, h: 0.18, y: 0.313 }], SMOOTH, 40, 8, true), MAT.yellow);
   add(loft([{ z: 2.4, w: 0.12, h: 0.02, y: 0.505 }, { z: 1.95, w: 0.16, h: 0.02, y: 0.58 }, { z: 1.4, w: 0.2, h: 0.02, y: 0.635 }, { z: 0.95, w: 0.22, h: 0.02, y: 0.625 }], 0.4, 16, 3, true), MAT.yellow);
   for (const sx of [1, -1]) add(rod([sx * 0.07, 0.51, 2.38], [sx * 0.11, 0.64, 1.0], 0.005), MAT.white, false);
   // --- the cockpit: high sides round his head, padded headrest wings,
@@ -694,14 +727,14 @@ export function buildF05Body(car, addPanel) {
   // front), then waisted in hard to the back: the coke bottle
   for (const s of [1, -1]) {
     const pod = [
-      { z: 0.64, w: 0.3, h: 0.3, y: 0.24, x: s * 0.56, top: 0.9 },
-      { z: 0.48, w: 0.38, h: 0.37, y: 0.15, x: s * 0.58, top: 0.85 },
-      { z: 0.05, w: 0.4, h: 0.4, y: 0.11, x: s * 0.57, top: 0.78 },
-      { z: -0.4, w: 0.34, h: 0.35, y: 0.11, x: s * 0.51, top: 0.75 },
-      { z: -0.8, w: 0.22, h: 0.27, y: 0.11, x: s * 0.4, top: 0.75 },
-      { z: -1.12, w: 0.12, h: 0.18, y: 0.11, x: s * 0.3, top: 0.8 },
+      { z: 0.64, w: 0.3, h: 0.28, y: 0.24, x: s * 0.56, top: 0.92 },
+      { z: 0.5, w: 0.38, h: 0.34, y: 0.15, x: s * 0.58, top: 0.86 },
+      { z: 0.1, w: 0.4, h: 0.36, y: 0.11, x: s * 0.57, top: 0.8 },
+      { z: -0.35, w: 0.35, h: 0.31, y: 0.11, x: s * 0.52, top: 0.76 },
+      { z: -0.8, w: 0.22, h: 0.24, y: 0.11, x: s * 0.41, top: 0.74 },
+      { z: -1.12, w: 0.12, h: 0.17, y: 0.11, x: s * 0.31, top: 0.8 },
     ];
-    add(loft(pod, 1.0, 28, 4, true), MAT.blue);
+    add(loft(pod, 1.9, 40, 8, true), MAT.blue);      // (squarer in section: a sculpted pod, not a tube)
     // yellow along the top of each pod, a white pinstripe below it
     add(loft(pod.map((p) => ({ ...p, w: p.w * 0.72, h: 0.035, y: p.y + p.h - 0.02 })), 0.8, 20, 4, true), MAT.yellow);
     // the radiator mouth: a dark rounded opening, with its lip
@@ -719,20 +752,48 @@ export function buildF05Body(car, addPanel) {
     add(box(0.012, 0.3, 0.42, s * 0.46, 0.2, 0.98, 0, s * 0.18), MAT.carbon);
     add(box(0.012, 0.18, 0.2, s * 0.38, 0.16, 1.25, 0, s * 0.3), MAT.carbon);
   }
+  // --- THE AERO DETAILS of the time: shark gills down the sidepods'
+  // flanks (hot air out of the radiators), a fin along the engine cover,
+  // turning vanes under the nose, winglets everywhere air could be used
+  for (const s of [1, -1]) {
+    // the gills: five angled slots, each with a lip, in the flank
+    for (let k = 0; k < 5; k++) {
+      const z = -0.08 - k * 0.1, x = s * (0.75 - k * 0.025);
+      add(box(0.012, 0.15, 0.05, x - s * 0.004, 0.33, z, 0, s * 0.35, 0), MAT.dark, false);
+      add(box(0.014, 0.16, 0.012, x + s * 0.004, 0.33, z + 0.03, 0, s * 0.35, 0), MAT.blue);
+    }
+    // a winglet on the mirror stalk, another low on the cockpit side
+    add(box(0.12, 0.008, 0.06, s * 0.42, 0.64, 0.49, 0, 0, -s * 0.15), MAT.carbon);
+    add(box(0.008, 0.08, 0.18, s * 0.36, 0.48, 0.72, 0, s * 0.12, 0), MAT.carbon);
+    // turning vanes hanging under the nose, between the wing pylons and the front wheels
+    add(box(0.008, 0.12, 0.34, s * 0.16, 0.2, 1.75, 0, s * 0.08, 0), MAT.carbon);
+    // a little wing on top of the sidepod, just behind the mouth
+    add(box(0.16, 0.008, 0.08, s * 0.6, 0.56, 0.42, -0.2, 0, -s * 0.1), MAT.carbon);
+  }
+  // the fin along the engine cover's spine, from behind the airbox to the rear wing
+  { const fin = new THREE.Shape(); fin.moveTo(-0.62, 0); fin.lineTo(-1.72, 0); fin.lineTo(-1.72, 0.2); fin.quadraticCurveTo(-1.2, 0.22, -0.62, 0.02); fin.lineTo(-0.62, 0);
+    const g = new THREE.ExtrudeGeometry(fin, { depth: 0.012, bevelEnabled: true, bevelSize: 0.004, bevelThickness: 0.004, bevelSegments: 2 });
+    g.rotateY(-Math.PI / 2).translate(0.006, 0, 0);       // (the shape's x runs along the car, its y up)
+    const P = g.attributes.position;
+    // (sat on the engine cover's top, following it down)
+    const coverTop = (z) => { const k = [[-0.62, 0.85], [-0.95, 0.65], [-1.35, 0.49], [-1.72, 0.38]]; for (let j = 0; j < k.length - 1; j++) if (z >= k[j + 1][0]) { const u = (z - k[j][0]) / (k[j + 1][0] - k[j][0]); return k[j][1] + (k[j + 1][1] - k[j][1]) * u; } return 0.38; };
+    for (let i = 0; i < P.count; i++) { const z = P.getZ(i); P.setY(i, P.getY(i) * 0.7 + coverTop(z) - 0.01); }
+    g.computeVertexNormals();
+    add(g, MAT.blue); }
   // --- engine cover: the airbox over his head (the roll hoop), then down
   // in a long smooth slope, narrowing tight to the gearbox
   const cover = [
-    { z: -0.18, w: 0.6, h: 0.56, y: 0.1, top: 0.7 },
-    { z: -0.3, w: 0.38, h: 0.98, y: 0.1, top: 0.35 },
-    { z: -0.55, w: 0.42, h: 0.84, y: 0.1, top: 0.42 },
+    { z: -0.16, w: 0.6, h: 0.6, y: 0.1, top: 0.7 },
+    { z: -0.24, w: 0.38, h: 0.98, y: 0.1, top: 0.35 },
+    { z: -0.55, w: 0.42, h: 0.82, y: 0.1, top: 0.42 },
     { z: -0.95, w: 0.44, h: 0.56, y: 0.1, top: 0.6 },
     { z: -1.35, w: 0.32, h: 0.38, y: 0.12, top: 0.72 },
     { z: -1.72, w: 0.2, h: 0.24, y: 0.15, top: 0.8 },
   ];
-  add(loft(cover, SMOOTH, 28, 4, true), MAT.yellow);
+  add(loft(cover, SMOOTH, 40, 8, true), MAT.yellow);
   // a blue spine down the middle, the airbox mouth, little camera pods
   add(loft(cover.slice(1).map((p) => ({ ...p, w: 0.12, h: 0.03, y: p.y + p.h - 0.015 })), 0.5, 16, 4, true), MAT.blue);
-  add(loft([{ z: -0.27, w: 0.17, h: 0.13, y: 0.94 }, { z: -0.31, w: 0.17, h: 0.13, y: 0.94 }], 1.2, 20, 1, false), MAT.dark, false);
+  add(loft([{ z: -0.21, w: 0.17, h: 0.13, y: 0.94 }, { z: -0.25, w: 0.17, h: 0.13, y: 0.94 }], 1.2, 20, 1, false), MAT.dark, false);
   for (const s of [1, -1]) add(box(0.05, 0.05, 0.12, s * 0.12, 1.04, -0.36), MAT.carbon);
   // the gearbox at the back, its rain light, the diffuser and its fences
   add(box(0.2, 0.18, 0.4, 0, 0.22, -1.88), MAT.carbon);
@@ -756,18 +817,23 @@ export function buildF05Body(car, addPanel) {
     addTo(g, box(0.56, 0.02, 0.34, s * 0.43, 0.095, 2.55, 0.06, -s * 0.03), MAT.blue);                 // main plane
     addTo(g, box(0.5, 0.014, 0.17, s * 0.45, 0.16, 2.38, 0.42, -s * 0.05), MAT.yellow);               // the flap above it
     addTo(g, box(0.36, 0.012, 0.11, s * 0.5, 0.2, 2.27, 0.7, -s * 0.05), MAT.white);                 // a second flap
-    addTo(g, box(0.015, 0.24, 0.52, s * 0.71, 0.17, 2.48, 0, 0, 0), MAT.yellow);                     // endplate
+    addTo(g, box(0.01, 0.14, 0.36, s * 0.71, 0.13, 2.52), MAT.blue);                                // endplate (low and slim, as they were)
     addTo(g, box(0.06, 0.012, 0.36, s * 0.69, 0.06, 2.48), MAT.carbon);                              // its foot
   }
   // --- the rear wing: narrow, set forward, two elements between tall
   // endplates; the beam wing below; a pillar down to the gearbox
-  for (const s of [1, -1]) addTo(wings.rear, box(0.018, 0.58, 0.5, s * 0.45, 0.72, -1.95), MAT.yellow);
-  for (const s of [1, -1]) addTo(wings.rear, box(0.02, 0.06, 0.5, s * 0.452, 0.98, -1.95), MAT.blue);
-  addTo(wings.rear, box(0.88, 0.024, 0.26, 0, 0.82, -1.86, 0.18), MAT.blue);
-  addTo(wings.rear, box(0.88, 0.018, 0.2, 0, 0.92, -2.06, 0.5), MAT.blue);
-  addTo(wings.rear, box(0.88, 0.006, 0.02, 0, 0.94, -2.16, 0), MAT.white);
+  // (as the real ones were: set well forward, its trailing edge about half a
+  // metre behind the rear axle, the endplates from 0.43 m up to 0.86 m)
+  for (const s of [1, -1]) addTo(wings.rear, box(0.014, 0.44, 0.4, s * 0.47, 0.645, -1.76), MAT.yellow);
+  for (const s of [1, -1]) addTo(wings.rear, box(0.016, 0.04, 0.4, s * 0.472, 0.86, -1.76), MAT.blue);
+  addTo(wings.rear, box(0.92, 0.024, 0.24, 0, 0.74, -1.66, 0.18), MAT.blue);
+  addTo(wings.rear, box(0.92, 0.018, 0.18, 0, 0.82, -1.85, 0.5), MAT.blue);
+  addTo(wings.rear, box(0.92, 0.006, 0.02, 0, 0.845, -1.95, 0), MAT.white);
   add(box(0.72, 0.02, 0.16, 0, 0.44, -1.92, 0.2), MAT.carbon);                // the beam wing (stays)
-  addTo(wings.rear, box(0.035, 0.42, 0.06, 0, 0.62, -1.96), MAT.carbon);
+  add(box(0.3, 0.012, 0.1, 0, 0.36, -2.12, 0.3), MAT.carbon);                // the "monkey seat" over the diffuser
+  // louvres cut in the rear wing's endplates
+  for (const s of [1, -1]) for (let k = 0; k < 4; k++) addTo(wings.rear, box(0.018, 0.012, 0.15, s * 0.47, 0.5 + k * 0.06, -1.82, 0.4), MAT.dark);
+  addTo(wings.rear, box(0.035, 0.34, 0.06, 0, 0.56, -1.78), MAT.carbon);
   return { helmet: [helmet, visor, stripe], rainMat: MAT.rain, exhaustMat: MAT.exhaust, mats: MAT, wings, mirrors, driver };
 }
 
@@ -813,7 +879,7 @@ export function buildF94Body(car, addPanel) {
     { z: 1.05, w: 0.54, h: 0.42, y: 0.14, top: 0.8 },
     { z: 0.75, w: 0.62, h: 0.46, y: 0.12, top: 0.78 },
   ];
-  add(loft(nose, SMOOTH, 28, 4, true), MAT.blue);
+  add(loft(nose, SMOOTH, 40, 8, true), MAT.blue);
   // a white band over the nose, swept back along its sides
   add(loft([{ z: 2.2, w: 0.27, h: 0.02, y: 0.43 }, { z: 1.85, w: 0.3, h: 0.02, y: 0.505 }, { z: 1.5, w: 0.36, h: 0.02, y: 0.53 }], 0.5, 16, 3, true), MAT.yellow);
   // --- the cockpit: lower sides than later, the driver's shoulders
@@ -869,7 +935,7 @@ export function buildF94Body(car, addPanel) {
       { z: -1.0, w: 0.26, h: 0.26, y: 0.1, x: s * 0.45, top: 0.8 },
       { z: -1.25, w: 0.16, h: 0.18, y: 0.1, x: s * 0.36, top: 0.85 },
     ];
-    add(loft(pod, 1.1, 28, 4, true), MAT.blue);
+    add(loft(pod, 1.1, 40, 8, true), MAT.blue);
     add(loft([{ z: 0.72, w: 0.3, h: 0.26, y: 0.185, x: s * 0.6 }, { z: 0.66, w: 0.3, h: 0.26, y: 0.185, x: s * 0.6 }], 1.3, 20, 1, false), MAT.dark, false);
     add(box(0.012, 0.06, 1.3, s * 0.835, 0.3, -0.2, 0, -s * 0.04), MAT.yellow);
     add(box(0.012, 0.3, 0.38, s * 0.47, 0.18, 1.0, 0, s * 0.15), MAT.carbon);           // bargeboards
@@ -883,7 +949,7 @@ export function buildF94Body(car, addPanel) {
     { z: -1.45, w: 0.34, h: 0.38, y: 0.12, top: 0.72 },
     { z: -1.78, w: 0.22, h: 0.24, y: 0.15, top: 0.8 },
   ];
-  add(loft(cover, SMOOTH, 28, 4, true), MAT.blue);
+  add(loft(cover, SMOOTH, 40, 8, true), MAT.blue);
   add(loft(cover.slice(1, 4).map((p) => ({ ...p, w: 0.1, h: 0.025, y: p.y + p.h - 0.012 })), 0.5, 16, 4, true), MAT.yellow);
   add(loft([{ z: -0.27, w: 0.2, h: 0.15, y: 0.86 }, { z: -0.31, w: 0.2, h: 0.15, y: 0.86 }], 1.3, 20, 1, false), MAT.dark, false);
   // the gearbox, the rain light, exhausts out low at the back over the diffuser
