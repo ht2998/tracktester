@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 54;
+export const BUILD = 55;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -875,6 +875,18 @@ export function buildF05Body(car, addPanel) {
     for (let i = 0; i <= N; i++) { const z = -0.35 - i / N * 1.3; pts.push([z, yTop(z) - 0.025]); }
     pts.push([-1.65, 0.75], [-0.35, 0.84]);
     add(plate(pts, 0, 0.018), MAT.blue); }
+  // the yellow carried on from the tub: a line down each side of the
+  // airbox and along the engine cover's edge to the back, laid on the skin
+  { const stripe = MAT.yellow.clone(); stripe.side = THREE.DoubleSide;
+    for (const sx of [1, -1]) {
+      const rows = [];
+      for (let i = 0; i <= 40; i++) {
+        const k = i / 40, z = -0.08 - k * 1.52, x = 0.215 - 0.125 * k * k * (3 - 2 * k) - 0.02 * Math.max(0, 1 - i / 6), w = 0.03 - 0.014 * k, row = [];
+        for (const t of [-1, 0, 1]) { const xx = x + t * w / 2; row.push([sx * xx, surfY(z, xx) + 0.008, z]); }
+        rows.push(row);
+      }
+      const m = new THREE.Mesh(grid(rows, 2), stripe); m.receiveShadow = true; car.add(m); addPanel(m);
+    } }
   // the gearbox at the back, its rain light, the floor, the plank, the diffuser and its fences
   add(box(0.2, 0.18, 0.36, 0, 0.22, -1.9), MAT.carbon);
   add(box(0.07, 0.04, 0.03, 0, 0.27, -2.1), MAT.rain);
