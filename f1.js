@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 45;
+export const BUILD = 46;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -749,7 +749,7 @@ export function buildF05Body(car, addPanel) {
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
     g.computeVertexNormals(); return g;
   };
-  const mirrorX = (g, s) => { if (s > 0) return g; g.scale(-1, 1, 1); const ix = g.index.array; for (let i = 0; i < ix.length; i += 3) { const t = ix[i + 1]; ix[i + 1] = ix[i + 2]; ix[i + 2] = t; } g.computeVertexNormals(); return g; };
+  const mirrorX = (g, s) => { if (s > 0) return g; g.scale(-1, 1, 1); const ix = g.index?.array; if (!ix || !(ix.length > 0)) return g; for (let i = 0; i < ix.length; i += 3) { const t = ix[i + 1]; ix[i + 1] = ix[i + 2]; ix[i + 2] = t; } g.computeVertexNormals(); return g; };
   for (const s of [1, -1]) {
     // the lower flank, floor to crease
     add(mirrorX(strip(0.66, -1.12, 40, 4, (z) => [XB(z), 0.11], (z) => [XO(z), YC(z)]), s), MAT.navy);
