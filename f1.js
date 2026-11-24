@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 48;
+export const BUILD = 49;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -673,44 +673,89 @@ export function buildF05Body(car, addPanel) {
   const mirrorX = (g, s) => { if (s > 0) return g; g.scale(-1, 1, 1); const ix = g.index?.array; if (!ix || !(ix.length > 0)) return g; for (let i = 0; i < ix.length; i += 3) { const t = ix[i + 1]; ix[i + 1] = ix[i + 2]; ix[i + 2] = t; } g.computeVertexNormals(); return g; };
   const cr = (p0, p1, p2, p3, t) => { const t2 = t * t, t3 = t2 * t; return 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3); };
 
-  // --- THE NOSE: high and long, sloping down to a rounded tip, its
-  // underside well up off the ground; yellow, a navy stripe down its top
-  const nose = [
-    { z: 2.74, w: 0.1, h: 0.09, y: 0.31 },
-    { z: 2.6, w: 0.16, h: 0.14, y: 0.31 },
-    { z: 2.3, w: 0.24, h: 0.2, y: 0.32 },
-    { z: 1.95, w: 0.3, h: 0.26, y: 0.33 },
-    { z: 1.55, w: 0.38, h: 0.31, y: 0.32 },
-    { z: 1.2, w: 0.48, h: 0.39, y: 0.25, top: 0.86 },
-    { z: 0.9, w: 0.58, h: 0.47, y: 0.16, top: 0.8 },
-    { z: 0.72, w: 0.64, h: 0.5, y: 0.13, top: 0.78 },
-  ];
-  add(loft(nose, SMOOTH, 40, 8, true), MAT.yellow);
-  add(loft([{ z: 2.755, w: 0.105, h: 0.095, y: 0.308 }, { z: 2.62, w: 0.162, h: 0.142, y: 0.308 }], SMOOTH, 40, 8, true), MAT.blue);     // (the tip)
-  add(loft([{ z: 2.5, w: 0.07, h: 0.02, y: 0.5 }, { z: 1.95, w: 0.11, h: 0.02, y: 0.585 }, { z: 1.4, w: 0.15, h: 0.02, y: 0.64 }, { z: 0.85, w: 0.17, h: 0.02, y: 0.63 }], 0.4, 16, 6, true), MAT.navy);
-  // --- THE COCKPIT: high walls round his head and shoulders (light blue
-  // round the opening), padded headrest wings, black inside
-  const pit = [
-    { z: 0.72, w: 0.64, h: 0.5, y: 0.13, top: 0.78 },
-    { z: 0.45, w: 0.7, h: 0.55, y: 0.11, top: 0.76 },
-    { z: 0.0, w: 0.72, h: 0.57, y: 0.1, top: 0.74 },
-    { z: -0.2, w: 0.72, h: 0.58, y: 0.1, top: 0.74 },
-  ];
-  const opening = (z) => (z > 0.4 ? 0.15 + (0.72 - z) / 0.32 * 0.05 : 0.2);
-  const shell = loftOpen(pit, SMOOTH, 3, opening);
-  add(shell, MAT.blue);
-  add(loftOpen(pit, SMOOTH, 3, opening, 0.025, true), MAT.carbon, false);
-  // the yellow carried back down the tub's side under the cockpit, narrowing to a point
+  // --- ONE SKIN, NOSE TO GEARBOX. The real car's body is a single
+  // surface: the nose swells into the tub, the tub's high walls run back
+  // into the sidepods, the pods' tops roll over into the crease and drop
+  // to the floor, and the whole lot pinches in to the gearbox. So it is
+  // built that way: one cross-section at every point along the car, the
+  // same eight points round it each time (the middle of the top, the
+  // cover's edge, the fillet, the pod's crown, its shoulder, the crease,
+  // the undercut, the middle underneath), swept from the nose's tip to
+  // the back, then mirrored. Each strip of it painted as the real car
+  const K = (vals) => curveAny(Z.map((z, i) => [z, vals[i]]));
+  const Z = [0.66, 0.4, 0.05, -0.25, -0.55, -0.9, -1.3, -1.75];
+  const yTop = K([0.64, 0.64, 0.64, 0.72, 0.73, 0.62, 0.5, 0.36]);
+  const x1 = K([0.33, 0.33, 0.32, 0.3, 0.27, 0.22, 0.16, 0.09]), y1 = K([0.56, 0.57, 0.58, 0.64, 0.64, 0.56, 0.46, 0.33]);
+  const CW = K([0.31, 0.31, 0.29, 0.19, 0.17, 0.15, 0.12, 0.08]);        // (the tub's walls, then the engine cover's half-width)
+  const xc = K([0.52, 0.57, 0.58, 0.52, 0.42, 0.31, 0.22, 0.12]), yc = K([0.52, 0.53, 0.52, 0.48, 0.44, 0.39, 0.34, 0.28]);
+  const xo = K([0.64, 0.77, 0.79, 0.74, 0.64, 0.48, 0.33, 0.2]), ycr = K([0.3, 0.3, 0.3, 0.31, 0.32, 0.33, 0.33, 0.26]);
+  const xb = (z) => xo(z) - 0.006 - 0.07 * Math.max(0, Math.min(1, (z - 0.05) / 0.5));       // (the undercut under the pod's front)
+  // the cockpit's opening: half its width along the car (closed ahead of it and behind the headrest)
+  const OWc = curveAny([[0.9, 0], [0.74, 0], [0.7, 0.15], [0.5, 0.2], [-0.05, 0.2], [-0.2, 0.06], [-0.3, 0], [-0.5, 0]]);
+  const OW = (z) => (z > 0.735 || z < -0.24 ? 0 : Math.max(0, OWc(z)));
+  const RIM = 0.64;                                                     // (the high walls: the rim round his shoulders)
+  // the nose and the front of the tub: half-width, underside, top
+  const ZA = [2.76, 2.6, 2.3, 1.95, 1.55, 1.2, 0.9, 0.72, 0.68];
+  const KA = (v) => curveAny(ZA.map((z, i) => [z, v[i]]));
+  const hwA = KA([0.05, 0.08, 0.12, 0.15, 0.19, 0.24, 0.29, 0.33, 0.345]);
+  const ybA = KA([0.31, 0.31, 0.32, 0.33, 0.32, 0.25, 0.16, 0.12, 0.11]);
+  const ytA = KA([0.4, 0.45, 0.52, 0.585, 0.625, 0.64, 0.64, 0.64, 0.64]);
+  const secA = (z) => {
+    const hw = hwA(z), yb = ybA(z), yt = ytA(z), h = yt - yb, o = OW(z);
+    return [[o, yt], [Math.max(o + 0.02, hw * 0.6), yt - 0.006], [hw * 0.88, yt - h * 0.1], [hw * 0.98, yt - h * 0.3], [hw, yb + h * 0.5],
+      [hw * 0.97, yb + h * 0.22], [hw * 0.8, yb + 0.004], [0, yb]];
+  };
+  const secB = (z) => {
+    const o = OW(z), k = Math.min(1, o / 0.2), yt = yTop(z) + (RIM - yTop(z)) * k, cw = Math.max(o + 0.03, CW(z));
+    const sh = [xo(z) - 0.035, ycr(z) + Math.min(0.13, (yc(z) - ycr(z)) * 0.65)];
+    const fil = [Math.min(xc(z) - 0.04, cw + 0.08), Math.max(yc(z) + 0.025, yt - 0.2)];
+    return [[o, yt], [cw, yt - 0.035], fil, [xc(z), yc(z)], sh, [xo(z), ycr(z)], [xb(z), 0.115], [0, 0.11]];
+  };
+  // (round a section: through its eight points, smoothly, S steps between each)
+  const S = 5, NP = 7 * S;
+  const sample = (P) => {
+    const out = [], at = (i) => P[Math.max(0, Math.min(P.length - 1, i))];
+    for (let k = 0; k <= NP; k++) {
+      const seg = Math.min(6, Math.floor(k / S)), t = k / S - seg, a = at(seg - 1), b = at(seg), c = at(seg + 1), d = at(seg + 2);
+      out.push([cr(a[0], b[0], c[0], d[0], t), cr(a[1], b[1], c[1], d[1], t)]);
+    }
+    return out;
+  };
+  const upper = (z) => sample(z > 0.67 ? secA(z) : secB(z)).map((p) => [p[0], p[1], z]);
+  // the paint of each strip: 0 yellow, 1 light blue, 2 navy, 3 carbon, 4 dark
+  const PAINT = [MAT.yellow, MAT.blue, MAT.navy, MAT.carbon, MAT.dark];
+  const paintA = (seg, z) => (z > 2.62 ? 1 : seg === 6 ? 3 : 0);
+  const paintB = (seg, z) => (seg === 0 ? (z > -0.02 ? 0 : 1) : seg === 1 ? (z > 0.22 ? 0 : 1) : seg === 6 ? 3 : seg === 5 ? 2 : 1);
+  const skin = (rows, paint) => {
+    const pos = [], lists = PAINT.map(() => []);
+    for (const r of rows) for (const p of r.pts) pos.push(p[0], p[1], r.z);
+    const W = NP + 1;
+    for (let i = 0; i < rows.length - 1; i++) for (let k = 0; k < NP; k++) {
+      const p0 = i * W + k, p1 = p0 + W, seg = Math.min(6, Math.floor(k / S));
+      lists[paint(seg, (rows[i].z + rows[i + 1].z) / 2)].push(p0, p0 + 1, p1, p0 + 1, p1 + 1, p1);
+    }
+    const g = new THREE.BufferGeometry(), idx = [];
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    lists.forEach((l, m) => { if (l.length) { g.addGroup?.(idx.length, l.length, m); for (const v of l) idx.push(v); } });
+    g.setIndex(idx); g.computeVertexNormals(); return g;
+  };
+  const rowsA = [], rowsB = [];
+  for (let i = 0; i <= 44; i++) { const z = 2.76 + (0.68 - 2.76) * i / 44; rowsA.push({ z, pts: sample(secA(z)) }); }
+  for (let i = 0; i <= 64; i++) { const z = 0.66 + (-1.75 - 0.66) * i / 64; rowsB.push({ z, pts: sample(secB(z)) }); }
   for (const s of [1, -1]) {
-    const rows = [];
-    for (let i = 0; i <= 12; i++) { const z = 0.72 - i * 0.05, k = i / 12, top = 0.55 - k * 0.32; rows.push([[0.372, 0.15, z], [0.372, Math.max(0.16, top), z]]); }
-    add(mirrorX(grid(rows, 1), s), MAT.yellow);
+    for (const [rows, paint] of [[rowsA, paintA], [rowsB, paintB], [[rowsA[rowsA.length - 1], rowsB[0]], () => 4]]) {
+      const m = new THREE.Mesh(mirrorX(skin(rows, paint), s), PAINT); m.castShadow = true; m.receiveShadow = true; car.add(m); addPanel(m);
+    }
+    // the back end closed off, dark, round the gearbox
+    { const r = rowsB[rowsB.length - 1], sh = new THREE.Shape(); sh.moveTo(0, r.pts[0][1]); for (const p of r.pts) sh.lineTo(p[0], p[1]);
+      add(mirrorX(new THREE.ShapeGeometry(sh).translate(0, 0, r.z), s), MAT.dark, false); }
   }
-  const rimZ = [0.72, 0.55, 0.35, 0.15, 0, -0.2];
-  for (const sx of [1, -1]) for (let i = 0; i < rimZ.length - 1; i++) {
-    const a = shell.userData.edge(rimZ[i]), b = shell.userData.edge(rimZ[i + 1]);
-    add(rod([sx * -a[0], a[1], a[2]], [sx * -b[0], b[1], b[2]], 0.02), MAT.seat, false);
-  }
+  add(loft([{ z: 2.765, w: 0.1, h: 0.09, y: 0.31 }, { z: 2.7, w: 0.105, h: 0.095, y: 0.308 }], SMOOTH, 40, 6, true), MAT.blue);     // (the tip, closed)
+  // the navy stripe down the nose's top, thin, laid on it
+  { const rows = []; for (let i = 0; i <= 30; i++) { const z = 2.62 - i * (2.62 - 0.8) / 30, y = ytA(z) + 0.003, w = 0.035 + 0.05 * i / 30; rows.push([[-w, y - 0.004, z], [0, y, z], [w, y - 0.004, z]]); }
+    add(grid(rows, 2, true), MAT.navy, false); }
+  // inside the cockpit: black, below the rim
+  add(box(0.6, 0.34, 0.96, 0, 0.28, 0.25), MAT.seat, false);
   for (const sx of [1, -1]) add(box(0.06, 0.13, 0.4, sx * 0.17, 0.66, -0.06), MAT.seat, false);
   add(box(0.36, 0.14, 0.08, 0, 0.66, -0.2), MAT.seat, false);
   add(box(0.32, 0.05, 0.34, 0, 0.13, 0.08), MAT.seat, false);
@@ -729,49 +774,7 @@ export function buildF05Body(car, addPanel) {
   const visor = add(new THREE.SphereGeometry(0.137, 20, 10, -0.9 + Math.PI / 2, 1.8, 1.1, 0.5).scale(1, 1.05, 1.1).translate(0, 0.73, -0.02), MAT.visor);
   const stripe = add(new THREE.TorusGeometry(0.135, 0.012, 6, 24, Math.PI).rotateY(Math.PI / 2).rotateZ(Math.PI / 2).scale(1, 1.05, 1.1).translate(0, 0.73, -0.02), MAT.yellow);
 
-  // --- THE BACK OF THE CAR: the sidepods and engine cover as one big
-  // flowing light-blue body. Across it, from the middle out: the cover's
-  // top, its shoulder, the pod's crown, then the crease along the middle
-  // of the flank, and below it the flank down to the floor (navy, cut
-  // under at the front). Along it: tall pods with big mouths, swelling
-  // out, then pulled in hard toward the gearbox (the coke bottle)
-  const K = (vals) => curve(Z.map((z, i) => [z, vals[i]]));
-  const Z = [0.66, 0.4, 0.05, -0.25, -0.55, -0.9, -1.3, -1.75];
-  const yTop = K([0.52, 0.54, 0.58, 0.7, 0.73, 0.62, 0.5, 0.36]);
-  const x1 = K([0.33, 0.33, 0.32, 0.3, 0.27, 0.22, 0.16, 0.09]), y1 = K([0.56, 0.57, 0.58, 0.64, 0.64, 0.56, 0.46, 0.33]);
-  const CW = K([0.3, 0.3, 0.28, 0.19, 0.17, 0.15, 0.12, 0.08]);        // (the engine cover's half-width: its spine)
-  const xc = K([0.52, 0.57, 0.58, 0.52, 0.42, 0.31, 0.22, 0.12]), yc = K([0.52, 0.53, 0.52, 0.48, 0.44, 0.39, 0.34, 0.28]);
-  const xo = K([0.64, 0.77, 0.79, 0.74, 0.64, 0.48, 0.33, 0.2]), ycr = K([0.3, 0.3, 0.3, 0.31, 0.32, 0.33, 0.33, 0.26]);
-  const xb = (z) => xo(z) - 0.006 - 0.07 * Math.max(0, Math.min(1, (z - 0.05) / 0.5));       // (the undercut under the pod's front)
-  const UP = 26, LOW = 4, N = 60, Z0 = 0.66, Z1 = -1.75;
-  // the top, middle to crease, through its shoulder and crown
-  const upper = (z) => {
-    // (the crown, then the shoulder rolling over and dropping to the crease)
-    // (the cover a raised spine, its edge, then a concave fillet down to the
-    // pod's crown; the shoulder rolling over and dropping to the crease)
-    const sh = [xo(z) - 0.035, ycr(z) + Math.min(0.13, (yc(z) - ycr(z)) * 0.65)];
-    const cw = CW(z), fil = [Math.min(xc(z) - 0.04, cw + 0.09), Math.max(yc(z) + 0.025, yTop(z) - 0.2)];
-    const P = [[-cw, yTop(z) - 0.03], [0, yTop(z)], [cw, yTop(z) - 0.035], fil, [xc(z), yc(z)], sh, [xo(z), ycr(z)], [xo(z) + 0.01, ycr(z) - 0.2]];
-    const pts = [];
-    for (let k = 0; k <= UP; k++) {
-      const u = k / UP * 5, seg = Math.min(4, Math.floor(u)), t = u - seg;
-      const a = P[seg], b = P[seg + 1], c = P[seg + 2], d = P[seg + 3];
-      pts.push([cr(a[0], b[0], c[0], d[0], t), cr(a[1], b[1], c[1], d[1], t), z]);
-    }
-    return pts;
-  };
-  const lower = (z) => { const pts = []; for (let k = 0; k <= LOW; k++) { const t = k / LOW; pts.push([xo(z) + (xb(z) - xo(z)) * t, ycr(z) + (0.11 - ycr(z)) * t, z]); } return pts; };
-  const zs = []; for (let i = 0; i <= N; i++) zs.push(Z0 + (Z1 - Z0) * i / N);
   for (const s of [1, -1]) {
-    add(mirrorX(grid(zs.map(upper), UP, true), s), MAT.blue);
-    add(mirrorX(grid(zs.map(lower), LOW, true), s), MAT.navy);
-    // the pod's mouth at the front: dark, inside the outline of the pod beside the tub
-    { const z = Z0, up = upper(z).filter((p) => p[0] >= 0.34), sh = new THREE.Shape();
-      sh.moveTo(0.34, 0.11); for (const p of up) sh.lineTo(p[0], p[1]); for (const p of lower(z)) sh.lineTo(p[0], p[1]); sh.lineTo(0.34, 0.11);
-      const g = new THREE.ShapeGeometry(sh).translate(0, 0, z - 0.002); add(mirrorX(g, s), MAT.dark, false); }
-    // its rounded lip: a light-blue rim just round the mouth
-    { const z = Z0, pts = upper(z).filter((p) => p[0] >= 0.34).concat(lower(z));
-      for (let k = 0; k < pts.length - 1; k++) add(mirrorX(rod([pts[k][0], pts[k][1], z + 0.004], [pts[k + 1][0], pts[k + 1][1], z + 0.004], 0.014), s), MAT.blue); }
     // the gills: slotted into the upper rear of the pod, between its crown and the crease
     for (let k = 0; k < 6; k++) {
       const z = -0.5 - k * 0.09, t = 0.45, x = xc(z) + (xo(z) - xc(z)) * t, y = yc(z) + (ycr(z) - yc(z)) * t + 0.01;
@@ -1028,6 +1031,8 @@ function smoothBody(z0, z1, n, f, ring = 32) {
   g.computeVertexNormals();
   return g;
 }
+// (the same, for keys given from the front of the car back)
+const curveAny = (keys) => curve([...keys].sort((a, b) => a[0] - b[0]));
 function curve(keys) {
   const n = keys.length;
   const m = keys.map((k, i) => { const a = keys[Math.max(0, i - 1)], b = keys[Math.min(n - 1, i + 1)]; return (b[1] - a[1]) / ((b[0] - a[0]) || 1); });

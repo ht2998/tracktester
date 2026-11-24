@@ -21,11 +21,18 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 119;
+export const BUILD = 120;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 103, date: '24 Nov 2026', title: 'TTF-05: one body',
+    items: [
+      ['One continuous body', 'The TTF-05 is no longer a tub with sidepods stuck on: nose, tub, high cockpit walls, sidepods, engine cover and gearbox are now one smooth skin, swelling out into the pods and pinching in hard to the back like the real thing', 'update'],
+      ['Shaped from the drawings', 'High raised nose with the navy stripe, big dark sidepod mouths, the light-blue top rolling over into a crease with navy below, and the yellow running back down the tub', 'update'],
+    ],
+  },
   {
     id: 102, date: '24 Nov 2026', title: 'TTF-05 rebuilt',
     items: [
