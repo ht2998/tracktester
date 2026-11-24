@@ -737,7 +737,7 @@ export function buildF05Body(car, addPanel) {
     ];
     add(loft(pod, 1.9, 40, 8, true), MAT.blue);      // (squarer in section: a sculpted pod, not a tube)
     // navy along the lower half of each pod, as the real car had
-    add(loft(pod.map((q) => ({ ...q, w: q.w + 0.012, h: q.h * 0.5 + 0.004, y: q.y - 0.004 })), 1.9, 40, 8, true), MAT.navy);
+    add(loft(pod.map((q) => ({ ...q, w: q.w + 0.012, h: q.h * 0.66 + 0.004, y: q.y - 0.004 })), 1.9, 40, 8, true), MAT.navy);
     // yellow along the top of each pod, a white pinstripe below it
     add(loft(pod.map((p) => ({ ...p, w: p.w * 0.72, h: 0.035, y: p.y + p.h - 0.02 })), 0.8, 20, 4, true), MAT.yellow);
     // the radiator mouth: a dark rounded opening, with its lip
