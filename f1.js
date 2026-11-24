@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 57;
+export const BUILD = 58;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -878,21 +878,21 @@ export function buildF05Body(car, addPanel) {
   // --- THE AIRBOX: rising out of the cover right over his head, its
   // mouth over his helmet, the roll hoop on top with the camera
   const airbox = [
-    { z: -0.02, w: 0.24, h: 0.24, y: 0.72 },
-    { z: -0.2, w: 0.3, h: 0.32, y: 0.7 },
-    { z: -0.45, w: 0.34, h: 0.24, y: 0.7 },
-    { z: -0.75, w: 0.3, h: 0.08, y: 0.64 },
+    { z: -0.32, w: 0.24, h: 0.24, y: 0.72 },
+    { z: -0.5, w: 0.3, h: 0.32, y: 0.7 },
+    { z: -0.75, w: 0.34, h: 0.24, y: 0.7 },
+    { z: -1.05, w: 0.3, h: 0.08, y: 0.6 },
   ];
   add(loft(airbox, 1.0, 40, 8, true), MAT.blue);
-  add(loft([{ z: 0.0, w: 0.17, h: 0.13, y: 0.79 }, { z: -0.06, w: 0.17, h: 0.13, y: 0.79 }], 1.2, 20, 1, false), MAT.dark, false);
-  add(box(0.1, 0.06, 0.16, 0, 1.05, -0.2), MAT.camera);                       // (the camera pod)
+  add(loft([{ z: -0.3, w: 0.17, h: 0.13, y: 0.79 }, { z: -0.36, w: 0.17, h: 0.13, y: 0.79 }], 1.2, 20, 1, false), MAT.dark, false);
+  add(box(0.1, 0.06, 0.16, 0, 1.05, -0.5), MAT.camera);                       // (the camera pod)
   // a little fin along the cover's spine, behind the airbox
   // (rising out of the cover behind the airbox and sweeping up and back to
   // meet the rear wing: its root sunk into the cover, its top a straight line)
   { const pts = [], N = 14;
     // (its top edge carrying on the line of the airbox's top, out of the back of it)
-    for (let i = 0; i <= N; i++) { const z = -0.35 - i / N * 1.3; pts.push([z, yTop(z) - 0.025]); }
-    pts.push([-1.65, 0.8], [-0.35, 0.86]);
+    for (let i = 0; i <= N; i++) { const z = -0.65 - i / N * 1.0; pts.push([z, yTop(z) - 0.025]); }
+    pts.push([-1.65, 0.8], [-0.65, 0.86]);
     add(plate(pts, 0, 0.02), MAT.navy); }     // (navy, like the wing it runs into)
   // the yellow carried on from the tub: a line down each side of the
   // airbox and along the engine cover's edge to the back, laid on the skin

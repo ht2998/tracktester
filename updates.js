@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 131;
+export const BUILD = 132;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
@@ -30,6 +30,7 @@ export const UPDATES = [
     id: 111, date: '24 Nov 2026', title: 'TTF-05 cameras and fin',
     items: [
       ['Real camera spots', 'On the TTF-05 the T-cam now looks out from the orange camera pod on top of the airbox, and the bonnet camera sits on top of the nose in line with where the front suspension meets it', 'update'],
+      ['Airbox further back', 'The TTF-05\'s airbox, with its camera pod (and the T-cam), sits 30 cm further back, behind the driver\'s head, the fin running on from it to the rear wing', 'update'],
       ['The fin, in navy', 'The fin is now navy like the rear wing it runs into, and a little taller, so you can actually see it standing up along the engine cover', 'fix'],
     ],
   },

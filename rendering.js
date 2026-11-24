@@ -60,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 89;
+const BUILD = 90;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -3781,7 +3781,7 @@ const F1_VIEWS = CLOSED_RHD ? {
   // front suspension meets it; the T-cam in the camera pod on the airbox)
   bonnet: { spot: new THREE.Vector3(0, 0.67, 1.67), pitch: -0.07 },
   cockpit: { spot: new THREE.Vector3(0, 0.88, 0.02), pitch: -0.27 },
-  tcam: { spot: new THREE.Vector3(0, 1.1, -0.2), pitch: -0.1 },
+  tcam: { spot: new THREE.Vector3(0, 1.1, -0.5), pitch: -0.1 },
 } : {
   bonnet: { spot: new THREE.Vector3(0, 0.62, 0.95), pitch: -0.06 },
   cockpit: { spot: new THREE.Vector3(0, 0.88, 0.02), pitch: -0.27 },     // (his eye well above the cockpit's sides, as a real driver's is)
