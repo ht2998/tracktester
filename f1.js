@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 53;
+export const BUILD = 54;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -831,9 +831,9 @@ export function buildF05Body(car, addPanel) {
       add(mirrorX(box(0.26, 0.012, 0.15, xo(z) + 0.11, y + 0.01, z, -0.25), s), MAT.carbon);
       add(mirrorX(box(0.012, 0.17, 0.22, xo(z) + 0.24, y + 0.03, z - 0.02), s), MAT.carbon);
       add(mirrorX(box(0.012, 0.09, 0.4, xo(z) + 0.004, y - 0.035, z + 0.18), s), MAT.carbon); }
-    // the "horn" winglet on the pod's top beside the cockpit
+    // the winglet on the pod's top
     // (its pillar standing on the bodywork, a little into it; the wing across its top)
-    { const z = 0.3, x = 0.44, y = surfY(z, x);
+    { const z = -0.72, x = xc(-0.72) - 0.03, y = surfY(z, x);       // (right above the gills)
       add(mirrorX(plate([[z + 0.07, y - 0.02], [z + 0.05, y + 0.12], [z - 0.07, y + 0.13], [z - 0.08, y - 0.02]], x, 0.012), s), MAT.carbon);
       add(mirrorX(box(0.16, 0.012, 0.11, x + 0.05, y + 0.13, z, -0.3, 0, -0.25), s), MAT.carbon); }
     // bargeboards: tall curved carbon panels behind the front wheels, on the floor
@@ -871,8 +871,9 @@ export function buildF05Body(car, addPanel) {
   // (rising out of the cover behind the airbox and sweeping up and back to
   // meet the rear wing: its root sunk into the cover, its top a straight line)
   { const pts = [], N = 14;
-    for (let i = 0; i <= N; i++) { const z = -0.7 - i / N * 0.95; pts.push([z, yTop(z) - 0.025]); }
-    pts.push([-1.65, 0.75], [-0.7, yTop(-0.7) + 0.02]);
+    // (its top edge carrying on the line of the airbox's top, out of the back of it)
+    for (let i = 0; i <= N; i++) { const z = -0.35 - i / N * 1.3; pts.push([z, yTop(z) - 0.025]); }
+    pts.push([-1.65, 0.75], [-0.35, 0.84]);
     add(plate(pts, 0, 0.018), MAT.blue); }
   // the gearbox at the back, its rain light, the floor, the plank, the diffuser and its fences
   add(box(0.2, 0.18, 0.36, 0, 0.22, -1.9), MAT.carbon);
