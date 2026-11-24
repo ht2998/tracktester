@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 67;
+export const BUILD = 68;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -1118,8 +1118,11 @@ export function buildF05Body(car, addPanel) {
     // the bellhousing onto the gearbox
     e(new THREE.CylinderGeometry(0.12, 0.1, 0.18, 16).rotateX(Math.PI / 2).translate(0, cy, Z1 - 0.09), E.alloy);
   }
-  engine.visible = false;
+  engine.visible = false; engine.name = 'bay';
   car.add(engine);
+  // (the bodywork's materials, tagged: the Garage can turn them clear to show what's inside)
+  for (const k of ['blue', 'yellow', 'white', 'navy', 'carbon', 'dark', 'camera', 'glass']) if (MAT[k]) MAT[k].userData.shell = true;
+  car.traverse((o) => { if (o.isMesh && o.renderOrder === 2 && !Array.isArray(o.material)) o.material.userData.shell = true; });
   return { helmet: [helmet, visor, stripe], rainMat: MAT.rain, exhaustMat: MAT.exhaust, mats: MAT, wings, mirrors, driver, engine };
 }
 

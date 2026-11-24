@@ -7,7 +7,7 @@
 // has several cars dropping down again. Pick one and it fires up: a
 // couple of big revs, then it settles to idle.
 // =====================================================================
-export const BUILD = 8;
+export const BUILD = 9;
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -75,6 +75,8 @@ body.in-garage > *:not(#garage):not(#game):not(canvas):not(style):not(script) { 
 #garage .g-name { font-size: 46px; font-weight: 300; letter-spacing: 0.02em; line-height: 1.05; margin-top: 6px; }
 #garage .g-sub { font-size: 13px; color: #aab2bd; margin-top: 6px; letter-spacing: 0.06em; }
 #garage .g-rule { width: 54px; height: 2px; background: #e5b53d; margin-top: 12px; }
+#garage .g-clear { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+#garage .g-clear input { width: 16px; height: 16px; accent-color: #e5b53d; margin: 0; }
 #garage .g-stats { position: absolute; right: 26px; top: 50%; transform: translateY(-50%); width: 250px; pointer-events: auto;
   padding: 16px 18px; border-radius: 14px; background: rgba(14, 17, 22, 0.62); border: 1px solid rgba(255,255,255,0.08);
   backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
@@ -238,8 +240,14 @@ export class Garage {
     m.quaternion.identity();
     m.visible = true;
     m.traverse((o) => { if (o.isLight) o.visible = false; });
+    // (its own paint, so turning it clear here leaves the car you drive alone)
+    m.traverse((o) => { if (o.isMesh) o.material = Array.isArray(o.material) ? o.material.map((x) => x.clone()) : o.material.clone(); });
     this.carSpot.add(m);
     this.model = m;
+    // the clear / solid box: only for a car whose insides are built
+    let has = false; m.traverse((o) => { if (o.name === 'bay') has = true; });
+    const box = this.root?.querySelector('.g-clear');
+    if (box) { box.style.display = has ? '' : 'none'; box.querySelector('input').checked = false; }
     // the car's length decides how far back the camera stands
     const b = new THREE.Box3().setFromObject(m);
     const len = Math.max(b.max.z - b.min.z, b.max.x - b.min.x, 2);
@@ -247,6 +255,19 @@ export class Garage {
     this.controls.maxDistance = len * 2.6;
     this.controls.target.set(0, Math.min(0.6, (b.max.y + b.min.y) * 0.45), (b.max.z + b.min.z) / 2);
     this.carLength = len;
+  }
+
+  setClear(on) {
+    if (!this.model) return;
+    this.model.traverse((o) => {
+      if (o.name === 'bay') o.visible = on;
+      if (!o.isMesh) return;
+      for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+        if (!m.userData.shell) continue;
+        m.userData.was ??= { t: m.transparent, o: m.opacity, d: m.depthWrite };
+        m.transparent = on || m.userData.was.t; m.opacity = on ? 0.14 : m.userData.was.o; m.depthWrite = on ? false : m.userData.was.d; m.needsUpdate = true;
+      }
+    });
   }
 
   // a display TT-88 (or TT-05) for its picture, when you're in another car
@@ -315,10 +336,13 @@ export class Garage {
       <div class="g-title"><div class="g-eyebrow">GARAGE</div><div class="g-name"></div><div class="g-sub"></div><div class="g-rule"></div></div>
       <div class="g-stats"></div>
       <div class="g-hint">DRAG TO LOOK AROUND</div>
-      <div class="g-bar"><button class="g-btn g-change" type="button">${KEY_ICON}Change car</button><button class="g-btn go g-drive" type="button">Drive &#9656;</button></div>
+      <div class="g-bar"><label class="g-btn g-clear"><input type="checkbox"> Clear</label><button class="g-btn g-change" type="button">${KEY_ICON}Change car</button><button class="g-btn go g-drive" type="button">Drive &#9656;</button></div>
       <div class="g-pick"><div class="g-pick-head"><h2>${KEY_ICON}Change car</h2><button class="g-close" type="button" aria-label="Close">&times;</button></div><div class="g-cats"></div></div>`;
     document.body.appendChild(root);
     root.querySelector('.g-change').addEventListener('click', () => this.openPicker());
+    // CLEAR / SOLID: the bodywork see-through, to show the chassis, the cockpit and the engine inside
+    const clear = root.querySelector('.g-clear input');
+    clear.addEventListener('change', () => { this.setClear(clear.checked); clear.blur(); });
     root.querySelector('.g-drive').addEventListener('click', () => this.onDrive?.());
     root.querySelector('.g-close').addEventListener('click', () => this.closePicker());
   }

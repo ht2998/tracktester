@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 141;
+export const BUILD = 142;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
@@ -29,7 +29,7 @@ export const UPDATES = [
   {
     id: 115, date: '24 Nov 2026', title: 'See inside the TTF-05',
     items: [
-      ['Clear bodywork', 'With the TTF-05, a new tickbox in the side panel turns the bodywork clear: the paint, carbon and sponsors go see-through and the V10 is shown in its bay, so you can see the chassis, the cockpit tub, the sidepod ducts and radiators, the engine and the suspension. Untick it for the solid car again', 'new'],
+      ['Clear bodywork', 'In the Garage, with the TTF-05 on the turntable, a Clear tickbox turns its bodywork see-through: the paint, carbon and sponsors go clear and the V10 shows in its bay, so you can look at the chassis, the cockpit tub, the sidepod ducts and radiators and the engine. Untick it for the solid car. Only the Garage\'s car changes: the one you drive stays solid', 'new'],
     ],
   },
   {

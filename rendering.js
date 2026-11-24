@@ -60,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 91;
+const BUILD = 92;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -3101,9 +3101,6 @@ const hud = new Hud({
     try { localStorage.setItem('tracktester-damage', on ? 'on' : 'off'); } catch (e) { /* storage blocked */ }
     showToast(on ? 'DAMAGE ON' : physics.engineDead || physics.radiator < 1 || physics.suspDamage.some((d) => d > 0) ? 'DAMAGE OFF: BACK ON TRACK TO FIX THE CAR' : 'DAMAGE OFF: ONLY SCRATCHES AND DENTS');
   },
-  // (the TT-05: its bodywork clear or solid, to look at what's inside)
-  clearView: IS_F05 ? false : null,
-  onClear: (on) => setClearBody(on),
   onTyres: (id) => { physics.setTyres(id); tyreLooks.apply(id); },
   // Track picker: remember the choice and reload to build it
   track: TRACK,
@@ -3374,27 +3371,6 @@ function shellHit(p) {
     if (p.y - gy < (c.kind === 'tree' ? 10 : 3)) return true;
   }
   return false;
-}
-
-// CLEAR BODYWORK (the TT-05): the painted panels, the carbon and the
-// sponsors turned see-through, and the engine inside shown, so you can
-// look at the chassis, the cockpit, the V10 and the suspension. Solid
-// again, the engine's hidden back under its cover
-function setClearBody(on) {
-  const body = carModel.car.userData.f1;
-  if (!body?.mats) return;
-  const M = body.mats, see = [M.blue, M.yellow, M.white, M.navy, M.carbon, M.dark, M.camera, M.glass].filter(Boolean);
-  for (const m of see) {
-    m.userData.solid ??= { transparent: m.transparent, opacity: m.opacity, depthWrite: m.depthWrite };
-    const s0 = m.userData.solid;
-    m.transparent = on || s0.transparent; m.opacity = on ? 0.14 : s0.opacity; m.depthWrite = on ? false : s0.depthWrite; m.needsUpdate = true;
-  }
-  carModel.car.traverse((o) => {
-    if (!o.isMesh || o.renderOrder !== 2) return;                    // (the sponsors' decals)
-    const m = o.material; m.userData.op ??= { o: m.opacity, t: m.transparent }; m.opacity = on ? 0.14 : m.userData.op.o; m.transparent = on || m.userData.op.t; m.needsUpdate = true;
-  });
-  if (body.engine) body.engine.visible = on;
-  showToast(on ? 'BODYWORK: CLEAR' : 'BODYWORK: SOLID');
 }
 
 // RUN DOWN: anyone the car drives into is knocked flying, thrown ahead
