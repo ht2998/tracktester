@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 142;
+export const BUILD = 143;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 116, date: '24 Nov 2026', title: 'Legs to the pedals',
+    items: [
+      ['The driver\'s legs', 'In the single-seaters the driver now has legs: from his hips in the seat, thighs and shins run down the footwell to his feet on the pedals, the knees bending a little as his feet press and lift, as in the Caterham', 'update'],
+    ],
+  },
   {
     id: 115, date: '24 Nov 2026', title: 'See inside the TTF-05',
     items: [

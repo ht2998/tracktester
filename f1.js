@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 68;
+export const BUILD = 69;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -1859,6 +1859,26 @@ export function buildF1Cockpit(car, { paddles = false } = {}) {
   // his feet: racing boots, resting on the pedals
   const feet = [0, 1].map(() => { const f = add(new THREE.CapsuleGeometry(0.035, 0.11, 4, 10).rotateX(Math.PI / 2 - 0.35), M.boot || M.suit); return f; });
   const footPt = new THREE.Vector3();
+  // his legs, from his hips in the seat down the footwell to his feet on
+  // the pedals: a thigh and a shin each, the knee bent up a little between
+  // (worked out every frame, as his feet move on the pedals)
+  const THIGH = 0.5, SHIN = 0.53, hipY = 0.2, hipZ = 0.08;
+  const limb = new THREE.CylinderGeometry(1, 1, 1, 12).translate(0, 0.5, 0);
+  const legs = [0, 1].map((i) => ({
+    hip: new THREE.Vector3(i === 0 ? -0.09 : 0.09, hipY, hipZ),
+    thigh: add(limb, M.suit), shin: add(limb, M.suit), knee: add(new THREE.SphereGeometry(0.055, 12, 10), M.suit),
+  }));
+  const _d = new THREE.Vector3(), _k = new THREE.Vector3(), _u = new THREE.Vector3(), _q = new THREE.Quaternion(), UPV = new THREE.Vector3(0, 1, 0);
+  const bone = (m, a, b, r) => { _d.subVectors(b, a); const l = _d.length(); m.position.copy(a); m.quaternion.setFromUnitVectors(UPV, _d.normalize()); m.scale.set(r, l, r); };
+  const placeLeg = (L, foot) => {
+    const ankle = foot;
+    _d.subVectors(ankle, L.hip); const d = Math.min(_d.length(), (THIGH + SHIN) * 0.995); _d.normalize();
+    const a = (THIGH * THIGH - SHIN * SHIN + d * d) / (2 * d), h = Math.sqrt(Math.max(0, THIGH * THIGH - a * a));
+    _u.copy(UPV).addScaledVector(_d, -UPV.dot(_d)).normalize();          // (the knee bends up)
+    _k.copy(L.hip).addScaledVector(_d, a).addScaledVector(_u, h);
+    bone(L.thigh, L.hip, _k, 0.065); bone(L.shin, _k, ankle, 0.048); L.knee.position.copy(_k);
+  };
+  legs.forEach((L, i) => placeLeg(L, new THREE.Vector3(i === 0 ? pedalAt.throttle : (paddles ? pedalAt.brake : pedalAt.clutch), pedalY + 0.06, pedalZ - 0.03)));   // (where they start)
   // the driver: shoulders and chest just under the rim, arms to the wheel
   // (sat back in the tub, not hunched over the wheel: his back against the
   // seat, leaning back, shoulders square and his head up against the headrest)
@@ -1906,7 +1926,7 @@ export function buildF1Cockpit(car, { paddles = false } = {}) {
   const gripPt = new THREE.Vector3(), knobPt = new THREE.Vector3();
   return {
     group,
-    driverParts: [chest, back, neck, ...feet, ...arms.flatMap((a) => [a.upper, a.fore, a.elbow, a.hand])],   // (him, without the wheel: for climbing out)
+    driverParts: [chest, back, neck, ...feet, ...legs.flatMap((l) => [l.thigh, l.shin, l.knee]), ...arms.flatMap((a) => [a.upper, a.fore, a.elbow, a.hand])],   // (him, without the wheel: for climbing out)
     head,                                          // how far his head is thrown about (car's frame): add to the eye
     // a gear change: his right hand goes to the lever
     onShift(direction) { shift = 0; shiftDir = direction > 0 ? 1 : -1; },
@@ -1928,6 +1948,7 @@ export function buildF1Cockpit(car, { paddles = false } = {}) {
         const a = 0.35 + 0.45 * press;
         footPt.set(x, pedalY - 0.04 + Math.cos(a) * 0.1, pedalZ + Math.sin(a) * 0.1 - 0.06);
         feet[i].position.copy(footPt); feet[i].rotation.x = a - 0.35;
+        placeLeg(legs[i], footPt);
       }
       if (limp) { steer = 0; speed = 0; slip = 0; bump = 0; shift = 1; }
       // how hard he's fighting it: the speed, how much it's sliding, the bumps.
