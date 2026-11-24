@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 62;
+export const BUILD = 63;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -768,7 +768,8 @@ export function buildF05Body(car, addPanel) {
     const W = NP + 1;
     for (let i = 0; i < rows.length - 1; i++) for (let k = 0; k < NP; k++) {
       const p0 = i * W + k, p1 = p0 + W, seg = Math.min(6, Math.floor(k / S));
-      lists[paint(seg, (rows[i].z + rows[i + 1].z) / 2)].push(p0, p0 + 1, p1, p0 + 1, p1 + 1, p1);
+      const m = paint(seg, (rows[i].z + rows[i + 1].z) / 2, rows[i].pts[k][0]); if (m < 0) continue;       // (-1: left open)
+      lists[m].push(p0, p0 + 1, p1, p0 + 1, p1 + 1, p1);
     }
     const g = new THREE.BufferGeometry(), idx = [];
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -779,9 +780,27 @@ export function buildF05Body(car, addPanel) {
   for (let i = 0; i <= 44; i++) { const z = 2.76 + (0.68 - 2.76) * i / 44; rowsA.push({ z, pts: sample(secA(z)) }); }
   for (let i = 0; i <= 64; i++) { const z = 0.66 + (-1.75 - 0.66) * i / 64; rowsB.push({ z, pts: sample(secB(z)) }); }
   for (const s of [1, -1]) {
-    for (const [rows, paint] of [[rowsA, paintA], [rowsB, paintB], [[rowsA[rowsA.length - 1], rowsB[0]], () => 4]]) {
+    for (const [rows, paint] of [[rowsA, paintA], [rowsB, paintB], [[rowsA[rowsA.length - 1], rowsB[0]], (seg, z, x) => (x > 0.36 ? -1 : 4)]]) {     // (the pod's mouth itself left open: see the intakes)
       const m = new THREE.Mesh(mirrorX(skin(rows, paint), s), PAINT); m.castShadow = true; m.receiveShadow = true; car.add(m); addPanel(m);
     }
+    // THE INTAKES: each pod's mouth is open, a dark duct running back into
+    // it and narrowing a little, the radiator's fins at the back of it
+    { const r = rowsB[0].pts, z0 = rowsB[0].z, z1 = 0.36;
+      const loop = r.filter((p) => p[0] > 0.36).map((p) => [p[0], p[1]]);
+      loop.push([0.362, Math.max(0.12, loop[loop.length - 1][1])], [0.362, loop[0][1]]);       // (closed along the tub's side)
+      const cx = loop.reduce((a, p) => a + p[0], 0) / loop.length, cy = loop.reduce((a, p) => a + p[1], 0) / loop.length;
+      const inset = (p, k) => [cx + (p[0] - cx) * k, cy + (p[1] - cy) * k];
+      const duct = new THREE.MeshStandardMaterial({ color: 0x0b0c0e, roughness: 0.85, side: THREE.DoubleSide });
+      const rows = [loop.map((p) => [p[0], p[1], z0]), loop.map((p) => { const q = inset(p, 0.82); return [q[0], q[1], z1]; })];
+      rows.forEach((row) => row.push(row[0]));
+      const dm = new THREE.Mesh(mirrorX(grid(rows, loop.length), s), duct); car.add(dm);
+      // the radiator: a dark face across the back of the duct, its fins in fine lines
+      const sh = new THREE.Shape(); loop.forEach((p, i) => { const q = inset(p, 0.82); if (i) sh.lineTo(q[0], q[1]); else sh.moveTo(q[0], q[1]); });
+      const rc = typeof document !== 'undefined' ? document.createElement('canvas') : null;
+      let rmat = new THREE.MeshStandardMaterial({ color: 0x2a2c30, roughness: 0.6, metalness: 0.5, side: THREE.DoubleSide });
+      if (rc) { rc.width = 64; rc.height = 64; const g = rc.getContext('2d'); g.fillStyle = '#22242a'; g.fillRect(0, 0, 64, 64); g.fillStyle = '#9aa0a8'; for (let y = 0; y < 64; y += 4) g.fillRect(0, y, 64, 1.5);
+        const t = new THREE.CanvasTexture(rc); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(6, 6); rmat = new THREE.MeshStandardMaterial({ map: t, roughness: 0.6, metalness: 0.5, side: THREE.DoubleSide }); }
+      const rg = new THREE.ShapeGeometry(sh).translate(0, 0, z1); add(mirrorX(rg, s), rmat, false); }
     // the back end closed off, dark, round the gearbox
     { const r = rowsB[rowsB.length - 1], sh = new THREE.Shape(); sh.moveTo(0, r.pts[0][1]); for (const p of r.pts) sh.lineTo(p[0], p[1]);
       add(mirrorX(new THREE.ShapeGeometry(sh).translate(0, 0, r.z), s), MAT.dark, false); }

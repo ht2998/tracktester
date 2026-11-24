@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 136;
+export const BUILD = 137;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 114, date: '24 Nov 2026', title: 'Open intakes',
+    items: [
+      ['Hollow sidepods', 'The TTF-05\'s sidepod mouths are open now: a dark duct runs back into each pod, narrowing as it goes, with the radiator\'s fins at the back of it, instead of a flat black panel', 'update'],
+    ],
+  },
   {
     id: 113, date: '24 Nov 2026', title: 'Sponsors with proper logos',
     items: [
