@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 44;
+export const BUILD = 45;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -724,54 +724,78 @@ export function buildF05Body(car, addPanel) {
     mirrors[s > 0 ? 'l' : 'r'] = { stalk, pod, at: [s * 0.5, 0.665, 0.5] };
   }
 
-  // --- sidepods: tall, with undercut mouths (cut away low down at the
-  // front), then waisted in hard to the back: the coke bottle
+  // --- SIDEPODS, shaped as the real ones were: a near-vertical lower
+  // flank (in navy, undercut at the front), a crisp crease along the
+  // middle of the flank that runs back and rises into the flip-up winglet
+  // ahead of the back wheel, and above the crease the top rolling over and
+  // sloping in to meet the engine cover, dipping inward beside the
+  // chimney. Built as two surfaces meeting at the crease, so it stays sharp
+  const XO = curve([[0.66, 0.64], [0.48, 0.76], [0.1, 0.78], [-0.4, 0.72], [-0.8, 0.57], [-1.12, 0.4]]);      // the flank
+  const XB = (z) => XO(z) - 0.07 * Math.max(0, Math.min(1, (z - 0.05) / 0.5));                                  // (the undercut, under the front)
+  const YC = curve([[0.66, 0.3], [0.2, 0.3], [-0.4, 0.31], [-0.8, 0.345], [-1.12, 0.4]]);                         // the crease
+  const XI = curve([[0.66, 0.42], [0.1, 0.4], [-0.45, 0.31], [-0.8, 0.26], [-1.12, 0.2]]);                       // where the top meets the cover
+  const YT = curve([[0.66, 0.5], [0.3, 0.51], [-0.3, 0.48], [-0.6, 0.43], [-1.12, 0.4]]);
+  const BUL = curve([[0.66, 0.035], [0.2, 0.055], [-0.35, 0.035], [-0.6, 0.01], [-1.12, 0.0]]);                   // how much the top rolls over (less by the chimney)
+  // a surface between two lines along the car: a(z) and b(z) give [x, y];
+  // bulge pushes it outward across its middle
+  const strip = (z0, z1, n, m, a, b, bulge = () => 0) => {
+    const pos = [], idx = [];
+    for (let i = 0; i <= n; i++) {
+      const z = z0 + (z1 - z0) * i / n, A = a(z), B = b(z), bu = bulge(z);
+      const dx = B[0] - A[0], dy = B[1] - A[1], L = Math.hypot(dx, dy) || 1, nx = dy / L, ny = -dx / L;   // (out of the line from a to b)
+      for (let k = 0; k <= m; k++) { const t = k / m, sn = Math.sin(Math.PI * t) * bu; pos.push(A[0] + dx * t + nx * sn, A[1] + dy * t + ny * sn, z); }
+    }
+    for (let i = 0; i < n; i++) for (let k = 0; k < m; k++) { const p0 = i * (m + 1) + k, p1 = p0 + m + 1; idx.push(p0, p1, p0 + 1, p0 + 1, p1, p1 + 1); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
+    g.computeVertexNormals(); return g;
+  };
+  const mirrorX = (g, s) => { if (s > 0) return g; g.scale(-1, 1, 1); const ix = g.index.array; for (let i = 0; i < ix.length; i += 3) { const t = ix[i + 1]; ix[i + 1] = ix[i + 2]; ix[i + 2] = t; } g.computeVertexNormals(); return g; };
   for (const s of [1, -1]) {
-    const pod = [
-      { z: 0.64, w: 0.3, h: 0.28, y: 0.24, x: s * 0.56, top: 0.92 },
-      { z: 0.5, w: 0.38, h: 0.34, y: 0.15, x: s * 0.58, top: 0.86 },
-      { z: 0.1, w: 0.4, h: 0.36, y: 0.11, x: s * 0.57, top: 0.8 },
-      { z: -0.35, w: 0.35, h: 0.31, y: 0.11, x: s * 0.52, top: 0.76 },
-      { z: -0.8, w: 0.22, h: 0.24, y: 0.11, x: s * 0.41, top: 0.74 },
-      { z: -1.12, w: 0.12, h: 0.17, y: 0.11, x: s * 0.31, top: 0.8 },
-    ];
-    add(loft(pod, 1.9, 40, 8, true), MAT.blue);      // (squarer in section: a sculpted pod, not a tube)
-    // navy along the lower half of each pod, as the real car had
-    add(loft(pod.map((q) => ({ ...q, w: q.w + 0.012, h: q.h * 0.66 + 0.004, y: q.y - 0.004 })), 1.9, 40, 8, true), MAT.navy);
-    // yellow along the top of each pod, a white pinstripe below it
-    add(loft(pod.map((p) => ({ ...p, w: p.w * 0.72, h: 0.035, y: p.y + p.h - 0.02 })), 0.8, 20, 4, true), MAT.yellow);
-    // the radiator mouth: a dark rounded opening, with its lip
-    add(loft([{ z: 0.66, w: 0.25, h: 0.25, y: 0.265, x: s * 0.56 }, { z: 0.6, w: 0.25, h: 0.25, y: 0.265, x: s * 0.56 }], 1.1, 20, 1, false), MAT.dark, false);
-    // a chimney on top (hot air out), and the exhaust coming up through the pod's top
-    add(new THREE.CylinderGeometry(0.045, 0.05, 0.12, 12, 1, true).translate(s * 0.53, 0.56, -0.38), MAT.blue);
-    add(new THREE.CircleGeometry(0.044, 12).rotateX(-Math.PI / 2).translate(s * 0.53, 0.615, -0.38), MAT.dark, false);
-    add(new THREE.CylinderGeometry(0.055, 0.06, 0.1, 12, 1, true).rotateX(-0.6).translate(s * 0.3, 0.44, -1.05), MAT.exhaust);
-    add(new THREE.CircleGeometry(0.052, 12).rotateX(-Math.PI / 2 - 0.6).translate(s * 0.3, 0.48, -1.08), MAT.dark, false);
-    // the flip-ups in front of the back wheels, and a little "horn" winglet by the cockpit
-    add(box(0.16, 0.012, 0.12, s * 0.52, 0.42, -0.98, -0.25), MAT.carbon);
-    add(box(0.012, 0.12, 0.16, s * 0.6, 0.38, -0.98), MAT.carbon);
-    add(box(0.1, 0.01, 0.08, s * 0.4, 0.66, 0.24, -0.35, 0, -s * 0.4), MAT.carbon);
-    // bargeboards: tall curved carbon panels behind the front wheels, ahead of the pods
+    // the lower flank, floor to crease
+    add(mirrorX(strip(0.66, -1.12, 40, 4, (z) => [XB(z), 0.11], (z) => [XO(z), YC(z)]), s), MAT.navy);
+    // the top, crease up and over to the cover
+    add(mirrorX(strip(0.66, -1.12, 40, 10, (z) => [XO(z), YC(z)], (z) => [XI(z), YT(z)], BUL), s), MAT.blue);
+    // the mouth at the front: a dark opening inside a lip
+    { const z = 0.66, sh = new THREE.Shape();
+      sh.moveTo(XB(z), 0.11); sh.lineTo(XO(z), YC(z));
+      for (let k = 1; k <= 8; k++) { const t = k / 8, dx = XI(z) - XO(z), dy = YT(z) - YC(z), L = Math.hypot(dx, dy), b = Math.sin(Math.PI * t) * BUL(z); sh.lineTo(XO(z) + dx * t + dy / L * b, YC(z) + dy * t - dx / L * b); }
+      sh.lineTo(XI(z), 0.11); sh.lineTo(XB(z), 0.11);
+      const g = new THREE.ShapeGeometry(sh); if (s < 0) mirrorX(g, s);
+      add(g.translate(0, 0, z), MAT.dark, false);
+    }
+    // the gills, let into the flank below the crease
+    for (let k = 0; k < 5; k++) {
+      const z = -0.05 - k * 0.11, x = s * XO(z);
+      add(box(0.006, 0.12, 0.045, x + s * 0.002, 0.21, z, 0, s * 0.3, 0), MAT.dark, false);
+    }
+    // the chimney, sitting on the top's slope, and the exhaust out through the top further back
+    { const z = -0.42, t = 0.5, xx = XO(z) + (XI(z) - XO(z)) * t, yy = YC(z) + (YT(z) - YC(z)) * t + BUL(z);
+      add(new THREE.CylinderGeometry(0.045, 0.055, 0.12, 14, 1, true).translate(s * xx, yy + 0.04, z), MAT.blue);
+      add(new THREE.CircleGeometry(0.044, 14).rotateX(-Math.PI / 2).translate(s * xx, yy + 0.1, z), MAT.dark, false); }
+    { const z = -1.0, t = 0.65, xx = XO(z) + (XI(z) - XO(z)) * t, yy = YC(z) + (YT(z) - YC(z)) * t;
+      add(new THREE.CylinderGeometry(0.05, 0.058, 0.08, 14, 1, true).rotateX(-0.6).translate(s * xx, yy + 0.03, z), MAT.exhaust);
+      add(new THREE.CircleGeometry(0.048, 14).rotateX(-Math.PI / 2 - 0.6).translate(s * xx, yy + 0.06, z - 0.02), MAT.dark, false); }
+    // the flip-up: the crease runs back into it, ahead of the back wheel
+    { const z = -1.1, yc = YC(z);
+      add(box(0.24, 0.012, 0.14, s * (XO(z) + 0.1), yc + 0.005, z, -0.25), MAT.carbon);
+      add(box(0.012, 0.16, 0.2, s * (XO(z) + 0.22), yc + 0.02, z - 0.02), MAT.carbon);
+      add(box(0.012, 0.08, 0.3, s * (XO(z) + 0.005), yc - 0.03, z + 0.12), MAT.carbon); }
+    // the "horn" winglet by the cockpit, sitting on the top of the pod
+    { const z = 0.25, xx = XI(z) + 0.06, yy = YT(z) + 0.01;
+      add(box(0.012, 0.1, 0.12, s * xx, yy + 0.05, z), MAT.carbon);
+      add(box(0.12, 0.01, 0.08, s * (xx + 0.05), yy + 0.1, z, -0.35, 0, -s * 0.3), MAT.carbon); }
+    // bargeboards: tall curved carbon panels behind the front wheels, ahead of the pods, standing on the floor
     add(box(0.012, 0.3, 0.42, s * 0.46, 0.2, 0.98, 0, s * 0.18), MAT.carbon);
-    add(box(0.012, 0.18, 0.2, s * 0.38, 0.16, 1.25, 0, s * 0.3), MAT.carbon);
+    add(box(0.012, 0.18, 0.2, s * 0.38, 0.14, 1.25, 0, s * 0.3), MAT.carbon);
   }
   // --- THE AERO DETAILS of the time: shark gills down the sidepods'
-  // flanks (hot air out of the radiators), a fin along the engine cover,
-  // turning vanes under the nose, winglets everywhere air could be used
+  // flanks (hot air out of the radiators: with the pods, above), a fin
+  // along the engine cover, turning vanes under the nose, winglets
   for (const s of [1, -1]) {
-    // the gills: five angled slots, each with a lip, in the flank
-    for (let k = 0; k < 5; k++) {
-      const z = -0.08 - k * 0.1, x = s * (0.75 - k * 0.025);
-      add(box(0.012, 0.15, 0.05, x - s * 0.004, 0.33, z, 0, s * 0.35, 0), MAT.dark, false);
-      add(box(0.014, 0.16, 0.012, x + s * 0.004, 0.33, z + 0.03, 0, s * 0.35, 0), MAT.navy);
-    }
-    // a winglet on the mirror stalk, another low on the cockpit side
+    // a winglet on the mirror stalk
     add(box(0.12, 0.008, 0.06, s * 0.42, 0.64, 0.49, 0, 0, -s * 0.15), MAT.carbon);
-    add(box(0.008, 0.08, 0.18, s * 0.36, 0.48, 0.72, 0, s * 0.12, 0), MAT.carbon);
-    // turning vanes hanging under the nose, between the wing pylons and the front wheels
-    add(box(0.008, 0.12, 0.34, s * 0.16, 0.2, 1.75, 0, s * 0.08, 0), MAT.carbon);
-    // a little wing on top of the sidepod, just behind the mouth
-    add(box(0.16, 0.008, 0.08, s * 0.6, 0.56, 0.42, -0.2, 0, -s * 0.1), MAT.carbon);
+    // turning vanes, hanging from the underside of the nose down toward the floor's front
+    add(box(0.008, 0.16, 0.34, s * 0.15, 0.25, 1.75, 0, s * 0.08, 0), MAT.carbon);
   }
   // the fin along the engine cover's spine, from behind the airbox to the rear wing
   { const fin = new THREE.Shape(); fin.moveTo(-0.62, 0); fin.lineTo(-1.72, 0); fin.lineTo(-1.72, 0.2); fin.quadraticCurveTo(-1.2, 0.22, -0.62, 0.02); fin.lineTo(-0.62, 0);
