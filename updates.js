@@ -21,11 +21,18 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 125;
+export const BUILD = 126;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 108, date: '24 Nov 2026', title: 'TTF-05 fin and winglets',
+    items: [
+      ['A fin you can see', 'The TTF-05\'s fin now rises out of the engine cover behind the airbox and sweeps up and back to meet the rear wing', 'update'],
+      ['Winglets on the car', 'The winglets beside the cockpit now stand on the bodywork, their pillars set into it, instead of hovering above or sinking in', 'fix'],
+    ],
+  },
   {
     id: 107, date: '24 Nov 2026', title: 'Watch where you drive',
     items: [

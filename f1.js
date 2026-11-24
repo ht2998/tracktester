@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 52;
+export const BUILD = 53;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -746,7 +746,15 @@ export function buildF05Body(car, addPanel) {
   };
   const upper = (z) => sample(z > 0.67 ? secA(z) : secB(z)).map((p) => [p[0], p[1], z]);
   // (the height of the skin's top at x across, at z along: so parts sit right on it)
-  const surfY = (z, x) => { let b = null; for (const p of upper(z)) if (p[1] > ycr(z) + 0.04 && (!b || Math.abs(p[0] - x) < Math.abs(b[0] - x))) b = p; return b ? b[1] : 0.5; };
+  const surfY = (z, x) => {
+    // (along the top of the section, middle outward, to where it passes over x)
+    const u = upper(z);
+    for (let i = 0; i < u.length - 1; i++) {
+      const a = u[i], b = u[i + 1];
+      if ((a[0] - x) * (b[0] - x) <= 0 && a[0] !== b[0]) return a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0]);
+    }
+    return u[0][1];
+  };
   // (a flat plate cut to an outline drawn from the side: [z, y] points; at x across)
   const plate = (pts, x, t = 0.012) => { const sh = new THREE.Shape(); sh.moveTo(pts[0][0], pts[0][1]); for (const q of pts.slice(1)) sh.lineTo(q[0], q[1]);
     return new THREE.ExtrudeGeometry(sh, { depth: t, bevelEnabled: false, curveSegments: 4 }).translate(0, 0, -t / 2).rotateY(-Math.PI / 2).translate(x, 0, 0); };
@@ -824,9 +832,10 @@ export function buildF05Body(car, addPanel) {
       add(mirrorX(box(0.012, 0.17, 0.22, xo(z) + 0.24, y + 0.03, z - 0.02), s), MAT.carbon);
       add(mirrorX(box(0.012, 0.09, 0.4, xo(z) + 0.004, y - 0.035, z + 0.18), s), MAT.carbon); }
     // the "horn" winglet on the pod's top beside the cockpit
-    { const z = 0.28, x = 0.42, y = upper(z).reduce((m, p) => (Math.abs(p[0] - x) < Math.abs(m[0] - x) ? p : m))[1];
-      add(mirrorX(box(0.012, 0.12, 0.12, x, y + 0.06, z), s), MAT.carbon);
-      add(mirrorX(box(0.14, 0.01, 0.08, x + 0.06, y + 0.12, z, -0.35, 0, -0.3), s), MAT.carbon); }
+    // (its pillar standing on the bodywork, a little into it; the wing across its top)
+    { const z = 0.3, x = 0.44, y = surfY(z, x);
+      add(mirrorX(plate([[z + 0.07, y - 0.02], [z + 0.05, y + 0.12], [z - 0.07, y + 0.13], [z - 0.08, y - 0.02]], x, 0.012), s), MAT.carbon);
+      add(mirrorX(box(0.16, 0.012, 0.11, x + 0.05, y + 0.13, z, -0.3, 0, -0.25), s), MAT.carbon); }
     // bargeboards: tall curved carbon panels behind the front wheels, on the floor
     // (the big one: tall at the front, its top sweeping down and back to the pod's mouth, a slot cut in it)
     add(mirrorX(plate([[1.22, 0.11], [1.24, 0.3], [1.16, 0.4], [1.0, 0.43], [0.84, 0.36], [0.74, 0.22], [0.72, 0.11]], 0.46), s), MAT.carbon);
@@ -859,9 +868,12 @@ export function buildF05Body(car, addPanel) {
   add(loft([{ z: 0.0, w: 0.17, h: 0.13, y: 0.79 }, { z: -0.06, w: 0.17, h: 0.13, y: 0.79 }], 1.2, 20, 1, false), MAT.dark, false);
   add(box(0.1, 0.06, 0.16, 0, 1.05, -0.2), MAT.camera);                       // (the camera pod)
   // a little fin along the cover's spine, behind the airbox
-  { const g = new THREE.BoxGeometry(0.012, 1, 1, 1, 1, 12); const P = g.attributes.position;
-    if (P && P.count > 0) for (let i = 0; i < P.count; i++) { const v = P.getZ(i) + 0.5, z = -0.75 - v * 0.95, h = 0.06 + v * 0.08; P.setXYZ(i, P.getX(i), yTop(z) - 0.01 + (P.getY(i) + 0.5) * h, z); }
-    g.computeVertexNormals(); add(g, MAT.blue); }
+  // (rising out of the cover behind the airbox and sweeping up and back to
+  // meet the rear wing: its root sunk into the cover, its top a straight line)
+  { const pts = [], N = 14;
+    for (let i = 0; i <= N; i++) { const z = -0.7 - i / N * 0.95; pts.push([z, yTop(z) - 0.025]); }
+    pts.push([-1.65, 0.75], [-0.7, yTop(-0.7) + 0.02]);
+    add(plate(pts, 0, 0.018), MAT.blue); }
   // the gearbox at the back, its rain light, the floor, the plank, the diffuser and its fences
   add(box(0.2, 0.18, 0.36, 0, 0.22, -1.9), MAT.carbon);
   add(box(0.07, 0.04, 0.03, 0, 0.27, -2.1), MAT.rain);
