@@ -26,7 +26,7 @@
 // a smashed radiator): the team retire the car. DNF on the standings, and
 // they push it back into the garage.
 // =====================================================================
-export const BUILD = 21;
+export const BUILD = 22;
 
 import * as THREE from 'three';
 
@@ -458,7 +458,9 @@ export class Person {
         const [tx, tz] = a.go, dx = tx - this.x, dz = tz - this.z, d = Math.hypot(dx, dz);
         // (a stumble: lurching steps, quick then nearly stopping, never a steady pace)
         const lurch = a.stagger ? Math.max(0, Math.sin(this.t * 3.3) + 0.35 * Math.sin(this.t * 7.9 + 1)) : 0;
-        const v = (a.stagger ? 0.25 + 1.1 * lurch : a.panic ? 5.6 : a.run ? 4.6 : a.back ? 1.1 : (a.v || 1.6)) * this.gait.spd;
+        let v = (a.stagger ? 0.25 + 1.1 * lurch : a.panic ? 5.6 : a.run ? 4.6 : a.back ? 1.1 : (a.v || 1.6)) * this.gait.spd;
+        // (limping: slow, and slower still each time his weight's on the bad leg)
+        if (this.hurt?.limp) { const onBad = Math.max(0, (this.hurt.limp === 'L' ? -1 : 1) * Math.sin(this.phase)); v = Math.min(v, 0.9) * (0.35 + 0.65 * (1 - onBad)); }
         this.panic = !!a.panic; this.stagger = !!a.stagger;
         if (d < 0.04) { this.x = tx; this.z = tz; this.queue.shift(); continue; }
         const step = Math.min(d, v * dt);
@@ -543,6 +545,32 @@ export class Person {
       this.shL.rotation.x -= (0.35 + buckle * 0.6) * S; this.shR.rotation.x -= (0.3 + buckle * 0.5) * S;     // (reaching out as he goes down)
       this.elL.rotation.x -= 0.4 * S; this.elR.rotation.x -= 0.35 * S;
     } else this.torso.rotation.z = 0;
+    // HURT: how an injury shows as he moves. limp: the bad leg kept stiff
+    // and the body dipping and rolling onto it each time it takes his
+    // weight; arm: held across his chest by the other hand; neck: a hand
+    // on the back of his neck, head held stiff; chest: both arms wrapped
+    // round his ribs, bent over them
+    if (this.hurt && !this.keyed) {
+      const H = this.hurt, M = this.moving;
+      if (H.limp) {
+        const bad = H.limp === 'L', th = bad ? this.thL : this.thR, kn = bad ? this.knL : this.knR;
+        const onBad = Math.max(0, (bad ? -1 : 1) * Math.sin(this.phase)) * M;
+        kn.rotation.x *= 0.15; th.rotation.x *= 0.45;
+        this.hips.position.y -= 0.06 * onBad;
+        this.root.rotation.z += (bad ? 1 : -1) * 0.12 * onBad;
+        this.torso.rotation.z -= (bad ? 1 : -1) * 0.1 * onBad;
+      }
+      if (H.arm) {
+        const L = H.arm === 'L';
+        (L ? this.shL : this.shR).rotation.set(-0.45, 0, (L ? -1 : 1) * 0.3); (L ? this.elL : this.elR).rotation.x = -1.95;     // (the hurt one, tucked in)
+        (L ? this.shR : this.shL).rotation.set(-0.75, 0, (L ? 1 : -1) * 0.55); (L ? this.elR : this.elL).rotation.x = -1.7;     // (the good one holding it)
+      }
+      if (H.neck) { this.shR.rotation.set(-2.7, 0, -0.35); this.elR.rotation.x = -2.25; this.head.rotation.x = -0.05; this.head.rotation.z = 0.08; }
+      if (H.chest) {
+        this.shL.rotation.set(-0.85, 0, -0.5); this.elL.rotation.x = -1.95; this.shR.rotation.set(-0.8, 0, 0.55); this.elR.rotation.x = -1.9;
+        this.torso.rotation.x += 0.3; this.head.rotation.x += 0.25;
+      }
+    }
     // (the legs swung out sideways from the hips, the body kept upright over the hands)
     this.hips.rotation.z = p.hipRoll || 0;
     this.torso.rotation.z -= (p.hipRoll || 0) * 0.9;
@@ -580,6 +608,16 @@ function vaultKeys(from, to, h) {
 // pushed up to stand on the seat, one leg over the side, then the other,
 // and down beside it. seat: [x, z], out: [x, z] (beside the car, on the
 // side he's getting out), hipY: how high the seat is, hurry: 0 (dazed) - 1 (on fire)
+// A marshal's axe, to cut a trapped driver free: a long handle, a red head
+export function makeAxe() {
+  const g = new THREE.Group();
+  const wood = new THREE.MeshStandardMaterial({ color: 0x8a5a2e, roughness: 0.8 }), red = new THREE.MeshStandardMaterial({ color: 0xc81d25, roughness: 0.5, metalness: 0.4 }), steel = new THREE.MeshStandardMaterial({ color: 0xc9ccd0, roughness: 0.3, metalness: 0.9 });
+  const h = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, 0.85, 8).translate(0, -0.3, 0), wood); h.castShadow = true; g.add(h);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.09, 0.16).translate(0, -0.72, 0.06), red); head.castShadow = true; g.add(head);
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.1, 0.04).translate(0, -0.72, 0.15), steel));
+  return g;
+}
+
 export function climbOutKeys(seat, out, hipY = 0.35, hurry = 0.5) {
   const s = 1.6 - hurry * 0.75;                      // (slower if he's dazed)
   const sx = out[0] - seat[0], sz = out[1] - seat[1];

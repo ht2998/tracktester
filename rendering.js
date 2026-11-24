@@ -35,7 +35,7 @@ import { setGround, groundAt, lieOnGround } from './ground.js';
 import * as packFile from './assets.js';
 import { AIField, BUILD as AI_BUILD } from './ai.js';
 import { Garage, BUILD as GARAGE_BUILD } from './garage.js';
-import { PitStop, SEPANG_PIT, Person as PersonFigure, climbOutKeys, BUILD as PITS_BUILD } from './pits.js';
+import { PitStop, SEPANG_PIT, Person as PersonFigure, climbOutKeys, makeAxe, BUILD as PITS_BUILD } from './pits.js';
 import { RaceControl, BUILD as RACECONTROL_BUILD } from './racecontrol.js';
 import { buildF1Body, buildF05Body, bodyForKind, WHEEL_LAYOUT, buildF1Cockpit, buildF1RimGeometry, tyreGeometry, F1_CAR, CATERHAM_CAR, ENGINES, withEngine, STOCK_ENGINE, specForKind, BUILD as F1_BUILD } from './f1.js';
 import * as groundFile from './ground.js';
@@ -60,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 97;
+const BUILD = 98;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -3001,7 +3001,8 @@ function collide(now) {
       lastCrashAt = now;
       if (hitSpeed > 12) crashFlash = 1.5;      // (the marshals near it flinch)
       if (hitSpeed > 30 && teleportGrace <= 0 && !physics.damageOff) raceControl?.medical?.({ x: physics.x, z: physics.z });   // (a big one: the medical car's sent)
-      if (teleportGrace <= 0 && !physics.damageOff) noteBigHit(hitSpeed);
+      if (teleportGrace <= 0 && !physics.damageOff) noteBigHit(hitSpeed, zone);
+      headKick(hitSpeed, zone);                                   // (his head thrown by the hit)
       physics.crashHit({ zone, speed: hitSpeed, along, across });
       // Dent the body where it struck (on the bodywork, not the wheel
       // that may have touched first), pushed in the way the wall pushed
@@ -3702,7 +3703,8 @@ function updateCamera(dt) {
       if (f1View && cameraMode === 'cockpit') camera.position.add(f1Cockpit.head);   // (his head thrown about as he fights the car)
       carModel.car.localToWorld(camera.position);
       carModel.car.getWorldQuaternion(carTurn);
-      lookEuler.set((heavyMode && cameraMode === 'bonnet' ? -0.05 : f1View ? f1View.pitch : mount.pitch) + look.pitch, Math.PI + look.yaw, 0);   // the camera looks along -z; the car faces +z
+      const inHead = !heavyMode && cameraMode === 'cockpit' && !driverOut;        // (from his eyes: tipped with his head)
+      lookEuler.set((heavyMode && cameraMode === 'bonnet' ? -0.05 : f1View ? f1View.pitch : mount.pitch) + look.pitch - (inHead ? headG.pitch * 0.5 : 0), Math.PI + look.yaw, inHead ? -headG.roll * 0.55 : 0);   // the camera looks along -z; the car faces +z
       camera.quaternion.copy(carTurn).multiply(lookTurn.setFromEuler(lookEuler));
     }
   } else {
@@ -4105,6 +4107,7 @@ function updateExplosion(dt) {
     }
   }
   updateDriverEscape(dt);
+  updateHeadG(dt);
   updateDeath(dt);
   updateWasherParty(dt);
 }
@@ -4126,12 +4129,49 @@ const driverMats = {
   glove: new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.7 }),
   boot: new THREE.MeshStandardMaterial({ color: 0x18191b, roughness: 0.6 }),
 };
+const marshalMats = {
+  look: 'marshal',
+  suits: [new THREE.MeshStandardMaterial({ color: 0xff7a12, roughness: 0.75 })],
+  helmet: driverMats.helmet, visor: driverMats.visor,
+  glove: new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.7 }), boot: driverMats.boot,
+};
 function driverInCar(show) {
   if (IS_F1) { for (const m of carModel.car.userData.f1?.helmet || []) m.visible = show && cameraMode !== 'cockpit' && !WASHER; for (const m of f1Cockpit?.driverParts || []) m.visible = show && !WASHER; }
   else if (cockpit.driver) cockpit.driver.visible = show;
 }
 // (collide() tells this how hard the last big hit was)
-function noteBigHit(v) { if (v > bigHit || bigHitT > 6) bigHit = v; bigHitT = 0; }
+let bigHitZone = 'front';
+function noteBigHit(v, zone = 'front') { if (v > bigHit || bigHitT > 6) { bigHit = v; bigHitZone = zone; } bigHitT = 0; }
+
+// HIS HEAD UNDER G: thrown forward under braking, back under power, out to
+// the side in a corner, and snapped about by a hit (whiplash), on a
+// springy neck. Seen on his helmet from outside and in the cockpit view.
+const headG = { pitch: 0, roll: 0, vp: 0, vr: 0, lastVx: 0, pivot: null };
+function headKick(v, zone) {
+  if (v < 3) return;
+  const k = Math.min(9, v * 0.18);
+  if (zone === 'front') headG.vp += k; else if (zone === 'rear') headG.vp -= k * 1.3;       // (a hit from behind: the worst whiplash)
+  else headG.vr += zone === 'left' ? -k : k;
+}
+const _hq = new THREE.Quaternion(), _he = new THREE.Euler(), _hp = new THREE.Vector3();
+function updateHeadG(dt) {
+  if (dt <= 0) return;
+  const along = (physics.vx - headG.lastVx) / dt; headG.lastVx = physics.vx;
+  const lat = physics.vx * physics.yawRate;
+  const tp = Math.max(-0.38, Math.min(0.38, -along * 0.0065)), tr = Math.max(-0.32, Math.min(0.32, lat * 0.0065));
+  const K = 70, D = 9;
+  headG.vp += ((tp - headG.pitch) * K - headG.vp * D) * dt; headG.pitch += headG.vp * dt;
+  headG.vr += ((tr - headG.roll) * K - headG.vr * D) * dt; headG.roll += headG.vr * dt;
+  headG.pitch = Math.max(-0.7, Math.min(0.7, headG.pitch)); headG.roll = Math.max(-0.6, Math.min(0.6, headG.roll));
+  // the helmet, turned about his neck
+  const H = carModel.car.userData.f1?.helmet;
+  if (H?.length) {
+    if (!headG.pivot) { const b = new THREE.Box3(); for (const m of H) { m.geometry.computeBoundingBox?.(); if (m.geometry.boundingBox) b.union(m.geometry.boundingBox); } headG.pivot = b.isEmpty() ? new THREE.Vector3(0, 0.62, 0) : new THREE.Vector3((b.min.x + b.max.x) / 2, b.min.y - 0.02, (b.min.z + b.max.z) / 2); }
+    _hq.setFromEuler(_he.set(headG.pitch, 0, headG.roll));
+    _hp.copy(headG.pivot).applyQuaternion(_hq);
+    for (const m of H) { m.quaternion.copy(_hq); m.position.copy(headG.pivot).sub(_hp); }
+  }
+}
 // the way to go on foot, round things and over barriers (race control knows how)
 const footTo = (from, to, opts) => raceControl?.footPath ? raceControl.footPath(from, to, opts) : [{ go: to, ...opts }];
 function updateDriverEscape(dt) {
@@ -4162,7 +4202,58 @@ function updateDriverEscape(dt) {
     const hipY = IS_F1 ? 0.3 : 0.62;
     // (sat still in it for a moment first, then out)
     const climb = (hurry, still = 0) => { const K = climbOutKeys([seat.x, seat.z], over, hipY, hurry); if (still) { K.forEach((f) => { f.t += still; }); K.unshift({ ...K[0], t: 0 }); } return { keys: K, after: 'STAND' }; };
-    if (how === 'fire') {
+    // WHAT THE CRASH DID TO HIM: picked from how hard it was and which way
+    const pick = (opts) => { let tot = 0; for (const [, w] of opts) tot += w; let x = Math.random() * tot; for (const [n, w] of opts) { x -= w; if (x <= 0) return n; } return opts[0][0]; };
+    const front = bigHitZone === 'front', side = bigHitZone === 'left' || bigHitZone === 'right', rear = bigHitZone === 'rear';
+    const inj = how === 'fire' ? (Math.random() < 0.45 ? 'burns' : 'fire')
+      : how === 'hurt' ? pick([['out', 3], ['trapped', front ? 4 : 0.6], ['spine', 1], ['down', 2], ['leg', front ? 3 : 1], ['chest', side ? 3 : 1]])
+      : pick([['shaken', 3], ['cuts', 2], ['leg', front ? 2 : 0.5], ['arm', 1.5], ['neck', rear ? 4 : 0.6], ['concussion', 2], ['chest', side ? 2 : 0.4]]);
+    // (sat in the car, as he is when it stops)
+    const seatPose = { drop: 0.95 - hipY, lean: -0.15, thL: 1.5, thR: 1.5, knL: 0.25, knR: 0.25, shL: 1.15, shR: 1.15, elL: 0.6, elR: 0.6 };
+    const inSeat = (poses, every = 0.7, cycles = 1) => { const K = []; let t = 0; for (let c = 0; c < cycles; c++) for (const p of poses) { K.push({ t, pose: { ...seatPose, ...p }, at: [seat.x, seat.z] }); t += every; } return K; };
+    const later = { ready: false };
+    if (inj === 'out' || inj === 'spine') {
+      // knocked out (or not daring to move, his back hurt): slumped in the seat, still. The medics get him out
+      const slump = inj === 'out' ? { lean: 0.35, head: 0.85, shL: 0.2, shR: 0.15, elL: 0.3, elR: 0.25, outL: 0.25, outR: 0.2, knL: 0.35 } : { head: 0.05, lean: -0.1 };
+      person.run([{ keys: inSeat([slump, slump], 600), after: 'LIE' }]);
+      later.ready = true;
+    } else if (inj === 'trapped') {
+      // trapped: the front folded round his legs. He fights to get out and can't; a marshal runs over with an axe and cuts him free
+      const twistA = { lean: 0.25, roll: 0.15, shL: 0.1, outL: 0.6, shR: 0.1, outR: 0.6, elL: 0.05, elR: 0.05, head: 0.2 }, twistB = { lean: 0.45, roll: -0.15, shL: 1.0, shR: 0.3, outR: 0.7, elL: 0.3, elR: 0.1, head: 0.4 };
+      person.run([{ keys: inSeat([twistA, twistB, { lean: 0.1, head: -0.1, shL: 0.4, shR: 0.4, elL: 0.8, elR: 0.8 }], 0.55, 40), after: 'STAND' }]);
+      const axe = makeAxe();
+      const m = new PersonFigure(marshalMats, 0); scene.add(m.root); m.hold(axe, 'hand');
+      const from = [seat.x + ax * 28 + Math.sin(physics.heading) * 8, seat.z + az * 28 + Math.cos(physics.heading) * 8], at = clear(1.15);
+      m.place(from[0], from[1], 0);
+      const up = { shR: 2.9, elR: 0.4, shL: 2.6, elL: 0.5, lean: -0.15 }, down = { shR: 0.8, elR: 0.1, shL: 0.8, elL: 0.15, lean: 0.55, drop: 0.12 };
+      const chops = []; for (let k = 0; k < 7; k++) chops.push({ t: k * 0.75, pose: up }, { t: k * 0.75 + 0.3, pose: down });
+      m.run([...footTo(from, at, { run: true }), { face: [seat.x, seat.z] }, { keys: chops, after: 'STAND' },
+        { fn: () => {
+          // free: out he climbs, slowly, and limps clear
+          person.hurt = { limp: Math.random() < 0.5 ? 'L' : 'R' };
+          person.run([climb(0, 0.3), ...footTo(over, clear(5), { v: 0.9 }), { face: [seat.x, seat.z] }, { pose: 'SIT', t: 2 }, { pose: 'SIT_HEAD' }, { fn: () => { later.ready = true; } }]);
+        } },
+        { go: clear(2.4), back: true }, { face: [seat.x, seat.z] }, { pose: 'STAND' }]);
+      later.marshal = m;
+      showToast('THE DRIVER\'S TRAPPED: A MARSHAL\'S ON HIS WAY');
+    } else if (inj === 'leg' || inj === 'arm' || inj === 'neck' || inj === 'chest') {
+      // hurt but walking: out carefully, then off to the side holding himself (or limping), and down
+      person.hurt = inj === 'leg' ? { limp: Math.random() < 0.5 ? 'L' : 'R' } : { [inj]: inj === 'arm' ? (Math.random() < 0.5 ? 'L' : 'R') : true };
+      person.run([climb(0.1, 0.8), ...footTo(over, clear(inj === 'leg' ? 5 : 7), { v: inj === 'chest' ? 0.8 : 1.1 }), { face: [seat.x, seat.z] },
+        ...(inj === 'chest' ? [{ pose: 'HUNCH', t: 1.5 }, { pose: 'KNEEL', t: 1.2 }] : []), { pose: 'SIT', t: 1.5 }, { pose: inj === 'neck' || inj === 'chest' ? 'SIT_HEAD' : 'SIT' }, { fn: () => { later.ready = true; } }]);
+    } else if (inj === 'cuts') {
+      // cut and shaken: out, a few steps, and he drops to the ground
+      person.run([climb(0.4, 0.5), { go: clear(3.2), v: 1.4 }, { pose: 'HUNCH', t: 0.4 },
+        { keys: [{ t: 0, pose: 'HUNCH' }, { t: 0.35, pose: { drop: 0.5, lean: 0.7, thL: 0.2, knL: 1.6, thR: 0.25, knR: 1.6, shL: 1.1, shR: 1.1, elL: 0.1, elR: 0.1, head: 0.4 } }, { t: 1.1, pose: 'SIT' }], after: 'SIT' },
+        { pose: 'SIT_HEAD', t: 4 }, { pose: 'SIT' }, { fn: () => { later.ready = true; } }]);
+    } else if (inj === 'concussion') {
+      // dazed: slow getting out, wandering unsteadily, then sits down, head in his hands
+      person.run([climb(0, 1.6), { go: clear(2.5), stagger: true }, { go: clear(4.5), stagger: true }, { face: [seat.x, seat.z] }, { pose: 'SIT', t: 1.2 }, { pose: 'SIT_HEAD' }, { fn: () => { later.ready = true; } }]);
+    } else if (inj === 'burns') {
+      // burnt: out and running from the fire, then down onto the ground, rolling, and lying still
+      person.run([climb(1), ...footTo(over, clear(12), { run: true, panic: true }),
+        { keys: [{ t: 0, pose: 'HUNCH' }, { t: 0.5, pose: 'FALL' }, { t: 1.2, pose: 'PRONE' }, { t: 1.9, pose: 'LIE' }, { t: 2.6, pose: 'PRONE' }, { t: 3.3, pose: 'LIE' }], after: 'LIE' }, { fn: () => { later.ready = true; } }]);
+    } else if (how === 'fire') {
       person.run([
         climb(1),                                                            // up, out over the side, quick
         ...footTo(over, clear(17), { run: true, panic: true }),              // and away from the fire, fast
@@ -4206,18 +4297,25 @@ function updateDriverEscape(dt) {
         ], after: 'LIE' },
       ]);
     }
-    driverOut = { person, t: 0, kind: how };
+    driverOut = { person, t: 0, kind: how, inj, later };
     driverInCar(false);
     if (cameraMode === 'cockpit' || cameraMode === 'bonnet') { cameraMode = 'chase'; applyCamera(); }
-    showToast(how === 'hurt' ? 'THE DRIVER\'S DOWN: MEDICS ON THEIR WAY' : 'THE DRIVER\'S OUT');
+    const SAY = { out: 'THE DRIVER\'S UNCONSCIOUS', spine: 'THE DRIVER CAN\'T MOVE: A SUSPECTED BACK INJURY', trapped: null, leg: 'THE DRIVER\'S HURT HIS LEG', arm: 'THE DRIVER\'S HURT HIS ARM', neck: 'WHIPLASH: THE DRIVER\'S HOLDING HIS NECK', chest: 'THE DRIVER\'S HURT HIS RIBS', cuts: 'THE DRIVER\'S CUT AND SHAKEN', concussion: 'THE DRIVER\'S CONCUSSED', burns: 'THE DRIVER\'S BURNT' };
+    if (SAY[inj] !== null) showToast(SAY[inj] ? SAY[inj] + ': MEDICS ON THEIR WAY' : how === 'hurt' ? 'THE DRIVER\'S DOWN: MEDICS ON THEIR WAY' : 'THE DRIVER\'S OUT');
     raceControl?.medical?.({ x: seat.x, z: seat.z });
   }
   if (driverOut && !driverOut.gone) { driverOut.t += dt; driverOut.person.update(dt, driverOut.ground || groundAt); }
+  if (driverOut?.later?.marshal) driverOut.later.marshal.update(dt, groundAt);
 }
 // the medics with him (race control asks): a stretcher for a hurt one
 const driverHooks = {
   // (the medics come to him once he's settled: lying still, or sat down)
-  casualty: () => (driverOut && !driverOut.gone && driverOut.t > 4 && (driverOut.kind === 'hurt' ? !driverOut.person.busy : /SIT/.test(driverOut.person.want)) ? { person: driverOut.person, hurt: driverOut.kind === 'hurt' } : null),
+  casualty: () => {
+    if (!driverOut || driverOut.gone || driverOut.t < 4) return null;
+    const inj = driverOut.inj, onStretcher = ['out', 'spine', 'down', 'burns', 'chest', 'trapped', 'leg'].includes(inj) || (driverOut.kind === 'hurt' && !inj);
+    const ready = driverOut.later?.ready || (driverOut.kind === 'hurt' ? !driverOut.person.busy : /SIT/.test(driverOut.person.want));
+    return ready ? { person: driverOut.person, hurt: onStretcher } : null;
+  },
   people: () => (driverOut && !driverOut.gone ? [driverOut.person] : []),
   onStretcher: (st) => {
     if (!driverOut) return;
@@ -4288,7 +4386,7 @@ function clearWasherParty() {
 }
 function clearDriverOut() {
   clearWasherParty();
-  if (driverOut) { scene.remove(driverOut.person.root); driverOut = null; }
+  if (driverOut) { scene.remove(driverOut.person.root); if (driverOut.later?.marshal) scene.remove(driverOut.later.marshal.root); driverOut = null; }
   burnStill = 0; bigHit = 0; driverDead = false;
   driverInCar(true);
   setDeathScreen(false);
