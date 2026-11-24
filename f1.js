@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 56;
+export const BUILD = 57;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -892,8 +892,8 @@ export function buildF05Body(car, addPanel) {
   { const pts = [], N = 14;
     // (its top edge carrying on the line of the airbox's top, out of the back of it)
     for (let i = 0; i <= N; i++) { const z = -0.35 - i / N * 1.3; pts.push([z, yTop(z) - 0.025]); }
-    pts.push([-1.65, 0.75], [-0.35, 0.84]);
-    add(plate(pts, 0, 0.018), MAT.blue); }
+    pts.push([-1.65, 0.8], [-0.35, 0.86]);
+    add(plate(pts, 0, 0.02), MAT.navy); }     // (navy, like the wing it runs into)
   // the yellow carried on from the tub: a line down each side of the
   // airbox and along the engine cover's edge to the back, laid on the skin
   { const stripe = MAT.yellow.clone(); stripe.side = THREE.DoubleSide;
