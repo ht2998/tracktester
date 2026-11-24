@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 66;
+export const BUILD = 67;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -923,7 +923,7 @@ export function buildF05Body(car, addPanel) {
         for (const t of [-1, 0, 1]) { const xx = x + t * w / 2; row.push([sx * xx, surfY(z, xx) + 0.008, z]); }
         rows.push(row);
       }
-      const m = new THREE.Mesh(grid(rows, 2), stripe); m.receiveShadow = true; car.add(m); addPanel(m);
+      const m = new THREE.Mesh(grid(rows, 2), stripe); m.receiveShadow = true; m.renderOrder = 2; car.add(m); addPanel(m);
     } }
   // the horns: a slanted winglet each side, rooted on the cover right
   // beside the airbox's mouth and rising diagonally up and out over the pod

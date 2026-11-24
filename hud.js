@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 16;
+export const BUILD = 17;
 
 const COLORS = {
   face: '#15181c',
@@ -721,7 +721,7 @@ function roundRect(g, x, y, w, h, r) {
 export class Hud {
   constructor({ redline, maxSpeed = 240, onTransmission, onAssist, onTyres, tyreOptions = {}, compact = false,
                 timeSpeeds = [60], onSky = {}, onWhatsNew = null, track = 'test', onTrack = null,
-                damageOn = true, onDamage = null, onEngine = null, onCode = null }) {
+                damageOn = true, onDamage = null, onEngine = null, onCode = null, clearView = null, onClear = null }) {
     this.timeSpeeds = timeSpeeds;
     this.onSky = onSky;
     this.onTyres = onTyres;
@@ -858,6 +858,18 @@ export class Hud {
     const damageInput = damageBox.querySelector('input');
     damageInput.checked = damageOn;
     damageInput.addEventListener('change', () => { onDamage?.(damageInput.checked); damageInput.blur(); });
+
+    // Clear / solid: see through the bodywork to the chassis inside (only on cars that have their insides built)
+    let clearBox = null;
+    if (clearView != null) {
+      clearBox = document.createElement('div');
+      clearBox.className = 'tyre-box';
+      clearBox.innerHTML = `<label class="tw-check"><input type="checkbox" id="clear-toggle"> Clear bodywork</label>`
+        + `<span class="gb-note">Ticked: clear, to see the chassis, engine and cockpit inside. Unticked: solid</span>`;
+      const ci = clearBox.querySelector('input');
+      ci.checked = !!clearView;
+      ci.addEventListener('change', () => { onClear?.(ci.checked); ci.blur(); });
+    }
 
     // Codes: typed in here (works with a phone's keyboard too)
     const codeBox = document.createElement('div');
@@ -1005,7 +1017,7 @@ export class Hud {
     newsBtn.textContent = "What's new";
     newsBtn.addEventListener('click', () => { newsBtn.blur(); onWhatsNew?.(); });
 
-    panel.append(trackHeading, trackBox, gearHeading, gearGroup, assistHeading, ...assistButtons, damageBox, tyreHeading, tyreBox, engineHeading, engineBox, skyHeading, skyBox, codeBox, newsBtn);
+    panel.append(trackHeading, trackBox, gearHeading, gearGroup, assistHeading, ...assistButtons, damageBox, ...(clearBox ? [clearBox] : []), tyreHeading, tyreBox, engineHeading, engineBox, skyHeading, skyBox, codeBox, newsBtn);
     this.side.append(handle, panel);
     document.body.appendChild(this.side);
 
