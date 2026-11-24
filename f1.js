@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 59;
+export const BUILD = 60;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -954,6 +954,26 @@ export function buildF05Body(car, addPanel) {
       const rp = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.2).rotateY(sx * Math.PI / 2).translate(sx * 0.479, 0.74, -1.77), plate); rp.renderOrder = 2; wingDecals.push([rp, 'rear']);
       const fp = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.15).rotateY(sx * Math.PI / 2).translate(sx * 0.724, 0.19, 2.46), decal('VELTRIS', '#ffffff', 'diamond', 512, 256)); fp.renderOrder = 2; wingDecals.push([fp, sx > 0 ? 'fl' : 'fr']);
     }
+    // and the rest of them: the title sponsor along the engine cover and
+    // across the rear wing, the others on the pods' tops, the nose, the
+    // cockpit's sides, the airbox, the front wing
+    const navyInk = '#15214e', title = decal('ZEPHRA', navyInk, 'diamond'), pods = decal('HALDEN', navyInk, 'ring');
+    const noseTop = decal('TERAVO', navyInk, 'ring'), pit = decal('QUANTEX', navyInk, 'diamond', 512, 128), box2 = decal('NOVIK', '#ffffff', 'ring', 512, 160);
+    for (const sx of [1, -1]) {
+      onSkin(secB, -1.0, -1.58, 2 * S, 3 * S + 2, title, sx);           // (the cover's flank, behind the gills)
+      onSkin(secB, 0.48, -0.2, 2 * S, 3 * S, pods, sx);                   // (the pod's top, ahead of the gills)
+      onSkin(secA, 2.25, 1.62, S + 1, 2 * S, noseTop, sx);                // (the nose's shoulders)
+      onSkin(secB, 0.62, 0.28, S, 2 * S - 1, pit, sx);                    // (the cockpit's side)
+      // the airbox's sides
+      const ab = new THREE.Mesh(new THREE.PlaneGeometry(0.26, 0.08).rotateY(sx * Math.PI / 2).translate(sx * 0.163, 0.9, -0.58), box2); ab.renderOrder = 2; car.add(ab);
+      // the front wing's main plane, on top
+      const fw = new THREE.Mesh(new THREE.PlaneGeometry(0.36, 0.09).rotateX(-Math.PI / 2).rotateY(Math.PI).rotateX(0.06).translate(sx * 0.45, 0.108, 2.6), decal('ARDENTA', '#15214e', 'diamond', 512, 128));
+      fw.renderOrder = 2; wingDecals.push([fw, sx > 0 ? 'fl' : 'fr']);
+    }
+    // the title across the rear wing's top flap, read from behind
+    { const n = new THREE.Vector3(0, Math.cos(0.5), Math.sin(0.5)).multiplyScalar(0.011);
+      const rw = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.15).rotateX(-Math.PI / 2).rotateY(Math.PI).rotateX(0.5).translate(n.x, 0.82 + n.y, -1.85 + n.z), decal('ZEPHRA', '#ffffff', 'diamond'));
+      rw.renderOrder = 2; wingDecals.push([rw, 'rear']); }
   }
   // the gearbox at the back, its rain light, the floor, the plank, the diffuser and its fences
   add(box(0.2, 0.18, 0.36, 0, 0.22, -1.9), MAT.carbon);
