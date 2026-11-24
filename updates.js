@@ -21,11 +21,19 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 129;
+export const BUILD = 130;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 110, date: '24 Nov 2026', title: 'TTF-05 cockpit and underside',
+    items: [
+      ['A proper cockpit', 'The TTF-05\'s cockpit is lined in black carbon all round: from the driver\'s seat you see the inside of the tub, the padded dash and the bulkheads, instead of looking straight through the bodywork. The stray blue shapes in the footwell are gone, and the outside driver has a proper wheel with grips, a screen, buttons and paddles', 'update'],
+      ['Floor and plank', 'The floor is a flat rectangle again, stepping in round the rear wheels, and the wooden plank is fixed right under it instead of hanging below', 'fix'],
+      ['Mirrors on the car', 'The mirror stalks now come up out of the bodywork into the mirrors', 'fix'],
+    ],
+  },
   {
     id: 109, date: '24 Nov 2026', title: 'Mind the car',
     items: [

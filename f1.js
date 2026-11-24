@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 55;
+export const BUILD = 56;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -790,22 +790,41 @@ export function buildF05Body(car, addPanel) {
   // the navy stripe down the nose's top, thin, laid on it
   { const rows = []; for (let i = 0; i <= 30; i++) { const z = 2.62 - i * (2.62 - 0.8) / 30, y = ytA(z) + 0.003, w = 0.035 + 0.05 * i / 30; rows.push([[-w, y - 0.004, z], [0, y, z], [w, y - 0.004, z]]); }
     add(grid(rows, 2, true), MAT.navy, false); }
-  // inside the cockpit: black, below the rim
-  add(box(0.6, 0.34, 0.96, 0, 0.28, 0.25), MAT.seat, false);
+  // INSIDE THE COCKPIT: lined in black carbon all round, so from his seat
+  // you see the inside of the tub, not through it: the walls dropping
+  // straight down from the rim, the floor, the front bulkhead closing it
+  // off under the cowl ahead of the wheel, the bulkhead behind his back
+  { const liner = new THREE.MeshStandardMaterial({ color: 0x15161a, roughness: 0.7, metalness: 0.1, side: THREE.DoubleSide });
+    for (const sx of [1, -1]) {
+      const rows = [];
+      for (let i = 0; i <= 40; i++) {
+        const z = 0.75 - i / 40 * 1.0, o = Math.max(0.004, OW(z)), hw = Math.min(0.28, o + 0.1);
+        rows.push([[o, RIM - 0.004], [o + 0.012, RIM - 0.05], [hw, 0.5], [hw, 0.2], [hw * 0.7, 0.13], [0, 0.12]].map((q) => [sx * q[0], q[1], z]));
+      }
+      const m = new THREE.Mesh(grid(rows, 5), liner); m.receiveShadow = true; car.add(m);
+    }
+    // the dash: a padded cowl under the rim's front, with the wheel's column through it
+    add(box(0.42, 0.06, 0.06, 0, 0.58, 0.69, 0.3), MAT.seat, false);
+    add(rod([0, 0.5, 0.72], [0, 0.565, 0.5], 0.02), MAT.carbon);
+  }
   for (const sx of [1, -1]) add(box(0.06, 0.13, 0.4, sx * 0.17, 0.66, -0.06), MAT.seat, false);
   add(box(0.36, 0.14, 0.08, 0, 0.66, -0.2), MAT.seat, false);
   add(box(0.32, 0.05, 0.34, 0, 0.13, 0.08), MAT.seat, false);
   add(box(0.34, 0.4, 0.05, 0, 0.33, -0.12, -0.38), MAT.seat, false);
-  for (const sx of [1, -1]) {
-    add(rod([sx * 0.08, 0.2, 0.02], [sx * 0.09, 0.32, 0.6], 0.055), MAT.suit, false);
-    add(rod([sx * 0.09, 0.32, 0.6], [sx * 0.07, 0.3, 1.1], 0.045), MAT.suit, false);
-  }
   const driver = new THREE.Group();
   car.add(driver);
   const dAdd = (geo, mat) => { const m = new THREE.Mesh(geo, mat); m.castShadow = false; driver.add(m); return m; };
   dAdd(new THREE.CapsuleGeometry(0.15, 0.12, 4, 10).rotateZ(Math.PI / 2).scale(1, 0.7, 0.8).translate(0, 0.48, -0.04), MAT.suit);
   for (const sx of [1, -1]) { dAdd(rod([sx * 0.17, 0.51, -0.02], [sx * 0.15, 0.44, 0.22], 0.04), MAT.suit); dAdd(rod([sx * 0.15, 0.44, 0.22], [sx * 0.12, 0.55, 0.42], 0.035), MAT.suit); }
-  dAdd(new THREE.BoxGeometry(0.26, 0.13, 0.03).rotateX(-0.45).translate(0, 0.57, 0.46), MAT.carbon);
+  // the wheel: a carbon wheel cut flat top and bottom, rubber grips each
+  // side, a little display in the middle with its rows of buttons, the
+  // shift paddles behind
+  { const W = (geo, mat) => dAdd(geo.rotateX(-0.45).translate(0, 0.57, 0.46), mat);
+    W(new THREE.BoxGeometry(0.2, 0.1, 0.025), MAT.carbon);
+    for (const sx of [1, -1]) { W(new THREE.CapsuleGeometry(0.022, 0.08, 4, 8).translate(sx * 0.125, -0.005, 0), MAT.seat); W(new THREE.BoxGeometry(0.05, 0.006, 0.035).translate(sx * 0.1, 0.01, -0.03), MAT.steel); }
+    W(new THREE.PlaneGeometry(0.07, 0.035).translate(0, 0.018, 0.0135), new THREE.MeshStandardMaterial({ color: 0x0a1a10, emissive: 0x30ff70, emissiveIntensity: 0.35 }));
+    const btn = new THREE.MeshStandardMaterial({ color: 0xd03020, roughness: 0.5 });
+    for (const [bx, by] of [[-0.06, -0.025], [0.06, -0.025], [-0.06, 0.025], [0.06, 0.025], [-0.025, -0.032], [0.025, -0.032]]) W(new THREE.CylinderGeometry(0.008, 0.008, 0.008, 10).rotateX(Math.PI / 2).translate(bx, by, 0.014), btn); }
   const helmet = add(new THREE.SphereGeometry(0.135, 20, 16).scale(1, 1.05, 1.1).translate(0, 0.73, -0.02), MAT.helmet);
   const visor = add(new THREE.SphereGeometry(0.137, 20, 10, -0.9 + Math.PI / 2, 1.8, 1.1, 0.5).scale(1, 1.05, 1.1).translate(0, 0.73, -0.02), MAT.visor);
   const stripe = add(new THREE.TorusGeometry(0.135, 0.012, 6, 24, Math.PI).rotateY(Math.PI / 2).rotateZ(Math.PI / 2).scale(1, 1.05, 1.1).translate(0, 0.73, -0.02), MAT.yellow);
@@ -848,12 +867,12 @@ export function buildF05Body(car, addPanel) {
   }
   const mirrors = {};
   for (const s of [1, -1]) {
-    const stalk = add(rod([s * 0.34, 0.66, 0.48], [s * 0.5, 0.7, 0.5], 0.01), MAT.carbon);
+    const sy = surfY(0.5, 0.37) - 0.01, stalk = add(rod([s * 0.37, sy, 0.5], [s * 0.5, 0.645, 0.5], 0.011), MAT.carbon);   // (out of the bodywork, up into the mirror)
     const pod = new THREE.Group();
     car.add(pod);
     pod.add(add(loft([{ z: 0.53, w: 0.14, h: 0.065, y: 0.672, x: s * 0.53 }, { z: 0.47, w: 0.15, h: 0.075, y: 0.668, x: s * 0.53 }], 0.9, 16, 1, false), MAT.blue));
     pod.add(add(new THREE.PlaneGeometry(0.12, 0.058).rotateY(Math.PI).translate(s * 0.53, 0.705, 0.465), MAT.visor));
-    add(box(0.12, 0.008, 0.06, s * 0.42, 0.68, 0.49, 0, 0, -s * 0.12), MAT.carbon);
+    add(box(0.1, 0.008, 0.06, s * 0.44, (sy + 0.645) / 2 + 0.01, 0.49, 0, 0, -s * Math.atan2(0.645 - sy, 0.13)), MAT.carbon);
     mirrors[s > 0 ? 'l' : 'r'] = { stalk, pod, at: [s * 0.53, 0.705, 0.5] };
   }
   // --- THE AIRBOX: rising out of the cover right over his head, its
@@ -892,12 +911,11 @@ export function buildF05Body(car, addPanel) {
   add(box(0.07, 0.04, 0.03, 0, 0.27, -2.1), MAT.rain);
   // the floor: under the whole car, its edge following the pods' outline (stepped out a little), from behind the front wheels
   { const sh = new THREE.Shape(), pts = [];
-    pts.push([0.3, 1.3], [0.5, 1.22], [0.52, 0.72]);
-    for (let i = 0; i <= 16; i++) { const z = 0.66 - i * (0.66 + 1.7) / 16; pts.push([Math.max(0.3, xo(z) + 0.04), z]); }
-    pts.push([0.3, -1.75]);
+    // (a flat rectangle from behind the front wheels to ahead of the back ones, stepping in round them to the gearbox)
+    pts.push([0.3, 1.3], [0.7, 1.22], [0.7, -0.95], [0.46, -1.1], [0.42, -1.75], [0.3, -1.75]);
     sh.moveTo(0, 1.3); for (const q of pts) sh.lineTo(q[0], q[1]); for (const q of pts.slice().reverse()) sh.lineTo(-q[0], q[1]); sh.lineTo(0, 1.3);
     add(new THREE.ExtrudeGeometry(sh, { depth: 0.02, bevelEnabled: false }).rotateX(Math.PI / 2).translate(0, 0.12, 0), MAT.carbon); }
-  add(box(0.3, 0.012, 2.6, 0, 0.03, -0.1), new THREE.MeshStandardMaterial({ color: 0x6b5a3e, roughness: 0.9 }));
+  add(box(0.3, 0.012, 2.6, 0, 0.094, -0.15), new THREE.MeshStandardMaterial({ color: 0x6b5a3e, roughness: 0.9 }));   // (the plank, fixed right under the floor)
   add(box(0.86, 0.02, 0.6, 0, 0.12, -1.85, -0.3), MAT.carbon);
   for (const x of [-0.32, -0.12, 0.12, 0.32]) add(box(0.01, 0.14, 0.55, x, 0.11, -1.85), MAT.carbon);
   add(box(0.3, 0.012, 0.1, 0, 0.36, -2.1, 0.3), MAT.carbon);                  // the "monkey seat" over the diffuser
