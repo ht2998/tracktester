@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 149;
+export const BUILD = 150;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
@@ -30,6 +30,7 @@ export const UPDATES = [
     id: 122, date: '24 Nov 2026', title: 'Real injuries',
     items: [
       ['What a crash does to him', 'After a big crash the driver can now be hurt in many different ways, depending on how hard the hit was and which way it came: knocked out cold, slumped in the seat until the medics get him out; a suspected back injury, not daring to move; trapped by the folded front, fighting to get out and unable to, until a marshal runs over with an axe and cuts him free; a hurt leg, limping and dipping onto it every step; a hurt arm, held across his chest; whiplash, a hand on the back of his neck; hurt ribs, arms wrapped round them, bent over, down on his knees; cut and shaken, out and a few steps before he drops to the ground; concussed, wandering unsteadily then sitting with his head in his hands; burnt, running from the fire, then down and rolling', 'new'],
+      ['Thrown out, shock, panic', 'In the very biggest hits he can be flung out of the car as it hits: tumbling through the air, landing hard and sliding, then lying still. In shock, he gets out, goes a few steps and lies down on his side, curled up, breathing hard. Panicking, he gets out fast and sits hunched, rocking, hyperventilating', 'new'],
       ['The medics', 'They bring the stretcher for the badly hurt (and to the car for one still in it) and walk the others to the ambulance', 'update'],
       ['G-force and whiplash', 'The driver\'s head is thrown about on his neck: forward under braking, back under power, out to the side through corners, and snapped by a hit (worst from behind). You see it on his helmet, and the cockpit view tips with his head', 'new'],
     ],

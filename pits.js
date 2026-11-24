@@ -26,7 +26,7 @@
 // a smashed radiator): the team retire the car. DNF on the standings, and
 // they push it back into the garage.
 // =====================================================================
-export const BUILD = 22;
+export const BUILD = 23;
 
 import * as THREE from 'three';
 
@@ -76,6 +76,8 @@ export const POSES = {
   SIT_HEAD: { rate: 4, drop: 0.79, lean: 0.62, thL: 1.5, thR: 1.42, knL: 1.3, knR: 1.4, shL: 1.25, shR: 1.25, elL: 2.35, elR: 2.35, outL: -0.2, outR: -0.2, head: 0.5 },
   // hurt: down on his back by the track; on the stretcher; doubled over
   // (arms gone limp: down flat on the ground beside him, palms down, one a little out from his side)
+  // curled up on his side, knees drawn up, arms in round them
+  CURL: { rate: 4, roll: 1.42, lift: 0.17, lean: 0.55, thL: 1.55, knL: 1.85, thR: 1.4, knR: 1.95, shL: 1.25, elL: 1.6, shR: 1.1, elR: 1.8, outL: -0.2, outR: -0.25, head: 0.55 },
   LIE: { rate: 5, tilt: -1.52, lift: 0.12, shL: -0.06, shR: -0.04, outL: 0.55, outR: 0.25, elL: 0.15, elR: 0.08, thL: 0.12, knL: 0.45, knR: 0.1, head: -0.15 },
   FALL: { rate: 4, tilt: -0.9, lift: 0.45, drop: 0.3, shL: 1.2, shR: 1.4, outL: 0.5, outR: 0.5, thL: 0.8, knL: 0.9, thR: 0.6, knR: 0.6 },
   HUNCH: { lean: 0.65, shL: 0.6, shR: 0.7, elL: 1.2, elR: 1.0, thL: 0.25, knL: 0.35, thR: 0.2, knR: 0.3, drop: 0.08, head: 0.3 },
@@ -571,6 +573,15 @@ export class Person {
         this.torso.rotation.x += 0.3; this.head.rotation.x += 0.25;
       }
     }
+    // breathing hard: panting, or hyperventilating in a panic: his chest
+    // heaving fast, shoulders rising and falling with it
+    if (this.hurt?.breathe) {
+      const B = this.hurt.breathe, f = Math.sin(this.t * (B > 1 ? 11 : 6));
+      this.torso.scale.set(1 + 0.025 * f * B, 1, 1 + 0.06 * f * B);
+      this.shL.rotation.z += 0.07 * f * B; this.shR.rotation.z -= 0.07 * f * B;
+      this.head.rotation.x -= 0.06 * f * B;
+      if (B > 1) this.torso.rotation.x += 0.08 * Math.sin(this.t * 1.6);                   // (rocking)
+    } else if (this.torso.scale.x !== 1) this.torso.scale.set(1, 1, 1);
     // (the legs swung out sideways from the hips, the body kept upright over the hands)
     this.hips.rotation.z = p.hipRoll || 0;
     this.torso.rotation.z -= (p.hipRoll || 0) * 0.9;
