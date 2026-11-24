@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 145;
+export const BUILD = 146;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 119, date: '24 Nov 2026', title: 'Fix: racing cars load again',
+    items: [
+      ['Racing cars wouldn\'t load', 'The last update checked the tyres before the car\'s physics existed, which stopped the single-seaters and prototypes from loading. Fixed: they load, and still start on racing slicks', 'fix'],
+    ],
+  },
   {
     id: 118, date: '24 Nov 2026', title: 'TTF-05 grips like a 2005 car',
     items: [
