@@ -22,11 +22,11 @@
 // Arrive on fire and the nearest man jumps back in shock, runs into the
 // garage for the extinguisher and puts it out first.
 //
-// Too badly hurt to fix (a blown engine, a wheel torn off, a split tank,
+// Too badly hurt to fix (a blown engine, a wheel torn off, a split fuel cell,
 // a smashed radiator): the team retire the car. DNF on the standings, and
 // they push it back into the garage.
 // =====================================================================
-export const BUILD = 18;
+export const BUILD = 19;
 
 import * as THREE from 'three';
 
@@ -788,7 +788,7 @@ body.pit-auto #touch > *:not(.t-menu):not(.t-sheet):not(.t-rotate) { visibility:
     const P = this.physics, F = this.hooks.f1, out = [];
     const corner = ['Front left', 'Front right', 'Rear left', 'Rear right'];
     if (P.engineBlown) out.push({ key: 'engine', name: 'Engine blown', serious: true });
-    if (P.fuelLeak > 0) out.push({ key: 'tank', name: 'Fuel tank split', serious: true });
+    if (P.fuelLeak > 0) out.push({ key: 'cell', name: 'Fuel cell split', serious: true });
     if (P.radiator < 0.5) out.push({ key: 'rad', name: 'Radiator smashed', serious: true });
     else if (P.radiator < 0.999) out.push({ key: 'rad', kind: 'rad', name: 'Radiator holed (patch, top up)', time: 6 });
     if (P.sumpLeak > 0) out.push({ key: 'sump', kind: 'rad', name: 'Sump cracked (new sump, top up oil)', time: 8,
@@ -872,7 +872,7 @@ body.pit-auto #touch > *:not(.t-menu):not(.t-sheet):not(.t-rotate) { visibility:
     if (ch.fuel) t = Math.max(t, 2 + Math.max(0, P.spec.fuelCapacity - P.fuel) / this.fuelRate());
     return t + 1.5;
   }
-  fuelRate() { return Math.max(4, this.physics.spec.fuelCapacity / 9); }   // (a full tank in about 9 s)
+  fuelRate() { return Math.max(4, this.physics.spec.fuelCapacity / 9); }   // (full in about 9 s)
 
   clearLitter() { for (const l of this.litter || []) this.group.remove(l); this.litter = []; }
   reset() {

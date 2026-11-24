@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 138;
+export const BUILD = 139;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
@@ -484,7 +484,7 @@ export const UPDATES = [
       ['The crew', 'Jack men lift the front and back. At each wheel the gun man spins the nut off, one man pulls the old wheel away, another pushes the new one on, the nut goes back on and his hand goes up. The refueller tops you up from the churn. The lollipop goes up when it\'s all done: go', 'new'],
       ['Repairs', 'A knocked-off mirror is ripped off and a new one bolted on (mirrors can now be knocked off the TT-88). A broken wing is unbolted and put down while a new one is held in place and bolted on. Bent suspension is fixed with the wheel off. A holed radiator is patched and topped up', 'new'],
       ['Fire!', 'Come in burning and the nearest man jumps back, runs into the garage for the extinguisher and puts it out before anyone touches the car', 'new'],
-      ['Retired', 'A blown engine, a torn-off wheel, a split tank or a smashed radiator is too much: the team retire the car (DNF on the race standings) and push it back into the garage. Reset to start again', 'new'],
+      ['Retired', 'A blown engine, a torn-off wheel, a split fuel cell or a smashed radiator is too much: the team retire the car (DNF on the race standings) and push it back into the garage. Reset to start again', 'new'],
       ['Pit sounds', 'The wheel guns, the click of the jacks, the extinguisher\'s smooth roar and the glug of fuel from the churn', 'new'],
       ['Computer TT-88s', 'In the TT-88, the computer drivers drive TT-88s too, in their own colours, and no longer spin off: they feel for the grip in the fast corners', 'new'],
     ],
@@ -774,7 +774,7 @@ export const UPDATES = [
   {
     id: 18, date: '12 Nov 2026', title: 'Crash damage, fire, tyre temperatures and wind',
     items: [
-      ['Crash damage depends on the hit', 'Nose first: the nose crumples and the radiator gets holed (steam, leaking coolant). Hit the front again, or very hard, and the engine behind it gets damaged. Backwards into a wall: the tail crumples and the fuel tank can split and leak. Side hits knock that wheel out of line, so the car pulls to one side, and a hard one can puncture the tyre. Soft tyre walls do less damage than concrete', 'debris'],
+      ['Crash damage depends on the hit', 'Nose first: the nose crumples and the radiator gets holed (steam, leaking coolant). Hit the front again, or very hard, and the engine behind it gets damaged. Backwards into a wall: the tail crumples and the fuel cell can split and leak. Side hits knock that wheel out of line, so the car pulls to one side, and a hard one can puncture the tyre. Soft tyre walls do less damage than concrete', 'debris'],
       ['Overheating', 'With a holed radiator the coolant runs out, the engine gets hotter (new temperature light: amber when hot, flashing red when boiling) and then cooks itself if you keep pushing', 'gauges'],
       ['Fire', 'A big hit on a badly damaged engine, or with fuel leaking, can set the engine bay alight: flames, black smoke and an orange glow. The fire wrecks the engine and burns out after a while. Backspace repairs everything', 'fire'],
       ['Scratches', 'Scrape along a wall and the side of the car gets scratched down to bare metal, where it touched', 'sparks'],

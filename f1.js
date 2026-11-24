@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 64;
+export const BUILD = 65;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -1071,6 +1071,7 @@ export function buildF05Body(car, addPanel) {
   const engine = new THREE.Group();
   { const E = {
       alloy: new THREE.MeshStandardMaterial({ color: 0xa4a8ae, roughness: 0.5, metalness: 0.45 }),
+      chrome: new THREE.MeshStandardMaterial({ color: 0xe4e7ea, roughness: 0.12, metalness: 1, side: THREE.DoubleSide }),
       dark: new THREE.MeshStandardMaterial({ color: 0x2b2d31, roughness: 0.5, metalness: 0.6 }),
       cam: new THREE.MeshStandardMaterial({ color: 0x1d1f24, roughness: 0.35, metalness: 0.4 }),
       yellow: new THREE.MeshStandardMaterial({ color: 0xf6c51a, roughness: 0.35 }),
@@ -1097,7 +1098,8 @@ export function buildF05Body(car, addPanel) {
         [x, y] = at(0.33); e(new THREE.CylinderGeometry(0.014, 0.014, 0.04, 8).rotateZ(-a).translate(x, y, z), E.dark);
         // the intake trumpet, up into the V from the inner side of the head
         const ix = ux * 0.22 - sx * 0.07, iy = cy + uy * 0.22 + 0.05;
-        e(new THREE.CylinderGeometry(0.028, 0.022, 0.12, 12, 1, true).translate(sx * 0.055, iy + 0.06, z), E.alloy);
+        e(new THREE.CylinderGeometry(0.026, 0.02, 0.14, 14, 1, true).translate(sx * 0.055, iy + 0.07, z), E.chrome);
+        e(new THREE.TorusGeometry(0.03, 0.007, 8, 16).rotateX(Math.PI / 2).translate(sx * 0.055, iy + 0.14, z), E.chrome);      // (its flared lip)
         // the exhaust primary: out of the bank's outer side, curling down and back
         const ox = ux * 0.2 + sx * 0.09, oy = cy + uy * 0.2 - 0.02;
         const path = new THREE.CatmullRomCurve3([new THREE.Vector3(ox, oy, z), new THREE.Vector3(ox + sx * 0.06, oy - 0.08, z - 0.05), new THREE.Vector3(sx * 0.2, cy - 0.02, Z1 - 0.05), new THREE.Vector3(sx * 0.16, cy + 0.05, Z1 - 0.3)]);
@@ -1106,9 +1108,7 @@ export function buildF05Body(car, addPanel) {
       // the collector, and the tail pipe on toward the exhaust's exit
       e(new THREE.CylinderGeometry(0.035, 0.04, 0.22, 12).rotateX(Math.PI / 2 - 0.2).translate(sx * 0.16, cy + 0.07, Z1 - 0.4), E.pipe);
     }
-    // the plenum over the trumpets, fed by the airbox above
-    e(new THREE.BoxGeometry(0.2, 0.08, L * 0.95).translate(0, cy + 0.31, zc), E.carbon);
-    e(new THREE.CylinderGeometry(0.08, 0.1, 0.16, 16).translate(0, cy + 0.42, Z0 - 0.08), E.carbon);
+    // (no plenum box over them: the ten polished trumpets stand open in the V, the airbox's duct feeding down over them)
     // the front: the timing cover, the oil reservoir between it and his back, the pumps along the bottom
     e(new THREE.BoxGeometry(0.3, 0.26, 0.04).translate(0, cy + 0.06, Z0 + 0.02), E.dark);
     e(new THREE.CylinderGeometry(0.09, 0.09, 0.22, 16).translate(0, cy + 0.08, Z0 + 0.1), E.carbon);

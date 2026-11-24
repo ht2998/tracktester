@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 23;
+export const BUILD = 24;
 
 const G = 9.81;   // gravity, m/s²
 const RPM_PER_RADS = 60 / (2 * Math.PI);
@@ -327,7 +327,7 @@ export class CarPhysics {
     this.engineHealth = 1;    // drops after big over-revs (1 = full power, 0 = blown)
     this.engineBlown = false;
     this.oilLevel = 1;        // engine oil, 1 = full. Drains while leaking.
-    this.fuel = this.spec.fuelCapacity;   // litres in the tank (resets full)
+    this.fuel = this.spec.fuelCapacity;   // litres on board (resets full)
     this.misfiring = false;   // sputtering on the last drops of fuel
     this.clutchIn = false;    // X held: engine disconnected from the wheels
     this.clutchPedal = 0;     // 0 = foot off the clutch, 1 = pedal to the floor
@@ -341,7 +341,7 @@ export class CarPhysics {
     this.radiator = 1;        // 1 = intact, 0 = smashed (a nose-first hit)
     this.coolant = 1;         // coolant left in the system (leaks from a holed radiator)
     this.coolantTemp = 0.45;  // engine temperature gauge: ~0.45 normal, 1 = boiling
-    this.fuelLeak = 0;        // litres per second leaking from a split tank (rear hits)
+    this.fuelLeak = 0;        // litres per second leaking from a split fuel cell (rear hits)
     this.fires = [];          // crash fires besides the engine bay's: { kind: 'fuel' | 'oil', at: [x, y, z] (car's frame), level, t }
     this.wheelBend = [0, 0, 0, 0];   // each wheel knocked out of line, radians (+ = toe out to the left)
     this.suspDamage = [0, 0, 0, 0];  // each corner's suspension, bent (0) to torn off (1): the wheel leans, grips less, and at 1 comes off
@@ -398,7 +398,7 @@ export class CarPhysics {
   // What breaks depends on where and how hard:
   //   front: crumples the nose and holes the radiator; hit it again (or
   //          very hard) and the engine behind it gets damaged too
-  //   rear:  crumples the tail and can split the fuel tank
+  //   rear:  crumples the tail and can split the fuel cell
   //   side:  bends the wheel on that corner out of line (the car pulls),
   //          and a hard one can puncture the tyre
   //   big hits on a damaged engine, or with fuel leaking, can start a fire
@@ -865,7 +865,7 @@ export class CarPhysics {
 
   // --- Cooling: a holed radiator leaks coolant; with too little coolant the
   // engine overheats (the gauge climbs, steam pours out) and then cooks
-  // itself. Also the fire, and fuel leaking from a split tank. ---
+  // itself. Also the fire, and fuel leaking from a split fuel cell. ---
   updateDamage(dt) {
     const effort = this.engineDead ? 0 : 0.25 + 0.75 * clamp(this.rpm / this.spec.redline, 0, 1) * (0.4 + 0.6 * this.throttleAmount);
     if (this.radiator < 1 && this.coolant > 0) {
@@ -924,7 +924,7 @@ export class CarPhysics {
       if (this.engineHealth > wornTo) this.damageEngine(this.engineHealth - wornTo);
       if (this.engineBlown && Math.random() < 0.3) this.catchFire();
     }
-    // Fuel from a split tank (faster while the car is moving and sloshing it)
+    // Fuel from a split fuel cell (faster while the car is moving and sloshing it)
     if (this.fuelLeak > 0 && this.fuel > 0) {
       this.fuel = Math.max(0, this.fuel - this.fuelLeak * 0.12 * dt);
     }
