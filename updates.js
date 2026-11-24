@@ -21,11 +21,18 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 118;
+export const BUILD = 119;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 102, date: '24 Nov 2026', title: 'TTF-05 rebuilt',
+    items: [
+      ['A whole new TTF-05', 'Rebuilt from the real car\'s blueprint and photos: one flowing rear body instead of separate parts, high cockpit walls, big sidepod mouths, a raised engine cover spine with the pods dropping away either side, gills on the upper rear, a strong coke-bottle squeeze to the gearbox, the centre crease running back into the winglets, and a tall airbox and fin', 'update'],
+      ['The right colours', 'Yellow nose and tub with a navy stripe, light-blue body over a navy lower flank, big navy endplates and an orange camera pod', 'update'],
+    ],
+  },
   {
     id: 101, date: '24 Nov 2026', title: 'Closer to the real thing',
     items: [
