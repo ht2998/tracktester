@@ -26,7 +26,7 @@
 // a smashed radiator): the team retire the car. DNF on the standings, and
 // they push it back into the garage.
 // =====================================================================
-export const BUILD = 17;
+export const BUILD = 18;
 
 import * as THREE from 'three';
 
@@ -195,6 +195,39 @@ export class Person {
   // the middle of his body on the ground (he's placed by his feet: lying on
   // his back, the rest of him is behind them)
   static all = new Set();          // (everyone, for blasts and the like to find)
+  // THE CAR IN THE WAY: your car, in the world: { x, z, h (heading), L, W
+  // (half its length and width) }, or null. Anyone walking steps round it
+  // instead of marching into it and getting stuck
+  static obstacle = null;
+  // (a step from here, turned to go round the car if it would take him into it)
+  steerRound(sx, sz, step, tx, tz) {
+    const o = Person.obstacle, par = this.root.parent;
+    if (!o || !par) return [sx, sz];
+    const e = par.matrixWorld.elements;
+    // into the world, then into the car's own frame (along it, across it)
+    const toW = (x, z) => [e[0] * x + e[8] * z + e[12], e[2] * x + e[10] * z + e[14]];
+    const fx = Math.sin(o.h), fz = Math.cos(o.h), car = (w) => { const dx = w[0] - o.x, dz = w[1] - o.z; return [dx * fx + dz * fz, dx * fz - dz * fx]; };
+    const L = o.L + 0.45, W = o.W + 0.45;
+    const now = car(toW(this.x, this.z)), next = car(toW(this.x + sx * step, this.z + sz * step));
+    if (Math.abs(next[0]) > L || Math.abs(next[1]) > W) { this.roundWay = null; return [sx, sz]; }
+    // (going to the car on purpose: a medic, a marshal, the crane's man)
+    const goal = car(toW(tx, tz)); if (Math.abs(goal[0]) < L + 0.3 && Math.abs(goal[1]) < W + 0.3) return [sx, sz];
+    // heading into it: walk along whichever face he's at, toward the nearer corner
+    const dw = [toW(this.x + sx, this.z + sz)[0] - toW(this.x, this.z)[0], toW(this.x + sx, this.z + sz)[1] - toW(this.x, this.z)[1]];
+    let ga = dw[0] * fx + dw[1] * fz, gb = dw[0] * fz - dw[1] * fx;          // (the way he wants to go, in the car's frame)
+    // (which way round: chosen once, the shorter way, and kept till he's clear)
+    const beside = Math.abs(now[1]) / W >= Math.abs(now[0]) / L;
+    if (!this.roundWay || this.roundWay.beside !== beside) {
+      const g = beside ? (Math.abs(ga) > 0.2 ? Math.sign(ga) : now[0] >= 0 ? 1 : -1) : (Math.abs(gb) > 0.2 ? Math.sign(gb) : now[1] >= 0 ? 1 : -1);
+      this.roundWay = { beside, g };
+    }
+    if (beside) { gb = Math.sign(now[1]) * Math.max(0, gb * Math.sign(now[1])); ga = this.roundWay.g; }        // (along it)
+    else { ga = Math.sign(now[0]) * Math.max(0, ga * Math.sign(now[0])); gb = this.roundWay.g; }               // (across its front or back)
+    const wx = ga * fx + gb * fz, wz = ga * fz - gb * fx;                   // (back into the world)
+    // and into his own surroundings' frame
+    let lx = e[0] * wx + e[2] * wz, lz = e[8] * wx + e[10] * wz; const l = Math.hypot(lx, lz) || 1;
+    return [lx / l, lz / l];
+  }
   get bodyAt() {
     const lying = Math.min(1, Math.abs(this.p.tilt || 0) / 1.4), back = (this.p.tilt || 0) < 0 ? -1 : 1;
     return [this.x + Math.sin(this.face) * 0.85 * lying * back, this.z + Math.cos(this.face) * 0.85 * lying * back];
@@ -357,6 +390,7 @@ export class Person {
         const step = Math.min(d, v * dt);
         let sx = dx / d, sz = dz / d;
         if (a.stagger) { const w = Math.sin(this.t * 2.3) * 0.55 + Math.sin(this.t * 5.7) * 0.2; const c = Math.cos(w), s2 = Math.sin(w); [sx, sz] = [sx * c + sz * s2, -sx * s2 + sz * c]; }
+        if (!a.through) [sx, sz] = this.steerRound(sx, sz, step, tx, tz);
         this.x += sx * step; this.z += sz * step;
         speed = v;
         this.back = !!a.back;

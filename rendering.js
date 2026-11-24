@@ -60,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 87;
+const BUILD = 88;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -5053,6 +5053,9 @@ renderer.setAnimationLoop(() => {
 
   if (cameraMode === 'cockpit' && !heavyMode && !IS_F1) cockpit.renderMirrors(renderer, scene);
   if (cameraMode === 'cockpit' && heavyMode) renderPeriscope();
+  // (your car, for people walking to step round: not while the crew are at it in a stop)
+  { const P = heavyMode && heavyPhys ? heavyPhys : physics, busy = pits && pits.phase !== 'off';
+    PersonFigure.obstacle = busy ? null : { x: P.x, z: P.z, h: P.heading, L: heavyMode ? 3.5 : IS_F1 ? 2.5 : 1.8, W: heavyMode ? 1.7 : 0.95 }; }
   runOver(dt);
   updateGun(dt);
   updateDriverSeat(input);

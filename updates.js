@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 128;
+export const BUILD = 129;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 109, date: '24 Nov 2026', title: 'Mind the car',
+    items: [
+      ['People walk round your car', 'Marshals, crew, medics and drivers on foot now step round your car when it\'s in their way, going the shorter way round its nose or tail, instead of walking into it and getting stuck. Anyone actually going to your car (a medic, a marshal) still comes right up to it, and the crew still work on it in a stop', 'fix'],
+    ],
+  },
   {
     id: 108, date: '24 Nov 2026', title: 'TTF-05 fin and winglets',
     items: [
