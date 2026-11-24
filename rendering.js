@@ -60,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 86;
+const BUILD = 87;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -3373,6 +3373,37 @@ function shellHit(p) {
   return false;
 }
 
+// RUN DOWN: anyone the car drives into is knocked flying, thrown ahead
+// of it and up, tumbling, as hard as it hit them. Slow, they pick
+// themselves up; the faster it hits, the likelier it kills them (from a
+// chance at 20 km/h to certain by 80), and then they stay down
+let runOverT = 0, runFrom = null;
+function runOver(dt) {
+  // (how fast, from where it's got to: the same for whatever you're driving)
+  const P = heavyMode && heavyPhys ? heavyPhys : physics, px = P.x, pz = P.z, h = P.heading;
+  if (!runFrom) runFrom = { x: px, z: pz, t: 0 };
+  runFrom.t += dt; runOverT -= dt;
+  if (runOverT > 0) return;
+  const mx = px - runFrom.x, mz = pz - runFrom.z, v = Math.hypot(mx, mz) / Math.max(1e-3, runFrom.t);
+  runFrom.x = px; runFrom.z = pz; runFrom.t = 0; runOverT = 0.04;
+  if (v < 1.5 || v > 120) return;                       // (still, or put somewhere new)
+  gatherPeople();
+  const fx = Math.sin(h), fz = Math.cos(h), sgn = mx * fx + mz * fz >= 0 ? 1 : -1;
+  const half = heavyMode ? 3.6 : IS_F1 ? 2.6 : 1.9, wide = heavyMode ? 1.8 : 0.95, cy = carModel.car.position.y, now = clock.elapsedTime;
+  for (const p of peopleHere) {
+    if ((p.p.hitUntil || 0) > now) continue;
+    const dx = p.x - px, dz = p.z - pz, along = dx * fx + dz * fz, side = dx * fz - dz * fx;
+    if (Math.abs(along) > half || Math.abs(side) > wide || Math.abs(p.y - cy) > 1.6) continue;
+    // (struck by the front or the back, whichever way the car's going)
+    if (along * sgn < -half * 0.3) continue;
+    p.p.hitUntil = now + 0.8;
+    const push = v * 1.05, up = Math.min(9, 1.2 + v * 0.28), kick = (side >= 0 ? 1 : -1) * v * 0.22;
+    knockPerson(p, fx * push * sgn + fz * kick, up, fz * push * sgn - fx * kick);
+    const kmh = v * 3.6;
+    if (Math.random() < Math.max(0, Math.min(1, (kmh - 20) / 60))) p.p.dead = true;
+  }
+}
+
 function updateGun(dt) {
   if (shells.length || bullets.length) gatherPeople();
   updateCoax(dt);
@@ -5022,6 +5053,7 @@ renderer.setAnimationLoop(() => {
 
   if (cameraMode === 'cockpit' && !heavyMode && !IS_F1) cockpit.renderMirrors(renderer, scene);
   if (cameraMode === 'cockpit' && heavyMode) renderPeriscope();
+  runOver(dt);
   updateGun(dt);
   updateDriverSeat(input);
   placeGunRing();

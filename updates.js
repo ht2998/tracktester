@@ -21,11 +21,18 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 124;
+export const BUILD = 125;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 107, date: '24 Nov 2026', title: 'Watch where you drive',
+    items: [
+      ['Run people down', 'Drive into anyone (a marshal, a mechanic, a photographer) and they\'re knocked flying, thrown ahead of the car and tumbling as hard as you hit them', 'new'],
+      ['It can kill', 'Hit someone slowly and they pick themselves up; the faster you are, the likelier they don\'t: a chance from 20 km/h, certain by 80. The dead stay down (pit crew are needed for the stops, so a crewman is down a good while, then back at it)', 'new'],
+    ],
+  },
   {
     id: 106, date: '24 Nov 2026', title: 'Grooves and gills',
     items: [

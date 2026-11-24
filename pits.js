@@ -26,7 +26,7 @@
 // a smashed radiator): the team retire the car. DNF on the standings, and
 // they push it back into the garage.
 // =====================================================================
-export const BUILD = 16;
+export const BUILD = 17;
 
 import * as THREE from 'three';
 
@@ -284,7 +284,9 @@ export class Person {
       }
       this.torso.rotation.set(0, 0, 0); this.hips.rotation.set(0, 0, 0);
       // lain there a while: up he gets
-      if (r.rest > 3.5) { r.up = 1e-6; r.ax0 = r.ax; r.az0 = r.az; r.hy0 = r.hy; }
+      // (killed: he stays down. The pit crew are needed for the stops, so a
+      // crewman who's been hit that hard is down a good while, then back to it)
+      if (r.rest > (this.dead ? (this.role ? 25 : Infinity) : 3.5)) { r.up = 1e-6; r.ax0 = r.ax; r.az0 = r.az; r.hy0 = r.hy; this.dead = false; }
     }
     // placed by his hips: the feet are wherever the tilt puts them
     root.rotation.set(r.ax, this.face, r.az, 'YXZ');
