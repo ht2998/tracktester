@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 63;
+export const BUILD = 64;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -1064,7 +1064,61 @@ export function buildF05Body(car, addPanel) {
   for (const s of [1, -1]) for (let k = 0; k < 4; k++) addTo(wings.rear, box(0.018, 0.012, 0.15, s * 0.47, 0.5 + k * 0.06, -1.82, 0.4), MAT.dark);
   add(box(0.72, 0.02, 0.16, 0, 0.44, -1.92, 0.2), MAT.carbon);
   addTo(wings.rear, box(0.035, 0.45, 0.06, 0, 0.525, -1.8), MAT.carbon);
-  return { helmet: [helmet, visor, stripe], rainMat: MAT.rain, exhaustMat: MAT.exhaust, mats: MAT, wings, mirrors, driver };
+  // THE ENGINE: a 3-litre V10, its two banks of five at 72 degrees, laid
+  // in the bay behind his back under the cover. Modelled whole, but kept
+  // out of sight for now (engine.visible): for later, when the cover comes
+  // off or the engine gets thrown out of the car
+  const engine = new THREE.Group();
+  { const E = {
+      alloy: new THREE.MeshStandardMaterial({ color: 0xa4a8ae, roughness: 0.5, metalness: 0.45 }),
+      dark: new THREE.MeshStandardMaterial({ color: 0x2b2d31, roughness: 0.5, metalness: 0.6 }),
+      cam: new THREE.MeshStandardMaterial({ color: 0x1d1f24, roughness: 0.35, metalness: 0.4 }),
+      yellow: new THREE.MeshStandardMaterial({ color: 0xf6c51a, roughness: 0.35 }),
+      pipe: new THREE.MeshStandardMaterial({ color: 0xb8a58a, roughness: 0.35, metalness: 0.9 }),
+      carbon: MAT.carbon,
+    };
+    const e = (geo, m) => { const o = new THREE.Mesh(geo, m); o.castShadow = false; engine.add(o); return o; };
+    const Z0 = -0.3, Z1 = -0.92, L = Z0 - Z1, zc = (Z0 + Z1) / 2, cy = 0.2;     // (front and back of the block, the crank's height)
+    const V = 36 * Math.PI / 180;                                                 // (each bank 36 degrees off upright)
+    // the crankcase and sump, low in the car
+    e(new THREE.BoxGeometry(0.26, 0.16, L).translate(0, cy - 0.02, zc), E.alloy);
+    e(new THREE.BoxGeometry(0.2, 0.06, L * 0.9).translate(0, cy - 0.12, zc), E.dark);
+    for (const sx of [1, -1]) {
+      const a = sx * V, ux = Math.sin(a), uy = Math.cos(a);                       // (up along this bank)
+      const at = (d) => [ux * d, cy + uy * d];
+      // the bank: its block, then the head, then the cam cover on top with its yellow lettering strip
+      let [x, y] = at(0.13); e(new THREE.BoxGeometry(0.13, 0.17, L).rotateZ(-a).translate(x, y, zc), E.alloy);
+      [x, y] = at(0.25); e(new THREE.BoxGeometry(0.15, 0.08, L * 0.98).rotateZ(-a).translate(x, y, zc), E.dark);
+      [x, y] = at(0.3); e(new THREE.BoxGeometry(0.11, 0.04, L * 0.94).rotateZ(-a).translate(x, y, zc), E.cam);
+      [x, y] = at(0.322); e(new THREE.BoxGeometry(0.035, 0.006, L * 0.6).rotateZ(-a).translate(x, y, zc), E.yellow);
+      for (let c = 0; c < 5; c++) {
+        const z = Z0 - 0.06 - c * (L - 0.12) / 4;
+        // a coil on each cylinder, through the cam cover
+        [x, y] = at(0.33); e(new THREE.CylinderGeometry(0.014, 0.014, 0.04, 8).rotateZ(-a).translate(x, y, z), E.dark);
+        // the intake trumpet, up into the V from the inner side of the head
+        const ix = ux * 0.22 - sx * 0.07, iy = cy + uy * 0.22 + 0.05;
+        e(new THREE.CylinderGeometry(0.028, 0.022, 0.12, 12, 1, true).translate(sx * 0.055, iy + 0.06, z), E.alloy);
+        // the exhaust primary: out of the bank's outer side, curling down and back
+        const ox = ux * 0.2 + sx * 0.09, oy = cy + uy * 0.2 - 0.02;
+        const path = new THREE.CatmullRomCurve3([new THREE.Vector3(ox, oy, z), new THREE.Vector3(ox + sx * 0.06, oy - 0.08, z - 0.05), new THREE.Vector3(sx * 0.2, cy - 0.02, Z1 - 0.05), new THREE.Vector3(sx * 0.16, cy + 0.05, Z1 - 0.3)]);
+        e(new THREE.TubeGeometry(path, 16, 0.018, 8, false), E.pipe);
+      }
+      // the collector, and the tail pipe on toward the exhaust's exit
+      e(new THREE.CylinderGeometry(0.035, 0.04, 0.22, 12).rotateX(Math.PI / 2 - 0.2).translate(sx * 0.16, cy + 0.07, Z1 - 0.4), E.pipe);
+    }
+    // the plenum over the trumpets, fed by the airbox above
+    e(new THREE.BoxGeometry(0.2, 0.08, L * 0.95).translate(0, cy + 0.31, zc), E.carbon);
+    e(new THREE.CylinderGeometry(0.08, 0.1, 0.16, 16).translate(0, cy + 0.42, Z0 - 0.08), E.carbon);
+    // the front: the timing cover, the oil tank between it and his back, the pumps along the bottom
+    e(new THREE.BoxGeometry(0.3, 0.26, 0.04).translate(0, cy + 0.06, Z0 + 0.02), E.dark);
+    e(new THREE.CylinderGeometry(0.09, 0.09, 0.22, 16).translate(0, cy + 0.08, Z0 + 0.1), E.carbon);
+    for (const sx of [1, -1]) e(new THREE.CylinderGeometry(0.03, 0.03, L * 0.7, 10).rotateX(Math.PI / 2).translate(sx * 0.11, cy - 0.08, zc), E.dark);
+    // the bellhousing onto the gearbox
+    e(new THREE.CylinderGeometry(0.12, 0.1, 0.18, 16).rotateX(Math.PI / 2).translate(0, cy, Z1 - 0.09), E.alloy);
+  }
+  engine.visible = false;
+  car.add(engine);
+  return { helmet: [helmet, visor, stripe], rainMat: MAT.rain, exhaustMat: MAT.exhaust, mats: MAT, wings, mirrors, driver, engine };
 }
 
 export function buildF94Body(car, addPanel) {
