@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 60;
+export const BUILD = 61;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -909,7 +909,7 @@ export function buildF05Body(car, addPanel) {
   // the horns: a slanted winglet each side, rooted on the cover right
   // beside the airbox's mouth and rising diagonally up and out over the pod
   for (const sx of [1, -1]) {
-    const z = -0.37, rx = 0.13, ry = surfY(z, rx) - 0.01, A = 0.6, L = 0.34;
+    const z = -0.37, rx = 0.24, ry = surfY(z, rx) - 0.01, A = 0.6, L = 0.17;   // (low on the side, beside the airbox)
     add(mirrorX(box(L, 0.014, 0.15, rx + Math.cos(A) * L / 2, ry + Math.sin(A) * L / 2, z, 0, 0, A), sx), MAT.carbon);
     add(mirrorX(box(0.008, 0.07, 0.12, rx + Math.cos(A) * L, ry + Math.sin(A) * L + 0.02, z), sx), MAT.carbon);     // (a little plate on its tip)
   }
