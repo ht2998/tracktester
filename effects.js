@@ -14,7 +14,7 @@ import { groundAt } from './ground.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 4;
+export const BUILD = 5;
 
 const rand = (a, b) => a + Math.random() * (b - a);
 
@@ -192,6 +192,9 @@ export class LooseWheel {
       spoke.castShadow = true;
       this.spinner.add(spoke);
     }
+    // its tyre, when it came off with the tyre still on
+    this.tyreRadius = parts.tyreRadius || parts.radius;
+    if (parts.tyreGeo) { this.tyre = new THREE.Mesh(parts.tyreGeo, parts.tyreMat); this.tyre.castShadow = true; this.tyre.visible = false; this.spinner.add(this.tyre); }
     this.group.add(this.spinner);
     this.group.visible = false;
     scene.add(this.group);
@@ -200,13 +203,17 @@ export class LooseWheel {
 
   // Break free at pos (world), moving at carVel, the car facing heading.
   // side: +1 if it's on the car's left, -1 on the right (it flies outwards)
-  release(pos, carVel, heading, side, scale = 1) {
+  // tyre: { pressure (0-1), width } when its tyre's still on it, else null (a bare rim)
+  release(pos, carVel, heading, side, scale = 1, tyre = null) {
+    this.tyreOn = !!(tyre && this.tyre);
+    this.pressure = tyre ? tyre.pressure : 0;
+    if (this.tyre) { this.tyre.visible = this.tyreOn; if (tyre) { this.tyre.scale.set(tyre.width || 1, 1, 1); if (tyre.mat) this.tyre.material = tyre.mat; } }
     const out = rand(1.2, 2.6);
     const lx = Math.cos(heading), lz = -Math.sin(heading);   // the car's left
     this.x = pos.x; this.z = pos.z;
     this.vx = carVel.x * rand(0.9, 1.05) + lx * side * out;
     this.vz = carVel.z * rand(0.9, 1.05) + lz * side * out;
-    this.y = groundAt(pos.x, pos.z) + this.radius * scale;
+    this.y = groundAt(pos.x, pos.z) + this.r0() * scale;
     this.vy = rand(0.5, 1.5);                  // it hops as it breaks away
     this.roll = 0;                             // how far it has turned
     this.lean = 0;                             // 0 = upright, PI/2 = flat on the ground
@@ -218,13 +225,18 @@ export class LooseWheel {
     this.group.scale.setScalar(scale);
   }
 
+  // how big it is to the ground: the tyre's size with its tyre on, the rim's without
+  r0() { return this.tyreOn ? this.tyreRadius * (0.86 + 0.14 * this.pressure) : this.radius; }
+
   update(dt) {
     if (!this.active) return;
     const speed = Math.hypot(this.vx, this.vz);
-    const r = this.radius * this.scale;
+    const r = this.r0() * this.scale;
     // Rolling resistance (much more once it's lying down)
     const down = this.lean / (Math.PI / 2);
-    const slow = 1.9 + 6 * down * down;              // a loose wheel scrubs and wobbles: stops in about 100 m from 70 km/h
+    // (a loose wheel scrubs and wobbles: stops in about 100 m from 70 km/h; on a
+    // pumped-up tyre it rolls on further, on a flat one it drags)
+    const slow = (this.tyreOn ? 1.2 + 1.6 * (1 - this.pressure) : 1.9) + 6 * down * down;
     // Still up and rolling on a slope: it speeds up downhill, slows uphill
     if (speed > 0.2 && down < 0.5) {
       const e = 0.4;
@@ -241,8 +253,10 @@ export class LooseWheel {
     // Hops and bounces
     this.vy -= 9.81 * dt;
     this.y += this.vy * dt;
-    const restY = groundAt(this.x, this.z) + r * Math.cos(this.lean) + 0.1 * this.scale * Math.sin(this.lean);   // lying flat: half its width up
-    if (this.y < restY) { this.y = restY; this.vy = Math.abs(this.vy) > 1 ? -this.vy * 0.35 : 0; }
+    const restY = groundAt(this.x, this.z) + r * Math.cos(this.lean) + (this.tyreOn ? 0.17 : 0.1) * this.scale * Math.sin(this.lean);   // lying flat: half its width up
+    // the bounce: a tyre full of air springs back up, a flat one barely, a bare rim a little
+    const e = this.tyreOn ? 0.12 + 0.5 * this.pressure : 0.35;
+    if (this.y < restY) { this.y = restY; this.vy = Math.abs(this.vy) > 0.6 ? -this.vy * e : 0; }
     // A rolling wheel stays up while it's fast; slow, it starts to wobble and topples
     if (speed < 6 || this.lean > 0.05) {
       this.leanSpeed += (2.5 * Math.sin(this.lean + 0.08) - 0.6 * this.leanSpeed) * dt * (1 + down);

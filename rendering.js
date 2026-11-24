@@ -60,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 96;
+const BUILD = 97;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -1673,9 +1673,9 @@ function placeLinkEnd(out, p, m, w, steersWith, steer) {
   return out;
 }
 // A WHEEL TORN OFF, OR THE CAR BLOWN UP: the suspension breaks. Each
-// wishbone, pushrod and track rod snaps near the chassis: a short jagged
-// stub stays on the car and the rest goes flying (the upright goes with
-// the wheel). Fixed in the pits, it's all new again.
+// wishbone, pushrod and track rod tears off whole at its mountings and
+// goes flying: nothing is left hanging on the car that isn't fixed to it
+// (the upright goes with the wheel). Fixed in the pits, it's all new again.
 const _lw = new THREE.Vector3(), _lw2 = new THREE.Vector3();
 function snapLink(r, mesh) {
   r.broken = true;
@@ -1684,11 +1684,11 @@ function snapLink(r, mesh) {
   placeLinkEnd(linkB, r.p2, r.m2, r.w, false, 0);
   const len = linkA.distanceTo(linkB);
   if (len < 0.05) return;
-  // the piece that flies: from the break (a third of the way out) to the outer end
+  // the whole arm flies, torn from both its ends
   carModel.car.updateMatrixWorld();
-  _lw.copy(linkA).lerp(linkB, 0.3); _lw2.copy(linkB);
+  _lw.copy(linkA); _lw2.copy(linkB);
   carModel.car.localToWorld(_lw); carModel.car.localToWorld(_lw2);
-  const piece = new THREE.Mesh(new THREE.CylinderGeometry(r.radius, r.radius, len * 0.7, 6), mesh.material);
+  const piece = new THREE.Mesh(new THREE.CylinderGeometry(r.radius, r.radius, len, 6), mesh.material);
   piece.position.addVectors(_lw, _lw2).multiplyScalar(0.5);
   piece.quaternion.setFromUnitVectors(LINK_UP, _lw2.sub(_lw).normalize());
   piece.castShadow = true;
@@ -1700,13 +1700,8 @@ function updateLinks(list, mesh, steer) {
     const torn = physics.tyres[r.w].detached || physics.wrecked;
     if (torn && !r.broken) snapLink(r, mesh);
     if (!torn) r.broken = false;
-    if (torn && r.m1 > 0) { mesh.setMatrixAt(i, HIDDEN); return; }      // (the upright: left with the wheel)
-    if (torn) {
-      // just the stub left on the chassis: a third of it, ending in the break
-      placeLinkEnd(linkA, r.p1, r.m1, r.w, false, steer);
-      placeLinkEnd(linkB, r.p2, r.m2, r.w, false, steer);
-      linkB.lerp(linkA, 0.7);
-    } else {
+    if (torn) { mesh.setMatrixAt(i, HIDDEN); return; }      // (gone: torn off whole and flying, or left with the wheel)
+    {
       placeLinkEnd(linkA, r.p1, r.m1, r.w, r.steers && r.m1 > 0, steer);
       placeLinkEnd(linkB, r.p2, r.m2, r.w, r.steers, steer);
     }
@@ -2028,7 +2023,10 @@ function releaseWheels() {
       for (let k = 0; k < 14; k++) chips.spawn({ x: hubWorld.x, z: hubWorld.z }, chipVel, 1);
       addPaintScratch(hubWorld, 0, 0);
     }
-    looseWheels[i].release(hubWorld, carVelocity, physics.heading, i % 2 === 0 ? 1 : -1, worn);
+    // (torn off with its tyre still on, it keeps it: as bouncy as the air left in it)
+    const t = physics.tyres[i], tyreOn = torn && !t.rim && !(t.blown && t.shred > 0.6);
+    const wi = WHEELS.findIndex(([x, , , f]) => physicsWheel(x, f) === i);
+    looseWheels[i].release(hubWorld, carVelocity, physics.heading, i % 2 === 0 ? 1 : -1, tyreOn ? 1 : worn, tyreOn ? { pressure: t.pressure, width: WHEEL_WIDTHS[wi] ?? 1, mat: carModel.tyres.material } : null);
     // a burst of sparks as it tears free
     for (let k = 0; k < 30; k++) debris.spawnRimSpark(hubWorld, carVelocity, physics.heading);
     debris.sparks.geometry.attributes.aSize.needsUpdate = true;
@@ -2514,7 +2512,8 @@ const gouges = new SkidMarks(scene, {
 const looseWheels = [0, 1, 2, 3].map(() => new LooseWheel(scene, {
   rimGeo: carModel.rims.geometry, spokeGeo: carModel.spokes.geometry,
   rimMat: carModel.rims.material, spokeMat: carModel.spokes.material,
-  radius: WHEEL_RADIUS * 0.66,
+  tyreGeo: carModel.tyres.geometry, tyreMat: carModel.tyres.material,
+  radius: WHEEL_RADIUS * 0.66, tyreRadius: WHEEL_RADIUS,
 }));
 const ENGINE_BAY = IS_F1 ? new THREE.Vector3(0, 0.55, -0.85) : new THREE.Vector3(0, 0.62, 0.95);   // (the TT-88's engine sits behind the driver)
 

@@ -21,11 +21,18 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 147;
+export const BUILD = 148;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 121, date: '24 Nov 2026', title: 'Breaking properly',
+    items: [
+      ['Arms tear off whole', 'When a corner is torn off, its wishbones, pushrod and track rod rip away whole from their mountings and go flying, instead of snapping in half and leaving a stub on the car', 'update'],
+      ['Wheels keep their tyres', 'A wheel torn off in a crash with its tyre still on keeps the tyre as it rolls and bounces away. How bouncy it is depends on the air left in it: a full tyre springs back up, a flat one thuds and drags. A wheel worn down to the rim still comes off bare', 'update'],
+    ],
+  },
   {
     id: 120, date: '24 Nov 2026', title: 'People, plants and barriers',
     items: [
