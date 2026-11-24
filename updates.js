@@ -21,11 +21,18 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 132;
+export const BUILD = 133;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 112, date: '24 Nov 2026', title: 'Horns and sponsors',
+    items: [
+      ['Horn winglets', 'The TTF-05 has a slanted winglet each side, rooted beside the airbox\'s mouth and rising diagonally up and out over the sidepods', 'new'],
+      ['Sponsors', 'Made-up sponsors painted on, following the bodywork\'s curves: a big one along each sidepod\'s navy flank, another on the nose, and more on the front and rear wings\' endplates', 'new'],
+    ],
+  },
   {
     id: 111, date: '24 Nov 2026', title: 'TTF-05 cameras and fin',
     items: [

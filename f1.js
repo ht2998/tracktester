@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 58;
+export const BUILD = 59;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -684,7 +684,7 @@ export function buildF05Body(car, addPanel) {
     if (mat === MAT.blue || mat === MAT.yellow || mat === MAT.white || mat === MAT.navy) addPanel(m);
     return m;
   };
-  const SMOOTH = 0.85;
+  const SMOOTH = 0.85, wingDecals = [];
   // (a surface between lines along the car, and the same for the other side)
   const grid = (rows, m, flip = false) => {
     const pos = [], idx = [];
@@ -906,6 +906,55 @@ export function buildF05Body(car, addPanel) {
       }
       const m = new THREE.Mesh(grid(rows, 2), stripe); m.receiveShadow = true; car.add(m); addPanel(m);
     } }
+  // the horns: a slanted winglet each side, rooted on the cover right
+  // beside the airbox's mouth and rising diagonally up and out over the pod
+  for (const sx of [1, -1]) {
+    const z = -0.37, rx = 0.13, ry = surfY(z, rx) - 0.01, A = 0.6, L = 0.34;
+    add(mirrorX(box(L, 0.014, 0.15, rx + Math.cos(A) * L / 2, ry + Math.sin(A) * L / 2, z, 0, 0, A), sx), MAT.carbon);
+    add(mirrorX(box(0.008, 0.07, 0.12, rx + Math.cos(A) * L, ry + Math.sin(A) * L + 0.02, z), sx), MAT.carbon);     // (a little plate on its tip)
+  }
+  // THE SPONSORS: made-up names and badges, painted on the car's own
+  // surfaces (laid on the skin, following its curves): big on the pods'
+  // navy flanks, on the nose's sides, the wings' endplates
+  if (typeof document !== 'undefined') {
+    const decal = (text, ink, badge, w = 1024, h = 256) => {
+      const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d');
+      g.clearRect(0, 0, w, h);
+      const B = h * 0.34;
+      // the badge: a ring with a slash through it, or a diamond
+      g.fillStyle = ink; g.strokeStyle = ink; g.lineWidth = h * 0.07;
+      if (badge === 'ring') { g.beginPath(); g.arc(B + 10, h / 2, B * 0.8, 0, Math.PI * 2); g.stroke(); g.beginPath(); g.moveTo(10 + B * 0.3, h / 2 + B * 0.6); g.lineTo(10 + B * 1.7, h / 2 - B * 0.6); g.stroke(); }
+      else { g.beginPath(); g.moveTo(B + 10, h / 2 - B); g.lineTo(2 * B + 10, h / 2); g.lineTo(B + 10, h / 2 + B); g.lineTo(10, h / 2); g.closePath(); g.fill(); }
+      let fs = h * 0.62; g.font = `italic 900 ${fs}px Arial, Helvetica, sans-serif`;
+      const room = w - 2 * B - 50; while (g.measureText(text).width > room && fs > 20) { fs -= 4; g.font = `italic 900 ${fs}px Arial, Helvetica, sans-serif`; }
+      g.textBaseline = 'middle'; g.fillText(text, 2 * B + 40, h / 2 + h * 0.03);
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+      return new THREE.MeshStandardMaterial({ map: t, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, roughness: 0.3, side: THREE.DoubleSide });
+    };
+    // (a decal over part of the skin: rows along z0..z1, across the section's points k0..k1, lifted just off it)
+    const onSkin = (secOf, z0, z1, k0, k1, mat, sx) => {
+      const pos = [], uv = [], idx = [], NZ = 16, NK = k1 - k0;
+      for (let i = 0; i <= NZ; i++) {
+        const z = z0 + (z1 - z0) * i / NZ, u = sample(secOf(z));
+        for (let k = k0; k <= k1; k++) {
+          const a = u[Math.max(0, k - 1)], b = u[Math.min(u.length - 1, k + 1)], tx = b[0] - a[0], ty = b[1] - a[1], l = Math.hypot(tx, ty) || 1;
+          pos.push(sx * (u[k][0] - ty / l * 0.006), u[k][1] + tx / l * 0.006, z);
+          uv.push(sx > 0 ? i / NZ : 1 - i / NZ, 1 - (k - k0) / NK);
+        }
+      }
+      for (let i = 0; i < NZ; i++) for (let k = 0; k < NK; k++) { const p0 = i * (NK + 1) + k, p1 = p0 + NK + 1; idx.push(p0, p1, p0 + 1, p0 + 1, p1, p1 + 1); }
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
+      const m = new THREE.Mesh(g, mat); m.renderOrder = 2; car.add(m); addPanel(m); return m;
+    };
+    const flank = decal('KORVANE', '#ffffff', 'ring'), nose = decal('VELTRIS', '#15214e', 'diamond'), plate = decal('ORBIXA', '#ffffff', 'ring', 512, 256);
+    for (const sx of [1, -1]) {
+      onSkin(secB, 0.15, -0.75, 5 * S, 6 * S - 1, flank, sx);              // (the navy flank, under the crease)
+      onSkin(secA, 1.5, 0.95, 3 * S, 4 * S, nose, sx);                     // (the nose's side)
+      // the wings' endplates, flat on their outsides
+      const rp = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.2).rotateY(sx * Math.PI / 2).translate(sx * 0.479, 0.74, -1.77), plate); rp.renderOrder = 2; wingDecals.push([rp, 'rear']);
+      const fp = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.15).rotateY(sx * Math.PI / 2).translate(sx * 0.724, 0.19, 2.46), decal('VELTRIS', '#ffffff', 'diamond', 512, 256)); fp.renderOrder = 2; wingDecals.push([fp, sx > 0 ? 'fl' : 'fr']);
+    }
+  }
   // the gearbox at the back, its rain light, the floor, the plank, the diffuser and its fences
   add(box(0.2, 0.18, 0.36, 0, 0.22, -1.9), MAT.carbon);
   add(box(0.07, 0.04, 0.03, 0, 0.27, -2.1), MAT.rain);
@@ -924,6 +973,7 @@ export function buildF05Body(car, addPanel) {
   // two pylons, a navy spoon in the middle, big navy endplates
   const wings = { fl: new THREE.Group(), fr: new THREE.Group(), rear: new THREE.Group() };
   for (const g of Object.values(wings)) car.add(g);
+  for (const [m, w] of wingDecals) wings[w].add(m);       // (the endplates' sponsors go with their wings)
   const addTo = (g, geo, mat) => { const m = add(geo, mat); g.add(m); return m; };
   for (const s of [1, -1]) add(box(0.015, 0.22, 0.16, s * 0.06, 0.22, 2.5, 0.2), MAT.navy);
   add(loft([{ z: 2.72, w: 0.3, h: 0.025, y: 0.13 }, { z: 2.42, w: 0.3, h: 0.025, y: 0.155 }], 0.3, 12, 2, false), MAT.navy);
