@@ -29,7 +29,7 @@ export const UPDATES = [
   {
     id: 114, date: '24 Nov 2026', title: 'Open intakes',
     items: [
-      ['A V10 inside', 'The TTF-05 now has its engine modelled in the bay behind the driver: a 3-litre V10, two banks of five at 72 degrees, cam covers, intake trumpets under the plenum, the exhaust headers curling back, the oil reservoir and the bellhousing. It\'s hidden under the cover for now, ready for later', 'new'],
+      ['A V10 inside', 'The TTF-05 now has its engine modelled in the bay behind the driver: a 3-litre V10, two banks of five at 72 degrees, cam covers, ten polished intake trumpets standing open in the V, the exhaust headers curling back, the oil reservoir and the bellhousing. It\'s hidden under the cover for now, ready for later', 'new'],
       ['Hollow sidepods', 'The TTF-05\'s sidepod mouths are open now: a dark duct runs back into each pod, narrowing as it goes, with the radiator\'s fins at the back of it, instead of a flat black panel', 'update'],
     ],
   },
