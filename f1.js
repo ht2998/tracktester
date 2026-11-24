@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 50;
+export const BUILD = 51;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -432,7 +432,22 @@ export function tyreGeometry(r, w, rimR = r * 0.62, seg = 40) {
   prof.push(new THREE.Vector2(r - sh, hw + 0.002));
   prof.push(new THREE.Vector2(rimR + (r - rimR) * 0.35, hw + 0.004));
   prof.push(new THREE.Vector2(rimR, hw - 0.012));
-  return new THREE.LatheGeometry(prof, seg).rotateZ(Math.PI / 2);
+  const g = new THREE.LatheGeometry(prof, seg).rotateZ(Math.PI / 2);
+  // Three groups, as on a plain cylinder: the tread (with its shoulders),
+  // then each sidewall. The tyre compounds paint them separately, and a
+  // tyre without its groups isn't drawn at all
+  const ix = g.index?.array, n = prof.length;
+  if (ix && ix.length > 0) {
+    const parts = [[], [], []];
+    for (let t = 0; t < ix.length; t += 3) {
+      const j = Math.min(ix[t] % n, ix[t + 1] % n, ix[t + 2] % n);
+      parts[j >= 2 && j < n - 3 ? 0 : j < 2 ? 1 : 2].push(ix[t], ix[t + 1], ix[t + 2]);
+    }
+    const all = [].concat(...parts);
+    g.setIndex(all); g.clearGroups();
+    let at = 0; parts.forEach((q, m) => { g.addGroup(at, q.length, m); at += q.length; });
+  }
+  return g;
 }
 const box = (w, h, d, x, y, z, rx = 0, ry = 0, rz = 0) => {
   const g = roundedBox(w, h, d);
@@ -687,8 +702,8 @@ export function buildF05Body(car, addPanel) {
   const yTop = K([0.64, 0.64, 0.64, 0.72, 0.73, 0.62, 0.5, 0.36]);
   const x1 = K([0.33, 0.33, 0.32, 0.3, 0.27, 0.22, 0.16, 0.09]), y1 = K([0.56, 0.57, 0.58, 0.64, 0.64, 0.56, 0.46, 0.33]);
   const CW = K([0.31, 0.31, 0.29, 0.19, 0.17, 0.15, 0.12, 0.08]);        // (the tub's walls, then the engine cover's half-width)
-  const xc = K([0.52, 0.57, 0.58, 0.52, 0.42, 0.31, 0.22, 0.12]), yc = K([0.52, 0.53, 0.52, 0.48, 0.44, 0.39, 0.34, 0.28]);
-  const xo = K([0.64, 0.77, 0.79, 0.74, 0.64, 0.48, 0.33, 0.2]), ycr = K([0.3, 0.3, 0.3, 0.31, 0.32, 0.33, 0.33, 0.26]);
+  const xc = K([0.5, 0.54, 0.55, 0.5, 0.41, 0.31, 0.22, 0.12]), yc = K([0.52, 0.53, 0.52, 0.48, 0.44, 0.39, 0.34, 0.28]);
+  const xo = K([0.6, 0.68, 0.69, 0.65, 0.57, 0.45, 0.32, 0.2]), ycr = K([0.3, 0.3, 0.3, 0.31, 0.32, 0.33, 0.33, 0.26]);
   const xb = (z) => xo(z) - 0.006 - 0.07 * Math.max(0, Math.min(1, (z - 0.05) / 0.5));       // (the undercut under the pod's front)
   // the cockpit's opening: half its width along the car (closed ahead of it and behind the headrest)
   const OWc = curveAny([[0.9, 0], [0.74, 0], [0.7, 0.15], [0.5, 0.2], [-0.05, 0.2], [-0.2, 0.06], [-0.3, 0], [-0.5, 0]]);
@@ -840,7 +855,13 @@ export function buildF05Body(car, addPanel) {
   // the gearbox at the back, its rain light, the floor, the plank, the diffuser and its fences
   add(box(0.2, 0.18, 0.36, 0, 0.22, -1.9), MAT.carbon);
   add(box(0.07, 0.04, 0.03, 0, 0.27, -2.1), MAT.rain);
-  add(box(1.4, 0.02, 2.1, 0, 0.1, -0.2), MAT.carbon);
+  // the floor: under the whole car, its edge following the pods' outline (stepped out a little), from behind the front wheels
+  { const sh = new THREE.Shape(), pts = [];
+    pts.push([0.3, 1.3], [0.5, 1.22], [0.52, 0.72]);
+    for (let i = 0; i <= 16; i++) { const z = 0.66 - i * (0.66 + 1.7) / 16; pts.push([Math.max(0.3, xo(z) + 0.04), z]); }
+    pts.push([0.3, -1.75]);
+    sh.moveTo(0, 1.3); for (const q of pts) sh.lineTo(q[0], q[1]); for (const q of pts.slice().reverse()) sh.lineTo(-q[0], q[1]); sh.lineTo(0, 1.3);
+    add(new THREE.ExtrudeGeometry(sh, { depth: 0.02, bevelEnabled: false }).rotateX(Math.PI / 2).translate(0, 0.12, 0), MAT.carbon); }
   add(box(0.3, 0.012, 2.6, 0, 0.03, -0.1), new THREE.MeshStandardMaterial({ color: 0x6b5a3e, roughness: 0.9 }));
   add(box(0.86, 0.02, 0.6, 0, 0.12, -1.85, -0.3), MAT.carbon);
   for (const x of [-0.32, -0.12, 0.12, 0.32]) add(box(0.01, 0.14, 0.55, x, 0.11, -1.85), MAT.carbon);
@@ -864,13 +885,13 @@ export function buildF05Body(car, addPanel) {
   // --- THE REAR WING: set well forward, navy endplates, dark planes,
   // a white lip on the top flap; the beam wing below; louvres in the plates
   // (the rear endplates: tall, square at the top, their front cut away low down over the tyre)
-  for (const s of [1, -1]) addTo(wings.rear, plate([[-1.6, 0.56], [-1.55, 0.66], [-1.55, 0.86], [-1.6, 0.885], [-1.97, 0.885], [-1.99, 0.86], [-1.99, 0.42], [-1.78, 0.41], [-1.7, 0.5]], s * 0.47, 0.014), MAT.navy);
+  for (const s of [1, -1]) addTo(wings.rear, plate([[-1.6, 0.56], [-1.55, 0.66], [-1.55, 0.86], [-1.6, 0.885], [-1.97, 0.885], [-1.99, 0.86], [-2.0, 0.13], [-1.82, 0.13], [-1.78, 0.3], [-1.7, 0.5]], s * 0.47, 0.014), MAT.navy);
   addTo(wings.rear, box(0.92, 0.024, 0.24, 0, 0.74, -1.66, 0.18), MAT.carbon);
   addTo(wings.rear, box(0.92, 0.018, 0.18, 0, 0.82, -1.85, 0.5), MAT.navy);
   addTo(wings.rear, box(0.92, 0.006, 0.02, 0, 0.845, -1.95, 0), MAT.white);
   for (const s of [1, -1]) for (let k = 0; k < 4; k++) addTo(wings.rear, box(0.018, 0.012, 0.15, s * 0.47, 0.5 + k * 0.06, -1.82, 0.4), MAT.dark);
   add(box(0.72, 0.02, 0.16, 0, 0.44, -1.92, 0.2), MAT.carbon);
-  addTo(wings.rear, box(0.035, 0.34, 0.06, 0, 0.56, -1.78), MAT.carbon);
+  addTo(wings.rear, box(0.035, 0.45, 0.06, 0, 0.525, -1.8), MAT.carbon);
   return { helmet: [helmet, visor, stripe], rainMat: MAT.rain, exhaustMat: MAT.exhaust, mats: MAT, wings, mirrors, driver };
 }
 

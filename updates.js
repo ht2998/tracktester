@@ -21,11 +21,18 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 121;
+export const BUILD = 122;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 105, date: '24 Nov 2026', title: 'Tyres are back',
+    items: [
+      ['Tyres fixed', 'Since the new tyre shapes went in, the cars showed only their rims: the tyres were there but weren\'t being drawn. They\'re back, tread and sidewalls, on every car', 'fix'],
+      ['TTF-05 fit', 'Sidepods slimmed to sit inside the wheels as on the real car, the floor now follows the body instead of sticking out as a slab, and the rear wing\'s endplates reach down to the diffuser, its pillar down onto the gearbox', 'update'],
+    ],
+  },
   {
     id: 104, date: '24 Nov 2026', title: 'TTF-05 details',
     items: [
