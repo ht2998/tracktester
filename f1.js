@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 82;
+export const BUILD = 83;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -635,10 +635,10 @@ export function buildF1Body(car, addPanel) {
       decalOnSkin(car, addPanel, sk, sk.secA, 1.6, 1.0, 3 * S, 4 * S + 2, fuel, sx);               // (the nose's white side)
       decalOnSkin(car, addPanel, sk, sk.secB, -0.85, -1.15, 2 * S, 3 * S, sponsorBadge('VELTRIS', '#ffffff'), sx);   // (small ones on the cover)
       decalOnSkin(car, addPanel, sk, sk.secB, 0.55, 0.36, S, 2 * S - 1, sponsorBadge('KORVANE', '#ffffff'), sx);     // (and by the cockpit)
-      wings.rear.add(flatDecal(0.36, 0.18, sx * 0.452, 0.82, -2.0, sponsorDecal('VESPERO', red, 768, 256)));
+      wings.rear.add(flatDecal(0.36, 0.18, sx * 0.452, 0.82, -2.0, sponsorDecal('VESPERO', red, 512, 256)));
       wings.rear.add(flatDecal(0.3, 0.1, sx * 0.452, 0.6, -2.02, sponsorDecal('VALCOR', '#1a1c20', 768, 256)));
     }
-    wings.rear.add(flatDecal(0.8, 0.16, 0, 1.013, -2.24, sponsorDecal('VESPERO', '#ffffff'), 'top', 0.7));
+    wings.rear.add(flatDecal(0.8, 0.16, 0, 1.013, -2.24, sponsorDecal('VESPERO', '#ffffff', 1280, 256), 'top', 0.7));
   }
   return { helmet: [helmet, visor, stripe], rainMat: MAT.rain, exhaustMat: MAT.exhaust, mats: MAT, wings, mirrors, driver };
 }
@@ -795,7 +795,7 @@ const LOGO = {
   // the tyres: a tread-ringed wheel, in yellow
   VALCOR: (g, x, y, d) => { g.strokeStyle = '#f6c51a'; g.lineWidth = d * 0.14; g.beginPath(); g.arc(x + d / 2, y + d / 2, d * 0.36, 0, 7); g.stroke(); g.fillStyle = '#f6c51a'; for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2; g.save(); g.translate(x + d / 2 + Math.cos(a) * d * 0.45, y + d / 2 + Math.sin(a) * d * 0.45); g.rotate(a); g.fillRect(-d * 0.04, -d * 0.05, d * 0.08, d * 0.1); g.restore(); } g.beginPath(); g.arc(x + d / 2, y + d / 2, d * 0.1, 0, 7); g.fill(); },
   // TOBACCO (the TTF-05's): three pale-blue curls rising in a ring
-  'PURE SPIRIT': (g, x, y, d) => { g.fillStyle = '#7fd0f5'; g.beginPath(); g.arc(x + d / 2, y + d / 2, d * 0.46, 0, 7); g.fill(); g.strokeStyle = '#ffffff'; g.lineWidth = d * 0.07; g.lineCap = 'round';
+  'PURE SPIRIT': (g, x, y, d) => { g.fillStyle = '#7fd0f5'; g.beginPath(); g.arc(x + d / 2, y + d / 2, d * 0.44, 0, 7); g.fill(); g.strokeStyle = '#ffffff'; g.lineWidth = d * 0.05; g.beginPath(); g.arc(x + d / 2, y + d / 2, d * 0.465, 0, 7); g.stroke(); g.strokeStyle = '#ffffff'; g.lineWidth = d * 0.07; g.lineCap = 'round';
     for (let k = 0; k < 3; k++) { g.beginPath(); for (let i = 0; i <= 16; i++) { const u = i / 16; g.lineTo(x + d * (0.3 + k * 0.2) + Math.sin(u * 6 + k) * d * 0.06, y + d * (0.82 - u * 0.62)); } g.stroke(); } },
   // TOBACCO (the TTF-88's and TTF-94's): a gold crown over a red shield with a white V
   VESPERO: (g, x, y, d) => { g.fillStyle = '#d2111c'; g.beginPath(); g.moveTo(x + d * 0.18, y + d * 0.3); g.lineTo(x + d * 0.82, y + d * 0.3); g.lineTo(x + d * 0.82, y + d * 0.62); g.quadraticCurveTo(x + d * 0.8, y + d * 0.86, x + d * 0.5, y + d * 0.98); g.quadraticCurveTo(x + d * 0.2, y + d * 0.86, x + d * 0.18, y + d * 0.62); g.closePath(); g.fill();
@@ -818,16 +818,24 @@ function sponsorMat(c) {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
   return new THREE.MeshStandardMaterial({ map: t, alphaTest: 0.5, alphaToCoverage: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, roughness: 0.3, side: THREE.DoubleSide });
 }
-function sponsorDecal(text, ink, w = 1024, h = 256, { name = true } = {}) {
+function sponsorDecal(text, ink, w = 1024, h = 256, { name = true, logo = true } = {}) {
   const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d');
   g.clearRect(0, 0, w, h);
-  const d = h * 0.78, x0 = h * 0.08;
-  (LOGO[text] || LOGO.NOVIK)(g, x0, (h - d) / 2, d, ink);
+  // (the badge a true circle at the picture's height, the name after it at its natural
+  // width, never squeezed or stretched; the pair centred along the picture)
+  const d = h * 0.78, pad = h * 0.08, gap = logo ? h * 0.14 : 0, sub = SUB[text];
+  let fs = h * (sub ? 0.52 : 0.62), tw = 0;
+  const font = () => `italic 900 ${fs}px Arial, Helvetica, sans-serif`;
   if (name) {
-    const sub = SUB[text], tx = x0 + d + h * 0.14, room = w - tx - h * 0.06;
-    let fs = h * (sub ? 0.52 : 0.62); g.font = `italic 900 ${fs}px Arial, Helvetica, sans-serif`;
-    while (g.measureText(text).width > room && fs > 16) { fs -= 4; g.font = `italic 900 ${fs}px Arial, Helvetica, sans-serif`; }
-    g.fillStyle = ink; g.textBaseline = 'middle';
+    g.font = font(); const room = w - 2 * pad - (logo ? d + gap : 0);
+    while (g.measureText(text).width > room && fs > 16) { fs -= 4; g.font = font(); }
+    tw = g.measureText(text).width;
+  }
+  const total = (logo ? d : 0) + (name ? gap + tw : 0), x0 = Math.max(pad, (w - total) / 2);
+  if (logo) (LOGO[text] || LOGO.NOVIK)(g, x0, (h - d) / 2, d, ink);
+  if (name) {
+    const tx = x0 + (logo ? d + gap : 0);
+    g.font = font(); g.fillStyle = ink; g.textBaseline = 'middle';
     g.fillText(text, tx, h / 2 - (sub ? h * 0.1 : -h * 0.03));
     if (sub) { g.font = `700 ${h * 0.17}px Arial, Helvetica, sans-serif`; g.fillStyle = text === 'ELX' ? '#d81e1e' : ink; g.fillText(sub.split('').join(String.fromCharCode(8202)), tx + 4, h / 2 + h * 0.27); }
   }
@@ -1197,9 +1205,16 @@ export function buildF05Body(car, addPanel) {
   // navy flanks, on the nose's sides, the wings' endplates
   if (typeof document !== 'undefined') {
     const decal = (text, ink, badge, w = 1024, h = 256) => sponsorDecal(text, ink, w, h);
+    // (a decal to be drawn later at the shape of the patch it goes on: aspect = its length / its height)
+    const fit = (text, ink, opts) => (aspect) => sponsorDecal(text, ink, Math.round(256 * Math.min(8, Math.max(1, aspect))), 256, opts);
     // (a decal over part of the skin: rows along z0..z1, across the section's points k0..k1, lifted just off it)
     const onSkin = (secOf, z0, z1, k0, k1, mat, sx) => {
       const pos = [], uv = [], idx = [], NZ = 16, NK = k1 - k0;
+      if (typeof mat === 'function') {       // (drawn to the patch's own length and height, so nothing on it is stretched)
+        const u = sample(secOf((z0 + z1) / 2)); let arc = 0;
+        for (let k = k0; k < k1; k++) arc += Math.hypot(u[k + 1][0] - u[k][0], u[k + 1][1] - u[k][1]);
+        mat = mat(Math.abs(z1 - z0) / Math.max(0.01, arc));
+      }
       for (let i = 0; i <= NZ; i++) {
         const z = z0 + (z1 - z0) * i / NZ, u = sample(secOf(z));
         for (let k = k0; k <= k1; k++) {
@@ -1212,7 +1227,7 @@ export function buildF05Body(car, addPanel) {
       const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
       const m = new THREE.Mesh(g, mat); m.renderOrder = 2; car.add(m); addPanel(m); return m;
     };
-    const flank = decal('PURE SPIRIT', '#ffffff', 'ring'), nose = decal('ELX', '#07102e', 'diamond'), plate = decal('PURE SPIRIT', '#ffffff', 'ring', 512, 256);
+    const flank = fit('PURE SPIRIT', '#ffffff'), nose = fit('ELX', '#07102e'), plate = decal('PURE SPIRIT', '#ffffff', 'ring', 512, 256);
     for (const sx of [1, -1]) {
       onSkin(secB, 0.3, -0.4, 4 * S, 6 * S - 2, flank, sx);            // (the main sponsor, big, down the pod's blue side)
       onSkin(secA, 1.5, 0.95, 2 * S, 4 * S, nose, sx);                     // (the nose's yellow side: the fuel)
@@ -1224,8 +1239,8 @@ export function buildF05Body(car, addPanel) {
     // and the rest of them: the title sponsor along the engine cover and
     // across the rear wing, the others on the pods' tops, the nose, the
     // cockpit's sides, the airbox, the front wing
-    const navyInk = '#07102e', title = decal('ZEPHRA', '#ffffff', 'diamond'), pods = decal('VELTRIS', '#ffffff', 'ring');
-    const noseTop = decal('TERAVO', navyInk, 'ring'), pit = decal('QUANTEX', navyInk, 'diamond', 512, 128), box2 = decal('NOVIK', '#ffffff', 'ring', 512, 160);
+    const navyInk = '#07102e', title = fit('ZEPHRA', '#ffffff'), pods = fit('VELTRIS', '#ffffff');
+    const noseTop = fit('TERAVO', navyInk), pit = fit('QUANTEX', navyInk), box2 = decal('NOVIK', '#ffffff', 'ring', 512, 160);
     for (const sx of [1, -1]) {
       onSkin(secB, -1.0, -1.58, 2 * S, 3 * S + 2, title, sx);           // (the cover's flank, behind the gills)
       onSkin(secB, 0.48, -0.2, 2 * S, 3 * S, pods, sx);                   // (the pod's top, ahead of the gills)
@@ -1237,16 +1252,24 @@ export function buildF05Body(car, addPanel) {
       const fw = new THREE.Mesh(new THREE.PlaneGeometry(0.36, 0.09).rotateX(-Math.PI / 2).rotateY(Math.PI).rotateX(0.06).translate(sx * 0.45, 0.138, 2.45), decal('PURE SPIRIT', '#ffffff', 'diamond', 512, 128));
       fw.renderOrder = 2; wingDecals.push([fw, sx > 0 ? 'fl' : 'fr']);
     }
-    // the main sponsor along the nose's blue top band, reading from the front back
-    { const pos = [], uv = [], idx = [], NZ = 24, NX = 6, tex = decal('PURE SPIRIT', '#ffffff', 'ring');
-      for (let i = 0; i <= NZ; i++) { const z = 2.28 - i * (2.28 - 1.3) / NZ, w = Math.min(0.055, hwA(z) * 0.5);
-        for (let k = 0; k <= NX; k++) { const x = -w + 2 * w * k / NX; pos.push(x, surfY(z, Math.abs(x)) + 0.005, z); uv.push(i / NZ, 1 - k / NX); } }
+    // (a patch laid on the top of the nose, z0 to z1 along it, half-width w(z) across, lifted just off it)
+    const onNose = (z0, z1, w, tex, NZ = 24, NX = 8) => {
+      const pos = [], uv = [], idx = [];
+      for (let i = 0; i <= NZ; i++) { const z = z0 + (z1 - z0) * i / NZ, ww = w(z);
+        for (let k = 0; k <= NX; k++) { const x = -ww + 2 * ww * k / NX; pos.push(x, surfY(z, Math.abs(x)) + 0.005, z); uv.push(i / NZ, 1 - k / NX); } }
       for (let i = 0; i < NZ; i++) for (let k = 0; k < NX; k++) { const p0 = i * (NX + 1) + k, p1 = p0 + NX + 1; idx.push(p0, p0 + 1, p1, p0 + 1, p1 + 1, p1); }
       const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
-      const m = new THREE.Mesh(g, tex); m.renderOrder = 2; car.add(m); addPanel(m); }
+      const m = new THREE.Mesh(g, tex); m.renderOrder = 2; car.add(m); addPanel(m); return m;
+    };
+    // the main sponsor's name along the nose's blue top band, reading from the front back
+    // (its picture drawn at the band's own length to width, so the letters keep their shape)
+    { const z0 = 2.0, z1 = 1.12, hw = 0.05;
+      onNose(z0, z1, () => hw, sponsorDecal('PURE SPIRIT', '#ffffff', Math.round(256 * (z0 - z1) / (2 * hw)), 256, { logo: false })); }
+    // and its badge, a true circle, on the top of the nose right in front of the driver
+    { const r = 0.07, zc = 0.86; onNose(zc + r, zc - r, () => r, sponsorBadge('PURE SPIRIT'), 12, 12); }
     // the phone company across the rear wing's top flap, lime on navy, read from the front (as in the Garage)
     { const n = new THREE.Vector3(0, Math.cos(0.5), Math.sin(0.5)).multiplyScalar(0.011);
-      const rw = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.15).rotateZ(Math.PI).rotateX(-Math.PI / 2).rotateY(Math.PI).rotateX(0.5).translate(n.x, 0.82 + n.y, -1.85 + n.z), decal('TELESPEED', '#c6f23a', 'diamond'));
+      const rw = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.15).rotateZ(Math.PI).rotateX(-Math.PI / 2).rotateY(Math.PI).rotateX(0.5).translate(n.x, 0.82 + n.y, -1.85 + n.z), decal('TELESPEED', '#c6f23a', 'diamond', 1365, 256));
       rw.renderOrder = 2; wingDecals.push([rw, 'rear']); }
   }
   // the gearbox at the back, its rain light, the floor, the plank, the diffuser and its fences
@@ -1465,12 +1488,12 @@ export function buildF94Body(car, addPanel) {
       decalOnSkin(car, addPanel, sk, sk.secA, 1.72, 1.12, 3 * S - 1, 4 * S + 1, fuel, sx);        // (the nose's side)
       decalOnSkin(car, addPanel, sk, sk.secB, -0.95, -1.25, 2 * S, 3 * S, sponsorBadge('QUANTEX'), sx);   // (small ones on the cover's flank)
       decalOnSkin(car, addPanel, sk, sk.secB, 0.62, 0.42, S, 2 * S - 1, sponsorBadge('NOVIK'), sx);       // (and by the cockpit)
-      const ep = flatDecal(0.36, 0.18, sx * 0.512, 0.8, -2.0, sponsorDecal('VESPERO', '#ffffff', 768, 256)); wings.rear.add(ep);
+      const ep = flatDecal(0.36, 0.18, sx * 0.512, 0.8, -2.0, sponsorDecal('VESPERO', '#ffffff', 512, 256)); wings.rear.add(ep);
       const tp = flatDecal(0.3, 0.1, sx * 0.512, 0.6, -2.02, sponsorDecal('VALCOR', '#ffffff', 768, 256)); wings.rear.add(tp);
       const fe = flatDecal(0.16, 0.16, sx * 0.785, 0.14, 2.4, sponsorBadge('ORBIXA')); (sx > 0 ? wings.fl : wings.fr).add(fe);
     }
     // across the rear wing's top element, read from the front
-    { const rw = flatDecal(0.84, 0.16, 0, 1.012, -2.22, sponsorDecal('VESPERO', '#ffffff'), 'top', 0.7); wings.rear.add(rw); }
+    { const rw = flatDecal(0.84, 0.16, 0, 1.012, -2.22, sponsorDecal('VESPERO', '#ffffff', 1344, 256), 'top', 0.7); wings.rear.add(rw); }
   }
   return { helmet: [helmet, visor, stripe], rainMat: MAT.rain, exhaustMat: MAT.exhaust, mats: MAT, wings, mirrors, driver };
 }
