@@ -1342,9 +1342,9 @@ export function buildF05Body(car, addPanel) {
       const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
       const m = new THREE.Mesh(g, tex); m.renderOrder = 2; car.add(m); addPanel(m); return m;
     };
-    // the main sponsor's name along the nose's blue top band, reading from the front back
+    // the main sponsor's name along the nose's blue top band, reading from the front back to its badge
     // (its picture drawn at the band's own length to width, so the letters keep their shape)
-    { const z0 = 2.0, z1 = 1.12, hw = 0.05;
+    { const hw = 0.065, z1 = 0.945, z0 = z1 + 1.144;        // (30% bigger than it was, ending right against the badge)
       onNose(z0, z1, () => hw, sponsorDecal('PURE SPIRIT', '#ffffff', Math.round(256 * (z0 - z1) / (2 * hw)), 256, { logo: false })); }
     // and its badge, a true circle, on the top of the nose right in front of the driver
     { const r = 0.07, zc = 0.86; onNose(zc + r, zc - r, () => r, sponsorBadge('PURE SPIRIT'), 12, 12); }
