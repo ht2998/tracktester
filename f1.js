@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 88;
+export const BUILD = 89;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -47,6 +47,11 @@ export const ENGINES = {
   turboV6: { engineInertia: 0.08, sound: { tone: 1.15, bass: 1, drive: 1.25, vol: 1.1 }, name: '1.5 turbo V6 (race boost)', cylinders: 6, idleRpm: 3200, redline: 12500, launchRpm: 8500, engineBraking: 60, peakTorque: 420, massDelta: 0,
     torqueCurve: [[2500, 230], [4000, 280], [6000, 330], [8000, 390], [9500, 415], [10500, 420], [11500, 405], [12500, 385], [13000, 160], [13300, 0]],
     turbo: { onRpm: 4500, fullRpm: 8000, lag: 0.6, base: 0.55 } },
+  // (the TTF-20's: a 1.6 turbo V6 with its electric motors, the turbo spun up by one
+  // too, so next to no lag; about 1,000 bhp together, rev-limited at 15,000)
+  hybridV6: { engineInertia: 0.06, sound: { tone: 1.3, bass: 0.9, drive: 1.3, vol: 1.1 }, name: '1.6 turbo V6 hybrid', cylinders: 6, idleRpm: 4000, redline: 15000, launchRpm: 10000, engineBraking: 70, peakTorque: 640, massDelta: 0,
+    torqueCurve: [[3000, 350], [5000, 480], [7000, 560], [9000, 620], [10500, 640], [11500, 630], [12500, 600], [13500, 520], [14500, 220], [15000, 0]],
+    turbo: { onRpm: 3000, fullRpm: 6000, lag: 0.1, base: 0.85 } },
   quali: { engineInertia: 0.08, sound: { tone: 1.2, bass: 1, drive: 1.35, vol: 1.2 }, name: '1.5 turbo V6 (qualifying boost)', cylinders: 6, idleRpm: 3200, redline: 12800, launchRpm: 9000, engineBraking: 60, peakTorque: 640, massDelta: 0,
     torqueCurve: [[2500, 300], [4000, 360], [6000, 450], [8000, 570], [9500, 630], [10500, 640], [11500, 610], [12800, 560], [13200, 200], [13500, 0]],
     turbo: { onRpm: 5000, fullRpm: 8800, lag: 0.85, base: 0.45 }, wear: 4 },
@@ -180,6 +185,34 @@ export const F05_CAR = {
   shiftTime: { manual: 0.05, auto: 0.12 },
   fuelCapacity: 140,
 };
+// THE TTF-20: an original 2020 hybrid Formula 1 car (a tribute to the cars of
+// that year: no real make, badges or livery). Very long (3.7 m between the
+// axles) and wide (2 m), heavy (746 kg), wide slicks on 13-inch wheels, the
+// halo over the cockpit, tiny sidepods, a huge floor and front wing: more
+// downforce and grip than any of the others, the 1.6 turbo V6 hybrid
+export const F20_CAR = {
+  ...F05_CAR,
+  name: 'TTF-20',
+  body: 'f20',
+  grooved: false,
+  stockEngine: 'hybridV6',
+  baseMass: 746,
+  inertia: 1250,
+  airInertia: { pitch: 1400, yaw: 1450, roll: 300 },
+  cgToFront: 2.04, cgToRear: 1.675,  // 3.715 m between the axles, a little more weight on the back
+  trackHalf: 0.79,
+  wheelRadius: 0.33,
+  frontGrip: 1.62, rearGrip: 1.78,   // (wide slicks)
+  cgHeight: 0.26,
+  downforce: 3.4,
+  downforceFront: 0.45,
+  drag: 0.78,
+  brakeForce: 30000, brakeBias: 0.57,
+  maxSteer: 0.3, steerSpeed: 3.4,
+  frontStiffness: 82000, rearStiffness: 95000,
+  shiftTime: { manual: 0.03, auto: 0.08 },
+  fuelCapacity: 110,
+};
 // THE TT-94: an original 1994 V12 Formula 1 car (a tribute to the cars of
 // that year: no real make, badges or livery). On slicks, with the
 // stepped floor, a raised nose and a drooping front wing, big sidepods,
@@ -268,8 +301,8 @@ export const P91_CAR = {
   gears: [2.5, 1.78, 1.38, 1.14, 0.97],
   fuelCapacity: 100,
 };
-export const STOCK_ENGINE = { caterham: 'duratec', f1: 'turboV6', f05: 'v10x', f94: 'v12', p70: 'flat12', p91: 'rotary4' };
-export const specForKind = (kind) => ({ f05: F05_CAR, f94: F94_CAR, p70: P70_CAR, p91: P91_CAR, f1: F1_CAR }[kind] || CATERHAM_CAR);
+export const STOCK_ENGINE = { caterham: 'duratec', f1: 'turboV6', f20: 'hybridV6', f05: 'v10x', f94: 'v12', p70: 'flat12', p91: 'rotary4' };
+export const specForKind = (kind) => ({ f20: F20_CAR, f05: F05_CAR, f94: F94_CAR, p70: P70_CAR, p91: P91_CAR, f1: F1_CAR }[kind] || CATERHAM_CAR);
 // where each single-seater's wheels are: [x, z, width] (left, right; front then back)
 // THE DRIVERS' RACE SUITS: in each team's colours (suit, and the trim on
 // his helmet): white and red for the TTF-88, red and white for the TTF-94,
@@ -278,10 +311,12 @@ export const DRIVER_SUITS = {
   f1: { suit: 0xf2f2ee, trim: 0xe0231b },
   f94: { suit: 0xc8141c, trim: 0xf4f4f0 },
   f05: { suit: 0x2f9be0, trim: 0xf2c200 },
+  f20: { suit: 0x16171a, trim: 0x00a19b },
 };
 export const WHEEL_LAYOUT = {
   f1: [[0.88, 1.62, 0.3], [-0.88, 1.62, 0.3], [0.88, -1.28, 0.42], [-0.88, -1.28, 0.42]],
   f05: [[0.73, 1.67, 0.28], [-0.73, 1.67, 0.28], [0.73, -1.43, 0.35], [-0.73, -1.43, 0.35]],
+  f20: [[0.805, 2.04, 0.305], [-0.805, 2.04, 0.305], [0.771, -1.675, 0.405], [-0.771, -1.675, 0.405]],
   f94: [[0.83, 1.62, 0.3], [-0.83, 1.62, 0.3], [0.83, -1.33, 0.39], [-0.83, -1.33, 0.39]],
   p70: [[0.78, 1.25, 0.26], [-0.78, 1.25, 0.26], [0.76, -1.05, 0.34], [-0.76, -1.05, 0.34]],
   p91: [[0.79, 1.3, 0.3], [-0.79, 1.3, 0.3], [0.77, -1.36, 0.36], [-0.77, -1.36, 0.36]],
@@ -486,6 +521,8 @@ const rod = (a, b, r = 0.012) => {
 // THE TT-88 AS THE PLAYER'S CAR: just the body (the game adds its own
 // wheels, brakes, suspension, cockpit and damage, as for the Caterham).
 // addPanel(mesh): a painted panel that can be dented.
+// how much further forward the TTF-88's driver sits than he used to (as the real car has him, lying well back)
+export const F88_DRIVER_DZ = 0.35;
 export function buildF1Body(car, addPanel) {
   const MAT = {
     blue: new THREE.MeshPhysicalMaterial({ color: 0xe0231b, roughness: 0.24, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.06 }),      // (the red)
@@ -519,12 +556,41 @@ export function buildF1Body(car, addPanel) {
   const PAINT = [MAT.blue, MAT.yellow, MAT.carbon, MAT.dark];
   // (the edge between red above and white below, along the pods: high at
   // the front, so the white comes to a point there, dropping toward the back)
-  const edgeY = (z) => 0.4 - (0.48 - z) * 0.26;
+  const edgeY = (z) => 0.4 - (0.7 - z) * 0.2;
+  // (measured off a reference of the real car: 40 slices down the nose to the pods'
+  // mouths, 60 from there back; eight points a slice behind the mouths: the middle of
+  // the top, three down the cover, the flat pod's top edge, its side, its foot, the floor)
+  const NZ = [2.5, 2.457, 2.414, 2.371, 2.328, 2.285, 2.242, 2.198, 2.155, 2.112, 2.069, 2.026, 1.983, 1.94, 1.897, 1.854, 1.811, 1.768, 1.725, 1.682, 1.638, 1.595, 1.552, 1.509, 1.466, 1.423, 1.38, 1.337, 1.294, 1.251, 1.208, 1.165, 1.122, 1.078, 1.035, 0.992, 0.949, 0.906, 0.863, 0.82];
+  const BZ = [0.8, 0.763, 0.725, 0.688, 0.651, 0.614, 0.576, 0.539, 0.502, 0.464, 0.427, 0.39, 0.353, 0.315, 0.278, 0.241, 0.203, 0.166, 0.129, 0.092, 0.054, 0.017, -0.02, -0.058, -0.095, -0.132, -0.169, -0.207, -0.244, -0.281, -0.319, -0.356, -0.393, -0.431, -0.468, -0.505, -0.542, -0.58, -0.617, -0.654, -0.692, -0.729, -0.766, -0.803, -0.841, -0.878, -0.915, -0.953, -0.99, -1.027, -1.064, -1.102, -1.139, -1.176, -1.214, -1.251, -1.288, -1.325, -1.363, -1.4];
+  const M = {
+    o: [0.219, 0.22, 0.223, 0.225, 0.226, 0.227, 0.227, 0.227, 0.227, 0.227, 0.227, 0.227, 0.225, 0.219, 0.187, 0.132, 0.063, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    x0: [0.219, 0.221, 0.224, 0.226, 0.228, 0.228, 0.228, 0.228, 0.228, 0.228, 0.228, 0.228, 0.227, 0.22, 0.189, 0.134, 0.075, 0.04, 0.029, 0.021, 0.012, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004],
+    y0: [0.476, 0.478, 0.481, 0.484, 0.484, 0.481, 0.479, 0.479, 0.479, 0.481, 0.482, 0.483, 0.484, 0.485, 0.497, 0.535, 0.603, 0.675, 0.721, 0.728, 0.72, 0.712, 0.711, 0.71, 0.708, 0.706, 0.704, 0.701, 0.698, 0.694, 0.69, 0.686, 0.681, 0.675, 0.67, 0.663, 0.657, 0.649, 0.642, 0.633, 0.624, 0.615, 0.605, 0.594, 0.584, 0.573, 0.561, 0.548, 0.535, 0.522, 0.508, 0.494, 0.48, 0.466, 0.451, 0.437, 0.428, 0.426, 0.432, 0.437],
+    x1: [0.26, 0.273, 0.295, 0.313, 0.322, 0.326, 0.328, 0.33, 0.332, 0.334, 0.335, 0.335, 0.334, 0.327, 0.302, 0.257, 0.2, 0.155, 0.128, 0.116, 0.113, 0.118, 0.126, 0.131, 0.133, 0.133, 0.134, 0.135, 0.136, 0.138, 0.14, 0.142, 0.145, 0.148, 0.15, 0.151, 0.149, 0.146, 0.142, 0.138, 0.133, 0.128, 0.122, 0.115, 0.109, 0.103, 0.097, 0.093, 0.089, 0.085, 0.082, 0.079, 0.077, 0.076, 0.075, 0.075, 0.083, 0.098, 0.12, 0.131],
+    y1: [0.459, 0.45, 0.435, 0.428, 0.428, 0.432, 0.436, 0.438, 0.44, 0.441, 0.442, 0.442, 0.442, 0.442, 0.453, 0.48, 0.524, 0.571, 0.614, 0.644, 0.65, 0.632, 0.604, 0.584, 0.576, 0.572, 0.569, 0.566, 0.563, 0.56, 0.558, 0.555, 0.553, 0.55, 0.549, 0.548, 0.55, 0.552, 0.556, 0.558, 0.561, 0.562, 0.563, 0.561, 0.557, 0.55, 0.541, 0.531, 0.519, 0.506, 0.494, 0.481, 0.468, 0.455, 0.442, 0.429, 0.421, 0.422, 0.43, 0.436],
+    x2: [0.314, 0.341, 0.387, 0.422, 0.439, 0.445, 0.449, 0.453, 0.455, 0.457, 0.457, 0.458, 0.457, 0.452, 0.433, 0.396, 0.346, 0.302, 0.269, 0.25, 0.245, 0.255, 0.27, 0.281, 0.285, 0.286, 0.288, 0.289, 0.29, 0.292, 0.294, 0.295, 0.297, 0.299, 0.298, 0.292, 0.282, 0.268, 0.255, 0.243, 0.232, 0.222, 0.212, 0.202, 0.192, 0.183, 0.175, 0.168, 0.162, 0.156, 0.15, 0.145, 0.143, 0.142, 0.142, 0.143, 0.157, 0.182, 0.219, 0.238],
+    y2: [0.428, 0.423, 0.421, 0.422, 0.428, 0.432, 0.436, 0.438, 0.44, 0.441, 0.442, 0.442, 0.442, 0.442, 0.441, 0.441, 0.442, 0.446, 0.457, 0.468, 0.471, 0.461, 0.448, 0.438, 0.434, 0.433, 0.431, 0.43, 0.429, 0.428, 0.427, 0.426, 0.425, 0.424, 0.423, 0.422, 0.423, 0.426, 0.433, 0.442, 0.453, 0.464, 0.474, 0.483, 0.488, 0.489, 0.487, 0.481, 0.473, 0.464, 0.454, 0.444, 0.432, 0.423, 0.417, 0.413, 0.411, 0.41, 0.41, 0.41],
+    x3: [0.375, 0.415, 0.482, 0.533, 0.557, 0.565, 0.571, 0.576, 0.579, 0.58, 0.58, 0.58, 0.58, 0.578, 0.568, 0.549, 0.524, 0.501, 0.483, 0.471, 0.468, 0.474, 0.484, 0.491, 0.494, 0.495, 0.495, 0.496, 0.497, 0.498, 0.499, 0.5, 0.501, 0.501, 0.497, 0.487, 0.468, 0.444, 0.417, 0.39, 0.363, 0.337, 0.311, 0.286, 0.265, 0.248, 0.237, 0.229, 0.224, 0.218, 0.214, 0.211, 0.211, 0.212, 0.213, 0.213, 0.22, 0.234, 0.256, 0.267],
+    y3: [0.415, 0.415, 0.416, 0.421, 0.427, 0.432, 0.436, 0.438, 0.44, 0.441, 0.442, 0.442, 0.442, 0.442, 0.441, 0.441, 0.44, 0.439, 0.438, 0.437, 0.436, 0.435, 0.434, 0.433, 0.432, 0.431, 0.43, 0.429, 0.428, 0.427, 0.427, 0.426, 0.425, 0.424, 0.423, 0.422, 0.421, 0.42, 0.419, 0.418, 0.418, 0.417, 0.416, 0.415, 0.415, 0.415, 0.416, 0.416, 0.415, 0.414, 0.413, 0.413, 0.413, 0.413, 0.413, 0.413, 0.398, 0.369, 0.326, 0.304],
+    x4: [0.434, 0.485, 0.571, 0.636, 0.666, 0.678, 0.686, 0.691, 0.694, 0.696, 0.696, 0.696, 0.696, 0.696, 0.696, 0.696, 0.696, 0.696, 0.696, 0.696, 0.696, 0.696, 0.696, 0.696, 0.696, 0.696, 0.696, 0.696, 0.696, 0.696, 0.696, 0.696, 0.696, 0.695, 0.688, 0.673, 0.648, 0.614, 0.577, 0.539, 0.501, 0.464, 0.428, 0.395, 0.364, 0.339, 0.319, 0.304, 0.293, 0.286, 0.281, 0.278, 0.276, 0.276, 0.276, 0.276, 0.281, 0.291, 0.305, 0.313],
+    y4: [0.398, 0.398, 0.399, 0.403, 0.41, 0.416, 0.419, 0.42, 0.421, 0.422, 0.423, 0.424, 0.424, 0.424, 0.424, 0.423, 0.423, 0.422, 0.421, 0.42, 0.419, 0.418, 0.417, 0.416, 0.415, 0.414, 0.412, 0.411, 0.41, 0.409, 0.408, 0.407, 0.406, 0.404, 0.403, 0.401, 0.401, 0.399, 0.398, 0.396, 0.395, 0.393, 0.392, 0.391, 0.39, 0.388, 0.385, 0.382, 0.38, 0.383, 0.386, 0.389, 0.39, 0.39, 0.39, 0.391, 0.367, 0.32, 0.249, 0.214],
+    xs: [0.371, 0.426, 0.538, 0.62, 0.668, 0.68, 0.688, 0.693, 0.695, 0.697, 0.697, 0.697, 0.687, 0.669, 0.647, 0.642, 0.649, 0.665, 0.678, 0.686, 0.692, 0.695, 0.697, 0.697, 0.697, 0.697, 0.697, 0.697, 0.697, 0.697, 0.697, 0.697, 0.697, 0.695, 0.69, 0.675, 0.65, 0.617, 0.579, 0.541, 0.503, 0.466, 0.43, 0.397, 0.367, 0.341, 0.321, 0.306, 0.295, 0.292, 0.296, 0.307, 0.315, 0.319, 0.319, 0.32, 0.317, 0.311, 0.303, 0.299],
+    ys: [0.229, 0.229, 0.23, 0.232, 0.235, 0.238, 0.239, 0.24, 0.24, 0.241, 0.242, 0.242, 0.242, 0.242, 0.242, 0.242, 0.241, 0.241, 0.241, 0.24, 0.24, 0.239, 0.239, 0.238, 0.237, 0.237, 0.236, 0.236, 0.235, 0.234, 0.234, 0.233, 0.233, 0.232, 0.231, 0.231, 0.23, 0.23, 0.229, 0.228, 0.227, 0.226, 0.226, 0.225, 0.225, 0.224, 0.222, 0.221, 0.22, 0.221, 0.223, 0.225, 0.225, 0.225, 0.225, 0.225, 0.214, 0.19, 0.155, 0.137],
+    xb: [0.371, 0.426, 0.537, 0.618, 0.666, 0.676, 0.684, 0.688, 0.691, 0.692, 0.693, 0.693, 0.693, 0.693, 0.693, 0.693, 0.693, 0.693, 0.693, 0.693, 0.693, 0.693, 0.693, 0.693, 0.693, 0.693, 0.693, 0.693, 0.693, 0.693, 0.693, 0.693, 0.693, 0.692, 0.687, 0.674, 0.649, 0.617, 0.579, 0.541, 0.503, 0.466, 0.43, 0.397, 0.367, 0.343, 0.329, 0.324, 0.324, 0.319, 0.31, 0.298, 0.291, 0.287, 0.288, 0.288, 0.285, 0.28, 0.273, 0.269],
+  };
+  const MK = {}; for (const k in M) MK[k] = curveAny(BZ.map((z, i) => [z, M[k][i]]));
+  const secB88 = (z) => {
+    const v = (k) => MK[k](z), o = v('o') > 0.05 ? v('o') : 0, xs = v('xs');
+    return [[o, v('y0')], [Math.max(v('x1'), o + 0.02), v('y1')], [v('x2'), v('y2')], [v('x3'), v('y3')], [v('x4'), v('y4')],
+      [xs, v('ys')], [Math.min(v('xb'), xs) - 0.02, 0.07], [0, 0.05]];
+  };
   const sk = sweptSkin(car, addPanel, add, PAINT, {
-    nose: { z: [2.5, 2.3, 2.0, 1.7, 1.35, 1.0, 0.8, 0.66, 0.62], hw: [0.075, 0.11, 0.15, 0.18, 0.22, 0.26, 0.29, 0.3, 0.303], yb: [0.1, 0.095, 0.09, 0.085, 0.08, 0.075, 0.072, 0.072, 0.072], yt: [0.19, 0.24, 0.3, 0.36, 0.42, 0.47, 0.5, 0.51, 0.51] },
-    body: { z: [0.6, 0.3, 0.0, -0.3, -0.6, -1.0, -1.4, -1.88], yTop: [0.51, 0.5, 0.5, 0.6, 0.63, 0.56, 0.45, 0.32], CW: [0.3, 0.3, 0.29, 0.24, 0.22, 0.2, 0.15, 0.1],
-      xc: [0.5, 0.58, 0.58, 0.55, 0.5, 0.4, 0.3, 0.15], yc: [0.36, 0.37, 0.37, 0.36, 0.34, 0.3, 0.26, 0.22], xo: [0.68, 0.74, 0.74, 0.72, 0.66, 0.52, 0.38, 0.2], yo: [0.2, 0.2, 0.2, 0.2, 0.2, 0.19, 0.18, 0.17], yb: 0.065 },
-    open: [[0.8, 0], [0.64, 0], [0.6, 0.17], [0.4, 0.21], [-0.02, 0.21], [-0.1, 0.1], [-0.16, 0], [-0.5, 0]], RIM: 0.5,
+    nose: { z: NZ, hw: [0.105, 0.109, 0.117, 0.126, 0.134, 0.14, 0.152, 0.161, 0.169, 0.166, 0.163, 0.159, 0.162, 0.166, 0.172, 0.177, 0.181, 0.185, 0.192, 0.2, 0.208, 0.214, 0.22, 0.226, 0.232, 0.238, 0.244, 0.25, 0.256, 0.262, 0.268, 0.274, 0.28, 0.286, 0.293, 0.298, 0.303, 0.307, 0.31, 0.311],
+      yb: [0.073, 0.071, 0.068, 0.065, 0.061, 0.059, 0.058, 0.056, 0.054, 0.052, 0.051, 0.049, 0.048, 0.047, 0.045, 0.044, 0.043, 0.038, 0.035, 0.031, 0.032, 0.032, 0.033, 0.034, 0.035, 0.036, 0.035, 0.034, 0.034, 0.034, 0.033, 0.033, 0.033, 0.033, 0.033, 0.033, 0.032, 0.032, 0.032, 0.032],
+      yt: [0.178, 0.182, 0.193, 0.207, 0.224, 0.24, 0.256, 0.272, 0.287, 0.303, 0.318, 0.334, 0.349, 0.364, 0.378, 0.392, 0.406, 0.418, 0.431, 0.444, 0.457, 0.47, 0.482, 0.495, 0.507, 0.518, 0.528, 0.535, 0.539, 0.54, 0.54, 0.541, 0.542, 0.547, 0.552, 0.552, 0.536, 0.518, 0.504, 0.502] },
+    body: { z: BZ, yb: 0.05 },
+    secB: secB88,
+    open: [[1.6, 0], [1.294, 0], [1.251, 0.06], [1.208, 0.076], [1.165, 0.089], [1.122, 0.102], [1.078, 0], [1.035, 0.157], [0.992, 0.171], [0.949, 0.19], [0.906, 0.2], [0.863, 0.208], [0.82, 0.214], [0.8, 0.219], [0.763, 0.22], [0.725, 0.223], [0.688, 0.225], [0.651, 0.226], [0.614, 0.227], [0.576, 0.227], [0.539, 0.227], [0.502, 0.227], [0.464, 0.227], [0.427, 0.227], [0.39, 0.227], [0.353, 0.225], [0.315, 0.219], [0.278, 0.187], [0.241, 0.132], [0.203, 0.063], [0.166, 0], [-0.6, 0]], RIM: 0.5,
     paint: (part, seg, z, x, y) => {
       if (part === 'join') return 3;
       if (seg === 6) return 2;
@@ -540,7 +606,7 @@ export function buildF1Body(car, addPanel) {
   for (const sx of [1, -1]) {
     const rows = [], M = 14;
     for (let i = 0; i <= 70; i++) {
-      const z = 0.6 - i / 70 * 2.48, u = sk.upper(z).slice(3 * S, 6 * S + 1), ey = edgeY(z);
+      const z = 0.78 - i / 70 * 2.16, u = sk.upper(z).slice(3 * S, 6 * S + 1), ey = edgeY(z);
       // (along the section from the crown down, to where it crosses the edge)
       const len = [0]; for (let k = 1; k < u.length; k++) len.push(len[k - 1] + Math.hypot(u[k][0] - u[k - 1][0], u[k][1] - u[k - 1][1]));
       let L = u[0][1] <= ey ? 0 : len[len.length - 1];
@@ -551,17 +617,19 @@ export function buildF1Body(car, addPanel) {
     const m = new THREE.Mesh(sk.grid(rows, M, sx > 0), MAT.blue); m.castShadow = true; m.receiveShadow = true; car.add(m); addPanel(m);
   }
   // the seat: a moulded shell, low down, its back leaning well back
-  add(box(0.34, 0.05, 0.36, 0, 0.12, 0.1), MAT.seat, false);
-  add(box(0.36, 0.42, 0.05, 0, 0.32, -0.07, -0.32), MAT.seat, false);
-  for (const sx of [1, -1]) add(box(0.04, 0.16, 0.36, sx * 0.17, 0.2, 0.08), MAT.seat, false);
+  // (all of him, the seat and the cockpit's bits sat further forward, as the real car has him: DZ)
+  const DZ = F88_DRIVER_DZ;
+  add(box(0.34, 0.05, 0.36, 0, 0.1, 0.1 + DZ), MAT.seat, false);
+  add(box(0.36, 0.42, 0.05, 0, 0.3, -0.07 + DZ, -0.32), MAT.seat, false);
+  for (const sx of [1, -1]) add(box(0.04, 0.16, 0.36, sx * 0.17, 0.18, 0.08 + DZ), MAT.seat, false);
   // his legs, forward and a little raised, under the scuttle (always there)
   for (const sx of [1, -1]) {
-    add(rod([sx * 0.08, 0.2, 0.02], [sx * 0.09, 0.3, 0.55], 0.055), MAT.suit, false);
-    add(rod([sx * 0.09, 0.3, 0.55], [sx * 0.07, 0.22, 1.0], 0.045), MAT.suit, false);
+    add(rod([sx * 0.08, 0.18, 0.02 + DZ], [sx * 0.09, 0.28, 0.55 + DZ], 0.055), MAT.suit, false);
+    add(rod([sx * 0.09, 0.28, 0.55 + DZ], [sx * 0.07, 0.2, 1.0 + DZ], 0.045), MAT.suit, false);
   }
   // his body, arms and a wheel (the computer drivers' and the Garage's cars;
   // the player's car has its own moving ones in the cockpit, so the game hides this)
-  const driver = new THREE.Group();
+  const driver = new THREE.Group(); driver.position.set(0, -0.02, DZ);
   car.add(driver);
   const dAdd = (geo, mat) => { const m = new THREE.Mesh(geo, mat); m.castShadow = false; driver.add(m); return m; };
   dAdd(new THREE.CapsuleGeometry(0.15, 0.12, 4, 10).rotateZ(Math.PI / 2).scale(1, 0.7, 0.8).translate(0, 0.46, -0.02), MAT.suit);
@@ -571,26 +639,27 @@ export function buildF1Body(car, addPanel) {
   }
   dAdd(new THREE.TorusGeometry(0.13, 0.016, 6, 20).rotateX(-0.45).translate(0, 0.52, 0.44), MAT.carbon);
   // the little smoked screen at the front of the opening
-  add(new THREE.CylinderGeometry(0.24, 0.24, 0.1, 10, 1, true, -0.9, 1.8).rotateX(-0.35).translate(0, 0.55, 0.46), MAT.glass, false);
+  add(new THREE.CylinderGeometry(0.24, 0.24, 0.1, 10, 1, true, -0.9, 1.8).rotateX(-0.35).translate(0, 0.57, 1.15), MAT.glass, false);
   // the driver: a helmet with a dark visor, his shoulders just below the rim
-  const helmet = add(new THREE.SphereGeometry(0.135, 20, 16).scale(1, 1.05, 1.1).translate(0, 0.665, -0.06), MAT.helmet);
-  const visor = add(new THREE.SphereGeometry(0.137, 20, 10, -0.9 + Math.PI / 2, 1.8, 1.1, 0.5).scale(1, 1.05, 1.1).translate(0, 0.665, -0.06), MAT.visor);
+  const helmet = add(new THREE.SphereGeometry(0.135, 20, 16).scale(1, 1.05, 1.1).translate(0, 0.645, -0.06 + DZ), MAT.helmet);
+  const visor = add(new THREE.SphereGeometry(0.137, 20, 10, -0.9 + Math.PI / 2, 1.8, 1.1, 0.5).scale(1, 1.05, 1.1).translate(0, 0.645, -0.06 + DZ), MAT.visor);
   // (a red and white helmet stripe)
-  const stripe = add(new THREE.TorusGeometry(0.135, 0.012, 6, 24, Math.PI).rotateY(Math.PI / 2).rotateZ(Math.PI / 2).scale(1, 1.05, 1.1).translate(0, 0.665, -0.06), MAT.blue);
+  const stripe = add(new THREE.TorusGeometry(0.135, 0.012, 6, 24, Math.PI).rotateY(Math.PI / 2).rotateZ(Math.PI / 2).scale(1, 1.05, 1.1).translate(0, 0.645, -0.06 + DZ), MAT.blue);
   // mirrors: pods on stalks at the cockpit sides (each pod can be knocked
   // off, leaving its stalk; the pit crew fit a new one)
   const mirrors = {};
   for (const s of [1, -1]) {
-    const stalk = add(rod([s * 0.31, 0.49, 0.55], [s * 0.42, 0.6, 0.56], 0.01), MAT.carbon);
+    const mz = 0.9;
+    const stalk = add(rod([s * 0.3, 0.5, mz - 0.01], [s * 0.42, 0.6, mz], 0.01), MAT.carbon);
     const pod = new THREE.Group();
     car.add(pod);
-    pod.add(add(loft([{ z: 0.59, w: 0.12, h: 0.065, y: 0.585, x: s * 0.45 }, { z: 0.53, w: 0.13, h: 0.072, y: 0.582, x: s * 0.45 }], 0.9, 16, 1, false), MAT.blue));
-    pod.add(add(new THREE.PlaneGeometry(0.105, 0.058).rotateY(Math.PI).translate(s * 0.45, 0.62, 0.524), MAT.visor));
-    mirrors[s > 0 ? 'l' : 'r'] = { stalk, pod, at: [s * 0.45, 0.62, 0.56] };
+    pod.add(add(loft([{ z: mz + 0.03, w: 0.12, h: 0.065, y: 0.585, x: s * 0.45 }, { z: mz - 0.03, w: 0.13, h: 0.072, y: 0.582, x: s * 0.45 }], 0.9, 16, 1, false), MAT.blue));
+    pod.add(add(new THREE.PlaneGeometry(0.105, 0.058).rotateY(Math.PI).translate(s * 0.45, 0.62, mz - 0.036), MAT.visor));
+    mirrors[s > 0 ? 'l' : 'r'] = { stalk, pod, at: [s * 0.45, 0.62, mz] };
   }
-  // --- the small airbox over the roll hoop, its mouth behind his head
-  add(loft([{ z: -0.17, w: 0.24, h: 0.18, y: 0.46 }, { z: -0.32, w: 0.3, h: 0.27, y: 0.46 }, { z: -0.6, w: 0.32, h: 0.19, y: 0.48 }, { z: -0.95, w: 0.26, h: 0.06, y: 0.5 }], 1.0, 40, 8, true), MAT.blue);
-  add(loft([{ z: -0.16, w: 0.14, h: 0.09, y: 0.53 }, { z: -0.21, w: 0.14, h: 0.09, y: 0.53 }], 1.2, 20, 1, false), MAT.dark, false);
+  // --- the low engine cover rises over the roll hoop behind his head (part of the skin);
+  // the roll hoop's little intake, dark, in its face
+  add(new THREE.CircleGeometry(0.06, 20).scale(1.2, 0.8, 1).translate(0, 0.66, 0.13), MAT.dark, false);
   // the gearbox at the very back, and the red rain light on it
   add(box(0.22, 0.18, 0.35, 0, 0.2, -2.0), MAT.carbon);
   const rainLight = add(box(0.08, 0.05, 0.03, 0, 0.26, -2.19), MAT.rain);
@@ -1464,6 +1533,185 @@ export function buildF05Body(car, addPanel) {
   return { helmet: [helmet, visor, stripe], rainMat: MAT.rain, exhaustMat: MAT.exhaust, mats: MAT, wings, mirrors, driver, engine };
 }
 
+// how much further forward the TTF-20's driver sits than the older cars' (as on the real car)
+export const F20_DRIVER_DZ = 0.58;
+export function buildF20Body(car, addPanel) {
+  // THE TTF-20: black all over, a field of small silver stars across the
+  // engine cover and the pods, thickest at the back and fading out toward
+  // the front; thin teal lines along the nose and the cover; a red star on
+  // the halo. No sponsors (yet)
+  const MAT = {
+    blue: new THREE.MeshPhysicalMaterial({ color: 0x141518, roughness: 0.3, metalness: 0.35, clearcoat: 1, clearcoatRoughness: 0.08 }),     // (the black paint)
+    yellow: new THREE.MeshPhysicalMaterial({ color: 0x00a19b, roughness: 0.3, metalness: 0.1, clearcoat: 1, clearcoatRoughness: 0.08 }),  // (the teal)
+    silver: new THREE.MeshPhysicalMaterial({ color: 0xb9bdc3, roughness: 0.25, metalness: 0.8, clearcoat: 1 }),
+    red: new THREE.MeshPhysicalMaterial({ color: 0xd2141e, roughness: 0.3, clearcoat: 1 }),
+    carbon: new THREE.MeshStandardMaterial({ color: 0x0d0e10, roughness: 0.4, metalness: 0.35 }),
+    steel: new THREE.MeshStandardMaterial({ color: 0x8d9096, roughness: 0.35, metalness: 0.9 }),
+    glass: new THREE.MeshStandardMaterial({ color: 0x3a4a52, roughness: 0.05, metalness: 0.3, transparent: true, opacity: 0.45 }),
+    helmet: new THREE.MeshPhysicalMaterial({ color: 0xf4f4f0, roughness: 0.2, clearcoat: 1 }),
+    visor: new THREE.MeshStandardMaterial({ color: 0x101418, roughness: 0.05, metalness: 0.8 }),
+    exhaust: new THREE.MeshStandardMaterial({ color: 0x5a4a40, roughness: 0.5, metalness: 0.8, emissive: 0xff5a10, emissiveIntensity: 0 }),
+    rain: new THREE.MeshStandardMaterial({ color: 0x4a0a0a, emissive: 0xff1a10, emissiveIntensity: 0 }),
+    seat: new THREE.MeshStandardMaterial({ color: 0x24262c, roughness: 0.9 }),
+    suit: new THREE.MeshStandardMaterial({ color: DRIVER_SUITS.f20.suit, roughness: 0.8 }),
+    dark: new THREE.MeshStandardMaterial({ color: 0x050506, roughness: 0.8 }),
+  };
+  const add = (geo, mat, shadow = true) => {
+    const m = new THREE.Mesh(geo, mat); m.castShadow = shadow; m.receiveShadow = true; car.add(m);
+    if (mat === MAT.blue || mat === MAT.yellow) addPanel(m);
+    return m;
+  };
+  const PAINT = [MAT.blue, MAT.yellow, MAT.carbon, MAT.dark];
+  // --- ONE SKIN, NOSE TO GEARBOX, measured off a reference of the real car: 40
+  // slices from the nose's tip to just behind the sidepods' inlets, 60 from there to
+  // the end of the engine cover; behind the inlets each slice is eight points of its
+  // own (the middle of the top, three down the cover's sweep, the pod's top edge, its
+  // side, its deeply tucked-in foot, the floor). The airbox is part of the one skin
+  const NZ = [2.93, 2.872, 2.814, 2.755, 2.697, 2.639, 2.581, 2.523, 2.464, 2.406, 2.348, 2.29, 2.232, 2.173, 2.115, 2.057, 1.999, 1.941, 1.882, 1.824, 1.766, 1.708, 1.649, 1.591, 1.533, 1.475, 1.417, 1.358, 1.3, 1.242, 1.184, 1.126, 1.067, 1.009, 0.951, 0.893, 0.835, 0.776, 0.718, 0.66];
+  const BZ = [0.62, 0.582, 0.544, 0.506, 0.468, 0.43, 0.392, 0.354, 0.316, 0.278, 0.24, 0.202, 0.164, 0.126, 0.088, 0.051, 0.013, -0.025, -0.063, -0.101, -0.139, -0.177, -0.215, -0.253, -0.291, -0.329, -0.367, -0.405, -0.443, -0.481, -0.519, -0.557, -0.595, -0.633, -0.671, -0.709, -0.747, -0.785, -0.823, -0.861, -0.899, -0.937, -0.975, -1.013, -1.051, -1.088, -1.126, -1.164, -1.202, -1.24, -1.278, -1.316, -1.354, -1.392, -1.43, -1.468, -1.506, -1.544, -1.582, -1.62];
+  const M = {
+    o: [0.16, 0.159, 0.158, 0.158, 0.157, 0.154, 0.141, 0.118, 0.087, 0.055, 0.026, 0.008, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    x0: [0.16, 0.159, 0.159, 0.159, 0.158, 0.156, 0.143, 0.121, 0.09, 0.059, 0.03, 0.012, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004],
+    y0: [0.666, 0.671, 0.681, 0.701, 0.714, 0.727, 0.738, 0.756, 0.79, 0.848, 0.93, 1.006, 1.073, 1.111, 1.131, 1.122, 1.11, 1.096, 1.087, 1.078, 1.075, 1.075, 1.074, 1.073, 1.071, 1.068, 1.063, 1.056, 1.048, 1.038, 1.027, 1.014, 1.001, 0.986, 0.971, 0.955, 0.939, 0.923, 0.908, 0.892, 0.877, 0.861, 0.846, 0.83, 0.815, 0.799, 0.785, 0.771, 0.76, 0.749, 0.739, 0.73, 0.721, 0.713, 0.705, 0.699, 0.693, 0.689, 0.686, 0.684],
+    x1: [0.284, 0.282, 0.28, 0.28, 0.277, 0.272, 0.261, 0.248, 0.224, 0.199, 0.17, 0.15, 0.135, 0.129, 0.132, 0.146, 0.16, 0.166, 0.166, 0.159, 0.145, 0.132, 0.126, 0.126, 0.127, 0.126, 0.124, 0.122, 0.118, 0.113, 0.109, 0.105, 0.102, 0.1, 0.099, 0.098, 0.097, 0.096, 0.094, 0.093, 0.092, 0.091, 0.09, 0.089, 0.089, 0.089, 0.089, 0.089, 0.089, 0.087, 0.084, 0.084, 0.085, 0.089, 0.086, 0.08, 0.066, 0.051, 0.035, 0.028],
+    y1: [0.871, 0.867, 0.857, 0.853, 0.844, 0.837, 0.829, 0.822, 0.818, 0.831, 0.872, 0.929, 0.996, 1.047, 1.078, 1.076, 1.052, 1.012, 0.975, 0.943, 0.919, 0.904, 0.894, 0.891, 0.888, 0.885, 0.881, 0.879, 0.877, 0.876, 0.874, 0.87, 0.865, 0.857, 0.848, 0.838, 0.828, 0.818, 0.808, 0.798, 0.788, 0.777, 0.765, 0.753, 0.742, 0.731, 0.722, 0.713, 0.704, 0.694, 0.681, 0.663, 0.642, 0.62, 0.608, 0.605, 0.615, 0.628, 0.648, 0.656],
+    x2: [0.42, 0.41, 0.392, 0.376, 0.357, 0.342, 0.335, 0.338, 0.336, 0.321, 0.291, 0.253, 0.218, 0.194, 0.187, 0.195, 0.213, 0.23, 0.242, 0.246, 0.251, 0.254, 0.255, 0.256, 0.256, 0.255, 0.253, 0.248, 0.241, 0.231, 0.222, 0.213, 0.206, 0.201, 0.197, 0.193, 0.189, 0.185, 0.181, 0.177, 0.173, 0.17, 0.166, 0.164, 0.16, 0.157, 0.152, 0.149, 0.145, 0.143, 0.141, 0.145, 0.154, 0.169, 0.172, 0.164, 0.139, 0.113, 0.077, 0.061],
+    y2: [0.717, 0.72, 0.727, 0.729, 0.733, 0.734, 0.739, 0.744, 0.757, 0.768, 0.783, 0.793, 0.809, 0.822, 0.833, 0.828, 0.815, 0.791, 0.765, 0.739, 0.724, 0.715, 0.708, 0.704, 0.701, 0.7, 0.699, 0.702, 0.708, 0.715, 0.722, 0.725, 0.726, 0.724, 0.718, 0.712, 0.706, 0.7, 0.693, 0.687, 0.681, 0.674, 0.666, 0.658, 0.65, 0.641, 0.634, 0.626, 0.618, 0.608, 0.599, 0.581, 0.562, 0.543, 0.541, 0.55, 0.575, 0.602, 0.632, 0.643],
+    x3: [0.636, 0.622, 0.591, 0.564, 0.537, 0.519, 0.509, 0.505, 0.497, 0.481, 0.458, 0.434, 0.412, 0.395, 0.384, 0.386, 0.393, 0.403, 0.41, 0.415, 0.415, 0.413, 0.41, 0.406, 0.403, 0.399, 0.394, 0.385, 0.372, 0.356, 0.34, 0.325, 0.313, 0.304, 0.297, 0.292, 0.286, 0.28, 0.274, 0.268, 0.263, 0.259, 0.256, 0.253, 0.25, 0.246, 0.242, 0.239, 0.236, 0.236, 0.236, 0.24, 0.243, 0.246, 0.233, 0.208, 0.168, 0.132, 0.093, 0.077],
+    y3: [0.592, 0.605, 0.621, 0.639, 0.661, 0.681, 0.686, 0.675, 0.665, 0.658, 0.657, 0.659, 0.662, 0.663, 0.658, 0.644, 0.624, 0.602, 0.581, 0.562, 0.549, 0.539, 0.532, 0.527, 0.523, 0.523, 0.525, 0.533, 0.545, 0.559, 0.572, 0.583, 0.589, 0.591, 0.59, 0.589, 0.587, 0.586, 0.584, 0.583, 0.581, 0.58, 0.578, 0.575, 0.573, 0.571, 0.569, 0.568, 0.566, 0.563, 0.561, 0.55, 0.528, 0.497, 0.482, 0.484, 0.509, 0.543, 0.589, 0.612],
+    x4: [0.772, 0.756, 0.723, 0.693, 0.661, 0.639, 0.629, 0.629, 0.629, 0.627, 0.625, 0.621, 0.616, 0.61, 0.604, 0.598, 0.591, 0.585, 0.578, 0.57, 0.561, 0.55, 0.538, 0.524, 0.509, 0.493, 0.475, 0.458, 0.442, 0.428, 0.417, 0.407, 0.398, 0.39, 0.382, 0.374, 0.365, 0.356, 0.348, 0.34, 0.333, 0.327, 0.321, 0.317, 0.313, 0.31, 0.307, 0.306, 0.305, 0.305, 0.305, 0.306, 0.307, 0.309, 0.294, 0.262, 0.213, 0.167, 0.117, 0.094],
+    y4: [0.616, 0.613, 0.612, 0.61, 0.598, 0.582, 0.568, 0.558, 0.544, 0.533, 0.523, 0.512, 0.498, 0.483, 0.467, 0.449, 0.429, 0.41, 0.392, 0.375, 0.36, 0.347, 0.336, 0.327, 0.32, 0.317, 0.318, 0.33, 0.35, 0.377, 0.404, 0.426, 0.443, 0.452, 0.455, 0.457, 0.46, 0.462, 0.465, 0.468, 0.471, 0.473, 0.475, 0.476, 0.479, 0.482, 0.486, 0.49, 0.492, 0.492, 0.491, 0.489, 0.487, 0.484, 0.492, 0.509, 0.537, 0.561, 0.59, 0.602],
+    xs: [0.769, 0.754, 0.722, 0.693, 0.661, 0.639, 0.628, 0.627, 0.624, 0.622, 0.618, 0.613, 0.607, 0.602, 0.596, 0.59, 0.585, 0.579, 0.573, 0.565, 0.557, 0.547, 0.532, 0.513, 0.489, 0.464, 0.442, 0.425, 0.416, 0.412, 0.409, 0.405, 0.398, 0.389, 0.379, 0.369, 0.359, 0.35, 0.341, 0.333, 0.325, 0.317, 0.31, 0.305, 0.301, 0.299, 0.299, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.285, 0.252, 0.204, 0.159, 0.11, 0.087],
+    ys: [0.408, 0.407, 0.406, 0.405, 0.399, 0.391, 0.384, 0.379, 0.372, 0.367, 0.361, 0.356, 0.349, 0.341, 0.334, 0.324, 0.315, 0.305, 0.296, 0.287, 0.28, 0.274, 0.268, 0.263, 0.26, 0.258, 0.259, 0.265, 0.275, 0.289, 0.302, 0.313, 0.321, 0.326, 0.327, 0.329, 0.33, 0.331, 0.332, 0.334, 0.336, 0.336, 0.337, 0.338, 0.339, 0.341, 0.343, 0.345, 0.346, 0.346, 0.346, 0.344, 0.344, 0.342, 0.346, 0.355, 0.368, 0.381, 0.395, 0.401],
+    xb: [0.727, 0.702, 0.649, 0.602, 0.553, 0.524, 0.514, 0.523, 0.531, 0.539, 0.546, 0.552, 0.556, 0.56, 0.562, 0.564, 0.565, 0.565, 0.563, 0.559, 0.554, 0.547, 0.538, 0.526, 0.512, 0.497, 0.48, 0.463, 0.446, 0.429, 0.411, 0.391, 0.37, 0.35, 0.332, 0.317, 0.305, 0.297, 0.29, 0.283, 0.276, 0.269, 0.263, 0.259, 0.256, 0.254, 0.254, 0.255, 0.255, 0.255, 0.255, 0.255, 0.255, 0.255, 0.242, 0.215, 0.173, 0.135, 0.093, 0.074],
+  };
+  const MK = {}; for (const k in M) MK[k] = curveAny(BZ.map((z, i) => [z, M[k][i]]));
+  const secB20 = (z) => {
+    const v = (k) => MK[k](z), o = v('o') > 0.05 ? v('o') : 0, xs = v('xs');
+    return [[o, v('y0')], [Math.max(v('x1'), o + 0.02), v('y1')], [v('x2'), v('y2')], [v('x3'), v('y3')], [v('x4'), v('y4')],
+      [xs, v('ys')], [Math.min(v('xb'), xs) - 0.03, 0.2], [0, 0.17]];
+  };
+  const sk = sweptSkin(car, addPanel, add, PAINT, {
+    nose: { z: NZ, hw: [0.111, 0.11, 0.109, 0.108, 0.107, 0.107, 0.107, 0.108, 0.109, 0.11, 0.11, 0.112, 0.117, 0.126, 0.139, 0.152, 0.166, 0.177, 0.185, 0.189, 0.193, 0.196, 0.198, 0.201, 0.203, 0.205, 0.208, 0.212, 0.217, 0.222, 0.228, 0.236, 0.244, 0.254, 0.262, 0.269, 0.273, 0.276, 0.276, 0.277],
+      yb: [0.206, 0.211, 0.22, 0.229, 0.239, 0.245, 0.247, 0.244, 0.239, 0.234, 0.229, 0.226, 0.223, 0.221, 0.219, 0.218, 0.219, 0.223, 0.23, 0.236, 0.24, 0.238, 0.23, 0.22, 0.21, 0.203, 0.194, 0.182, 0.163, 0.145, 0.127, 0.115, 0.11, 0.111, 0.112, 0.112, 0.113, 0.113, 0.113, 0.113],
+      yt: [0.376, 0.381, 0.392, 0.408, 0.426, 0.444, 0.463, 0.482, 0.501, 0.52, 0.539, 0.558, 0.578, 0.598, 0.62, 0.645, 0.672, 0.694, 0.709, 0.718, 0.725, 0.728, 0.73, 0.731, 0.731, 0.731, 0.731, 0.736, 0.749, 0.772, 0.795, 0.801, 0.787, 0.754, 0.724, 0.704, 0.697, 0.696, 0.695, 0.695] },
+    body: { z: BZ, yb: 0.17 },
+    secB: secB20,
+    open: [[1.4, 0], [1.067, 0], [1.009, 0.16], [0.951, 0.16], [0.893, 0.171], [0.835, 0.166], [0.776, 0.159], [0.718, 0.159], [0.66, 0.159], [0.62, 0.159], [0.582, 0.16], [0.544, 0.16], [0.506, 0.157], [0.468, 0.156], [0.43, 0.157], [0.392, 0.156], [0.354, 0.144], [0.316, 0.091], [0.278, 0], [-0.6, 0]], RIM: 0.72,
+    paint: (part, seg) => (part === 'join' ? 3 : seg === 6 ? 2 : 0), mouthX: 0.3, duct: 0.28,
+  });
+  const { surfY, S } = sk;
+  const DZ = F20_DRIVER_DZ;
+  // the teal: a thin line down each side of the nose's top, and along each shoulder of the engine cover
+  sk.strip(2.85, 1.15, (z) => sk.hwA(z) * 0.8, () => 0.007, MAT.yellow);
+  sk.strip(-0.1, -1.55, (z) => MK.x1(z) + 0.01, () => 0.006, MAT.yellow);
+  // THE STARS: a field of small five-pointed silver stars over the engine cover's flanks
+  // and the pods, packed at the back and thinning out toward the front
+  if (typeof document !== 'undefined') {
+    const c = document.createElement('canvas'); c.width = 2048; c.height = 512; const g = c.getContext('2d');
+    g.clearRect(0, 0, c.width, c.height);
+    let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const star = (x, y, r) => { g.beginPath(); for (let k = 0; k < 10; k++) { const a = -Math.PI / 2 + k * Math.PI / 5, rr = k % 2 ? r * 0.42 : r; g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); } g.closePath(); g.fill(); };
+    for (let i = 0; i < 900; i++) {
+      const u = rnd(), v = rnd();                      // (u: 0 at the back of the patch, 1 at its front)
+      if (rnd() > Math.pow(1 - u, 1.6)) continue;      // (fewer of them toward the front)
+      g.fillStyle = `rgba(200,205,212,${0.55 + 0.45 * (1 - u)})`; star(u * c.width, v * c.height, 6 + 14 * (1 - u) * rnd());
+    }
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+    const stars = new THREE.MeshStandardMaterial({ map: t, alphaTest: 0.3, roughness: 0.25, metalness: 0.7, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, side: THREE.DoubleSide });
+    for (const sx of [1, -1]) decalOnSkin(car, addPanel, sk, sk.secB, -1.6, 0.3, 1, 6 * S - 1, stars, sx);
+  }
+  // the cockpit: the little screen at the front of it, his seat, his legs down into the nose
+  add(new THREE.CylinderGeometry(0.2, 0.2, 0.05, 12, 1, true, -0.8, 1.6).rotateX(-0.3).translate(0, 0.77, 1.06), MAT.glass, false);
+  add(box(0.3, 0.05, 0.34, 0, 0.18, 0.08 + DZ), MAT.seat, false);
+  add(box(0.32, 0.4, 0.05, 0, 0.38, -0.12 + DZ, -0.36), MAT.seat, false);
+  for (const sx of [1, -1]) {
+    add(rod([sx * 0.08, 0.24, 0.02 + DZ], [sx * 0.09, 0.34, 0.55 + DZ], 0.055), MAT.suit, false);
+    add(rod([sx * 0.09, 0.34, 0.55 + DZ], [sx * 0.07, 0.3, 1.02 + DZ], 0.045), MAT.suit, false);
+  }
+  const driver = new THREE.Group(); driver.position.set(0, 0.04, DZ);
+  car.add(driver);
+  const dAdd = (geo, mat) => { const m = new THREE.Mesh(geo, mat); m.castShadow = false; driver.add(m); return m; };
+  dAdd(new THREE.CapsuleGeometry(0.15, 0.12, 4, 10).rotateZ(Math.PI / 2).scale(1, 0.7, 0.8).translate(0, 0.48, -0.04), MAT.suit);
+  for (const sx of [1, -1]) { dAdd(rod([sx * 0.17, 0.51, -0.02], [sx * 0.15, 0.43, 0.22], 0.04), MAT.suit); dAdd(rod([sx * 0.15, 0.43, 0.22], [sx * 0.12, 0.54, 0.42], 0.035), MAT.suit); }
+  dAdd(new THREE.BoxGeometry(0.27, 0.13, 0.03).translate(0, 0.58, 0.44), MAT.carbon);
+  const helmet = add(new THREE.SphereGeometry(0.135, 20, 16).scale(1, 1.05, 1.1).translate(0, 0.78, -0.03 + DZ), MAT.helmet);
+  const visor = add(new THREE.SphereGeometry(0.137, 20, 10, -0.9 + Math.PI / 2, 1.8, 1.1, 0.5).scale(1, 1.05, 1.1).translate(0, 0.78, -0.03 + DZ), MAT.visor);
+  const stripe = add(new THREE.TorusGeometry(0.135, 0.012, 6, 24, Math.PI).rotateY(Math.PI / 2).rotateZ(Math.PI / 2).scale(1, 1.05, 1.1).translate(0, 0.78, -0.03 + DZ), MAT.yellow);
+  // THE HALO: the titanium hoop over his head, from its two mounts behind him up and round
+  // in front of his face, and the centre pillar down onto the tub ahead of him; painted black
+  { const P = (a) => a.map(([x, y, z]) => new THREE.Vector3(x, y, z));
+    const hoop = new THREE.CatmullRomCurve3(P([[0.29, 0.7, 0.36], [0.29, 0.86, 0.5], [0.26, 0.92, 0.7], [0.16, 0.935, 0.9], [0, 0.94, 0.98], [-0.16, 0.935, 0.9], [-0.26, 0.92, 0.7], [-0.29, 0.86, 0.5], [-0.29, 0.7, 0.36]]));
+    add(new THREE.TubeGeometry(hoop, 60, 0.024, 10, false), MAT.blue);
+    const pillar = new THREE.CatmullRomCurve3(P([[0, 0.94, 0.97], [0, 0.88, 1.06], [0, 0.78, 1.12], [0, 0.73, 1.15]]));
+    add(new THREE.TubeGeometry(pillar, 16, 0.028, 10, false), MAT.blue);
+    // the red star on its top, in front of his face (the tribute)
+    const sh = new THREE.Shape(); for (let k = 0; k < 10; k++) { const a = Math.PI / 2 + k * Math.PI / 5, r = k % 2 ? 0.017 : 0.04; const x = Math.cos(a) * r, y = Math.sin(a) * r; if (k) sh.lineTo(x, y); else sh.moveTo(x, y); }
+    add(new THREE.ShapeGeometry(sh).rotateX(-Math.PI / 2).translate(0, 0.966, 0.93), MAT.red, false); }
+  // mirrors: out on the sidepods' inlets, on stalks, ahead of him
+  const mirrors = {};
+  for (const s of [1, -1]) {
+    const mz = 0.92;
+    const stalk = add(rod([s * 0.4, 0.68, mz - 0.05], [s * 0.5, 0.75, mz], 0.01), MAT.carbon);
+    const pod = new THREE.Group();
+    car.add(pod);
+    pod.add(add(loft([{ z: mz + 0.04, w: 0.13, h: 0.05, y: 0.745, x: s * 0.505 }, { z: mz - 0.02, w: 0.14, h: 0.06, y: 0.74, x: s * 0.505 }], 0.9, 16, 1, false), MAT.blue));
+    pod.add(add(new THREE.PlaneGeometry(0.12, 0.045).rotateY(Math.PI).translate(s * 0.505, 0.77, mz - 0.025), MAT.visor));
+    mirrors[s > 0 ? 'l' : 'r'] = { stalk, pod, at: [s * 0.505, 0.77, mz] };
+  }
+  // the airbox's mouth: dark, in the face of the skin's rise right over his head; the T-cam on top
+  add(new THREE.CircleGeometry(0.085, 24).scale(1.1, 0.8, 1).translate(0, 1.0, 0.3), MAT.dark, false);
+  add(box(0.09, 0.05, 0.14, 0, 1.17, 0.12), MAT.carbon).name = 'tcamPod';
+  // the bargeboards: a cluster of curved vertical vanes between the front wheels and the pods
+  for (const s of [1, -1]) {
+    for (let k = 0; k < 4; k++) add(box(0.01, 0.3 - k * 0.04, 0.4, s * (0.38 + k * 0.06), 0.32 - k * 0.015, 1.2 - k * 0.07, 0, s * (0.1 + k * 0.05)), MAT.carbon);
+    add(box(0.32, 0.01, 0.16, s * 0.52, 0.56, 1.05, 0.15, 0, -s * 0.2), MAT.carbon);                 // (the boomerang over them)
+    add(box(0.012, 0.14, 0.5, s * 0.78, 0.25, 0.6, 0, s * 0.05), MAT.carbon);                      // (the floor's edge vane)
+  }
+  // --- THE FLOOR: huge, flat, out to the full width between the wheels, slots cut
+  // along its edges ahead of the rear wheels; the plank under it; the diffuser behind
+  add(box(1.58, 0.02, 2.9, 0, 0.12, -0.2), MAT.carbon);
+  add(box(0.3, 0.012, 3.2, 0, 0.1, -0.1), new THREE.MeshStandardMaterial({ color: 0x6b5a3e, roughness: 0.9 }));
+  for (const s of [1, -1]) for (let k = 0; k < 6; k++) add(box(0.05, 0.022, 0.012, s * 0.76, 0.125, -1.0 - k * 0.07), MAT.dark, false);
+  add(box(1.0, 0.02, 0.75, 0, 0.24, -2.05, -0.32), MAT.carbon);
+  for (const x of [-0.42, -0.25, -0.08, 0.08, 0.25, 0.42]) add(box(0.01, 0.2, 0.7, x, 0.21, -2.05), MAT.carbon);
+  // the gearbox and the crash structure behind it, the rain light, the exhaust out in the middle
+  add(box(0.24, 0.24, 0.9, 0, 0.36, -2.05), MAT.carbon);
+  add(box(0.12, 0.12, 0.35, 0, 0.42, -2.55), MAT.carbon);
+  add(box(0.1, 0.05, 0.03, 0, 0.4, -2.74), MAT.rain);
+  add(new THREE.CylinderGeometry(0.055, 0.06, 0.24, 14, 1, true).rotateX(Math.PI / 2 - 0.12).translate(0, 0.55, -2.33), MAT.exhaust);
+  // --- THE FRONT WING: two metres wide, slung straight under the nose's tip on two
+  // pylons; a flat neutral middle, then the main plane and three flaps stacked behind
+  // it, curling up toward the endplates; small outboard flicks on the endplates
+  const wings = { fl: new THREE.Group(), fr: new THREE.Group(), rear: new THREE.Group() };
+  for (const g of Object.values(wings)) car.add(g);
+  const addTo = (g, geo, mat) => { const m = add(geo, mat); g.add(m); return m; };
+  for (const s of [1, -1]) add(box(0.012, 0.15, 0.22, s * 0.05, 0.2, 2.84), MAT.carbon);
+  add(box(0.5, 0.02, 0.4, 0, 0.1, 2.9), MAT.carbon);
+  for (const s of [1, -1]) {
+    const g = s > 0 ? wings.fl : wings.fr;
+    addTo(g, box(0.76, 0.022, 0.34, s * 0.62, 0.095, 2.92, 0.05, 0, -s * 0.04), MAT.blue);           // the main plane
+    for (let k = 0; k < 3; k++) addTo(g, box(0.72 - k * 0.04, 0.014, 0.14, s * (0.63 + k * 0.01), 0.13 + k * 0.045, 2.75 - k * 0.09, 0.45 + k * 0.2, 0, -s * (0.06 + k * 0.04)), k === 0 ? MAT.blue : MAT.carbon);
+    addTo(g, box(0.014, 0.3, 0.6, s * 0.99, 0.21, 2.78), MAT.blue);                                  // the endplate
+    addTo(g, box(0.1, 0.012, 0.2, s * 0.95, 0.34, 2.62, 0.3), MAT.carbon);                          // (a flick on it)
+    addTo(g, box(0.5, 0.004, 0.03, s * 0.62, 0.108, 3.05, 0.05, 0, -s * 0.04), MAT.yellow);         // (a teal line along its leading edge)
+  }
+  // --- THE REAR WING: narrow-ish and tall, its endplates with their louvres, the main
+  // plane and the flap above it (the DRS slot between); the beam wing low behind the diffuser
+  for (const s of [1, -1]) addTo(wings.rear, plate94([[-2.0, 0.42], [-2.0, 1.03], [-2.6, 1.03], [-2.62, 0.75], [-2.4, 0.42]], s * 0.53), MAT.blue);
+  for (const s of [1, -1]) for (let k = 0; k < 5; k++) addTo(wings.rear, box(0.016, 0.01, 0.16, s * 0.53, 0.5 + k * 0.05, -2.22, 0.4), MAT.dark);
+  addTo(wings.rear, box(1.04, 0.024, 0.3, 0, 0.84, -2.18, 0.12), MAT.blue);
+  addTo(wings.rear, box(1.04, 0.018, 0.2, 0, 0.97, -2.42, 0.42), MAT.blue);
+  addTo(wings.rear, box(1.04, 0.004, 0.02, 0, 0.985, -2.31, 0.42), MAT.red);                       // (the red edge on the flap)
+  add(box(0.9, 0.018, 0.16, 0, 0.5, -2.45, 0.2), MAT.carbon);
+  for (const s of [1, -1]) addTo(wings.rear, box(0.03, 0.4, 0.08, s * 0.08, 0.66, -2.3, -0.2), MAT.carbon);   // (its twin pillars)
+  return { helmet: [helmet, visor, stripe], rainMat: MAT.rain, exhaustMat: MAT.exhaust, mats: MAT, wings, mirrors, driver };
+}
+// (a flat plate cut to an outline drawn from the side: [z, y] points; at x across)
+function plate94(pts, x, t = 0.014) {
+  const sh = new THREE.Shape(); sh.moveTo(pts[0][0], pts[0][1]); for (const q of pts.slice(1)) sh.lineTo(q[0], q[1]);
+  return new THREE.ExtrudeGeometry(sh, { depth: t, bevelEnabled: false, curveSegments: 4 }).translate(0, 0, -t / 2).rotateY(-Math.PI / 2).translate(x, 0, 0);
+}
 // how much further forward the TTF-94's driver sits than the older cars' (as on the real car)
 export const F94_DRIVER_DZ = 0.45;
 export function buildF94Body(car, addPanel) {
@@ -1680,6 +1928,8 @@ function curve(keys) {
 // with a broad orange stripe down the middle, our own design (no
 // sponsor, no badges), a white roundel with a number on each door.
 // =====================================================================
+// how much further forward the TTP-70's driver sits than he used to (under the high front of the roof)
+export const P70_DRIVER_DZ = 0.4;
 export function buildP70Body(car, addPanel) {
   const MAT = {
     blue: new THREE.MeshPhysicalMaterial({ color: 0x8cc4e8, roughness: 0.3, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.08 }),
@@ -1706,35 +1956,38 @@ export function buildP70Body(car, addPanel) {
     return m;
   };
   const FZ = 1.25, RZ = -1.05, WR = 0.33;
-  const LAMP_AT = [0, 0.6, 1.95];          // (where the headlights shine from)
+  const LAMP_AT = [0, 0.38, 1.95];          // (where the headlights shine from)
   const arch = (z, base) => { let b = base; for (const wz of [FZ, RZ]) { const d = z - wz, r = WR + 0.05; if (Math.abs(d) < r) b = Math.max(b, WR + Math.sqrt(r * r - d * d)); } return b; };
   // --- the main body: a low wedge, wide, the middle of the bonnet low
-  // between the fenders, the tail cut off square
-  const W = curve([[-2.0, 1.84], [-1.6, 1.98], [-1.05, 2.02], [0, 1.9], [1.25, 2.0], [1.8, 1.92], [2.13, 1.66]]);
-  const TOP = curve([[-2.0, 0.66], [-1.6, 0.7], [-0.9, 0.7], [-0.4, 0.66], [0.6, 0.6], [1.4, 0.54], [1.9, 0.44], [2.13, 0.3]]);
+  // between the fenders, the tail cut off square. (Its widths and heights
+  // measured off a reference of the real car, every 4 cm along it, and
+  // smoothed: the reference is built of little blocks)
+  const W = curve([[-2.0, 1.82], [-1.66, 1.92], [-1.09, 1.9], [-0.52, 1.89], [0, 1.83], [0.63, 1.82], [1.25, 1.82], [1.77, 1.8], [2.13, 1.66]]);
+  const TOP = curve([[-2.0, 0.66], [-1.66, 0.68], [-1.09, 0.65], [-0.8, 0.66], [-0.4, 0.66], [0.6, 0.72], [0.91, 0.75], [1.2, 0.63], [1.49, 0.45], [1.77, 0.3], [2.13, 0.17]]);
   const BOT = (z) => arch(z, z > 1.8 ? 0.12 + (z - 1.8) * 0.15 : 0.12);
   add(smoothBody(-2.0, 2.13, 80, (z) => ({ w: W(z), top: TOP(z), bot: BOT(z), tuck: 0.12, sq: 6 })), MAT.blue);
   add(new THREE.BoxGeometry(1.2, 0.08, 3.6).translate(0, 0.14, 0.05), MAT.carbon);           // the floor (no seeing through)
   for (const wz of [FZ, RZ]) for (const s of [1, -1]) add(new THREE.CylinderGeometry(WR + 0.05, WR + 0.05, 0.4, 16, 1, true, -Math.PI / 2, Math.PI).rotateZ(Math.PI / 2).translate(s * 0.72, WR, wz), MAT.dark, false);
   // the front fenders standing up either side of the low bonnet, swelling over the wheels
-  const FT = curve([[0.55, 0.6], [0.9, 0.72], [1.25, 0.78], [1.65, 0.72], [2.05, 0.46]]);
+  const FT = curve([[0.55, 0.62], [0.91, 0.64], [1.25, 0.68], [1.49, 0.6], [1.77, 0.46], [2.05, 0.32]]);
   // (each swelling grows smoothly out of the body and back into it: no ends sticking out)
   const ease = (u) => { u = Math.max(0, Math.min(1, u)); return u * u * (3 - 2 * u); };
   for (const s of [1, -1]) add(smoothBody(0.45, 2.08, 34, (z) => { const e = ease((z - 0.45) / 0.45); return { x: s * (0.72 - 0.12 * (1 - e)), w: (0.56 - Math.max(0, z - 1.7) * 0.4) * (0.3 + 0.7 * e), top: TOP(z) - 0.03 + (FT(z) - TOP(z) + 0.03) * e, bot: Math.max(BOT(z), 0.3 + 0.12 * (1 - e)), tuck: 0.3, sq: 3 }; }), MAT.blue);
   // the rear fenders, swelling up over the back wheels and running into the fins
-  const RT = curve([[-0.5, 0.66], [-1.05, 0.82], [-1.5, 0.86], [-1.85, 0.92], [-2.0, 0.94]]);
+  const RT = curve([[-0.5, 0.67], [-0.8, 0.7], [-1.09, 0.75], [-1.38, 0.78], [-1.66, 0.8], [-2.0, 0.83]]);
   for (const s of [1, -1]) add(smoothBody(-2.0, -0.35, 34, (z) => { const e = ease((-0.35 - z) / 0.45); return { x: s * (0.74 - 0.12 * (1 - e)), w: 0.54 * (0.3 + 0.7 * e), top: TOP(z) - 0.03 + (RT(z) - TOP(z) + 0.03) * e, bot: Math.max(BOT(z), 0.32 + 0.12 * (1 - e)), tuck: 0.35, sq: 3 }; }), MAT.blue);
   // the broad orange stripe down the middle: nose, roof, tail, edged in blue
   const stripe = (z0, z1, topFn, w) => add(smoothBody(z0, z1, 40, (z) => ({ w, top: topFn(z) + 0.006, bot: topFn(z) - 0.02, sq: 2.4 })), MAT.yellow);
   stripe(0.7, 2.11, TOP, 0.62);
   // --- the cockpit: a small bubble, a wraparound screen, the roof, the window frames
-  const CT = curve([[-0.75, 0.66], [-0.45, 0.86], [-0.05, 0.93], [0.35, 0.88], [0.72, 0.62]]);
-  const CW = curve([[-0.75, 1.1], [-0.2, 1.22], [0.35, 1.26], [0.72, 1.34]]);
-  add(smoothBody(-0.75, 0.72, 30, (z) => ({ w: CW(z), top: CT(z), bot: 0.55, tuck: 0.35, sq: 2.6 })), MAT.glass, false);
+  // (the cabin: its roof high and level well forward, then the steep screen down onto the cowl)
+  const CT = curve([[-0.75, 0.66], [-0.52, 0.69], [-0.23, 0.79], [0.05, 0.87], [0.4, 0.875], [0.62, 0.85], [0.8, 0.76], [0.9, 0.73]]);
+  const CW = curve([[-0.75, 1.0], [-0.23, 1.04], [0.35, 1.08], [0.9, 1.14]]);
+  add(smoothBody(-0.75, 0.9, 34, (z) => ({ w: CW(z), top: CT(z), bot: 0.55, tuck: 0.35, sq: 2.6 })), MAT.glass, false);
   { const roof = add(smoothBody(-0.7, 0.18, 20, (z) => ({ w: CW(z) * 0.86, top: CT(z) + 0.01, bot: CT(z) - 0.06, tuck: 0.25, sq: 2.6 })), roofMat); roof.castShadow = false; addPanel(roof); }
   stripe(-0.7, 0.18, (z) => CT(z) + 0.012, 0.42);
   add(smoothBody(-1.98, -0.72, 30, (z) => ({ w: 0.62, top: TOP(z) + 0.006, bot: TOP(z) - 0.02, sq: 2.4 })), MAT.yellow);
-  for (const s of [1, -1]) add(rod([s * 0.6, 0.6, 0.7], [s * 0.5, 0.88, 0.3], 0.025), MAT.blue);        // the screen's pillars
+  for (const s of [1, -1]) add(rod([s * 0.56, 0.72, 0.9], [s * 0.46, 0.86, 0.55], 0.025), MAT.blue);        // the screen's pillars
   // the doors' shut lines, and a white roundel with a number on each
   const roundel = new THREE.MeshStandardMaterial({ roughness: 0.4, alphaTest: 0.5, alphaToCoverage: true, map: (() => {
     const c = document.createElement('canvas'); c.width = 128; c.height = 128; const g = c.getContext('2d');
@@ -1750,24 +2003,24 @@ export function buildP70Body(car, addPanel) {
   // --- the nose: the headlights under clear covers in the fenders, a
   // low mouth for the oil cooler and the brakes
   for (const s of [1, -1]) {
-    add(new THREE.CylinderGeometry(0.075, 0.075, 0.03, 16).rotateX(Math.PI / 2 - 0.5).translate(s * 0.7, 0.62, 1.88), MAT.lamp);
-    add(new THREE.CylinderGeometry(0.06, 0.06, 0.03, 16).rotateX(Math.PI / 2 - 0.5).translate(s * 0.52, 0.56, 1.95), MAT.lamp);
+    add(new THREE.CylinderGeometry(0.075, 0.075, 0.03, 16).rotateX(Math.PI / 2 - 0.5).translate(s * 0.7, FT(1.88) - 0.05, 1.88), MAT.lamp);
+    add(new THREE.CylinderGeometry(0.06, 0.06, 0.03, 16).rotateX(Math.PI / 2 - 0.5).translate(s * 0.52, FT(1.95) - 0.06, 1.95), MAT.lamp);
     add(smoothBody(1.78, 2.02, 6, (z) => ({ x: s * 0.62, w: 0.36, top: FT(z) + 0.01, bot: FT(z) - 0.12, sq: 2.5 })), MAT.lens, false);
   }
   add(new THREE.BoxGeometry(0.7, 0.08, 0.02).translate(0, 0.2, 2.1), MAT.dark, false);
   // mirrors: little round ones on the front fenders
   const mirrors = {};
   for (const s of [1, -1]) {
-    const stalk = add(rod([s * 0.72, 0.74, 0.85], [s * 0.74, 0.8, 0.85], 0.012), MAT.carbon);
+    const stalk = add(rod([s * 0.72, 0.66, 0.85], [s * 0.74, 0.72, 0.85], 0.012), MAT.carbon);
     const pod = new THREE.Group(); car.add(pod);
-    pod.add(add(new THREE.CylinderGeometry(0.055, 0.055, 0.05, 16).rotateX(Math.PI / 2).translate(s * 0.74, 0.84, 0.85), MAT.blue));
-    pod.add(add(new THREE.CircleGeometry(0.048, 16).rotateY(Math.PI).translate(s * 0.74, 0.84, 0.824), MAT.visor));
-    mirrors[s > 0 ? 'l' : 'r'] = { stalk, pod, at: [s * 0.74, 0.84, 0.85] };
+    pod.add(add(new THREE.CylinderGeometry(0.055, 0.055, 0.05, 16).rotateX(Math.PI / 2).translate(s * 0.74, 0.76, 0.85), MAT.blue));
+    pod.add(add(new THREE.CircleGeometry(0.048, 16).rotateY(Math.PI).translate(s * 0.74, 0.76, 0.824), MAT.visor));
+    mirrors[s > 0 ? 'l' : 'r'] = { stalk, pod, at: [s * 0.74, 0.76, 0.85] };
   }
   // --- the tail: the deck's cooling grille over the flat-12 (the big fan
   // under it), the two fins, the mesh across the back, the lights, the exhausts
-  add(new THREE.CylinderGeometry(0.24, 0.24, 0.02, 24).translate(0, 0.705, -1.0), MAT.dark, false);
-  for (let k = -3; k <= 3; k++) add(new THREE.BoxGeometry(0.46, 0.012, 0.02).translate(0, 0.716, -1.0 + k * 0.06), MAT.carbon, false);
+  add(new THREE.CylinderGeometry(0.24, 0.24, 0.02, 24).translate(0, TOP(-1.0) + 0.006, -1.0), MAT.dark, false);
+  for (let k = -3; k <= 3; k++) add(new THREE.BoxGeometry(0.46, 0.012, 0.02).translate(0, TOP(-1.0) + 0.017, -1.0 + k * 0.06), MAT.carbon, false);
   add(new THREE.PlaneGeometry(1.5, 0.42).rotateY(Math.PI).translate(0, 0.42, -2.005), MAT.dark, false);
   for (const s of [1, -1]) {
     add(new THREE.CylinderGeometry(0.05, 0.05, 0.02, 14).rotateX(Math.PI / 2).translate(s * 0.72, 0.62, -2.01), MAT.rain);
@@ -1775,17 +2028,18 @@ export function buildP70Body(car, addPanel) {
   }
   // the driver (on the right), his helmet, his body and the wheel (the
   // computer drivers' and the Garage's; the player's has its own cockpit)
-  const DX = -0.27;
-  add(new THREE.BoxGeometry(0.42, 0.06, 0.42).translate(DX, 0.22, -0.15), MAT.seat, false);
-  add(new THREE.BoxGeometry(0.42, 0.5, 0.06).rotateX(-0.3).translate(DX, 0.45, -0.4), MAT.seat, false);
-  const driver = new THREE.Group(); car.add(driver);
+  // (sat under the high front of the roof, as the real car has him: DZ further forward than he was)
+  const DX = -0.27, DZ = P70_DRIVER_DZ;
+  add(new THREE.BoxGeometry(0.42, 0.06, 0.42).translate(DX, 0.22, -0.15 + DZ), MAT.seat, false);
+  add(new THREE.BoxGeometry(0.42, 0.5, 0.06).rotateX(-0.3).translate(DX, 0.45, -0.4 + DZ), MAT.seat, false);
+  const driver = new THREE.Group(); driver.position.z = DZ; car.add(driver);
   const dAdd = (geo, mat) => { const m = new THREE.Mesh(geo, mat); m.castShadow = false; driver.add(m); return m; };
   dAdd(new THREE.CapsuleGeometry(0.15, 0.14, 4, 10).rotateZ(Math.PI / 2).scale(1, 0.75, 0.8).translate(DX, 0.56, -0.25), MAT.suit);
   for (const sx of [1, -1]) { dAdd(rod([DX + sx * 0.17, 0.6, -0.22], [DX + sx * 0.15, 0.5, 0.02], 0.04), MAT.suit); dAdd(rod([DX + sx * 0.15, 0.5, 0.02], [DX + sx * 0.12, 0.62, 0.22], 0.035), MAT.suit); }
   dAdd(new THREE.TorusGeometry(0.17, 0.016, 6, 20).rotateX(-0.6).translate(DX, 0.62, 0.26), MAT.carbon);
-  const helmet = add(new THREE.SphereGeometry(0.135, 20, 16).scale(1, 1.05, 1.1).translate(DX, 0.78, -0.25), MAT.helmet);
-  const visor = add(new THREE.SphereGeometry(0.137, 20, 10, -0.9 + Math.PI / 2, 1.8, 1.1, 0.5).scale(1, 1.05, 1.1).translate(DX, 0.78, -0.25), MAT.visor);
-  const hstripe = add(new THREE.TorusGeometry(0.135, 0.012, 6, 24, Math.PI).rotateY(Math.PI / 2).rotateZ(Math.PI / 2).scale(1, 1.05, 1.1).translate(DX, 0.78, -0.25), MAT.yellow);
+  const helmet = add(new THREE.SphereGeometry(0.135, 20, 16).scale(1, 1.05, 1.1).translate(DX, 0.74, -0.25 + DZ), MAT.helmet);
+  const visor = add(new THREE.SphereGeometry(0.137, 20, 10, -0.9 + Math.PI / 2, 1.8, 1.1, 0.5).scale(1, 1.05, 1.1).translate(DX, 0.74, -0.25 + DZ), MAT.visor);
+  const hstripe = add(new THREE.TorusGeometry(0.135, 0.012, 6, 24, Math.PI).rotateY(Math.PI / 2).rotateZ(Math.PI / 2).scale(1, 1.05, 1.1).translate(DX, 0.74, -0.25 + DZ), MAT.yellow);
   // the "wings": little canards at the nose's corners, and the spoiler
   // lip across the tail between the fins (each can be knocked off)
   const wings = { fl: new THREE.Group(), fr: new THREE.Group(), rear: new THREE.Group() };
@@ -1852,26 +2106,28 @@ export function buildP91Body(car, addPanel) {
   };
   const ease = (u) => { u = Math.max(0, Math.min(1, u)); return u * u * (3 - 2 * u); };
   const FZ = 1.3, RZ = -1.36, WR = 0.33;
-  const LAMP_AT = [0, 0.5, 2.05];          // (where the headlights shine from)
+  const LAMP_AT = [0, 0.36, 2.05];          // (where the headlights shine from)
   // (the front wheels have open arches; the back ones are skirted)
   const arch = (z, base) => { const d = z - FZ, r = WR + 0.05; return Math.abs(d) < r ? Math.max(base, WR + Math.sqrt(r * r - d * d)) : base; };
-  const W = curve([[-2.45, 1.92], [-1.36, 2.0], [-0.4, 1.94], [0.4, 1.92], [1.3, 2.0], [2.0, 1.92], [2.36, 1.72]]);
-  const TOP = curve([[-2.45, 0.8], [-1.8, 0.78], [-1.0, 0.75], [-0.6, 0.72], [0.6, 0.6], [1.3, 0.56], [1.9, 0.42], [2.36, 0.2]]);
+  // (its widths and heights measured off a reference of the real car, every 5 cm along it, smoothed)
+  const W = curve([[-2.45, 1.9], [-1.58, 1.95], [-0.7, 1.96], [0, 1.9], [0.76, 1.92], [1.34, 1.92], [1.92, 1.78], [2.36, 1.45]]);
+  const TOP = curve([[-2.45, 0.84], [-1.8, 0.74], [-1.28, 0.78], [-1.0, 0.74], [-0.6, 0.72], [0.6, 0.78], [0.76, 0.82], [1.05, 0.75], [1.34, 0.62], [1.63, 0.41], [2.0, 0.28], [2.36, 0.18]]);
   const BOT = (z) => arch(z, z > 2.0 ? 0.1 + (z - 2.0) * 0.12 : 0.1);
   add((smoothBody(-2.45, 2.36, 140, (z) => ({ w: W(z), top: TOP(z), bot: BOT(z), tuck: 0.12, sq: 7 }), 64)), MAT.blue);
   add(new THREE.BoxGeometry(1.3, 0.06, 4.2).translate(0, 0.12, -0.05), MAT.carbon);
   for (const s of [1, -1]) add(new THREE.CylinderGeometry(WR + 0.05, WR + 0.05, 0.42, 16, 1, true, -Math.PI / 2, Math.PI).rotateZ(Math.PI / 2).translate(s * 0.73, WR, FZ), MAT.dark, false);
   // the front fenders swelling up either side of the low nose (and back into the body)
-  const FT = curve([[0.55, 0.58], [0.95, 0.68], [1.3, 0.74], [1.75, 0.66], [2.2, 0.36]]);
+  const FT = curve([[0.55, 0.62], [0.76, 0.66], [1.05, 0.73], [1.34, 0.8], [1.63, 0.6], [1.92, 0.42], [2.22, 0.24]]);
   for (const s of [1, -1]) add((smoothBody(0.5, 2.22, 50, (z) => { const e = ease((z - 0.5) / 0.45); return { x: s * (0.73 - 0.12 * (1 - e)), w: (0.54 - Math.max(0, z - 1.8) * 0.5) * (0.3 + 0.7 * e), top: TOP(z) - 0.03 + (FT(z) - TOP(z) + 0.03) * e, bot: Math.max(BOT(z), 0.3 + 0.12 * (1 - e)), tuck: 0.3, sq: 3 }; }, 40)), MAT.blue);
   // the cockpit: small, a wraparound screen, the roof (green), its pillars
-  const CT = curve([[-0.85, 0.72], [-0.5, 0.93], [-0.05, 0.99], [0.35, 0.93], [0.72, 0.6]]);
-  const CW = curve([[-0.85, 1.1], [-0.2, 1.24], [0.35, 1.28], [0.72, 1.36]]);
-  add(smoothBody(-0.85, 0.72, 30, (z) => ({ w: CW(z), top: CT(z), bot: 0.55, tuck: 0.35, sq: 2.6 })), MAT.glass, false);
-  { const roof = add((smoothBody(-0.8, 0.2, 30, (z) => ({ w: CW(z) * 0.86, top: CT(z) + 0.01, bot: CT(z) - 0.06, tuck: 0.25, sq: 2.6 }), 40)), roofMat); roof.castShadow = false; }
-  for (const s of [1, -1]) add(rod([s * 0.62, 0.6, 0.7], [s * 0.52, 0.93, 0.32], 0.025), MAT.green);
+  // (its roof high well forward, then the steep screen down onto the cowl)
+  const CT = curve([[-0.85, 0.78], [-0.51, 0.925], [-0.12, 0.98], [0.15, 1.0], [0.3, 0.99], [0.47, 0.915], [0.66, 0.76], [0.8, 0.72]]);
+  const CW = curve([[-0.85, 1.02], [-0.2, 1.08], [0.35, 1.1], [0.8, 1.18]]);
+  add(smoothBody(-0.85, 0.8, 34, (z) => ({ w: CW(z), top: CT(z), bot: 0.55, tuck: 0.35, sq: 2.6 })), MAT.glass, false);
+  { const roof = add((smoothBody(-0.8, 0.36, 30, (z) => ({ w: CW(z) * 0.86, top: CT(z) + 0.01, bot: CT(z) - 0.06, tuck: 0.25, sq: 2.6 }), 40)), roofMat); roof.castShadow = false; }
+  for (const s of [1, -1]) add(rod([s * 0.58, 0.7, 0.8], [s * 0.48, 0.98, 0.38], 0.025), MAT.green);
   // the long tail: the deck, the fins rising either side, the big wing between them
-  const FinT = curve([[-0.9, 0.76], [-1.6, 0.86], [-2.1, 0.98], [-2.45, 1.02]]);
+  const FinT = curve([[-0.9, 0.77], [-1.28, 0.79], [-1.6, 0.76], [-1.87, 0.74], [-2.16, 0.81], [-2.45, 0.85]]);
   for (const s of [1, -1]) add((smoothBody(-2.45, -0.85, 40, (z) => { const e = ease((-0.85 - z) / 0.5); return { x: s * (0.86 - 0.1 * (1 - e)), w: 0.2 * (0.4 + 0.6 * e), top: TOP(z) + (FinT(z) - TOP(z)) * e, bot: TOP(z) - 0.15, tuck: 0.2, sq: 3 }; })), MAT.blue);
   // the flanks: a duct ahead of each back wheel, the skirt's line
   for (const s of [1, -1]) {
@@ -1888,7 +2144,7 @@ export function buildP91Body(car, addPanel) {
   for (const s of [1, -1]) { const d = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.28), numMat); d.position.set(s * (W(0) / 2 + 0.012), 0.5, 0.0); d.rotation.y = s * Math.PI / 2; car.add(d); }
   // the nose: the headlights at its corners under clear covers, a low mouth
   for (const s of [1, -1]) {
-    add(new THREE.BoxGeometry(0.22, 0.06, 0.02).rotateX(-0.9).translate(s * 0.6, 0.5, 1.98), MAT.lamp);
+    add(new THREE.BoxGeometry(0.22, 0.06, 0.02).rotateX(-0.9).translate(s * 0.6, FT(1.98) - 0.04, 1.98), MAT.lamp);
     add(smoothBody(1.86, 2.12, 6, (z) => ({ x: s * 0.6, w: 0.3, top: FT(z) + 0.01, bot: FT(z) - 0.1, sq: 2.5 })), MAT.lens, false);
   }
   add(new THREE.BoxGeometry(0.9, 0.06, 0.02).translate(0, 0.15, 2.3), MAT.dark, false);
@@ -1926,7 +2182,7 @@ export function buildP91Body(car, addPanel) {
   for (const s of [1, -1]) addTo(wings.rear, new THREE.BoxGeometry(0.02, 0.36, 0.56).translate(s * 0.82, 0.98, -2.25), MAT.green);
   return { helmet: [helmet, visor, hstripe], rainMat: MAT.rain, exhaustMat: MAT.exhaust, mats: MAT, wings, mirrors, driver, lampMat: MAT.lamp, lampAt: LAMP_AT };
 }
-export const bodyForKind = (kind) => ({ f05: buildF05Body, f94: buildF94Body, p70: buildP70Body, p91: buildP91Body }[kind] || buildF1Body);
+export const bodyForKind = (kind) => ({ f20: buildF20Body, f05: buildF05Body, f94: buildF94Body, p70: buildP70Body, p91: buildP91Body }[kind] || buildF1Body);
 
 // a plain F1 rim of the time: a shallow dish with six slim spokes and a
 // big single centre nut (r: its radius, w: its width)
@@ -1939,6 +2195,7 @@ export const RIM_STYLES = {
   f1: { pattern: 'straight', spokes: 10, color: 0xb9bcc1 },
   f94: { pattern: 'cross', spokes: 10, color: 0xc7c9cc },
   f05: { pattern: 'split', spokes: 6, color: 0x2e3035 },
+  f20: { pattern: 'split', spokes: 5, color: 0x1a1b1e },
 };
 export function buildF1RimGeometry(r, w, style = { pattern: 'straight', spokes: 6 }) {
   const parts = [

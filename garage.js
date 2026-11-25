@@ -7,55 +7,173 @@
 // has several cars dropping down again. Pick one and it fires up: a
 // couple of big revs, then it settles to idle.
 // =====================================================================
-export const BUILD = 20;
+export const BUILD = 21;
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { bodyForKind, WHEEL_LAYOUT, buildF1RimGeometry, tyreGeometry, RIM_STYLES } from './f1.js';
 
-// THE COLLECTION. kind: a car you can drive (the rest are coming soon).
-// (made-up names, no real makes)
-export const COLLECTION = [
-  { cat: 'Formula', cars: [
-    { name: 'TTF-75', year: 1975, blurb: '3.0 flat-12, a world champion\'s car' },
-    { name: 'TTF-88', year: 1988, kind: 'f1', blurb: 'Turbo era, 1.5 V6' },
-    { name: 'TTF-94', year: 1994, kind: 'f94', blurb: '3.5 V12, 16,000 rpm' },
-    { name: 'TTF-05', year: 2005, kind: 'f05', blurb: '3.0 V10, 19,200 rpm' },
-    { name: 'TTF-14', year: 2014, blurb: 'Hybrid turbo V6' },
+// THE COLLECTION, in three sections. kind: a car you can drive (the rest are
+// coming soon). Made-up names, no real makes: each one a tribute to its era.
+// BY DECADE: the 1970s to the 2020s, three cars a decade in each of formula,
+// endurance, rally and touring. RIVALRIES: five famous pairs. HONOURABLE
+// MENTIONS: road cars known for timeless design, Japanese legends, minivans
+// and coaches
+const C = (name, year, blurb, kind) => ({ name, year, blurb, ...(kind ? { kind } : {}) });
+export const SECTIONS = [
+  { title: 'By decade', byDecade: true, groups: [
+    { cat: 'Formula', cars: [
+      C('TTF-72', 1972, 'Wedge nose, radiators in the sides, inboard brakes'),
+      C('TTF-77', 1977, 'Six wheels: four small ones at the front'),
+      C('TTF-78', 1978, 'Ground effect: the whole car a wing'),
+      C('TTF-83', 1983, 'Arrow-shaped turbo four, refuelled mid-race'),
+      C('TTF-86', 1986, 'Twin-turbo V6, over 1,000 bhp in qualifying'),
+      C('TTF-88', 1988, 'Turbo era, 1.5 V6: won all but one race', 'f1'),
+      C('TTF-92', 1992, 'Active suspension, traction control, a V10'),
+      C('TTF-94', 1994, '3.5 V12, 16,000 rpm', 'f94'),
+      C('TTF-98', 1998, 'Narrow track, grooved tyres, silver and black'),
+      C('TTF-04', 2004, 'The V10 at its peak: won 15 of 18'),
+      C('TTF-05', 2005, '3.0 V10, 19,200 rpm', 'f05'),
+      C('TTF-09', 2009, 'Double diffuser: from nowhere to the title'),
+      C('TTF-11', 2011, 'Blown diffuser, V8, a raked stance'),
+      C('TTF-14', 2014, 'The first hybrid turbo V6s'),
+      C('TTF-18', 2018, 'The halo arrives: hybrid V6, big wings'),
+      C('TTF-20', 2020, '1.6 turbo V6 hybrid, the halo era', 'f20'),
+      C('TTF-23', 2023, 'Ground effect returns: won all but one race'),
+      C('TTF-24', 2024, 'Papaya and black, ground effect'),
+    ] },
+    { cat: 'Endurance', cars: [
+      C('TTP-70', 1970, '4.9 flat-12, long-distance racer', 'p70'),
+      C('TTP-72', 1972, 'Screaming V12, French blue'),
+      C('TTP-78', 1978, 'Turbo V6 with a bubble canopy'),
+      C('TTP-87', 1987, 'Group C: flat-six turbo, the endurance benchmark'),
+      C('TTP-88', 1988, 'Group C: V12, purple and white'),
+      C('TTP-89', 1989, 'Group C: twin-turbo V8, silver'),
+      C('TTP-91', 1991, 'Group C: 2.6 four-rotor', 'p91'),
+      C('TTP-92', 1992, 'V10 sports prototype, 3.5 litres'),
+      C('TTP-95', 1995, 'GT1: a road car\'s V12, three seats made one'),
+      C('TTP-00', 2000, 'LMP900: open-top twin-turbo V8'),
+      C('TTP-03', 2003, 'Closed coupé, British racing green'),
+      C('TTP-06', 2006, 'LMP1: diesel V12, near silent'),
+      C('TTP-12', 2012, 'LMP1: diesel hybrid, four-wheel drive'),
+      C('TTP-15', 2015, 'LMP1: turbo V4 hybrid, 900 bhp'),
+      C('TTP-18', 2018, 'LMP1: twin-turbo V6 hybrid'),
+      C('TTP-21', 2021, 'Hypercar: hybrid V6'),
+      C('TTP-23', 2023, 'Hypercar: hybrid V6, red'),
+      C('TTP-24', 2024, 'Hypercar: twin-turbo V8 hybrid'),
+    ] },
+    { cat: 'Rally', cars: [
+      C('TTR-74', 1974, 'Group 4: mid-engined V6 wedge'),
+      C('TTR-77', 1977, 'Group 4: a family saloon, rally-bred'),
+      C('TTR-79', 1979, 'Group 4: rear-drive twin-cam, sideways everywhere'),
+      C('TTR-83', 1983, 'Group B: rear-drive supercharged four'),
+      C('TTR-84', 1984, 'Group B: mid-engined turbo 4WD hatch'),
+      C('TTR-85', 1985, 'Group B: 4WD, five-cylinder turbo, gravel'),
+      C('TTR-92', 1992, 'Group A: turbo 4WD hatch, wide arches'),
+      C('TTR-93', 1993, 'Group A: turbo 4WD coupé'),
+      C('TTR-94', 1994, 'Group A: turbo four, a huge rear wing'),
+      C('TTR-00', 2000, 'WRC: a small hatch, very short'),
+      C('TTR-03', 2003, 'WRC: turbo hatch, a forest of flaps'),
+      C('TTR-04', 2004, 'WRC: the tarmac king'),
+      C('TTR-11', 2011, 'WRC: 1.6 turbo, small and nimble'),
+      C('TTR-13', 2013, 'WRC: 1.6 turbo hatch, four titles in a row'),
+      C('TTR-17', 2017, 'WRC: wide, wild aero'),
+      C('TTR-22', 2022, 'Rally1: hybrid boost'),
+      C('TTR-23', 2023, 'Rally1: hybrid hatch, a spaceframe'),
+      C('TTR-24', 2024, 'Rally1: hybrid crossover'),
+    ] },
+    { cat: 'Touring', cars: [
+      C('TTS-70', 1970, 'Group 2: light coupé, twin-cam four'),
+      C('TTS-73', 1973, 'Group 2: straight-six coupé, the batmobile wings'),
+      C('TTS-74', 1974, 'Group 2: long-bonnet V6 coupé'),
+      C('TTS-85', 1985, 'Group A: a turbo brick, fast as anything'),
+      C('TTS-87', 1987, 'Group A: four-cylinder box arches'),
+      C('TTS-88', 1988, 'Group A: turbo four, 500 bhp, a whale tail'),
+      C('TTS-90', 1990, 'Group A: sixteen-valve saloon, a big wing'),
+      C('TTS-93', 1993, 'Class 1: V6 4WD, electronics everywhere'),
+      C('TTS-96', 1996, 'Super Touring: 2.0 saloon, 4WD'),
+      C('TTS-00', 2000, 'V8 coupé, a silhouette on a saloon'),
+      C('TTS-05', 2005, 'Super 2000: 2.0 saloon'),
+      C('TTS-08', 2008, 'Super 2000: diesel saloon'),
+      C('TTS-14', 2014, 'TC1: turbo saloon, wide and winged'),
+      C('TTS-17', 2017, 'Class 1: V8 coupé, carbon everything'),
+      C('TTS-19', 2019, 'TCR: front-drive turbo'),
+      C('TTS-21', 2021, 'TCR: front-drive turbo saloon'),
+      C('TTS-22', 2022, 'TCR: five-door turbo hatch'),
+      C('TTS-23', 2023, 'TCR: turbo crossover-saloon'),
+    ] },
   ] },
-  { cat: 'GT3', cars: [
-    { name: 'TTG-12', year: 2012, blurb: 'Front-engined V8 coupé' },
-    { name: 'TTG-16', year: 2016, blurb: 'Mid-engined V8 turbo' },
-    { name: 'TTG-23', year: 2023, blurb: 'Flat-six' },
+  { title: 'Rivalries', groups: [
+    { cat: 'The rally saloons', note: 'Blue and gold against red, turbo four-wheel drive', cars: [
+      C('TTR-97', 1997, 'Flat-four turbo, blue and gold'),
+      C('TTR-99', 1999, 'Turbo four, the evolution of a saloon'),
+    ] },
+    { cat: 'The mountain V8s', note: 'Red against blue round the mountain', cars: [
+      C('TTS-98', 1998, 'V8 saloon, red, the lion'),
+      C('TTS-99', 1999, 'V8 saloon, blue, the oval'),
+    ] },
+    { cat: 'The long-distance war', note: 'One won Le Mans, the other the hearts', cars: [
+      C('TTP-66', 1966, 'Big-block V8, built to beat the other'),
+      C('TTP-67', 1967, 'Red V12, the beauty'),
+    ] },
+    { cat: '1976', note: 'Two drivers, one title, decided in the rain', cars: [
+      C('TTF-76', 1976, 'Customer V8, the playboy\'s car'),
+      C('TTF-75', 1975, 'Flat-12, the champion\'s car'),
+    ] },
+    { cat: 'The pony cars', note: 'Fastback against fastback, coast to coast', cars: [
+      C('TTS-69', 1969, 'Small-block V8 pony car, the original'),
+      C('TTS-68', 1968, 'Small-block V8 pony car, the answer'),
+    ] },
   ] },
-  { cat: 'Rally', cars: [
-    { name: 'TTR-74', year: 1974, blurb: 'Group 4, mid-engined V6' },
-    { name: 'TTR-85', year: 1985, blurb: 'Group B: 4WD, 500 bhp, gravel' },
-    { name: 'TTR-95', year: 1995, blurb: 'Group A: turbo four, anti-lag' },
-    { name: 'TTR-22', year: 2022, blurb: 'Rally1: hybrid boost' },
-  ] },
-  { cat: 'Prototype', cars: [
-    { name: 'TTP-70', year: 1970, kind: 'p70', blurb: '4.9 flat-12, long-distance racer' },
-    { name: 'TTP-91', year: 1991, kind: 'p91', blurb: 'Group C: 2.6 four-rotor' },
-    { name: 'TTP-09', year: 2009, blurb: 'LMP1: diesel V12' },
-    { name: 'TTP-23', year: 2023, blurb: 'Hypercar: hybrid V6' },
-  ] },
-  { cat: 'Touring', cars: [
-    { name: 'TTS-73', year: 1973, blurb: 'Group 2: straight-six coupé' },
-    { name: 'TTS-97', year: 1997, blurb: 'Super Touring: 2.0 saloon' },
-    { name: 'TTS-19', year: 2019, blurb: 'TCR: front-drive turbo' },
-  ] },
-  { cat: 'Road', cars: [
-    { name: 'TT Roadster 62', year: 1962, blurb: 'Lightweight sports car' },
-    { name: 'TT Coupé 72', year: 1972, blurb: 'Front-engined V8, long bonnet' },
-    { name: 'Caterham Seven', year: 2015, kind: 'caterham', blurb: 'The test car', hidden: true },
-    { name: 'TT Hatch 86', year: 1986, blurb: 'Front-drive, 1.6' },
+  { title: 'Honourable mentions', groups: [
+    { cat: 'Road', note: 'Known for timeless design', cars: [
+      C('TT Gullwing 54', 1954, 'Doors that open upward, straight-six'),
+      C('TT Saloon 55', 1955, 'A spaceship of a family car, on air'),
+      C('TT Roadster 61', 1961, 'The longest bonnet, the prettiest car'),
+      C('TT GT 62', 1962, 'Front-engined V12, a few dozen made'),
+      C('TT Grand Tourer 63', 1963, 'British straight-six, a spy film star'),
+      C('TT Flat-Six 64', 1964, 'Rear engine, the shape that never changed'),
+      C('TT V12 66', 1966, 'The first mid-engined supercar'),
+      C('TT Wedge 74', 1974, 'All edges, doors that open up'),
+      C('TT Turbo 87', 1987, 'Twin-turbo V8, the last of its maker'),
+      { ...C('Caterham Seven', 2015, 'The test car', 'caterham'), hidden: true },
+      C('TT Three-Seater 92', 1992, 'Driver in the middle, gold-lined bay'),
+    ] },
+    { cat: 'JDM legends', note: 'Japan\'s greatest', cars: [
+      C('TTJ-67', 1967, 'Straight-six grand tourer, hand-built'),
+      C('TTJ-69', 1969, 'Long-bonnet straight-six coupé'),
+      C('TTJ-83', 1983, 'Rear-drive twin-cam hatch, the drift hero'),
+      C('TTJ-90', 1990, 'Mid-engined V6, aluminium'),
+      C('TTJ-92', 1992, 'Twin-rotor turbo coupé'),
+      C('TTJ-93', 1993, 'Twin-turbo straight-six coupé'),
+      C('TTJ-97', 1997, 'High-revving hatch, the red badge'),
+      C('TTJ-99', 1999, 'Twin-turbo straight-six, 4WD'),
+      C('TTJ-01', 2001, 'Rear-drive turbo four coupé'),
+      C('TTJ-10', 2010, 'V10 supercar, the sound'),
+    ] },
+    { cat: 'Minivans', note: 'Timeless design and reliability', cars: [
+      C('TTV-67', 1967, 'The split-screen bus, rear engine'),
+      C('TTV-83', 1983, 'The first family minivan'),
+      C('TTV-84', 1984, 'One-box people carrier, a living room'),
+      C('TTV-90', 1990, 'The egg: mid-engined minivan'),
+      C('TTV-94', 1994, 'A saloon that grew into a minivan'),
+    ] },
+    { cat: 'Coaches', note: 'Buses and coaches', cars: [
+      C('TTB-54', 1954, 'Double-deck coach, the cross-country cruiser'),
+      C('TTB-56', 1956, 'Red double-decker, open platform at the back'),
+      C('TTB-71', 1971, 'Long-distance coach, raked glass'),
+      C('TTB-74', 1974, 'Touring coach, the classic shape'),
+      C('TTB-76', 1976, 'High-deck coach, a monocoque'),
+    ] },
   ] },
 ];
+// (every car in one list, for whoever wants them all)
+export const COLLECTION = SECTIONS.flatMap((s) => s.groups);
 export const CAR_INFO = {
   f1: { name: 'TTF-88', year: 1988, cat: 'Formula', drive: 'Rear-wheel drive' },
   f05: { name: 'TTF-05', year: 2005, cat: 'Formula', drive: 'Rear-wheel drive' },
   f94: { name: 'TTF-94', year: 1994, cat: 'Formula', drive: 'Rear-wheel drive' },
+  f20: { name: 'TTF-20', year: 2020, cat: 'Formula', drive: 'Rear-wheel drive' },
   p70: { name: 'TTP-70', year: 1970, cat: 'Prototype', drive: 'Rear-wheel drive' },
   p91: { name: 'TTP-91', year: 1991, cat: 'Prototype', drive: 'Rear-wheel drive' },
   caterham: { name: 'Caterham Seven', year: 2015, cat: 'Road', drive: 'Rear-wheel drive' },
@@ -116,6 +234,10 @@ body.in-garage > *:not(#garage):not(#tune):not(#game):not(canvas):not(style):not
 #garage .open > .g-list { display: flex; }
 #garage .g-dec { display: flex; align-items: center; justify-content: space-between; padding: 8px 6px; border: 0; background: none;
   font-size: 12px; letter-spacing: 0.24em; color: #aab2bd; text-align: left; }
+#garage .g-tabs { display: flex; gap: 6px; flex: 1; justify-content: center; flex-wrap: wrap; }
+#garage .g-tab { border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.04); color: #c9cfd8; border-radius: 999px; padding: 7px 14px; font: inherit; font-size: 13px; letter-spacing: 0.06em; cursor: pointer; }
+#garage .g-tab.on { background: #e5b53d; border-color: #e5b53d; color: #15171b; font-weight: 600; }
+#garage .g-note { font-size: 12px; color: #8d96a3; padding: 6px 6px 4px; line-height: 1.35; }
 #garage .g-declabel { font-size: 12px; letter-spacing: 0.24em; color: #aab2bd; padding: 8px 6px 0; }
 #garage .g-sublist { display: none; flex-direction: column; gap: 10px; }
 #garage .open > .g-sublist { display: flex; }
@@ -346,7 +468,7 @@ export class Garage {
       <div class="g-stats"></div>
       <div class="g-hint">DRAG TO LOOK AROUND</div>
       <div class="g-bar"><label class="g-btn g-clear"><input type="checkbox"> Clear</label><span class="g-mid"><button class="g-btn g-tune" type="button">${TUNE_ICON}Tuning</button><button class="g-btn g-change" type="button">${KEY_ICON}Change car</button></span><button class="g-btn go g-drive" type="button">Drive &#9656;</button></div>
-      <div class="g-pick"><div class="g-pick-head"><h2>${KEY_ICON}Change car</h2><button class="g-close" type="button" aria-label="Close">&times;</button></div><div class="g-cats"></div></div>`;
+      <div class="g-pick"><div class="g-pick-head"><h2>${KEY_ICON}Change car</h2><div class="g-tabs"></div><button class="g-close" type="button" aria-label="Close">&times;</button></div><div class="g-cats"></div></div>`;
     document.body.appendChild(root);
     root.querySelector('.g-change').addEventListener('click', () => this.openPicker());
     root.querySelector('.g-tune').addEventListener('click', () => this.onTune?.((CAR_INFO[this.kind] || {}).name || this.kind));
@@ -386,10 +508,20 @@ export class Garage {
       + `<div class="g-curve"><small>POWER CURVE</small><svg viewBox="0 0 230 56" preserveAspectRatio="none"><path d="${path}" fill="none" stroke="#e5b53d" stroke-width="2"/><path d="${path}L230,56L0,56Z" fill="rgba(229,181,61,0.12)"/></svg></div>`;
   }
 
-  openPicker() {
+  openPicker(si) {
+    // (which section: the one asked for, else the one with the car in use in it)
+    if (si === undefined) si = Math.max(0, SECTIONS.findIndex((sec) => sec.groups.some((g) => g.cars.some((c) => c.kind === this.kind))));
+    this.section = si;
+    const sec = SECTIONS[si];
+    const tabs = this.root.querySelector('.g-tabs');
+    tabs.innerHTML = '';
+    SECTIONS.forEach((t, i) => {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'g-tab' + (i === si ? ' on' : ''); b.textContent = t.title;
+      b.addEventListener('click', () => this.openPicker(i)); tabs.appendChild(b);
+    });
     const cats = this.root.querySelector('.g-cats');
     cats.innerHTML = '';
-    for (const group of COLLECTION) {
+    for (const group of sec.groups) {
       const cars = group.cars.filter((c) => !c.hidden || this.unlocked(c.kind) || c.kind === this.kind).sort((a, b) => a.year - b.year);
       if (!cars.length) continue;
       const col = document.createElement('div');
@@ -400,6 +532,12 @@ export class Garage {
       head.addEventListener('click', () => col.classList.toggle('open'));
       const list = document.createElement('div');
       list.className = 'g-list';
+      if (group.note) { const n = document.createElement('div'); n.className = 'g-note'; n.textContent = group.note; list.appendChild(n); }
+      if (!sec.byDecade) {          // (rivalries and honourable mentions: just the cars, oldest first)
+        for (const c of cars) list.appendChild(this.card(c));
+        if (!sec.byDecade && si > 0) col.classList.add('open');
+        col.append(head, list); cats.appendChild(col); continue;
+      }
       // by decade, oldest first; a decade with several cars drops down again
       const decades = new Map();
       for (const c of cars) { const d = Math.floor(c.year / 10) * 10; if (!decades.has(d)) decades.set(d, []); decades.get(d).push(c); }
@@ -522,6 +660,6 @@ export class Garage {
     this.renderer.render(this.scene, this.camera);
   }
 }
-const THUMB_KEY = 'tracktester-thumb-10-';   // (a new number when a car's looks change)
+const THUMB_KEY = 'tracktester-thumb-11-';   // (a new number when a car's looks change)
 const FAR = new THREE.Vector3(1e5, 0, 1e5);
 const SIZE = new THREE.Vector2();

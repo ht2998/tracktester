@@ -21,11 +21,20 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 170;
+export const BUILD = 171;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 141, date: '25 Nov 2026', title: 'The TTF-20, and a new garage',
+    items: [
+      ['A new car: the TTF-20', 'A 2020-style hybrid Formula car, shaped from measurements of the real car at 100 points: very long and wide, tiny sidepods, the airbox rising over the driver, the halo over the cockpit, a two-metre front wing and a huge floor. Black, with a field of silver stars across the engine cover and pods, thin teal lines, and a red star on the halo. The 1.6 turbo V6 hybrid revs to 15,000 with next to no lag. No sponsors yet, and its own sound is coming', 'new'],
+      ['The garage, rearranged', 'Change car now has three sections. By decade: formula, endurance, rally and touring, three cars a decade from the 1970s to the 2020s. Rivalries: five famous pairs. Honourable mentions: road cars known for their timeless design, Japanese legends, minivans and coaches. The cars still to come show as coming soon', 'new'],
+      ['The TTF-88, measured', 'The TTF-88\'s body is now shaped from measurements of the real 1988 car at 100 points: very low, a long flat-topped pod each side, the engine cover rising over the roll hoop. The driver sits 35 cm further forward, lying well back, as in the real car, and the cameras have moved with him', 'new'],
+      ['The prototypes, measured', 'The TTP-70 and TTP-91 have their widths, fenders, noses and cabins set from measurements of the real cars: lower fenders, steeper noses, narrower cabins with the roof high well forward and a steep screen. The TTP-70\'s driver sits 40 cm further forward, under the high part of the roof', 'new'],
+    ],
+  },
   {
     id: 140, date: '25 Nov 2026', title: 'The TTF-94, measured',
     items: [
