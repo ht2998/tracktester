@@ -21,11 +21,21 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 150;
+export const BUILD = 151;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 123, date: '25 Nov 2026', title: 'Hit for real',
+    items: [
+      ['The car\'s real shape', 'Whether you hit someone now goes by where the car actually is: a single-seater\'s wheels, narrow nose, wide front wing, sidepods and rear wing, with the gaps between them, not a box round the whole car', 'fix'],
+      ['What it does', 'Hit slowly, he gets up. Faster, he\'s knocked out cold or killed, lying there as a pool of blood spreads under him. Very fast, he\'s torn apart: arms and legs thrown off, bleeding as they fly', 'new'],
+      ['Flying debris', 'A loose wheel, a torn-off suspension arm or a wing flying off can hit someone: hard enough, it knocks him out; a suspension arm going fast enough runs him through and stays in him. In an open cockpit the driver\'s head is exposed too: struck on the helmet he\'s knocked out, or the arm goes into his helmet, and the medics come for him', 'new'],
+      ['Barrier heights', 'The concrete walls, steel barriers and tyre walls are as tall to hit as they are to look at, so you only clear one if you\'re really over it', 'fix'],
+      ['Single-seaters\' radiators', 'They sit in the sidepods, well back, so a head-on no longer holes them (and leaves a cloud of coolant) unless it\'s enormous, over 100 km/h into a wall', 'fix'],
+    ],
+  },
   {
     id: 122, date: '24 Nov 2026', title: 'Real injuries',
     items: [

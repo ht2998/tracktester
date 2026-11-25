@@ -60,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 99;
+const BUILD = 100;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -1693,7 +1693,7 @@ function snapLink(r, mesh) {
   piece.quaternion.setFromUnitVectors(LINK_UP, _lw2.sub(_lw).normalize());
   piece.castShadow = true;
   scene.add(piece);
-  flyingParts.push({ obj: piece, v: new THREE.Vector3().copy(carVelocity).multiplyScalar(0.6).add(new THREE.Vector3((Math.random() - 0.5) * 6, 2 + Math.random() * 4, (Math.random() - 0.5) * 6)), w: new THREE.Vector3((Math.random() - 0.5) * 18, (Math.random() - 0.5) * 18, (Math.random() - 0.5) * 18), rest: false });
+  flyingParts.push({ link: true, obj: piece, v: new THREE.Vector3().copy(carVelocity).multiplyScalar(0.6).add(new THREE.Vector3((Math.random() - 0.5) * 6, 2 + Math.random() * 4, (Math.random() - 0.5) * 6)), w: new THREE.Vector3((Math.random() - 0.5) * 18, (Math.random() - 0.5) * 18, (Math.random() - 0.5) * 18), rest: false });
 }
 function updateLinks(list, mesh, steer) {
   list.forEach((r, i) => {
@@ -2950,7 +2950,7 @@ function knockPerson(h, vx, vy, vz) {
 let hardestHit = 0;
 let sweptFromX = null, sweptFromZ = null;
 // how tall each kind of barrier is (m): fly higher than that and you clear it
-const BARRIER_TOP = { armco: 0.75, tyres: 0.9, concrete: 1.0, bollard: 0.5, fence: 4, building: 50, tree: 50 };
+const BARRIER_TOP = { armco: 0.97, tyres: 0.99, concrete: 1.37, bollard: 0.5, fence: 4, building: 50, tree: 50 };   // (as tall as each is built)
 function collide(now) {
   const toX = physics.x, toZ = physics.z;
   const fromX = sweptFromX, fromZ = sweptFromZ;
@@ -3410,6 +3410,130 @@ function shellHit(p) {
 // of it and up, tumbling, as hard as it hit them. Slow, they pick
 // themselves up; the faster it hits, the likelier it kills them (from a
 // chance at 20 km/h to certain by 80), and then they stay down
+// THE CAR'S SHAPE from above, for hitting people: where there's actually car.
+// A single-seater is its wheels, its narrow nose, the wide front wing, the
+// sidepods and the rear wing, with gaps between; others are their body.
+// (along, side) in the car's own frame; pad = how far round it counts
+function carTouches(along, side, pad) {
+  if (heavyMode) return Math.abs(along) < 3.6 + pad && Math.abs(side) < 1.8 + pad;
+  const box = (a0, a1, hw) => along > a0 - pad && along < a1 + pad && Math.abs(side) < hw + pad;
+  if (!IS_F1) return box(-CAR_REAR, CAR_FRONT, CAR_HALF_W);
+  for (const [x, , z, front] of WHEELS) { const wr = WHEEL_RADIUS + pad; if ((along - z) ** 2 / (wr * wr) + (side - x) ** 2 / ((0.22 + pad) ** 2) < 1) return true; }
+  return box(CAR_FRONT - 0.65, CAR_FRONT, 0.9) || box(0.9, CAR_FRONT, 0.2) || box(-1.25, 0.75, 0.72) || box(-1.25, 0.9, 0.36) || box(-CAR_REAR, -1.25, 0.48);
+}
+
+// WHAT IT DOES TO SOMEONE, by how fast he was hit (km/h): a knock he gets
+// up from; knocked out, lying there bleeding; killed; or, very fast, torn
+// apart, his arms and legs thrown off, blood everywhere
+function hurtPerson(h, kmh, vx, vy, vz) {
+  const P = h.p;
+  if (kmh > 20) blood.spray(_bp.set(h.x, h.y + 1.0, h.z), _bv.set(vx, vy, vz), Math.min(60, kmh * 0.4));
+  if (kmh > 110 && !P.torn) {
+    const all = ['armL', 'armR', 'legL', 'legR'].filter(() => Math.random() < Math.min(0.9, (kmh - 90) / 100));
+    if (!all.length) all.push(['armL', 'armR', 'legL', 'legR'][Math.floor(Math.random() * 4)]);
+    for (const limb of P.dismember(all, scene)) {
+      flyingParts.push({ obj: limb, bleed: 1.5, v: new THREE.Vector3(vx * (0.6 + Math.random() * 0.5) + (Math.random() - 0.5) * 6, vy + Math.random() * 4, vz * (0.6 + Math.random() * 0.5) + (Math.random() - 0.5) * 6), w: new THREE.Vector3((Math.random() - 0.5) * 22, (Math.random() - 0.5) * 22, (Math.random() - 0.5) * 22), rest: false });
+      blood.spray(limb.getWorldPosition(_bp), _bv.set(vx, vy, vz), 40);
+    }
+    P.dead = true;
+  } else if (Math.random() < Math.max(0, Math.min(1, (kmh - 20) / 60))) P.dead = true;           // (out cold, or worse: he stays down)
+  if (P.dead) { P.bleeding = 1; bleeders.add(P); }
+}
+const _bp = new THREE.Vector3(), _bv = new THREE.Vector3();
+
+// BLOOD: red droplets flung out, falling and splashing into spots on the
+// ground; and a pool spreading under anyone left lying hurt
+const blood = (() => {
+  const N = isMobile ? 160 : 320, D = isMobile ? 60 : 140;
+  const drop = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.03, 0), new THREE.MeshStandardMaterial({ color: 0x7a0a0a, roughness: 0.35 }), N);
+  const spot = new THREE.InstancedMesh(new THREE.CircleGeometry(1, 14).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x5c0707, roughness: 0.25, polygonOffset: true, polygonOffsetFactor: -3, transparent: true, opacity: 0.92, depthWrite: false }), D);
+  drop.frustumCulled = spot.frustumCulled = false; drop.count = 0; spot.count = 0;
+  scene.add(drop, spot);
+  const drops = [], spots = []; let nextSpot = 0;
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+  const addSpot = (x, z, r) => {
+    const k = nextSpot++ % D; spots[k] = { x, z, r, grow: r };
+    spot.setMatrixAt(k, m4.compose(_pw.set(x, groundAt(x, z) + 0.012 + k * 0.00002, z), q.identity(), sc.set(r, 1, r))); spot.count = Math.max(spot.count, k + 1); spot.instanceMatrix.needsUpdate = true;
+    return k;
+  };
+  return {
+    spray(at, vel, n) {
+      for (let i = 0; i < n; i++) {
+        if (drops.length >= N) drops.shift();
+        drops.push({ p: at.clone().add(_pv.set((Math.random() - 0.5) * 0.3, (Math.random() - 0.5) * 0.3, (Math.random() - 0.5) * 0.3)), v: new THREE.Vector3(vel.x * 0.25 + (Math.random() - 0.5) * 5, Math.abs(vel.y) * 0.2 + Math.random() * 3.5, vel.z * 0.25 + (Math.random() - 0.5) * 5) });
+      }
+    },
+    pool(x, z, r) { return addSpot(x, z, r); },
+    grow(k, r) { const s = spots[k]; if (!s) return; spot.setMatrixAt(k, m4.compose(_pw.set(s.x, groundAt(s.x, s.z) + 0.012 + k * 0.00002, s.z), q.identity(), sc.set(r, 1, r))); spot.instanceMatrix.needsUpdate = true; },
+    update(dt) {
+      for (let i = drops.length - 1; i >= 0; i--) {
+        const d = drops[i]; d.v.y -= 9.81 * dt; d.p.addScaledVector(d.v, dt);
+        if (d.p.y < groundAt(d.p.x, d.p.z)) { if (Math.random() < 0.35) addSpot(d.p.x, d.p.z, 0.04 + Math.random() * 0.09); drops.splice(i, 1); }
+      }
+      drop.count = drops.length;
+      drops.forEach((d, i) => drop.setMatrixAt(i, m4.makeTranslation(d.p.x, d.p.y, d.p.z)));
+      if (drops.length) drop.instanceMatrix.needsUpdate = true;
+    },
+    clear() { drops.length = 0; drop.count = 0; spot.count = 0; nextSpot = 0; spots.length = 0; },
+  };
+})();
+// (the hurt, bleeding where they lie: the pool under them spreads for a while)
+const bleeders = new Set();
+function updateBleeding(dt) {
+  blood.update(dt);
+  for (const P of bleeders) {
+    if (!P.root.parent) { bleeders.delete(P); continue; }
+    P.root.getWorldPosition(_pw);
+    if (P.rag && P.rag.rest > 1 && P.pool == null) { P.pool = blood.pool(_pw.x, _pw.z, 0.15); P.poolR = 0.15; }
+    if (P.pool != null) { P.poolR = Math.min(P.torn ? 1.4 : 0.8, P.poolR + dt * 0.03); blood.grow(P.pool, P.poolR); if (P.poolR >= (P.torn ? 1.4 : 0.8)) bleeders.delete(P); }
+  }
+  // torn-off limbs leave a trail as they fly
+  for (const f of flyingParts) if (f.bleed > 0 && !f.rest) { f.bleed -= dt; if (Math.random() < 0.5) blood.spray(f.obj.getWorldPosition(_bp), _bv.set(0, 0, 0), 1); }
+}
+
+// FLYING DEBRIS HITTING PEOPLE: a loose wheel, a torn-off arm of the
+// suspension, a wing. A hard enough hit knocks someone out (like Massa's
+// spring); a suspension arm going fast enough runs him through (as killed
+// Senna). Open cockpits: the driver's head is where he's exposed.
+let driverHeadHit = null;
+function debrisHits() {
+  const parts = [];
+  for (const f of flyingParts) if (!f.rest && f.v.lengthSq() > 36) parts.push({ f, p: f.obj.getWorldPosition(new THREE.Vector3()), v: f.v });
+  for (const w of looseWheels) if (w.active && Math.hypot(w.vx, w.vz) > 6) parts.push({ wheel: w, p: new THREE.Vector3(w.x, w.y, w.z), v: new THREE.Vector3(w.vx, w.vy, w.vz), r: 0.33 });
+  if (!parts.length) return;
+  gatherPeople();
+  for (const h of peopleHere) {
+    if (h.p === driverOut?.person) continue;
+    for (const q of parts) {
+      const dx = q.p.x - h.x, dz = q.p.z - h.z, r = 0.3 + (q.r || 0);
+      if (dx * dx + dz * dz > r * r || q.p.y < h.y - 0.1 || q.p.y > h.y + 1.9) continue;
+      const kmh = q.v.length() * 3.6;
+      knockPerson(h, q.v.x * 0.35, 1.5, q.v.z * 0.35);
+      blood.spray(_bp.copy(q.p), q.v, Math.min(40, kmh * 0.4));
+      if (q.f?.link && kmh > 45) {           // (run through: the arm left in him)
+        h.p.torso.attach(q.f.obj); q.f.rest = true; q.f.obj.userData.stuck = true;
+        h.p.dead = true;
+      } else if (kmh > 30) h.p.dead = true;   // (knocked out cold)
+      if (h.p.dead) { h.p.bleeding = 1; bleeders.add(h.p); }
+      if (q.f) { q.f.v.multiplyScalar(0.3); } else if (q.wheel) { q.wheel.vx *= 0.3; q.wheel.vz *= 0.3; }
+    }
+  }
+  // the driver's head, in an open cockpit
+  if (IS_F1 && !driverOut && !driverDead && !driverHeadHit && headG.pivot) {
+    const head = carModel.car.localToWorld(_hp.copy(headG.pivot).add(_pv.set(0, 0.12, 0)));
+    for (const q of parts) {
+      if (q.p.distanceTo(head) > 0.28 + (q.r || 0)) continue;
+      const kmh = q.v.length() * 3.6;
+      if (kmh < 25) continue;
+      if (q.f?.link && kmh > 45) { carModel.car.attach(q.f.obj); q.f.rest = true; driverHeadHit = 'impaled'; }
+      else driverHeadHit = 'struck';
+      blood.spray(head.clone(), q.v, 25);
+      showToast(driverHeadHit === 'impaled' ? 'THE DRIVER\'S BEEN HIT ON THE HEAD BY A SUSPENSION ARM' : 'THE DRIVER\'S BEEN HIT ON THE HELMET BY DEBRIS');
+      break;
+    }
+  }
+}
+
 let runOverT = 0, runFrom = null;
 function runOver(dt) {
   // (how fast, from where it's got to: the same for whatever you're driving)
@@ -3422,18 +3546,17 @@ function runOver(dt) {
   if (v < 1.5 || v > 120) return;                       // (still, or put somewhere new)
   gatherPeople();
   const fx = Math.sin(h), fz = Math.cos(h), sgn = mx * fx + mz * fz >= 0 ? 1 : -1;
-  const half = heavyMode ? 3.6 : IS_F1 ? 2.6 : 1.9, wide = heavyMode ? 1.8 : 0.95, cy = carModel.car.position.y, now = clock.elapsedTime;
+  const cy = carModel.car.position.y, now = clock.elapsedTime;
   for (const p of peopleHere) {
     if ((p.p.hitUntil || 0) > now) continue;
     const dx = p.x - px, dz = p.z - pz, along = dx * fx + dz * fz, side = dx * fz - dz * fx;
-    if (Math.abs(along) > half || Math.abs(side) > wide || Math.abs(p.y - cy) > 1.6) continue;
+    if (Math.abs(p.y - cy) > 1.6 || !carTouches(along, side, 0.22)) continue;
     // (struck by the front or the back, whichever way the car's going)
-    if (along * sgn < -half * 0.3) continue;
+    if (along * sgn < -1) continue;
     p.p.hitUntil = now + 0.8;
     const push = v * 1.05, up = Math.min(9, 1.2 + v * 0.28), kick = (side >= 0 ? 1 : -1) * v * 0.22;
     knockPerson(p, fx * push * sgn + fz * kick, up, fz * push * sgn - fx * kick);
-    const kmh = v * 3.6;
-    if (Math.random() < Math.max(0, Math.min(1, (kmh - 20) / 60))) p.p.dead = true;
+    hurtPerson(p, v * 3.6, fx * push * sgn + fz * kick, up, fz * push * sgn - fx * kick);
   }
 }
 
@@ -4184,6 +4307,7 @@ function updateDriverEscape(dt) {
   if ((physics.burning || exploded) && burnStill > 1.5) how = 'fire';
   else if (bigHit >= 40 && bigHitT < 12) { if (burnStill > 3.5) how = 'hurt'; }
   else if (bigHit >= 26 && bigHitT < 12 && broken && burnStill > 2.5) how = 'shaken';
+  if (!how && driverHeadHit && burnStill > 2) how = 'hurt';
   // THROWN OUT: in the very biggest hits he can be flung out of the car the
   // moment it hits, not once it's stopped
   let thrown = false;
@@ -4210,7 +4334,7 @@ function updateDriverEscape(dt) {
     // WHAT THE CRASH DID TO HIM: picked from how hard it was and which way
     const pick = (opts) => { let tot = 0; for (const [, w] of opts) tot += w; let x = Math.random() * tot; for (const [n, w] of opts) { x -= w; if (x <= 0) return n; } return opts[0][0]; };
     const front = bigHitZone === 'front', side = bigHitZone === 'left' || bigHitZone === 'right', rear = bigHitZone === 'rear';
-    const inj = thrown ? 'thrown' : how === 'fire' ? (Math.random() < 0.45 ? 'burns' : 'fire')
+    const inj = driverHeadHit ? 'out' : thrown ? 'thrown' : how === 'fire' ? (Math.random() < 0.45 ? 'burns' : 'fire')
       : how === 'hurt' ? pick([['out', 3], ['trapped', front ? 4 : 0.6], ['spine', 1], ['down', 2], ['leg', front ? 3 : 1], ['chest', side ? 3 : 1]])
       : pick([['shaken', 3], ['cuts', 2], ['leg', front ? 2 : 0.5], ['arm', 1.5], ['neck', rear ? 4 : 0.6], ['concussion', 2], ['chest', side ? 2 : 0.4], ['shock', 1.2], ['panic', 1.2]]);
     // (sat in the car, as he is when it stops)
@@ -4327,6 +4451,7 @@ function updateDriverEscape(dt) {
     driverInCar(false);
     if (cameraMode === 'cockpit' || cameraMode === 'bonnet') { cameraMode = 'chase'; applyCamera(); }
     const SAY = { thrown: 'THE DRIVER\'S BEEN THROWN FROM THE CAR', shock: 'THE DRIVER\'S IN SHOCK', panic: 'THE DRIVER\'S PANICKING, STRUGGLING TO BREATHE', out: 'THE DRIVER\'S UNCONSCIOUS', spine: 'THE DRIVER CAN\'T MOVE: A SUSPECTED BACK INJURY', trapped: null, leg: 'THE DRIVER\'S HURT HIS LEG', arm: 'THE DRIVER\'S HURT HIS ARM', neck: 'WHIPLASH: THE DRIVER\'S HOLDING HIS NECK', chest: 'THE DRIVER\'S HURT HIS RIBS', cuts: 'THE DRIVER\'S CUT AND SHAKEN', concussion: 'THE DRIVER\'S CONCUSSED', burns: 'THE DRIVER\'S BURNT' };
+    if (driverHeadHit) driverOut.later.ready = true; driverHeadHit = null;
     if (SAY[inj] !== null) showToast(SAY[inj] ? SAY[inj] + ': MEDICS ON THEIR WAY' : how === 'hurt' ? 'THE DRIVER\'S DOWN: MEDICS ON THEIR WAY' : 'THE DRIVER\'S OUT');
     raceControl?.medical?.({ x: seat.x, z: seat.z });
   }
@@ -4413,6 +4538,7 @@ function clearWasherParty() {
 function clearDriverOut() {
   clearWasherParty();
   if (driverOut) { scene.remove(driverOut.person.root); if (driverOut.later?.marshal) scene.remove(driverOut.later.marshal.root); driverOut = null; }
+  driverHeadHit = null;
   burnStill = 0; bigHit = 0; driverDead = false;
   driverInCar(true);
   setDeathScreen(false);
@@ -5219,6 +5345,8 @@ renderer.setAnimationLoop(() => {
   { const P = heavyMode && heavyPhys ? heavyPhys : physics, busy = pits && pits.phase !== 'off';
     PersonFigure.obstacle = busy ? null : { x: P.x, z: P.z, h: P.heading, L: heavyMode ? 3.5 : IS_F1 ? 2.5 : 1.8, W: heavyMode ? 1.7 : 0.95 }; }
   runOver(dt);
+  debrisHits();
+  updateBleeding(dt);
   updateGun(dt);
   updateDriverSeat(input);
   placeGunRing();

@@ -26,7 +26,7 @@
 // a smashed radiator): the team retire the car. DNF on the standings, and
 // they push it back into the garage.
 // =====================================================================
-export const BUILD = 23;
+export const BUILD = 24;
 
 import * as THREE from 'three';
 
@@ -319,6 +319,31 @@ export class Person {
   // tumbling, arms and legs flailing, he lands, bounces, slides, and lies
   // there limp; after a while he gets himself back up and carries on with
   // whatever he was doing. (v: the push, in the world, m/s)
+  // RIPPED APART: these limbs torn off (any of 'armL', 'armR', 'legL', 'legR'),
+  // each taken out into the world (its part of the skin goes with it) and
+  // handed back to be flung; the body carries on without them
+  dismember(which, world) {
+    const out = [];
+    const swap = (key, kids) => {
+      const g = this[key]; if (!g?.parent) return;
+      world.attach(g);
+      const d = new THREE.Group(); d.position.copy(g.position); out.push(g);
+      // (a stand-in where it was, so his moving and falling don't touch the torn-off one)
+      this[key] = d; for (const k of kids) this[k] = new THREE.Group();
+      (key.startsWith('sh') ? this.torso : this.hips).add(d);
+      // (the torn ends: raw red, on him and on it)
+      const raw = Person.raw || (Person.raw = new THREE.MeshStandardMaterial({ color: 0x6e0c0c, roughness: 0.4 }));
+      const r = key.startsWith('sh') ? 0.06 : 0.095;
+      d.add(new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8).scale(1, 0.55, 1), raw));
+      g.add(new THREE.Mesh(new THREE.SphereGeometry(r * 0.95, 10, 8).scale(1, 0.55, 1).translate(0, key.startsWith('sh') ? 0.02 : 0.05, 0), raw));
+    };
+    for (const w of which) {
+      if (w === 'armL') swap('shL', ['elL', 'handL']); if (w === 'armR') swap('shR', ['elR', 'handR']);
+      if (w === 'legL') swap('thL', ['knL']); if (w === 'legR') swap('thR', ['knR']);
+    }
+    this.torn = (this.torn || 0) + out.length;
+    return out;
+  }
   knock(vx, vy, vz) {
     const r = this.rag;
     if (r && r.up > 0) { r.up = 0; }
@@ -395,7 +420,7 @@ export class Person {
       // lain there a while: up he gets
       // (killed: he stays down. The pit crew are needed for the stops, so a
       // crewman who's been hit that hard is down a good while, then back to it)
-      if (r.rest > (this.dead ? (this.role ? 25 : Infinity) : 3.5)) { r.up = 1e-6; r.ax0 = r.ax; r.az0 = r.az; r.hy0 = r.hy; this.dead = false; }
+      if (r.rest > (this.dead ? (this.role && !this.torn ? 25 : Infinity) : 3.5)) { r.up = 1e-6; r.ax0 = r.ax; r.az0 = r.az; r.hy0 = r.hy; this.dead = false; }
     }
     // placed by his hips: the feet are wherever the tilt puts them
     root.rotation.set(r.ax, this.face, r.az, 'YXZ');

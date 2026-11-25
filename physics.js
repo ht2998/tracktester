@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 24;
+export const BUILD = 25;
 
 const G = 9.81;   // gravity, m/s²
 const RPM_PER_RADS = 60 / (2 * Math.PI);
@@ -442,8 +442,9 @@ export class CarPhysics {
       const radBefore = this.radiator;
       // (the radiator sits back behind the nose: a tap at walking pace, or
       // a nudge at 20 km/h, doesn't reach it)
-      // (the TT-88's are in its sidepods: only a big hit crumples that far back)
-      this.radiator = Math.max(0, this.radiator - Math.max(0, v - (this.spec.radiatorSides ? 16 : 7)) / 13);
+      // (the single-seaters' are in their sidepods, well back: a front hit has to
+      // be enormous, past 100 km/h into a wall, to crumple that far)
+      this.radiator = Math.max(0, this.radiator - Math.max(0, v - (this.spec.radiatorSides ? 30 : 7)) / (this.spec.radiatorSides ? 20 : 13));   // (in the sidepods: only a huge head-on reaches them)
       // The cooling system is under pressure: a holed radiator doesn't just
       // seep, it bursts out in a pink spray (and steam) right away
       if (radBefore - this.radiator > 0.05 && this.coolant > 0.05) {
