@@ -7,7 +7,7 @@
 // the car was built, so a car nobody's tuned drives as it always did.
 // =====================================================================
 import { TYRES } from './physics.js';
-export const BUILD = 1;
+export const BUILD = 2;
 
 const KEY = 'tracktester-tune-';
 export function loadTune(kind) {
@@ -125,6 +125,9 @@ export function withTune(s, tune) {
     const kmh = (g) => s.redline / (g * out.finalDrive) * 2 * Math.PI * s.wheelRadius / 60 * 3.6;
     out.autoUpshiftKmh = out.gears.slice(0, -1).map((g) => Math.round(kmh(g) * 0.96));
   }
+  // (and how it looks: the body's height front and rear, the wheels' lean and
+  // toe, against how it was built; the physics doesn't read these)
+  out.look = { dF, dR, camF: (v('camberF') - st.camberF) * Math.PI / 180, camR: (v('camberR') - st.camberR) * Math.PI / 180, toeF: (tune.toeF || 0) * Math.PI / 180, toeR: (tune.toeR || 0) * Math.PI / 180 };
   out.tuned = true;
   return out;
 }

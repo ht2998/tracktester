@@ -62,7 +62,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 112;
+const BUILD = 113;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -1653,6 +1653,7 @@ const wheelMatrix = new THREE.Matrix4();
 const wheelPos = new THREE.Vector3();
 const wheelRot = new THREE.Quaternion();
 const wheelEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+const _camQ = new THREE.Quaternion(), _camAx = new THREE.Vector3();
 const wheelScale = new THREE.Vector3(1, 1, 1);
 const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
 const ONE = new THREE.Vector3(1, 1, 1);
@@ -1796,10 +1797,14 @@ function updateWheels(steer, spin) {
     const toe = physics.wheelBend ? physics.wheelBend[pi] * 3 : 0;
     const camber = -Math.sign(x) * sd * 0.28;
     if (sd > 0) { wheelPos.x -= Math.sign(x) * 0.05 * sd; wheelPos.y -= 0.03 * sd; }
-    const yawBent = (isFront ? steer : 0) + toe;
+    // the tuning sheet's camber (the top leaning in) and toe (pointing in)
+    const look = physics.spec.look, cam = look ? (isFront ? look.camF : look.camR) : 0, toeT = look ? (isFront ? look.toeF : look.toeR) * 2 : 0;
+    const yawBent = (isFront ? steer : 0) + toe - Math.sign(x) * toeT;
     // the caliper: steers with the wheel, but doesn't spin
     wheelEuler.set(0, yawBent, camber);
     wheelRot.setFromEuler(wheelEuler);
+    // (the tuned camber: the whole wheel leant about its own forward line, so it leans steadily as it turns)
+    if (cam) wheelRot.premultiply(_camQ.setFromAxisAngle(_camAx.set(Math.sin(yawBent), 0, Math.cos(yawBent)), Math.sign(x) * cam));
     wheelMatrix.compose(wheelPos, wheelRot, ONE);
     carModel.calipers.setMatrixAt(i, wheelMatrix);
     // A bent rim: the wheel wobbles as it turns, and it's out of round (a
@@ -1812,6 +1817,7 @@ function updateWheels(steer, spin) {
       const turned = (physics.w4 ? physics.w4.angle[pi] : spin) + k * Math.PI / 2;
       wheelEuler.set(turnRound ? -turned : turned, yawW + (turnRound ? Math.PI : 0), camW);
       wheelRot.setFromEuler(wheelEuler);
+      if (cam) { const yw = yawW + (turnRound ? Math.PI : 0); wheelRot.premultiply(_camQ.setFromAxisAngle(_camAx.set(Math.sin(yw), 0, Math.cos(yw)), cam)); }
       wheelMatrix.compose(wheelPos, wheelRot, wheelScale);
       if (k === 0) {
         spinMatrix.makeRotationFromQuaternion(wheelRot);
@@ -1866,8 +1872,16 @@ function fitBodyToTyres(dt) {
   bodyLean.heave = body.heave;
   bodyLean.pitch = body.pitch;
   bodyLean.roll = body.roll;
+  // THE TUNED RIDE HEIGHT: the body sits lower (or higher) on its wheels,
+  // front and rear apart, so lower at the front it sits nose-down
+  const look = physics.spec.look;
+  if (look && (look.dF || look.dR)) {
+    const pitch = (look.dR - look.dF) / (FRONT_AXLE - REAR_AXLE);
+    bodyLean.heave += look.dF + pitch * FRONT_AXLE;
+    bodyLean.pitch += pitch;
+  }
   for (let i = 0; i < 4; i++) {
-    wheelLift[i] = body.travel[i];                     // how far the wheel has moved up into the body
+    wheelLift[i] = body.travel[i] - (look ? (i < 2 ? look.dF : look.dR) : 0);   // how far the wheel has moved up into the body (and the tuned height: a lowered body has its wheels further up into it)
     // how squashed each tyre must be to reach the road (flat tyres)
     const hubHeight = WHEEL_RADIUS - physics.tyreSink[i];
     tyreHub[i] = hubHeight;
@@ -4118,12 +4132,30 @@ let carKind = CAR_KIND, engineKey = STOCK_ENGINE[CAR_KIND];
 // the car's physics: as built, with its engine, then the tuning sheet's settings on top
 function buildSpec() { return washerTuned(withTune(withEngine(specForKind(carKind), engineKey), loadTune(carKind))); }
 // the tuning sheet changed something: on the car at once, wherever it is
+// (the tuned height, for the garage's copy of the car)
+function setRideLook() {
+  const look = physics.spec.look;
+  const pitch = look ? (look.dR - look.dF) / (FRONT_AXLE - REAR_AXLE) : 0;
+  carModel.car.userData.rideLook = look ? { heave: look.dF + pitch * FRONT_AXLE, pitch } : null;
+}
 function retune() {
   physics.spec = buildSpec();
   engineSound.setSpec?.(physics.spec);
   racing?.setCar(physics.spec);
   { let w = 0; for (const [r, nm] of physics.spec.torqueCurve) w = Math.max(w, nm * r * Math.PI / 30); setThrottleFeel(w / 745.7 / (physics.spec.mass / 1000)); }
-  if (garage?.isOpen) garage.showCar(physics.spec);
+  if (garage?.isOpen) {
+    garage.showCar(physics.spec);
+    // (the car on the turntable shows it too: its height, its wheels' lean and toe.
+    // Put together again a moment after the slider stops, not at every step of it)
+    clearTimeout(retune.timer);
+    retune.timer = setTimeout(() => {
+      if (!garage.isOpen) return;
+      setRideLook();
+      fitBodyToTyres(0);
+      updateWheels(physics.steer, physics.wheelSpin);
+      garage.placeCar({ keepView: true });
+    }, 180);
+  }
 }
 refreshEngineList();
 // The side panel's engine list: every engine, except the other vehicle's
@@ -5195,6 +5227,7 @@ function openGarage(opts) {
   engineSound.setDriverEar?.(false);
   for (const c of aiField?.cars || []) if (c.voice) { c.voice.stop(); c.voice = null; }
   controls.enabled = false;
+  setRideLook();
   garage.open(physics.spec, opts);
 }
 function closeGarage() {

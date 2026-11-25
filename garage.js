@@ -7,7 +7,7 @@
 // has several cars dropping down again. Pick one and it fires up: a
 // couple of big revs, then it settles to idle.
 // =====================================================================
-export const BUILD = 10;
+export const BUILD = 11;
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -234,13 +234,17 @@ export class Garage {
   }
 
   // a copy of the car you're in, standing on the turntable
-  placeCar() {
+  placeCar({ keepView = false } = {}) {
+    const wasClear = keepView && this.root?.querySelector('.g-clear input')?.checked;
     if (this.model) this.carSpot.remove(this.model);
     const src = this.getModel();
     const m = src.clone(true);
     m.position.set(0, 0, 0);
     m.rotation.set(0, 0, 0);
     m.quaternion.identity();
+    // (sitting at its tuned height: lower or higher, nose down or up)
+    const ride = src.userData.rideLook;
+    if (ride) { m.position.y = ride.heave; m.rotation.x = ride.pitch; }
     m.visible = true;
     m.traverse((o) => { if (o.isLight) o.visible = false; });
     // (its own paint, so turning it clear here leaves the car you drive alone)
@@ -250,7 +254,9 @@ export class Garage {
     // the clear / solid box: only for a car whose insides are built
     let has = false; m.traverse((o) => { if (o.name === 'bay') has = true; });
     const box = this.root?.querySelector('.g-clear');
-    if (box) { box.style.display = has ? '' : 'none'; box.querySelector('input').checked = false; }
+    if (box) { box.style.display = has ? '' : 'none'; box.querySelector('input').checked = !!wasClear; }
+    if (wasClear) this.setClear(true);
+    if (keepView) return;                    // (the camera stays where it was)
     // the car's length decides how far back the camera stands
     const b = new THREE.Box3().setFromObject(m);
     const len = Math.max(b.max.z - b.min.z, b.max.x - b.min.x, 2);
