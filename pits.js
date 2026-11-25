@@ -26,7 +26,7 @@
 // a smashed radiator): the team retire the car. DNF on the standings, and
 // they push it back into the garage.
 // =====================================================================
-export const BUILD = 24;
+export const BUILD = 25;
 
 import * as THREE from 'three';
 
@@ -598,6 +598,15 @@ export class Person {
         this.torso.rotation.x += 0.3; this.head.rotation.x += 0.25;
       }
     }
+    // OUT COLD: no muscle in him; his head hangs and lolls, rolling with
+    // every jolt, his arms hang where they've fallen
+    if (this.limp) {
+      const t = this.t;
+      this.head.rotation.x += 0.15 + 0.08 * Math.sin(t * 0.6);
+      this.head.rotation.z += 0.45 * (this.limp > 0 ? 1 : -1) + 0.1 * Math.sin(t * 0.45 + 1);
+      this.torso.rotation.z += 0.12 * (this.limp > 0 ? 1 : -1);
+      this.shL.rotation.x *= 0.3; this.shR.rotation.x *= 0.3; this.elL.rotation.x = -0.25; this.elR.rotation.x = -0.2;
+    }
     // breathing hard: panting, or hyperventilating in a panic: his chest
     // heaving fast, shoulders rising and falling with it
     if (this.hurt?.breathe) {
@@ -654,12 +663,33 @@ export function makeAxe() {
   return g;
 }
 
-export function climbOutKeys(seat, out, hipY = 0.35, hurry = 0.5) {
+// sill: how high the bodywork beside him is (a single-seater's sidepods):
+// then he never goes through it, but steps up onto it, walks out along it
+// and jumps down off its edge
+export function climbOutKeys(seat, out, hipY = 0.35, hurry = 0.5, sill = 0) {
   const s = 1.6 - hurry * 0.75;                      // (slower if he's dazed)
   const sx = out[0] - seat[0], sz = out[1] - seat[1];
   const p = (m) => [seat[0] + sx * m, seat[1] + sz * m];
   const sit = 0.95 - hipY;                            // (how far the hips drop to sit in it)
   const floor = Math.max(0, hipY - 0.32);            // (he stands on the floor of the tub)
+  if (sill > 0) return [
+    // sat in it, hands on the wheel; hands to the cockpit sides; pushing himself up
+    { t: 0, pose: { drop: sit, lean: -0.15, thL: 1.5, thR: 1.5, knL: 0.25, knR: 0.25, shL: 1.15, shR: 1.15, elL: 0.6, elR: 0.6 }, at: p(0) },
+    { t: 0.35 * s, pose: { drop: sit, lean: 0.05, thL: 1.5, thR: 1.5, knL: 0.6, knR: 0.6, shL: 0.25, shR: 0.25, outL: 0.55, outR: 0.55, elL: 0.35, elR: 0.35 }, at: p(0) },
+    { t: 0.75 * s, pose: { drop: sit * 0.55, lean: 0.35, thL: 1.3, thR: 1.2, knL: 1.6, knR: 1.6, shL: 0.1, shR: 0.1, outL: 0.45, outR: 0.45, elL: 0.05, elR: 0.05 }, at: p(0) },
+    // up, stood on the seat inside the tub
+    { t: 1.05 * s, pose: { drop: 0.05, lean: 0.2, thL: 0.2, knL: 0.3, shL: 0.35, shR: 0.35, outL: 0.5, outR: 0.5, elL: 0.2, elR: 0.2 }, at: p(0), lift: floor },
+    // a foot lifted high, up onto the top of the bodywork, hands on it
+    { t: 1.45 * s, pose: { lean: 0.35, thL: 1.5, knL: 1.6, thR: 0.1, knR: 0.15, shL: 0.9, shR: 0.9, elL: 0.2, elR: 0.2 }, at: p(0.12), lift: floor + 0.08, keepFace: true },
+    // stepping up: stood on top of it, crouched for balance
+    { t: 1.85 * s, pose: { drop: 0.12, lean: 0.25, thL: 0.5, knL: 0.8, thR: 0.6, knR: 0.9, shL: 0.5, shR: 0.5, outL: 0.4, outR: 0.4, elL: 0.3, elR: 0.3 }, at: p(0.42), lift: sill, keepFace: true },
+    // out along it to its edge
+    { t: 2.25 * s, pose: { drop: 0.18, lean: 0.35, thL: 0.7, knL: 1.0, thR: 0.65, knR: 1.0, shL: 0.6, shR: 0.6, outL: 0.35, outR: 0.35, elL: 0.3, elR: 0.3 }, at: p(0.72), lift: sill, keepFace: true },
+    // and down off it, landing bent-kneed beside the car
+    { t: 2.55 * s, pose: { drop: 0.05, lean: 0.15, thL: 0.4, knL: 0.5, thR: 0.3, knR: 0.4, shL: 0.9, shR: 0.9, outL: 0.5, outR: 0.5, elL: 0.2, elR: 0.2 }, at: p(0.95), lift: sill * 0.45, keepFace: true },
+    { t: 2.8 * s, pose: { drop: 0.3, lean: 0.35, thL: 0.9, knL: 1.4, thR: 0.8, knR: 1.3, shL: 0.6, shR: 0.6, outL: 0.3, outR: 0.3, elL: 0.6, elR: 0.6 }, at: p(1), lift: 0, keepFace: true },
+    { t: 3.1 * s, pose: 'STAND', at: p(1) },
+  ];
   return [
     // sat in it, legs out ahead under the dash, hands on the wheel
     { t: 0, pose: { drop: sit, lean: -0.15, thL: 1.5, thR: 1.5, knL: 0.25, knR: 0.25, shL: 1.15, shR: 1.15, elL: 0.6, elR: 0.6 }, at: p(0) },

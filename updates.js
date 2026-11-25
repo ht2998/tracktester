@@ -21,11 +21,18 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 151;
+export const BUILD = 152;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 124, date: '25 Nov 2026', title: 'Out cold, and out of the car properly',
+    items: [
+      ['Out cold', 'Knocked out, the driver now slumps in his seat like a rag doll: head hanging over to one side and lolling, arms fallen limp, until the medics lift him out. He no longer sits up with his hands on the wheel', 'fix'],
+      ['Never through the car', 'Climbing out of a single-seater or prototype, he steps up onto the sidepod, walks out along it and jumps down off its edge, instead of his legs passing through the bodywork', 'fix'],
+    ],
+  },
   {
     id: 123, date: '25 Nov 2026', title: 'Hit for real',
     items: [

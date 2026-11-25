@@ -60,7 +60,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 100;
+const BUILD = 101;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -4330,7 +4330,7 @@ function updateDriverEscape(dt) {
     const clear = (m) => [seat.x + ax * m, seat.z + az * m];
     const hipY = IS_F1 ? 0.3 : 0.62;
     // (sat still in it for a moment first, then out)
-    const climb = (hurry, still = 0) => { const K = climbOutKeys([seat.x, seat.z], over, hipY, hurry); if (still) { K.forEach((f) => { f.t += still; }); K.unshift({ ...K[0], t: 0 }); } return { keys: K, after: 'STAND' }; };
+    const climb = (hurry, still = 0) => { const K = climbOutKeys([seat.x, seat.z], over, hipY, hurry, IS_F1 ? 0.62 : 0); if (still) { K.forEach((f) => { f.t += still; }); K.unshift({ ...K[0], t: 0 }); } return { keys: K, after: 'STAND' }; };
     // WHAT THE CRASH DID TO HIM: picked from how hard it was and which way
     const pick = (opts) => { let tot = 0; for (const [, w] of opts) tot += w; let x = Math.random() * tot; for (const [n, w] of opts) { x -= w; if (x <= 0) return n; } return opts[0][0]; };
     const front = bigHitZone === 'front', side = bigHitZone === 'left' || bigHitZone === 'right', rear = bigHitZone === 'rear';
@@ -4364,7 +4364,8 @@ function updateDriverEscape(dt) {
       person.run([climb(0.8), { go: clear(5), v: 2.2 }, { face: [seat.x, seat.z] }, { pose: 'SIT', t: 1 }, { pose: 'SIT_HEAD' }, { fn: () => { later.ready = true; } }]);
     } else if (inj === 'out' || inj === 'spine') {
       // knocked out (or not daring to move, his back hurt): slumped in the seat, still. The medics get him out
-      const slump = inj === 'out' ? { lean: 0.35, head: 0.85, shL: 0.2, shR: 0.15, elL: 0.3, elR: 0.25, outL: 0.25, outR: 0.2, knL: 0.35 } : { head: 0.05, lean: -0.1 };
+      const slump = inj === 'out' ? { lean: 0.3, roll: 0.15, head: 0.9, shL: 0.05, shR: 0.0, elL: 0.2, elR: 0.25, outL: 0.12, outR: 0.08, knL: 0.35, knR: 0.3 } : { head: 0.05, lean: -0.1 };
+      if (inj === 'out') person.limp = Math.random() < 0.5 ? 1 : -1;
       person.run([{ keys: inSeat([slump, slump], 600), after: 'LIE' }]);
       later.ready = true;
     } else if (inj === 'trapped') {
@@ -4471,7 +4472,7 @@ const driverHooks = {
   onStretcher: (st) => {
     if (!driverOut) return;
     const P = driverOut.person;
-    P.run([{ pose: 'LIE' }]);
+    P.run([{ pose: 'LIE' }]); P.limp = 0;
     // (his feet at the front end, lying back along it: the middle of him in the middle of it)
     P.follow = () => [st.position.x + Math.sin(st.rotation.y) * 0.85, st.position.z + Math.cos(st.rotation.y) * 0.85, st.rotation.y, 0];
     driverOut.ground = () => st.position.y - 0.08;
