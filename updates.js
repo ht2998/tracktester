@@ -21,11 +21,19 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 160;
+export const BUILD = 161;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 132, date: '25 Nov 2026', title: 'New liveries for the TTFs',
+    items: [
+      ['The TTF-88, smoothed and repainted', 'The TTF-88 is now one smooth body like the later cars: very low, a long low nose, low pods and a small airbox. In our own red and white: red over the top, white below, a white arrowhead running forward down each pod to a point. Sponsored by VESPERO (tobacco) and TORRIN oil', 'new'],
+      ['Sponsors on the TTF-94', 'VESPERO, the same tobacco brand as the TTF-88, big on the pods and across the rear wing; SOLVARA fuels on the nose; the tyres on the endplates; small badges on the cover', 'new'],
+      ['The TTF-05 repainted', 'More light blue on the nose (its front and lower sides), more yellow on the body (over the cockpit, along the engine cover and onto the pods\' tops), and a new main sponsor: AZURA, a tobacco brand, big on the pods and across the rear wing. HALDEN is still its fuel', 'new'],
+    ],
+  },
   {
     id: 131, date: '25 Nov 2026', title: 'The TTF-94, smoothed',
     items: [

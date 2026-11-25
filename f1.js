@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 74;
+export const BUILD = 75;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -480,8 +480,8 @@ const rod = (a, b, r = 0.012) => {
 // addPanel(mesh): a painted panel that can be dented.
 export function buildF1Body(car, addPanel) {
   const MAT = {
-    blue: new THREE.MeshPhysicalMaterial({ color: 0x14215a, roughness: 0.25, metalness: 0.2, clearcoat: 1, clearcoatRoughness: 0.08 }),
-    yellow: new THREE.MeshPhysicalMaterial({ color: 0xf0d81e, roughness: 0.25, metalness: 0.1, clearcoat: 1, clearcoatRoughness: 0.08 }),
+    blue: new THREE.MeshPhysicalMaterial({ color: 0xe0231b, roughness: 0.24, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.06 }),      // (the red)
+    yellow: new THREE.MeshPhysicalMaterial({ color: 0xf4f4f0, roughness: 0.24, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.06 }),    // (the white)
     carbon: new THREE.MeshStandardMaterial({ color: 0x121316, roughness: 0.45, metalness: 0.3 }),
     steel: new THREE.MeshStandardMaterial({ color: 0x8d9096, roughness: 0.35, metalness: 0.9 }),
     tyre: new THREE.MeshStandardMaterial({ color: 0x18181a, roughness: 0.85 }),
@@ -492,48 +492,56 @@ export function buildF1Body(car, addPanel) {
     exhaust: new THREE.MeshStandardMaterial({ color: 0x5a4a40, roughness: 0.5, metalness: 0.8, emissive: 0xff5a10, emissiveIntensity: 0 }),
     rain: new THREE.MeshStandardMaterial({ color: 0x4a0a0a, emissive: 0xff1a10, emissiveIntensity: 0 }),
   };
-  // (flat shading: crisp edges between the flat panels, as the cars of the time had)
-  MAT.blue.flatShading = MAT.yellow.flatShading = MAT.carbon.flatShading = true;
   MAT.seat = new THREE.MeshStandardMaterial({ color: 0x24262c, roughness: 0.9 });   // (the seat and the cockpit's padded rim)
-  MAT.suit = new THREE.MeshStandardMaterial({ color: 0x1d2c6e, roughness: 0.8 });   // (the driver's overalls)
+  MAT.suit = new THREE.MeshStandardMaterial({ color: 0xd8231c, roughness: 0.8 });   // (the driver's overalls)
+  MAT.dark = new THREE.MeshStandardMaterial({ color: 0x050506, roughness: 0.8, side: THREE.DoubleSide });
   const add = (geo, mat, shadow = true) => {
     const m = new THREE.Mesh(geo, mat); m.castShadow = shadow; m.receiveShadow = true; car.add(m);
     if (mat === MAT.blue || mat === MAT.yellow) addPanel(m);
     return m;
   };
 
-  // --- the nose and tub: slab-sided and flat-topped, sharp edges, the
-  // sides leaning in a little; the nose a flat-topped wedge to a square tip
-  const BOXY = 2.6;                                  // (how square the corners are)
-  const tub = [
-    { z: 2.5, w: 0.15, h: 0.08, y: 0.11, top: 0.9 },
-    { z: 2.25, w: 0.26, h: 0.14, y: 0.1, top: 0.88 },
-    { z: 1.85, w: 0.36, h: 0.23, y: 0.09, top: 0.86 },
-    { z: 1.35, w: 0.46, h: 0.32, y: 0.08, top: 0.84 },
-    { z: 0.85, w: 0.56, h: 0.41, y: 0.075, top: 0.82 },
-    { z: 0.62, w: 0.606, h: 0.439, y: 0.072, top: 0.81 },
-  ];
-  add(loft(tub, BOXY, 24, 3, false), MAT.blue);
-  // the cockpit: the tub open on top where he sits, its inside in black,
-  // a moulded seat, his legs running forward under the scuttle
-  const pit = [
-    { z: 0.62, w: 0.606, h: 0.439, y: 0.072, top: 0.81 },
-    { z: 0.45, w: 0.64, h: 0.46, y: 0.07, top: 0.8 },
-    { z: 0.0, w: 0.68, h: 0.46, y: 0.07, top: 0.8 },
-    { z: -0.12, w: 0.68, h: 0.47, y: 0.07, top: 0.8 },
-  ];
-  const opening = (z) => (z > 0.35 ? 0.18 + (0.62 - z) / 0.27 * 0.04 : 0.22);
-  const shell = loftOpen(pit, BOXY, 3, opening);
-  add(shell, MAT.blue);
-  add(loftOpen(pit, BOXY, 3, opening, 0.025, true), MAT.carbon, false);
-  add(loft([{ z: -0.12, w: 0.68, h: 0.47, y: 0.07, top: 0.8 }, { z: -0.25, w: 0.68, h: 0.48, y: 0.07, top: 0.8 }], BOXY, 24, 1, false), MAT.blue);
-  // (the padded rim round the opening)
-  const rimZ = [0.62, 0.5, 0.35, 0.15, 0, -0.12];
-  for (const sx of [1, -1]) for (let i = 0; i < rimZ.length - 1; i++) {
-    const a = shell.userData.edge(rimZ[i]), b = shell.userData.edge(rimZ[i + 1]);
-    add(rod([sx * -a[0], a[1], a[2]], [sx * -b[0], b[1], b[2]], 0.022), MAT.seat, false);
+  // --- ONE SKIN, NOSE TO GEARBOX (sweptSkin), as the later TTFs are made:
+  // a very low car, the driver lying well back in it. A long low nose
+  // swelling into the tub, low cockpit sides, low flat pods with their
+  // mouths behind the front wheels, a low engine cover with a small
+  // airbox over the roll hoop. The livery, our own: red over the top and
+  // white below, a white arrowhead pointing forward down each side of the
+  // pods and running out in a point at their front
+  const PAINT = [MAT.blue, MAT.yellow, MAT.carbon, MAT.dark];
+  // (the edge between red above and white below, along the pods: high at
+  // the front, so the white comes to a point there, dropping toward the back)
+  const edgeY = (z) => 0.4 - (0.48 - z) * 0.26;
+  const sk = sweptSkin(car, addPanel, add, PAINT, {
+    nose: { z: [2.5, 2.3, 2.0, 1.7, 1.35, 1.0, 0.8, 0.66, 0.62], hw: [0.075, 0.11, 0.15, 0.18, 0.22, 0.26, 0.29, 0.3, 0.303], yb: [0.1, 0.095, 0.09, 0.085, 0.08, 0.075, 0.072, 0.072, 0.072], yt: [0.19, 0.24, 0.3, 0.36, 0.42, 0.47, 0.5, 0.51, 0.51] },
+    body: { z: [0.6, 0.3, 0.0, -0.3, -0.6, -1.0, -1.4, -1.88], yTop: [0.51, 0.5, 0.5, 0.6, 0.63, 0.56, 0.45, 0.32], CW: [0.3, 0.3, 0.29, 0.24, 0.22, 0.2, 0.15, 0.1],
+      xc: [0.5, 0.58, 0.58, 0.55, 0.5, 0.4, 0.3, 0.15], yc: [0.36, 0.37, 0.37, 0.36, 0.34, 0.3, 0.26, 0.22], xo: [0.68, 0.74, 0.74, 0.72, 0.66, 0.52, 0.38, 0.2], yo: [0.2, 0.2, 0.2, 0.2, 0.2, 0.19, 0.18, 0.17], yb: 0.065 },
+    open: [[0.8, 0], [0.64, 0], [0.6, 0.17], [0.4, 0.21], [-0.02, 0.21], [-0.1, 0.1], [-0.16, 0], [-0.5, 0]], RIM: 0.5,
+    paint: (part, seg, z, x, y) => {
+      if (part === 'join') return 3;
+      if (seg === 6) return 2;
+      if (part === 'nose') return seg <= 2 ? 0 : 1;                          // (the nose: red over the top, white down its sides)
+      return seg <= 2 ? 0 : 1;                                                // (the cockpit's top and the cover red; the pods white, the red laid over them below)
+    },
+    mouthX: 0.33, duct: 0.3, tipPaint: 0,
+  });
+  const { S } = sk;
+  // THE ARROWHEAD: the red over each pod, from its crown down to the edge,
+  // laid on the skin and cut exactly along that line (so the white below
+  // comes to a clean point at the front, not a staircase)
+  for (const sx of [1, -1]) {
+    const rows = [], M = 14;
+    for (let i = 0; i <= 70; i++) {
+      const z = 0.6 - i / 70 * 2.48, u = sk.upper(z).slice(3 * S, 6 * S + 1), ey = edgeY(z);
+      // (along the section from the crown down, to where it crosses the edge)
+      const len = [0]; for (let k = 1; k < u.length; k++) len.push(len[k - 1] + Math.hypot(u[k][0] - u[k - 1][0], u[k][1] - u[k - 1][1]));
+      let L = u[0][1] <= ey ? 0 : len[len.length - 1];
+      for (let k = 1; k < u.length; k++) if (u[k][1] <= ey && u[k - 1][1] > ey) { const t = (u[k - 1][1] - ey) / (u[k - 1][1] - u[k][1]); L = len[k - 1] + t * (len[k] - len[k - 1]); break; }
+      const at = (d) => { let k = 1; while (k < u.length - 1 && len[k] < d) k++; const t = (d - len[k - 1]) / ((len[k] - len[k - 1]) || 1), a = u[k - 1], b = u[k]; const tx = b[0] - a[0], ty = b[1] - a[1], l = Math.hypot(tx, ty) || 1; return [sx * (a[0] + tx * t - ty / l * 0.003), a[1] + ty * t + tx / l * 0.003, z]; };
+      const row = []; for (let j = 0; j <= M; j++) row.push(at(L * j / M)); rows.push(row);
+    }
+    const m = new THREE.Mesh(sk.grid(rows, M, sx > 0), MAT.blue); m.castShadow = true; m.receiveShadow = true; car.add(m); addPanel(m);
   }
-  for (const z of [0.62, -0.12]) { const a = shell.userData.edge(z); add(rod([a[0], a[1], z], [-a[0], a[1], z], 0.022), MAT.seat, false); }
   // the seat: a moulded shell, low down, its back leaning well back
   add(box(0.34, 0.05, 0.36, 0, 0.12, 0.1), MAT.seat, false);
   add(box(0.36, 0.42, 0.05, 0, 0.32, -0.07, -0.32), MAT.seat, false);
@@ -554,58 +562,27 @@ export function buildF1Body(car, addPanel) {
     dAdd(rod([sx * 0.15, 0.4, 0.22], [sx * 0.12, 0.5, 0.4], 0.035), MAT.suit);
   }
   dAdd(new THREE.TorusGeometry(0.13, 0.016, 6, 20).rotateX(-0.45).translate(0, 0.52, 0.44), MAT.carbon);
-  // a yellow nose tip and a yellow stripe along the top of the tub
-  add(loft([
-    { z: 2.52, w: 0.155, h: 0.085, y: 0.108, top: 0.9 }, { z: 2.25, w: 0.265, h: 0.145, y: 0.098, top: 0.88 }, { z: 1.95, w: 0.345, h: 0.215, y: 0.088, top: 0.87 },
-  ], BOXY, 24, 3, false), MAT.yellow);
-  add(box(0.16, 0.01, 1.25, 0, 0.462, 1.25, -0.11), MAT.yellow);
-  // the cockpit opening (dark) with a squared-off rim, the little smoked screen
-  const screen = new THREE.CylinderGeometry(0.24, 0.24, 0.12, 8, 1, true, -0.9, 1.8).rotateX(-0.35).translate(0, 0.57, 0.48);
-  add(screen, MAT.glass, false);
+  // the little smoked screen at the front of the opening
+  add(new THREE.CylinderGeometry(0.24, 0.24, 0.1, 10, 1, true, -0.9, 1.8).rotateX(-0.35).translate(0, 0.55, 0.46), MAT.glass, false);
   // the driver: a helmet with a dark visor, his shoulders just below the rim
   const helmet = add(new THREE.SphereGeometry(0.135, 20, 16).scale(1, 1.05, 1.1).translate(0, 0.665, -0.06), MAT.helmet);
   const visor = add(new THREE.SphereGeometry(0.137, 20, 10, -0.9 + Math.PI / 2, 1.8, 1.1, 0.5).scale(1, 1.05, 1.1).translate(0, 0.665, -0.06), MAT.visor);
-  // (a blue and yellow helmet stripe)
-  const stripe = add(new THREE.TorusGeometry(0.135, 0.012, 6, 24, Math.PI).rotateY(Math.PI / 2).rotateZ(Math.PI / 2).scale(1, 1.05, 1.1).translate(0, 0.665, -0.06), MAT.yellow);
-  // mirrors: squared-off pods on stalks at the cockpit sides (each pod
-  // can be knocked off, leaving its stalk; the pit crew fit a new one)
+  // (a red and white helmet stripe)
+  const stripe = add(new THREE.TorusGeometry(0.135, 0.012, 6, 24, Math.PI).rotateY(Math.PI / 2).rotateZ(Math.PI / 2).scale(1, 1.05, 1.1).translate(0, 0.665, -0.06), MAT.blue);
+  // mirrors: pods on stalks at the cockpit sides (each pod can be knocked
+  // off, leaving its stalk; the pit crew fit a new one)
   const mirrors = {};
   for (const s of [1, -1]) {
-    const stalk = add(rod([s * 0.31, 0.5, 0.55], [s * 0.42, 0.6, 0.56], 0.01), MAT.carbon);
+    const stalk = add(rod([s * 0.31, 0.49, 0.55], [s * 0.42, 0.6, 0.56], 0.01), MAT.carbon);
     const pod = new THREE.Group();
     car.add(pod);
-    pod.add(add(box(0.12, 0.07, 0.05, s * 0.45, 0.62, 0.56), MAT.blue));   // (add puts it on the car; the pod takes it from there)
-    pod.add(add(new THREE.PlaneGeometry(0.105, 0.058).rotateY(Math.PI).translate(s * 0.45, 0.62, 0.534), MAT.visor));
+    pod.add(add(loft([{ z: 0.59, w: 0.12, h: 0.065, y: 0.585, x: s * 0.45 }, { z: 0.53, w: 0.13, h: 0.072, y: 0.582, x: s * 0.45 }], 0.9, 16, 1, false), MAT.blue));
+    pod.add(add(new THREE.PlaneGeometry(0.105, 0.058).rotateY(Math.PI).translate(s * 0.45, 0.62, 0.524), MAT.visor));
     mirrors[s > 0 ? 'l' : 'r'] = { stalk, pod, at: [s * 0.45, 0.62, 0.56] };
   }
-
-  // --- sidepods: long flat slabs with flat tops and square edges, big
-  // radiator mouths at the front, straight-tapered in towards the back wheels
-  for (const s of [1, -1]) {
-    const pod = [
-      { z: 0.56, w: 0.4, h: 0.3, y: 0.055, x: s * 0.52 },
-      { z: 0.25, w: 0.44, h: 0.31, y: 0.055, x: s * 0.54 },
-      { z: -0.45, w: 0.42, h: 0.29, y: 0.055, x: s * 0.53 },
-      { z: -0.95, w: 0.28, h: 0.23, y: 0.055, x: s * 0.44 },
-      { z: -1.32, w: 0.16, h: 0.17, y: 0.055, x: s * 0.36 },
-    ];
-    add(loft(pod, 3.5, 24, 3, false), MAT.blue);
-    // the radiator mouth (dark, square) and a yellow stripe along the top edge
-    add(box(0.36, 0.25, 0.02, s * 0.52, 0.205, 0.575), MAT.carbon);
-    add(box(0.08, 0.012, 1.3, s * 0.55, 0.372, -0.25, 0, -s * 0.11), MAT.yellow);
-  }
-  // --- engine cover: angular, flat-sided, rising to a tall triangular
-  // airbox behind his head, then a straight taper to the gearbox
-  add(loft([
-    { z: -0.2, w: 0.52, h: 0.48, y: 0.07, top: 0.75 },
-    { z: -0.32, w: 0.36, h: 0.72, y: 0.07, top: 0.4 },     // the roll hoop and airbox
-    { z: -0.6, w: 0.4, h: 0.6, y: 0.07, top: 0.5 },
-    { z: -1.0, w: 0.44, h: 0.42, y: 0.07, top: 0.7 },
-    { z: -1.5, w: 0.32, h: 0.3, y: 0.08, top: 0.8 },
-    { z: -1.85, w: 0.22, h: 0.2, y: 0.12, top: 0.85 },
-  ], 2.2, 24, 3, false), MAT.blue);
-  add(box(0.12, 0.08, 0.02, 0, 0.73, -0.3), MAT.carbon);                // the airbox mouth
-  add(box(0.05, 0.012, 1.0, 0, 0.6, -0.95, 0.24), MAT.yellow);          // a yellow spine stripe
+  // --- the small airbox over the roll hoop, its mouth behind his head
+  add(loft([{ z: -0.17, w: 0.24, h: 0.18, y: 0.46 }, { z: -0.32, w: 0.3, h: 0.27, y: 0.46 }, { z: -0.6, w: 0.32, h: 0.19, y: 0.48 }, { z: -0.95, w: 0.26, h: 0.06, y: 0.5 }], 1.0, 40, 8, true), MAT.blue);
+  add(loft([{ z: -0.16, w: 0.14, h: 0.09, y: 0.53 }, { z: -0.21, w: 0.14, h: 0.09, y: 0.53 }], 1.2, 20, 1, false), MAT.dark, false);
   // the gearbox at the very back, and the red rain light on it
   add(box(0.22, 0.18, 0.35, 0, 0.2, -2.0), MAT.carbon);
   const rainLight = add(box(0.08, 0.05, 0.03, 0, 0.26, -2.19), MAT.rain);
@@ -640,7 +617,239 @@ export function buildF1Body(car, addPanel) {
   add(box(0.7, 0.02, 0.15, 0, 0.42, -1.95, 0.15), MAT.carbon);                // the beam wing (stays)
   addTo(wings.rear, box(0.04, 0.4, 0.06, 0, 0.6, -1.95), MAT.carbon);         // its pillar
 
+  // THE SPONSORS: the tobacco brand (shared with the TTF-94) on the white
+  // arrowhead down each pod and across the rear wing, the fuel on the
+  // nose's white sides, the tyres on the endplates, small ones as badges
+  if (typeof document !== 'undefined') {
+    const red = '#d2111c', main = sponsorDecal('VESPERO', red), fuel = sponsorDecal('TORRIN', '#1a1c20', 768, 256);
+    for (const sx of [1, -1]) {
+      decalOnSkin(car, addPanel, sk, sk.secB, 0.42, -0.28, 4 * S + 2, 5 * S + 3, main, sx);        // (the white of the pod's side)
+      decalOnSkin(car, addPanel, sk, sk.secA, 1.6, 1.0, 3 * S, 4 * S + 2, fuel, sx);               // (the nose's white side)
+      decalOnSkin(car, addPanel, sk, sk.secB, -0.85, -1.15, 2 * S, 3 * S, sponsorBadge('VELTRIS', '#ffffff'), sx);   // (small ones on the cover)
+      decalOnSkin(car, addPanel, sk, sk.secB, 0.55, 0.36, S, 2 * S - 1, sponsorBadge('KORVANE', '#ffffff'), sx);     // (and by the cockpit)
+      wings.rear.add(flatDecal(0.36, 0.18, sx * 0.452, 0.82, -2.0, sponsorDecal('VESPERO', red, 768, 256)));
+      wings.rear.add(flatDecal(0.3, 0.1, sx * 0.452, 0.6, -2.02, sponsorDecal('VALCOR', '#1a1c20', 768, 256)));
+    }
+    wings.rear.add(flatDecal(0.8, 0.16, 0, 1.013, -2.24, sponsorDecal('VESPERO', '#ffffff'), 'top', 0.7));
+  }
   return { helmet: [helmet, visor, stripe], rainMat: MAT.rain, exhaustMat: MAT.exhaust, mats: MAT, wings, mirrors, driver };
+}
+
+// =====================================================================
+// ONE SKIN, NOSE TO GEARBOX (the TTF cars' bodies): one cross-section at
+// every point along the car, the same eight points round it each time
+// (the middle of the top, the cover's edge, the fillet, the pod's crown,
+// its shoulder, its widest, the floor's edge, the middle underneath),
+// swept from the nose's tip to the back and mirrored; the pods' mouths
+// left open, a dark duct and a radiator inside each. cfg:
+//   nose: { z: [...], hw, yb, yt }   (the nose: keys from its tip back)
+//   body: { z: [...], yTop, CW, xc, yc, xo, yo, yb }   (behind the nose)
+//   open: [[z, half-width], ...], RIM: the cockpit rim's height
+//   paint(part, seg, z, x, y): which of PAINT each strip is (-1: none)
+//   mouthX: the tub's side (the mouth is outside it), duct: how deep
+// Returns what's needed to put things on it (upper, surfY, sample, ...)
+// =====================================================================
+function sweptSkin(car, addPanel, add, PAINT, cfg) {
+  const cr = (p0, p1, p2, p3, t) => { const t2 = t * t, t3 = t2 * t; return 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3); };
+  const N = cfg.nose, B = cfg.body, keys = (zs, v) => curveAny(zs.map((z, i) => [z, v[i]]));
+  const hwA = keys(N.z, N.hw), ybA = keys(N.z, N.yb), ytA = keys(N.z, N.yt);
+  const yTop = keys(B.z, B.yTop), CW = keys(B.z, B.CW), xc = keys(B.z, B.xc), yc = keys(B.z, B.yc), xo = keys(B.z, B.xo), yo = keys(B.z, B.yo);
+  const ZJ = N.z[N.z.length - 1], ZB0 = B.z[0], ZB1 = B.z[B.z.length - 1], yFloor = B.yb ?? 0.11;
+  const OWc = curveAny(cfg.open), oz = cfg.open.filter((p) => p[1] > 0).map((p) => p[0]), oFront = Math.max(...oz) + 0.035, oBack = Math.min(...oz) - 0.07;
+  const OW = (z) => (z > oFront || z < oBack ? 0 : Math.max(0, OWc(z)));
+  const RIM = cfg.RIM;
+  const secA = (z) => {
+    const hw = hwA(z), yb = ybA(z), yt = ytA(z), h = yt - yb, o = OW(z);
+    return [[o, yt], [Math.max(o + 0.02, hw * 0.55), yt - 0.008], [hw * 0.86, yt - h * 0.12], [hw * 0.98, yt - h * 0.35], [hw, yb + h * 0.5], [hw * 0.96, yb + h * 0.2], [hw * 0.75, yb + 0.004], [0, yb]];
+  };
+  const secB = (z) => {
+    const o = OW(z), k = Math.min(1, o / 0.2), yt = yTop(z) + (RIM - yTop(z)) * k, cw = Math.max(o + 0.03, CW(z));
+    const fil = [Math.min(xc(z) - 0.05, cw + 0.07), Math.max(yc(z) + 0.03, yt - 0.12)];
+    const sh = [(xc(z) + xo(z) * 2) / 3 + 0.01, (yc(z) + yo(z) * 2) / 3 + 0.05];
+    return [[o, yt], [cw, yt - 0.03], fil, [xc(z), yc(z)], sh, [xo(z), yo(z)], [xo(z) - 0.05, yFloor + 0.01], [0, yFloor]];
+  };
+  const S = 5, NP = 7 * S;
+  const sample = (P) => {
+    const out = [], at = (i) => P[Math.max(0, Math.min(P.length - 1, i))];
+    for (let k = 0; k <= NP; k++) {
+      const seg = Math.min(6, Math.floor(k / S)), t = k / S - seg, a = at(seg - 1), b = at(seg), c = at(seg + 1), d = at(seg + 2);
+      out.push([cr(a[0], b[0], c[0], d[0], t), cr(a[1], b[1], c[1], d[1], t)]);
+    }
+    return out;
+  };
+  const upper = (z) => sample(z > ZJ ? secA(z) : secB(z)).map((p) => [p[0], p[1], z]);
+  const surfY = (z, x) => {
+    const u = upper(z);
+    for (let i = 0; i < u.length - 1; i++) { const a = u[i], b = u[i + 1]; if ((a[0] - x) * (b[0] - x) <= 0 && a[0] !== b[0]) return a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0]); }
+    return u[0][1];
+  };
+  const grid = (rows, m, flip = false) => {
+    const pos = [], idx = [];
+    for (const row of rows) for (const p of row) pos.push(p[0], p[1], p[2]);
+    for (let i = 0; i < rows.length - 1; i++) for (let k = 0; k < m; k++) { const p0 = i * (m + 1) + k, p1 = p0 + m + 1; if (flip) idx.push(p0, p0 + 1, p1, p0 + 1, p1 + 1, p1); else idx.push(p0, p1, p0 + 1, p0 + 1, p1, p1 + 1); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
+    g.computeVertexNormals(); return g;
+  };
+  const mirrorX = (g, s) => { if (s > 0) return g; g.scale(-1, 1, 1); const ix = g.index?.array; if (!ix || !(ix.length > 0)) return g; for (let i = 0; i < ix.length; i += 3) { const t = ix[i + 1]; ix[i + 1] = ix[i + 2]; ix[i + 2] = t; } g.computeVertexNormals(); return g; };
+  const skin = (rows, part) => {
+    const pos = [], lists = PAINT.map(() => []);
+    for (const r of rows) for (const p of r.pts) pos.push(p[0], p[1], r.z);
+    const W = NP + 1;
+    for (let i = 0; i < rows.length - 1; i++) for (let k = 0; k < NP; k++) {
+      const p0 = i * W + k, p1 = p0 + W, seg = Math.min(6, Math.floor(k / S)), q = rows[i].pts[k], q2 = rows[i + 1].pts[k + 1];
+      const m = cfg.paint(part, seg, (rows[i].z + rows[i + 1].z) / 2, (q[0] + q2[0]) / 2, (q[1] + q2[1]) / 2); if (m < 0) continue;
+      lists[m].push(p0, p0 + 1, p1, p0 + 1, p1 + 1, p1);
+    }
+    const g = new THREE.BufferGeometry(), idx = [];
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    lists.forEach((l, m) => { if (l.length) { g.addGroup?.(idx.length, l.length, m); for (const v of l) idx.push(v); } });
+    g.setIndex(idx); g.computeVertexNormals(); return g;
+  };
+  const rowsA = [], rowsB = [];
+  for (let i = 0; i <= 40; i++) { const z = N.z[0] + (ZJ - N.z[0]) * i / 40; rowsA.push({ z, pts: sample(secA(z)) }); }
+  for (let i = 0; i <= 64; i++) { const z = ZB0 + (ZB1 - ZB0) * i / 64; rowsB.push({ z, pts: sample(secB(z)) }); }
+  const MX = cfg.mouthX;
+  for (const s of [1, -1]) {
+    for (const [rows, part] of [[rowsA, 'nose'], [rowsB, 'body'], [[rowsA[rowsA.length - 1], rowsB[0]], 'join']]) {
+      const m = new THREE.Mesh(mirrorX(skin(rows, part), s), PAINT); m.castShadow = true; m.receiveShadow = true; car.add(m); addPanel(m);
+    }
+    // the mouth: a dark duct back into the pod, the radiator at the back of it
+    { const r = rowsB[0].pts, z0 = rowsB[0].z, z1 = z0 - (cfg.duct ?? 0.32);
+      const loop = r.filter((p) => p[0] > MX).map((p) => [p[0], p[1]]);
+      loop.push([MX + 0.002, Math.max(yFloor + 0.01, loop[loop.length - 1][1])], [MX + 0.002, loop[0][1]]);
+      const cx = loop.reduce((a, p) => a + p[0], 0) / loop.length, cy = loop.reduce((a, p) => a + p[1], 0) / loop.length;
+      const inset = (p, k) => [cx + (p[0] - cx) * k, cy + (p[1] - cy) * k];
+      const duct = new THREE.MeshStandardMaterial({ color: 0x0b0c0e, roughness: 0.85, side: THREE.DoubleSide });
+      const rows = [loop.map((p) => [p[0], p[1], z0]), loop.map((p) => { const q = inset(p, 0.8); return [q[0], q[1], z1]; })];
+      rows.forEach((row) => row.push(row[0]));
+      car.add(new THREE.Mesh(mirrorX(grid(rows, loop.length), s), duct));
+      const sh = new THREE.Shape(); loop.forEach((p, i) => { const q = inset(p, 0.8); if (i) sh.lineTo(q[0], q[1]); else sh.moveTo(q[0], q[1]); });
+      add(mirrorX(new THREE.ShapeGeometry(sh).translate(0, 0, z1), s), new THREE.MeshStandardMaterial({ color: 0x2a2c30, roughness: 0.6, metalness: 0.5, side: THREE.DoubleSide }), false); }
+    // the back end closed off round the gearbox
+    { const r = rowsB[rowsB.length - 1], sh = new THREE.Shape(); sh.moveTo(0, r.pts[0][1]); for (const p of r.pts) sh.lineTo(p[0], p[1]);
+      add(mirrorX(new THREE.ShapeGeometry(sh).translate(0, 0, r.z), s), PAINT[3], false); }
+  }
+  // (the tip, closed)
+  { const z = N.z[0], hw = hwA(z), yb = ybA(z), yt = ytA(z);
+    add(loft([{ z: z + 0.005, w: hw * 2, h: yt - yb, y: yb }, { z: z - 0.04, w: hw * 2.05, h: yt - yb + 0.005, y: yb - 0.002 }], 0.8, 40, 6, true), PAINT[cfg.tipPaint ?? 0]); }
+  // INSIDE THE COCKPIT: lined in black, so from his seat you see the inside of the tub
+  { const liner = new THREE.MeshStandardMaterial({ color: 0x15161a, roughness: 0.7, metalness: 0.1, side: THREE.DoubleSide });
+    for (const sx of [1, -1]) {
+      const rows = [];
+      for (let i = 0; i <= 40; i++) {
+        const z = oFront - 0.01 - i / 40 * (oFront - oBack), o = Math.max(0.004, OW(z)), hw = Math.min(0.28, o + 0.1);
+        rows.push([[o, RIM - 0.004], [o + 0.012, RIM - 0.05], [hw, RIM - 0.12], [hw, yFloor + 0.09], [hw * 0.7, yFloor + 0.02], [0, yFloor + 0.01]].map((q) => [sx * q[0], q[1], z]));
+      }
+      const m = new THREE.Mesh(grid(rows, 5), liner); m.receiveShadow = true; car.add(m);
+    } }
+  // (a strip laid on the skin: along z0..z1, across from x(z)-w to x(z)+w; for stripes and flashes)
+  const strip = (z0, z1, xAt, wAt, mat, n = 30) => {
+    for (const s of [1, -1]) {
+      const rows = [];
+      for (let i = 0; i <= n; i++) { const z = z0 + (z1 - z0) * i / n, x = xAt(z), w = wAt(z); rows.push([x - w, x, x + w].map((xx) => [s * xx, surfY(z, xx) + 0.004, z])); }
+      const mm = mat.userData.twoSided || (mat.userData.twoSided = Object.assign(mat.clone(), { side: THREE.DoubleSide }));   // (seen from either side, however it's wound)
+      const m = new THREE.Mesh(grid(rows, 2), mm); m.renderOrder = 2; m.receiveShadow = true; car.add(m); addPanel(m);
+    }
+  };
+  return { upper, surfY, sample, secA, secB, S, NP, OW, RIM, grid, mirrorX, strip, yTop, CW, xc, yc, xo, yo, hwA, ytA };
+}
+
+// =====================================================================
+// THE SPONSORS (all made up): each one's badge, drawn in a square of side
+// d at (x, y) (its top left), in its own colours (ink: the lettering's
+// colour on the panel it's on). Used by every TTF car
+// =====================================================================
+const LOGO = {
+  // a mobile network: three swept arcs, like a signal on the wind
+  ZEPHRA: (g, x, y, d, ink) => { g.lineCap = 'round'; [['#29c4f6', 0.18], [ink, 0.3], [ink, 0.42]].forEach(([c, r]) => { g.strokeStyle = c; g.lineWidth = d * 0.09; g.beginPath(); g.arc(x + d * 0.2, y + d * 0.8, d * r * 1.6, -1.25, -0.25); g.stroke(); }); g.fillStyle = '#29c4f6'; g.beginPath(); g.arc(x + d * 0.2, y + d * 0.8, d * 0.08, 0, 7); g.fill(); },
+  // shipping: a slanted block with a K cut out of it, a wave under it
+  KORVANE: (g, x, y, d, ink) => { g.fillStyle = '#e8462a'; g.beginPath(); g.moveTo(x + d * 0.25, y + d * 0.1); g.lineTo(x + d, y + d * 0.1); g.lineTo(x + d * 0.75, y + d * 0.72); g.lineTo(x, y + d * 0.72); g.closePath(); g.fill();
+    g.fillStyle = '#ffffff'; g.font = `italic 900 ${d * 0.56}px Arial, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('K', x + d * 0.5, y + d * 0.43); g.textAlign = 'left';
+    g.strokeStyle = ink; g.lineWidth = d * 0.06; g.beginPath(); for (let k = 0; k <= 20; k++) { const u = k / 20; g.lineTo(x + u * d, y + d * 0.88 + Math.sin(u * 12) * d * 0.04); } g.stroke(); },
+  // fuel: a red drop with a flame of orange and yellow inside it
+  HALDEN: (g, x, y, d) => { const drop = (s, c) => { g.fillStyle = c; g.beginPath(); g.moveTo(x + d / 2, y + d * (0.5 - 0.48 * s)); g.bezierCurveTo(x + d / 2 + d * 0.42 * s, y + d * (0.5 - 0.05 * s), x + d / 2 + d * 0.38 * s, y + d * (0.52 + 0.45 * s), x + d / 2, y + d * (0.52 + 0.45 * s)); g.bezierCurveTo(x + d / 2 - d * 0.38 * s, y + d * (0.52 + 0.45 * s), x + d / 2 - d * 0.42 * s, y + d * (0.5 - 0.05 * s), x + d / 2, y + d * (0.5 - 0.48 * s)); g.fill(); };
+    drop(1, '#d81e1e'); g.save(); g.translate(0, d * 0.12); drop(0.55, '#ff9a14'); drop(0.3, '#ffe14a'); g.restore(); },
+  // electronics: a hexagon round a chevron
+  VELTRIS: (g, x, y, d, ink) => { g.strokeStyle = ink; g.lineWidth = d * 0.08; g.beginPath(); for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2 + Math.PI / 6; g.lineTo(x + d / 2 + Math.cos(a) * d * 0.44, y + d / 2 + Math.sin(a) * d * 0.44); } g.closePath(); g.stroke();
+    g.fillStyle = '#1f8fd6'; g.beginPath(); g.moveTo(x + d * 0.27, y + d * 0.32); g.lineTo(x + d * 0.5, y + d * 0.72); g.lineTo(x + d * 0.73, y + d * 0.32); g.lineTo(x + d * 0.6, y + d * 0.32); g.lineTo(x + d * 0.5, y + d * 0.52); g.lineTo(x + d * 0.4, y + d * 0.32); g.closePath(); g.fill(); },
+  // a bank: a globe, banded
+  TERAVO: (g, x, y, d, ink) => { g.save(); g.beginPath(); g.arc(x + d / 2, y + d / 2, d * 0.44, 0, 7); g.clip(); g.fillStyle = ink; g.fillRect(x, y, d, d); g.fillStyle = '#f6c51a'; for (let k = 0; k < 3; k++) g.fillRect(x, y + d * (0.27 + k * 0.2), d, d * 0.07); g.restore(); g.strokeStyle = '#f6c51a'; g.lineWidth = d * 0.05; g.beginPath(); g.ellipse(x + d / 2, y + d / 2, d * 0.16, d * 0.44, 0, 0, 7); g.stroke(); },
+  // computing: a Q, a ring with a red square for its tail
+  QUANTEX: (g, x, y, d, ink) => { g.strokeStyle = ink; g.lineWidth = d * 0.12; g.beginPath(); g.arc(x + d * 0.45, y + d * 0.45, d * 0.32, 0, Math.PI * 2); g.stroke(); g.fillStyle = '#d8312a'; g.fillRect(x + d * 0.66, y + d * 0.66, d * 0.24, d * 0.24); },
+  // watches: a four-pointed star in a ring
+  NOVIK: (g, x, y, d, ink) => { g.strokeStyle = ink; g.lineWidth = d * 0.05; g.beginPath(); g.arc(x + d / 2, y + d / 2, d * 0.45, 0, 7); g.stroke(); g.fillStyle = ink; g.beginPath(); for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2 - Math.PI / 2, r = k % 2 ? d * 0.1 : d * 0.36; g.lineTo(x + d / 2 + Math.cos(a) * r, y + d / 2 + Math.sin(a) * r); } g.closePath(); g.fill(); },
+  // an energy drink: two flames, red over orange
+  ARDENTA: (g, x, y, d) => { const f = (s, ox, c) => { g.fillStyle = c; g.beginPath(); g.moveTo(x + d * ox, y + d * 0.95); g.quadraticCurveTo(x + d * (ox - 0.3 * s), y + d * 0.5, x + d * (ox + 0.05), y + d * (1 - 0.95 * s)); g.quadraticCurveTo(x + d * (ox + 0.35 * s), y + d * 0.55, x + d * ox, y + d * 0.95); g.fill(); }; f(1, 0.45, '#ff9a14'); f(0.75, 0.55, '#d81e1e'); },
+  // a satellite network: a tilted orbit round a planet
+  ORBIXA: (g, x, y, d, ink) => { g.fillStyle = '#29c4f6'; g.beginPath(); g.arc(x + d / 2, y + d / 2, d * 0.22, 0, 7); g.fill(); g.strokeStyle = ink; g.lineWidth = d * 0.06; g.beginPath(); g.ellipse(x + d / 2, y + d / 2, d * 0.46, d * 0.17, -0.5, 0, 7); g.stroke(); g.fillStyle = ink; g.beginPath(); g.arc(x + d * 0.88, y + d * 0.3, d * 0.06, 0, 7); g.fill(); },
+  // the tyres: a tread-ringed wheel, in yellow
+  VALCOR: (g, x, y, d) => { g.strokeStyle = '#f6c51a'; g.lineWidth = d * 0.14; g.beginPath(); g.arc(x + d / 2, y + d / 2, d * 0.36, 0, 7); g.stroke(); g.fillStyle = '#f6c51a'; for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2; g.save(); g.translate(x + d / 2 + Math.cos(a) * d * 0.45, y + d / 2 + Math.sin(a) * d * 0.45); g.rotate(a); g.fillRect(-d * 0.04, -d * 0.05, d * 0.08, d * 0.1); g.restore(); } g.beginPath(); g.arc(x + d / 2, y + d / 2, d * 0.1, 0, 7); g.fill(); },
+  // TOBACCO (the TTF-05's): three pale-blue curls rising in a ring
+  AZURA: (g, x, y, d) => { g.fillStyle = '#7fd0f5'; g.beginPath(); g.arc(x + d / 2, y + d / 2, d * 0.46, 0, 7); g.fill(); g.strokeStyle = '#ffffff'; g.lineWidth = d * 0.07; g.lineCap = 'round';
+    for (let k = 0; k < 3; k++) { g.beginPath(); for (let i = 0; i <= 16; i++) { const u = i / 16; g.lineTo(x + d * (0.3 + k * 0.2) + Math.sin(u * 6 + k) * d * 0.06, y + d * (0.82 - u * 0.62)); } g.stroke(); } },
+  // TOBACCO (the TTF-88's and TTF-94's): a gold crown over a red shield with a white V
+  VESPERO: (g, x, y, d) => { g.fillStyle = '#d2111c'; g.beginPath(); g.moveTo(x + d * 0.18, y + d * 0.3); g.lineTo(x + d * 0.82, y + d * 0.3); g.lineTo(x + d * 0.82, y + d * 0.62); g.quadraticCurveTo(x + d * 0.8, y + d * 0.86, x + d * 0.5, y + d * 0.98); g.quadraticCurveTo(x + d * 0.2, y + d * 0.86, x + d * 0.18, y + d * 0.62); g.closePath(); g.fill();
+    g.fillStyle = '#ffffff'; g.beginPath(); g.moveTo(x + d * 0.32, y + d * 0.42); g.lineTo(x + d * 0.42, y + d * 0.42); g.lineTo(x + d * 0.5, y + d * 0.68); g.lineTo(x + d * 0.58, y + d * 0.42); g.lineTo(x + d * 0.68, y + d * 0.42); g.lineTo(x + d * 0.54, y + d * 0.82); g.lineTo(x + d * 0.46, y + d * 0.82); g.closePath(); g.fill();
+    g.fillStyle = '#e8b43a'; g.beginPath(); g.moveTo(x + d * 0.24, y + d * 0.26); g.lineTo(x + d * 0.22, y + d * 0.04); g.lineTo(x + d * 0.36, y + d * 0.16); g.lineTo(x + d * 0.5, y + d * 0.02); g.lineTo(x + d * 0.64, y + d * 0.16); g.lineTo(x + d * 0.78, y + d * 0.04); g.lineTo(x + d * 0.76, y + d * 0.26); g.closePath(); g.fill(); },
+  // FUEL (the TTF-94's): a yellow sun, a red flame rising through it
+  SOLVARA: (g, x, y, d) => { g.fillStyle = '#ffd21a'; g.beginPath(); for (let k = 0; k < 24; k++) { const a = k / 24 * Math.PI * 2, r = k % 2 ? d * 0.36 : d * 0.47; g.lineTo(x + d / 2 + Math.cos(a) * r, y + d / 2 + Math.sin(a) * r); } g.closePath(); g.fill();
+    g.fillStyle = '#d2111c'; g.beginPath(); g.moveTo(x + d * 0.5, y + d * 0.84); g.quadraticCurveTo(x + d * 0.28, y + d * 0.6, x + d * 0.5, y + d * 0.18); g.quadraticCurveTo(x + d * 0.72, y + d * 0.6, x + d * 0.5, y + d * 0.84); g.fill(); },
+  // FUEL (the TTF-88's): a green hexagon with a white drop and a wing
+  TORRIN: (g, x, y, d) => { g.fillStyle = '#1f8a4c'; g.beginPath(); for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2; g.lineTo(x + d / 2 + Math.cos(a) * d * 0.47, y + d / 2 + Math.sin(a) * d * 0.47); } g.closePath(); g.fill();
+    g.fillStyle = '#ffffff'; g.beginPath(); g.moveTo(x + d * 0.45, y + d * 0.2); g.bezierCurveTo(x + d * 0.7, y + d * 0.5, x + d * 0.62, y + d * 0.8, x + d * 0.45, y + d * 0.8); g.bezierCurveTo(x + d * 0.28, y + d * 0.8, x + d * 0.2, y + d * 0.5, x + d * 0.45, y + d * 0.2); g.fill();
+    g.fillStyle = '#ffd21a'; g.beginPath(); g.moveTo(x + d * 0.55, y + d * 0.52); g.lineTo(x + d * 0.9, y + d * 0.38); g.lineTo(x + d * 0.84, y + d * 0.5); g.lineTo(x + d * 0.92, y + d * 0.52); g.lineTo(x + d * 0.6, y + d * 0.62); g.closePath(); g.fill(); },
+};
+const SUB = { HALDEN: 'PETROLEUM', KORVANE: 'LOGISTICS', VALCOR: 'TYRES', ZEPHRA: 'MOBILE', TERAVO: 'BANK', SOLVARA: 'FUELS', TORRIN: 'OIL' };
+// a sponsor's decal: its badge and its name (and what it is, under it)
+// (solid, not see-through: drawn with the car's own paint, so smoke, fire
+// and dust in front hide it just as they hide the body; cut out where the
+// picture's empty)
+function sponsorMat(c) {
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  return new THREE.MeshStandardMaterial({ map: t, alphaTest: 0.5, alphaToCoverage: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, roughness: 0.3, side: THREE.DoubleSide });
+}
+function sponsorDecal(text, ink, w = 1024, h = 256, { name = true } = {}) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d');
+  g.clearRect(0, 0, w, h);
+  const d = h * 0.78, x0 = h * 0.08;
+  (LOGO[text] || LOGO.NOVIK)(g, x0, (h - d) / 2, d, ink);
+  if (name) {
+    const sub = SUB[text], tx = x0 + d + h * 0.14, room = w - tx - h * 0.06;
+    let fs = h * (sub ? 0.52 : 0.62); g.font = `italic 900 ${fs}px Arial, Helvetica, sans-serif`;
+    while (g.measureText(text).width > room && fs > 16) { fs -= 4; g.font = `italic 900 ${fs}px Arial, Helvetica, sans-serif`; }
+    g.fillStyle = ink; g.textBaseline = 'middle';
+    g.fillText(text, tx, h / 2 - (sub ? h * 0.1 : -h * 0.03));
+    if (sub) { g.font = `700 ${h * 0.17}px Arial, Helvetica, sans-serif`; g.fillStyle = text === 'HALDEN' ? '#d81e1e' : ink; g.fillText(sub.split('').join(String.fromCharCode(8202)), tx + 4, h / 2 + h * 0.27); }
+  }
+  return sponsorMat(c);
+}
+// a small sponsor: its badge alone, no name
+function sponsorBadge(text, ink = '#ffffff', d = 256) {
+  const c = document.createElement('canvas'); c.width = d; c.height = d; const g = c.getContext('2d');
+  (LOGO[text] || LOGO.NOVIK)(g, d * 0.04, d * 0.04, d * 0.92, ink);
+  return sponsorMat(c);
+}
+// (a decal over part of a swept skin: rows along z0..z1, across the section's points k0..k1, lifted just off it)
+function decalOnSkin(car, addPanel, sk, secOf, z0, z1, k0, k1, mat, sx) {
+  const pos = [], uv = [], idx = [], NZ = 16, NK = k1 - k0;
+  for (let i = 0; i <= NZ; i++) {
+    const z = z0 + (z1 - z0) * i / NZ, u = sk.sample(secOf(z));
+    for (let k = k0; k <= k1; k++) {
+      const a = u[Math.max(0, k - 1)], b = u[Math.min(u.length - 1, k + 1)], tx = b[0] - a[0], ty = b[1] - a[1], l = Math.hypot(tx, ty) || 1;
+      pos.push(sx * (u[k][0] - ty / l * 0.006), u[k][1] + tx / l * 0.006, z);
+      uv.push(sx > 0 ? i / NZ : 1 - i / NZ, 1 - (k - k0) / NK);
+    }
+  }
+  for (let i = 0; i < NZ; i++) for (let k = 0; k < NK; k++) { const p0 = i * (NK + 1) + k, p1 = p0 + NK + 1; idx.push(p0, p1, p0 + 1, p0 + 1, p1, p1 + 1); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
+  const m = new THREE.Mesh(g, mat); m.renderOrder = 2; car.add(m); addPanel(m); return m;
+}
+// (a flat decal on a flat face: a plane w x h at (x, y, z), facing out along sx (its side), or up)
+function flatDecal(w, h, x, y, z, mat, face = 'side', tilt = 0) {
+  const g = new THREE.PlaneGeometry(w, h);
+  if (face === 'side') g.rotateY(Math.sign(x || 1) * Math.PI / 2);
+  else { g.rotateX(-Math.PI / 2).rotateY(Math.PI); if (tilt) g.rotateX(tilt); g.translate(0, Math.cos(tilt) * 0.012, Math.sin(tilt) * 0.012); }   // (just off the element's face)
+  const m = new THREE.Mesh(g.translate(x, y, z), mat); m.renderOrder = 2; return m;
 }
 
 // =====================================================================
@@ -760,8 +969,10 @@ export function buildF05Body(car, addPanel) {
     return new THREE.ExtrudeGeometry(sh, { depth: t, bevelEnabled: false, curveSegments: 4 }).translate(0, 0, -t / 2).rotateY(-Math.PI / 2).translate(x, 0, 0); };
   // the paint of each strip: 0 yellow, 1 light blue, 2 navy, 3 carbon, 4 dark
   const PAINT = [MAT.yellow, MAT.blue, MAT.navy, MAT.carbon, MAT.dark];
-  const paintA = (seg, z) => (z > 2.62 ? 1 : seg === 6 ? 3 : 0);
-  const paintB = (seg, z) => (seg === 0 ? (z > -0.02 ? 0 : 1) : seg === 1 ? (z > 0.22 ? 0 : 1) : seg === 6 ? 3 : seg === 5 ? 2 : 1);
+  // (the nose: light blue at the front and down its lower sides, yellow over the top behind;
+  // the body: yellow over the cockpit, along the engine cover and onto the pods' tops, light blue below)
+  const paintA = (seg, z) => (seg === 6 ? 3 : z > 1.95 ? 1 : seg >= 4 && z > 1.15 ? 1 : 0);
+  const paintB = (seg, z) => (seg === 0 ? 0 : seg === 1 ? (z > -0.95 ? 0 : 1) : seg === 2 ? (z > 0.05 ? 0 : 1) : seg === 6 ? 3 : seg === 5 ? 2 : 1);
   const skin = (rows, paint) => {
     const pos = [], lists = PAINT.map(() => []);
     for (const r of rows) for (const p of r.pts) pos.push(p[0], p[1], r.z);
@@ -936,52 +1147,7 @@ export function buildF05Body(car, addPanel) {
   // surfaces (laid on the skin, following its curves): big on the pods'
   // navy flanks, on the nose's sides, the wings' endplates
   if (typeof document !== 'undefined') {
-    // each sponsor's badge, drawn in a square of side d at (x, y) (its top
-    // left), in its own colours (ink: the lettering's colour on this panel)
-    const LOGO = {
-      // a mobile network: three swept arcs, like a signal on the wind
-      ZEPHRA: (g, x, y, d, ink) => { g.lineCap = 'round'; [['#29c4f6', 0.18], [ink, 0.3], [ink, 0.42]].forEach(([c, r], i) => { g.strokeStyle = c; g.lineWidth = d * 0.09; g.beginPath(); g.arc(x + d * 0.2, y + d * 0.8, d * r * 1.6, -1.25, -0.25); g.stroke(); }); g.fillStyle = '#29c4f6'; g.beginPath(); g.arc(x + d * 0.2, y + d * 0.8, d * 0.08, 0, 7); g.fill(); },
-      // shipping: a slanted block with a K cut out of it, a wave under it
-      KORVANE: (g, x, y, d, ink) => { g.fillStyle = '#e8462a'; g.beginPath(); g.moveTo(x + d * 0.25, y + d * 0.1); g.lineTo(x + d, y + d * 0.1); g.lineTo(x + d * 0.75, y + d * 0.72); g.lineTo(x, y + d * 0.72); g.closePath(); g.fill();
-        g.fillStyle = '#ffffff'; g.font = `italic 900 ${d * 0.56}px Arial, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('K', x + d * 0.5, y + d * 0.43); g.textAlign = 'left';
-        g.strokeStyle = ink; g.lineWidth = d * 0.06; g.beginPath(); for (let k = 0; k <= 20; k++) { const u = k / 20; g.lineTo(x + u * d, y + d * 0.88 + Math.sin(u * 12) * d * 0.04); } g.stroke(); },
-      // fuel: a red drop with a flame of orange and yellow inside it
-      HALDEN: (g, x, y, d) => { const drop = (s, c) => { g.fillStyle = c; g.beginPath(); g.moveTo(x + d / 2, y + d * (0.5 - 0.48 * s)); g.bezierCurveTo(x + d / 2 + d * 0.42 * s, y + d * (0.5 - 0.05 * s), x + d / 2 + d * 0.38 * s, y + d * (0.52 + 0.45 * s), x + d / 2, y + d * (0.52 + 0.45 * s)); g.bezierCurveTo(x + d / 2 - d * 0.38 * s, y + d * (0.52 + 0.45 * s), x + d / 2 - d * 0.42 * s, y + d * (0.5 - 0.05 * s), x + d / 2, y + d * (0.5 - 0.48 * s)); g.fill(); };
-        drop(1, '#d81e1e'); g.save(); g.translate(0, d * 0.12); drop(0.55, '#ff9a14'); drop(0.3, '#ffe14a'); g.restore(); },
-      // electronics: a hexagon round a chevron
-      VELTRIS: (g, x, y, d, ink) => { g.strokeStyle = ink; g.lineWidth = d * 0.08; g.beginPath(); for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2 + Math.PI / 6; g.lineTo(x + d / 2 + Math.cos(a) * d * 0.44, y + d / 2 + Math.sin(a) * d * 0.44); } g.closePath(); g.stroke();
-        g.fillStyle = '#1f8fd6'; g.beginPath(); g.moveTo(x + d * 0.27, y + d * 0.32); g.lineTo(x + d * 0.5, y + d * 0.72); g.lineTo(x + d * 0.73, y + d * 0.32); g.lineTo(x + d * 0.6, y + d * 0.32); g.lineTo(x + d * 0.5, y + d * 0.52); g.lineTo(x + d * 0.4, y + d * 0.32); g.closePath(); g.fill(); },
-      // a bank: a globe, banded
-      TERAVO: (g, x, y, d, ink) => { g.save(); g.beginPath(); g.arc(x + d / 2, y + d / 2, d * 0.44, 0, 7); g.clip(); g.fillStyle = ink; g.fillRect(x, y, d, d); g.fillStyle = '#f6c51a'; for (let k = 0; k < 3; k++) g.fillRect(x, y + d * (0.27 + k * 0.2), d, d * 0.07); g.restore(); g.strokeStyle = '#f6c51a'; g.lineWidth = d * 0.05; g.beginPath(); g.ellipse(x + d / 2, y + d / 2, d * 0.16, d * 0.44, 0, 0, 7); g.stroke(); },
-      // computing: a Q, a ring with a red square for its tail
-      QUANTEX: (g, x, y, d, ink) => { g.strokeStyle = ink; g.lineWidth = d * 0.12; g.beginPath(); g.arc(x + d * 0.45, y + d * 0.45, d * 0.32, 0, Math.PI * 2); g.stroke(); g.fillStyle = '#d8312a'; g.fillRect(x + d * 0.66, y + d * 0.66, d * 0.24, d * 0.24); },
-      // watches: a four-pointed star in a ring
-      NOVIK: (g, x, y, d, ink) => { g.strokeStyle = ink; g.lineWidth = d * 0.05; g.beginPath(); g.arc(x + d / 2, y + d / 2, d * 0.45, 0, 7); g.stroke(); g.fillStyle = ink; g.beginPath(); for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2 - Math.PI / 2, r = k % 2 ? d * 0.1 : d * 0.36; g.lineTo(x + d / 2 + Math.cos(a) * r, y + d / 2 + Math.sin(a) * r); } g.closePath(); g.fill(); },
-      // an energy drink: two flames, red over orange
-      ARDENTA: (g, x, y, d) => { const f = (s, ox, c) => { g.fillStyle = c; g.beginPath(); g.moveTo(x + d * ox, y + d * 0.95); g.quadraticCurveTo(x + d * (ox - 0.3 * s), y + d * 0.5, x + d * (ox + 0.05), y + d * (1 - 0.95 * s)); g.quadraticCurveTo(x + d * (ox + 0.35 * s), y + d * 0.55, x + d * ox, y + d * 0.95); g.fill(); }; f(1, 0.45, '#ff9a14'); f(0.75, 0.55, '#d81e1e'); },
-      // a satellite network: a tilted orbit round a planet
-      ORBIXA: (g, x, y, d, ink) => { g.fillStyle = '#29c4f6'; g.beginPath(); g.arc(x + d / 2, y + d / 2, d * 0.22, 0, 7); g.fill(); g.strokeStyle = ink; g.lineWidth = d * 0.06; g.beginPath(); g.ellipse(x + d / 2, y + d / 2, d * 0.46, d * 0.17, -0.5, 0, 7); g.stroke(); g.fillStyle = ink; g.beginPath(); g.arc(x + d * 0.88, y + d * 0.3, d * 0.06, 0, 7); g.fill(); },
-      // the tyres: a tread-ringed wheel, in yellow
-      VALCOR: (g, x, y, d) => { g.strokeStyle = '#f6c51a'; g.lineWidth = d * 0.14; g.beginPath(); g.arc(x + d / 2, y + d / 2, d * 0.36, 0, 7); g.stroke(); g.fillStyle = '#f6c51a'; for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2; g.save(); g.translate(x + d / 2 + Math.cos(a) * d * 0.45, y + d / 2 + Math.sin(a) * d * 0.45); g.rotate(a); g.fillRect(-d * 0.04, -d * 0.05, d * 0.08, d * 0.1); g.restore(); } g.beginPath(); g.arc(x + d / 2, y + d / 2, d * 0.1, 0, 7); g.fill(); },
-    };
-    const SUB = { HALDEN: 'PETROLEUM', KORVANE: 'LOGISTICS', VALCOR: 'TYRES', ZEPHRA: 'MOBILE', TERAVO: 'BANK' };
-    const decal = (text, ink, badge, w = 1024, h = 256) => {
-      const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d');
-      g.clearRect(0, 0, w, h);
-      const d = h * 0.78, x0 = h * 0.08;
-      (LOGO[text] || LOGO.NOVIK)(g, x0, (h - d) / 2, d, ink);
-      const sub = SUB[text], tx = x0 + d + h * 0.14, room = w - tx - h * 0.06;
-      let fs = h * (sub ? 0.52 : 0.62); g.font = `italic 900 ${fs}px Arial, Helvetica, sans-serif`;
-      while (g.measureText(text).width > room && fs > 16) { fs -= 4; g.font = `italic 900 ${fs}px Arial, Helvetica, sans-serif`; }
-      g.fillStyle = ink; g.textBaseline = 'middle';
-      g.fillText(text, tx, h / 2 - (sub ? h * 0.1 : -h * 0.03));
-      if (sub) { g.font = `700 ${h * 0.17}px Arial, Helvetica, sans-serif`; g.fillStyle = text === 'HALDEN' ? '#d81e1e' : ink; const tw = g.measureText(text).width; g.fillText(sub.split('').join(String.fromCharCode(8202)), tx + 4, h / 2 + h * 0.27); }
-      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
-      // (solid, not see-through: drawn with the car's own paint, so smoke, fire
-      // and dust in front hide it just as they hide the body; its letters cut
-      // out where the picture's empty)
-      return new THREE.MeshStandardMaterial({ map: t, alphaTest: 0.5, alphaToCoverage: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, roughness: 0.3, side: THREE.DoubleSide });
-    };
+    const decal = (text, ink, badge, w = 1024, h = 256) => sponsorDecal(text, ink, w, h);
     // (a decal over part of the skin: rows along z0..z1, across the section's points k0..k1, lifted just off it)
     const onSkin = (secOf, z0, z1, k0, k1, mat, sx) => {
       const pos = [], uv = [], idx = [], NZ = 16, NK = k1 - k0;
@@ -997,7 +1163,7 @@ export function buildF05Body(car, addPanel) {
       const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
       const m = new THREE.Mesh(g, mat); m.renderOrder = 2; car.add(m); addPanel(m); return m;
     };
-    const flank = decal('KORVANE', '#ffffff', 'ring'), nose = decal('VELTRIS', '#15214e', 'diamond'), plate = decal('ORBIXA', '#ffffff', 'ring', 512, 256);
+    const flank = decal('AZURA', '#ffffff', 'ring'), nose = decal('VELTRIS', '#15214e', 'diamond'), plate = decal('ORBIXA', '#ffffff', 'ring', 512, 256);
     for (const sx of [1, -1]) {
       onSkin(secB, 0.15, -0.75, 5 * S, 6 * S - 1, flank, sx);              // (the navy flank, under the crease)
       onSkin(secA, 1.5, 0.95, 3 * S, 4 * S, nose, sx);                     // (the nose's side)
@@ -1022,9 +1188,9 @@ export function buildF05Body(car, addPanel) {
       const fw = new THREE.Mesh(new THREE.PlaneGeometry(0.36, 0.09).rotateX(-Math.PI / 2).rotateY(Math.PI).rotateX(0.06).translate(sx * 0.45, 0.108, 2.6), decal('ARDENTA', '#15214e', 'diamond', 512, 128));
       fw.renderOrder = 2; wingDecals.push([fw, sx > 0 ? 'fl' : 'fr']);
     }
-    // the title across the rear wing's top flap, read from behind
+    // the main sponsor (the tobacco brand) across the rear wing's top flap, read from behind
     { const n = new THREE.Vector3(0, Math.cos(0.5), Math.sin(0.5)).multiplyScalar(0.011);
-      const rw = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.15).rotateX(-Math.PI / 2).rotateY(Math.PI).rotateX(0.5).translate(n.x, 0.82 + n.y, -1.85 + n.z), decal('ZEPHRA', '#ffffff', 'diamond'));
+      const rw = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.15).rotateX(-Math.PI / 2).rotateY(Math.PI).rotateX(0.5).translate(n.x, 0.82 + n.y, -1.85 + n.z), decal('AZURA', '#ffffff', 'diamond'));
       rw.renderOrder = 2; wingDecals.push([rw, 'rear']); }
   }
   // the gearbox at the back, its rain light, the floor, the plank, the diffuser and its fences
@@ -1150,127 +1316,24 @@ export function buildF94Body(car, addPanel) {
     return m;
   };
   const SMOOTH = 0.8;
-  // --- ONE SKIN, NOSE TO GEARBOX (as the TT-05's is made): the 1994 car's
-  // body is all one smooth, rounded surface, a pebble shaped by the sea. A
-  // low, round nose swelling into the tub; low cockpit sides, his shoulders
-  // showing over them; long rounded sidepods, their mouths set back behind
-  // the front wheels, no crease anywhere, tapering gently into the engine
-  // cover and down to the gearbox. One cross-section at every point along
-  // the car (the same eight points round it each time), swept nose to
-  // tail and mirrored. Red, with white flashes laid over it
-  const grid = (rows, m, flip = false) => {
-    const pos = [], idx = [];
-    for (const row of rows) for (const p of row) pos.push(p[0], p[1], p[2]);
-    for (let i = 0; i < rows.length - 1; i++) for (let k = 0; k < m; k++) { const p0 = i * (m + 1) + k, p1 = p0 + m + 1; if (flip) idx.push(p0, p0 + 1, p1, p0 + 1, p1 + 1, p1); else idx.push(p0, p1, p0 + 1, p0 + 1, p1, p1 + 1); }
-    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
-    g.computeVertexNormals(); return g;
-  };
-  const mirrorX = (g, s) => { if (s > 0) return g; g.scale(-1, 1, 1); const ix = g.index?.array; if (!ix || !(ix.length > 0)) return g; for (let i = 0; i < ix.length; i += 3) { const t = ix[i + 1]; ix[i + 1] = ix[i + 2]; ix[i + 2] = t; } g.computeVertexNormals(); return g; };
-  const cr = (p0, p1, p2, p3, t) => { const t2 = t * t, t3 = t2 * t; return 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3); };
-  // the body behind the nose: along the car
-  const Z = [0.74, 0.4, 0.0, -0.3, -0.6, -0.95, -1.3, -1.78];
-  const K = (vals) => curveAny(Z.map((z, i) => [z, vals[i]]));
-  const yTop = K([0.68, 0.6, 0.6, 0.78, 0.8, 0.7, 0.55, 0.38]);                  // (the middle of the top: the scuttle, then the cover under the airbox, sloping to the back)
-  const CW = K([0.3, 0.3, 0.29, 0.22, 0.2, 0.18, 0.14, 0.09]);                    // (the tub's walls, then the cover's half-width)
-  const xc = K([0.56, 0.62, 0.62, 0.58, 0.5, 0.4, 0.28, 0.14]), yc = K([0.49, 0.5, 0.49, 0.46, 0.42, 0.37, 0.32, 0.27]);   // (the pod's crown)
-  const xo = K([0.72, 0.78, 0.78, 0.74, 0.65, 0.52, 0.36, 0.2]), yo = K([0.3, 0.3, 0.3, 0.3, 0.29, 0.28, 0.27, 0.24]);    // (its widest, round, no crease)
-  // the cockpit's opening: half its width along the car
-  const OWc = curveAny([[0.9, 0], [0.76, 0], [0.72, 0.16], [0.5, 0.21], [-0.05, 0.21], [-0.18, 0.08], [-0.25, 0], [-0.5, 0]]);
-  const OW = (z) => (z > 0.755 || z < -0.24 ? 0 : Math.max(0, OWc(z)));
-  const RIM = 0.6;                                                                 // (low sides: 1994)
-  // the nose: half-width, underside, top
-  const ZA = [2.62, 2.45, 2.2, 1.9, 1.55, 1.2, 0.95, 0.8, 0.76];
-  const KA = (v) => curveAny(ZA.map((z, i) => [z, v[i]]));
-  const hwA = KA([0.065, 0.1, 0.14, 0.17, 0.2, 0.24, 0.28, 0.3, 0.305]);
-  const ybA = KA([0.2, 0.2, 0.21, 0.22, 0.22, 0.18, 0.13, 0.11, 0.11]);
-  const ytA = KA([0.3, 0.35, 0.42, 0.49, 0.56, 0.62, 0.66, 0.68, 0.68]);
-  const secA = (z) => {
-    const hw = hwA(z), yb = ybA(z), yt = ytA(z), h = yt - yb, o = OW(z);
-    return [[o, yt], [Math.max(o + 0.02, hw * 0.55), yt - 0.008], [hw * 0.86, yt - h * 0.12], [hw * 0.98, yt - h * 0.35], [hw, yb + h * 0.5],
-      [hw * 0.96, yb + h * 0.2], [hw * 0.75, yb + 0.004], [0, yb]];
-  };
-  const secB = (z) => {
-    const o = OW(z), k = Math.min(1, o / 0.2), yt = yTop(z) + (RIM - yTop(z)) * k, cw = Math.max(o + 0.03, CW(z));
-    const fil = [Math.min(xc(z) - 0.05, cw + 0.07), Math.max(yc(z) + 0.03, yt - 0.12)];
-    const sh = [(xc(z) + xo(z) * 2) / 3 + 0.01, (yc(z) + yo(z) * 2) / 3 + 0.06];      // (rounding over from the crown to the side)
-    return [[o, yt], [cw, yt - 0.03], fil, [xc(z), yc(z)], sh, [xo(z), yo(z)], [xo(z) - 0.05, 0.12], [0, 0.11]];
-  };
-  const S = 5, NP = 7 * S;
-  const sample = (P) => {
-    const out = [], at = (i) => P[Math.max(0, Math.min(P.length - 1, i))];
-    for (let k = 0; k <= NP; k++) {
-      const seg = Math.min(6, Math.floor(k / S)), t = k / S - seg, a = at(seg - 1), b = at(seg), c = at(seg + 1), d = at(seg + 2);
-      out.push([cr(a[0], b[0], c[0], d[0], t), cr(a[1], b[1], c[1], d[1], t)]);
-    }
-    return out;
-  };
-  const upper = (z) => sample(z > 0.75 ? secA(z) : secB(z)).map((p) => [p[0], p[1], z]);
-  const surfY = (z, x) => {
-    const u = upper(z);
-    for (let i = 0; i < u.length - 1; i++) { const a = u[i], b = u[i + 1]; if ((a[0] - x) * (b[0] - x) <= 0 && a[0] !== b[0]) return a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0]); }
-    return u[0][1];
-  };
-  // the paint of each strip: 0 red, 1 white, 2 carbon (underneath), 3 dark
+  // --- ONE SKIN, NOSE TO GEARBOX (sweptSkin): the 1994 car's body is all
+  // one smooth, rounded surface, a pebble shaped by the sea. A low, round
+  // nose swelling into the tub; low cockpit sides, his shoulders showing
+  // over them; long rounded sidepods, their mouths set back behind the
+  // front wheels, no crease anywhere, tapering gently into the engine
+  // cover and down to the gearbox. Red, with white flashes laid over it
   const PAINT = [MAT.blue, MAT.yellow, MAT.carbon, MAT.dark];
-  const paintA = (seg) => (seg === 6 ? 2 : 0);
-  const paintB = (seg) => (seg === 6 ? 2 : 0);
-  const skin = (rows, paint) => {
-    const pos = [], lists = PAINT.map(() => []);
-    for (const r of rows) for (const p of r.pts) pos.push(p[0], p[1], r.z);
-    const W = NP + 1;
-    for (let i = 0; i < rows.length - 1; i++) for (let k = 0; k < NP; k++) {
-      const p0 = i * W + k, p1 = p0 + W, seg = Math.min(6, Math.floor(k / S));
-      const m = paint(seg, (rows[i].z + rows[i + 1].z) / 2, rows[i].pts[k][0]); if (m < 0) continue;
-      lists[m].push(p0, p0 + 1, p1, p0 + 1, p1 + 1, p1);
-    }
-    const g = new THREE.BufferGeometry(), idx = [];
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    lists.forEach((l, m) => { if (l.length) { g.addGroup?.(idx.length, l.length, m); for (const v of l) idx.push(v); } });
-    g.setIndex(idx); g.computeVertexNormals(); return g;
-  };
-  const rowsA = [], rowsB = [];
-  for (let i = 0; i <= 40; i++) { const z = 2.62 + (0.76 - 2.62) * i / 40; rowsA.push({ z, pts: sample(secA(z)) }); }
-  for (let i = 0; i <= 64; i++) { const z = 0.74 + (-1.78 - 0.74) * i / 64; rowsB.push({ z, pts: sample(secB(z)) }); }
-  for (const s of [1, -1]) {
-    for (const [rows, paint] of [[rowsA, paintA], [rowsB, paintB], [[rowsA[rowsA.length - 1], rowsB[0]], (seg, z, x) => (x > 0.33 ? -1 : 3)]]) {     // (the pod's mouth left open)
-      const m = new THREE.Mesh(mirrorX(skin(rows, paint), s), PAINT); m.castShadow = true; m.receiveShadow = true; car.add(m); addPanel(m);
-    }
-    // the mouth: a dark duct back into the pod, the radiator at the back of it
-    { const r = rowsB[0].pts, z0 = rowsB[0].z, z1 = 0.42;
-      const loop = r.filter((p) => p[0] > 0.33).map((p) => [p[0], p[1]]);
-      loop.push([0.332, Math.max(0.12, loop[loop.length - 1][1])], [0.332, loop[0][1]]);
-      const cx = loop.reduce((a, p) => a + p[0], 0) / loop.length, cy = loop.reduce((a, p) => a + p[1], 0) / loop.length;
-      const inset = (p, k) => [cx + (p[0] - cx) * k, cy + (p[1] - cy) * k];
-      const duct = new THREE.MeshStandardMaterial({ color: 0x0b0c0e, roughness: 0.85, side: THREE.DoubleSide });
-      const rows = [loop.map((p) => [p[0], p[1], z0]), loop.map((p) => { const q = inset(p, 0.8); return [q[0], q[1], z1]; })];
-      rows.forEach((row) => row.push(row[0]));
-      car.add(new THREE.Mesh(mirrorX(grid(rows, loop.length), s), duct));
-      const sh = new THREE.Shape(); loop.forEach((p, i) => { const q = inset(p, 0.8); if (i) sh.lineTo(q[0], q[1]); else sh.moveTo(q[0], q[1]); });
-      add(mirrorX(new THREE.ShapeGeometry(sh).translate(0, 0, z1), s), new THREE.MeshStandardMaterial({ color: 0x2a2c30, roughness: 0.6, metalness: 0.5, side: THREE.DoubleSide }), false); }
-    // the back end closed off round the gearbox
-    { const r = rowsB[rowsB.length - 1], sh = new THREE.Shape(); sh.moveTo(0, r.pts[0][1]); for (const p of r.pts) sh.lineTo(p[0], p[1]);
-      add(mirrorX(new THREE.ShapeGeometry(sh).translate(0, 0, r.z), s), MAT.dark, false); }
-    // the white flash along each pod's side, laid on the skin, sweeping up toward the back
-    { const rows = [];
-      for (let i = 0; i <= 30; i++) { const z = 0.6 - i / 30 * 1.35, u = upper(z), k0 = 4 * S, row = [];
-        for (let j = k0 - 1; j <= k0 + 1; j++) { const p = u[j], a = u[j - 1], b = u[j + 1], tx = b[0] - a[0], ty = b[1] - a[1], l = Math.hypot(tx, ty) || 1; row.push([p[0] - ty / l * 0.004, p[1] + tx / l * 0.004, z]); }
-        rows.push(row); }
-      const m = new THREE.Mesh(mirrorX(grid(rows, 2, true), s), MAT.yellow); m.renderOrder = 2; m.receiveShadow = true; car.add(m); addPanel(m); }
-  }
-  add(loft([{ z: 2.625, w: 0.13, h: 0.1, y: 0.2 }, { z: 2.58, w: 0.135, h: 0.105, y: 0.198 }], SMOOTH, 40, 6, true), MAT.blue);     // (the tip, closed)
-  // a white band over the nose's top, widening back toward the cockpit
-  { const rows = []; for (let i = 0; i <= 30; i++) { const z = 2.3 - i * (2.3 - 0.95) / 30, w = 0.05 + 0.1 * i / 30; rows.push([-w, 0, w].map((x) => [x, surfY(z, Math.abs(x)) + 0.004, z])); }
-    const m = new THREE.Mesh(grid(rows, 2, true), MAT.yellow); m.renderOrder = 2; car.add(m); addPanel(m); }
-  // INSIDE THE COCKPIT: lined in black, so from his seat you see the inside of the tub
-  { const liner = new THREE.MeshStandardMaterial({ color: 0x15161a, roughness: 0.7, metalness: 0.1, side: THREE.DoubleSide });
-    for (const sx of [1, -1]) {
-      const rows = [];
-      for (let i = 0; i <= 40; i++) {
-        const z = 0.75 - i / 40 * 1.0, o = Math.max(0.004, OW(z)), hw = Math.min(0.28, o + 0.1);
-        rows.push([[o, RIM - 0.004], [o + 0.012, RIM - 0.05], [hw, 0.48], [hw, 0.2], [hw * 0.7, 0.13], [0, 0.12]].map((q) => [sx * q[0], q[1], z]));
-      }
-      const m = new THREE.Mesh(grid(rows, 5), liner); m.receiveShadow = true; car.add(m);
-    } }
+  const sk = sweptSkin(car, addPanel, add, PAINT, {
+    nose: { z: [2.62, 2.45, 2.2, 1.9, 1.55, 1.2, 0.95, 0.8, 0.76], hw: [0.065, 0.1, 0.14, 0.17, 0.2, 0.24, 0.28, 0.3, 0.305], yb: [0.2, 0.2, 0.21, 0.22, 0.22, 0.18, 0.13, 0.11, 0.11], yt: [0.3, 0.35, 0.42, 0.49, 0.56, 0.62, 0.66, 0.68, 0.68] },
+    body: { z: [0.74, 0.4, 0.0, -0.3, -0.6, -0.95, -1.3, -1.78], yTop: [0.68, 0.6, 0.6, 0.78, 0.8, 0.7, 0.55, 0.38], CW: [0.3, 0.3, 0.29, 0.22, 0.2, 0.18, 0.14, 0.09],
+      xc: [0.56, 0.62, 0.62, 0.58, 0.5, 0.4, 0.28, 0.14], yc: [0.49, 0.5, 0.49, 0.46, 0.42, 0.37, 0.32, 0.27], xo: [0.72, 0.78, 0.78, 0.74, 0.65, 0.52, 0.36, 0.2], yo: [0.3, 0.3, 0.3, 0.3, 0.29, 0.28, 0.27, 0.24], yb: 0.11 },
+    open: [[0.9, 0], [0.76, 0], [0.72, 0.16], [0.5, 0.21], [-0.05, 0.21], [-0.18, 0.08], [-0.25, 0], [-0.5, 0]], RIM: 0.6,
+    paint: (part, seg) => (part === 'join' ? 3 : seg === 6 ? 2 : 0), mouthX: 0.33, duct: 0.32,
+  });
+  const { surfY, S } = sk;
+  // the white flash along each pod's side, sweeping back; a white band over the nose's top
+  sk.strip(0.6, -0.75, (z) => (sk.xc(z) + sk.xo(z)) / 2 - 0.01, () => 0.018, MAT.yellow);     // (over the pod's shoulder, above the sponsor)
+  sk.strip(2.3, 0.95, () => 0, (z) => 0.05 + 0.1 * (2.3 - z) / 1.35, MAT.yellow);
   // the little wraparound screen at the front of the opening
   add(new THREE.CylinderGeometry(0.24, 0.24, 0.1, 12, 1, true, -0.95, 1.9).rotateX(-0.3).translate(0, 0.66, 0.52), MAT.glass, false);
   add(box(0.32, 0.05, 0.34, 0, 0.13, 0.08), MAT.seat, false);
@@ -1335,6 +1398,23 @@ export function buildF94Body(car, addPanel) {
   addTo(wings.rear, box(0.98, 0.018, 0.14, 0, 1.01, -2.22, 0.7), MAT.carbon);
   add(box(0.8, 0.02, 0.16, 0, 0.46, -1.95, 0.18), MAT.carbon);
   addTo(wings.rear, box(0.035, 0.45, 0.06, 0, 0.63, -1.98), MAT.carbon);
+  // THE SPONSORS: the tobacco brand (shared with the TTF-88) big on the
+  // pods' sides and across the rear wing, the fuel on the nose, the tyres
+  // and a few small ones as badges alone
+  if (typeof document !== 'undefined') {
+    const main = sponsorDecal('VESPERO', '#ffffff'), fuel = sponsorDecal('SOLVARA', '#ffffff', 768, 256);
+    for (const sx of [1, -1]) {
+      decalOnSkin(car, addPanel, sk, sk.secB, 0.32, -0.62, 4 * S + 1, 5 * S + 2, main, sx);       // (the pod's side, under the white flash)
+      decalOnSkin(car, addPanel, sk, sk.secA, 1.72, 1.12, 3 * S - 1, 4 * S + 1, fuel, sx);        // (the nose's side)
+      decalOnSkin(car, addPanel, sk, sk.secB, -0.95, -1.25, 2 * S, 3 * S, sponsorBadge('QUANTEX'), sx);   // (small ones on the cover's flank)
+      decalOnSkin(car, addPanel, sk, sk.secB, 0.62, 0.42, S, 2 * S - 1, sponsorBadge('NOVIK'), sx);       // (and by the cockpit)
+      const ep = flatDecal(0.36, 0.18, sx * 0.512, 0.8, -2.0, sponsorDecal('VESPERO', '#ffffff', 768, 256)); wings.rear.add(ep);
+      const tp = flatDecal(0.3, 0.1, sx * 0.512, 0.6, -2.02, sponsorDecal('VALCOR', '#ffffff', 768, 256)); wings.rear.add(tp);
+      const fe = flatDecal(0.16, 0.16, sx * 0.785, 0.14, 2.4, sponsorBadge('ORBIXA')); (sx > 0 ? wings.fl : wings.fr).add(fe);
+    }
+    // across the rear wing's top element, read from behind
+    { const rw = flatDecal(0.84, 0.16, 0, 1.012, -2.22, sponsorDecal('VESPERO', '#ffffff'), 'top', 0.7); wings.rear.add(rw); }
+  }
   return { helmet: [helmet, visor, stripe], rainMat: MAT.rain, exhaustMat: MAT.exhaust, mats: MAT, wings, mirrors, driver };
 }
 
