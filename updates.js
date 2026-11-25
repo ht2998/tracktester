@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 163;
+export const BUILD = 164;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 135, date: '25 Nov 2026', title: 'The TTF-05 driver\'s suit',
+    items: [
+      ['Stripes and sponsors on his suit', 'The TTF-05\'s driver now wears a printed suit, as you see when he climbs out: light blue, a pair of yellow lines down the front beside each arm, a navy waistband, AZURA big on his chest and back, HALDEN and ZEPHRA smaller on the front', 'new'],
+    ],
+  },
   {
     id: 134, date: '25 Nov 2026', title: 'Wheels of their year',
     items: [

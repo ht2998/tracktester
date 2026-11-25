@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 78;
+export const BUILD = 79;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -836,6 +836,36 @@ function sponsorBadge(text, ink = '#ffffff', d = 256) {
   const c = document.createElement('canvas'); c.width = d; c.height = d; const g = c.getContext('2d');
   (LOGO[text] || LOGO.NOVIK)(g, d * 0.04, d * 0.04, d * 0.92, ink);
   return sponsorMat(c);
+}
+// A TEAM DRIVER'S SUIT, printed: the material for his chest (wrapped round
+// it: across the picture is round his body, the front at its edges, the
+// back in its middle; up the picture is up him). The TTF-05's: light blue,
+// yellow stripes down the front beside each arm, the tobacco brand big on
+// the chest and the back, the fuel and the title sponsor smaller on the front
+export function suitTorsoMaterial(kind) {
+  if (kind !== 'f05' || typeof document === 'undefined') return null;
+  const W = 1024, H = 512, c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
+  g.fillStyle = '#' + DRIVER_SUITS.f05.suit.toString(16).padStart(6, '0'); g.fillRect(0, 0, W, H);
+  // the yellow stripes: a pair down each side of the front, beside the arms (where they show)
+  g.fillStyle = '#f6c51a';
+  for (const u of [0.175, 0.825]) for (const o of [-0.018, 0.018]) g.fillRect((u + o) * W - 8, 0, 16, H * 0.8);
+  // a navy band at the waist
+  g.fillStyle = '#15214e'; g.fillRect(0, H * 0.8, W, H * 0.06);
+  // (a sponsor drawn into its own picture, then put on the suit centred at u (wrapping round the edge), y down)
+  const put = (name, u, y, w, h, ink) => {
+    const t = document.createElement('canvas'); t.width = 512; t.height = 128; const tg = t.getContext('2d');
+    const d = 128 * 0.8; (LOGO[name] || LOGO.NOVIK)(tg, 6, 12, d, ink);
+    let fs = 70; tg.font = `italic 900 ${fs}px Arial, Helvetica, sans-serif`; while (tg.measureText(name).width > 512 - d - 24 && fs > 20) { fs -= 4; tg.font = `italic 900 ${fs}px Arial, Helvetica, sans-serif`; }
+    tg.fillStyle = ink; tg.textBaseline = 'middle'; tg.fillText(name, d + 18, 66);
+    for (const off of [0, -W, W]) g.drawImage(t, u * W + off - w / 2, y, w, h);
+  };
+  // (up the picture runs up him unevenly: the chest is about 0.4 to 0.55 of the way down it)
+  put('AZURA', 0, H * 0.4, 230, 58, '#ffffff');         // (the chest)
+  put('HALDEN', 0, H * 0.53, 170, 42, '#15214e');       // (under it)
+  put('ZEPHRA', 0, H * 0.63, 150, 38, '#15214e');       // (the belly)
+  put('AZURA', 0.5, H * 0.42, 280, 70, '#ffffff');      // (the back)
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  return new THREE.MeshStandardMaterial({ map: t, roughness: 0.8 });
 }
 // (a decal over part of a swept skin: rows along z0..z1, across the section's points k0..k1, lifted just off it)
 function decalOnSkin(car, addPanel, sk, secOf, z0, z1, k0, k1, mat, sx) {

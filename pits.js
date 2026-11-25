@@ -26,7 +26,7 @@
 // a smashed radiator): the team retire the car. DNF on the standings, and
 // they push it back into the garage.
 // =====================================================================
-export const BUILD = 27;
+export const BUILD = 28;
 
 import * as THREE from 'three';
 
@@ -142,7 +142,7 @@ export class Person {
       }
       g.computeVertexNormals();
       return g;
-    }), suit));
+    }), mats.torso || suit));          // (a team's driver: his suit's chest printed with its stripes and sponsors)
     torso.add(chest);
     // the overalls: a collar round the neck, a zip down the front, a belt
     if (look !== 'driver') {

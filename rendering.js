@@ -39,7 +39,7 @@ import { TuningSheet, withTune, loadTune, BUILD as TUNING_BUILD } from './tuning
 import { CrushFrame, BUILD as SOFTBODY_BUILD } from './softbody.js';
 import { PitStop, SEPANG_PIT, Person as PersonFigure, climbOutKeys, makeAxe, BUILD as PITS_BUILD } from './pits.js';
 import { RaceControl, BUILD as RACECONTROL_BUILD } from './racecontrol.js';
-import { buildF1Body, buildF05Body, bodyForKind, WHEEL_LAYOUT, DRIVER_SUITS, RIM_STYLES, buildF1Cockpit, buildF1RimGeometry, tyreGeometry, F1_CAR, CATERHAM_CAR, ENGINES, withEngine, STOCK_ENGINE, specForKind, BUILD as F1_BUILD } from './f1.js';
+import { buildF1Body, buildF05Body, bodyForKind, WHEEL_LAYOUT, DRIVER_SUITS, RIM_STYLES, suitTorsoMaterial, buildF1Cockpit, buildF1RimGeometry, tyreGeometry, F1_CAR, CATERHAM_CAR, ENGINES, withEngine, STOCK_ENGINE, specForKind, BUILD as F1_BUILD } from './f1.js';
 import * as groundFile from './ground.js';
 import * as tyresFile from './tyres.js';
 import * as cockpitFile from './cockpit.js';
@@ -62,7 +62,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 115;
+const BUILD = 116;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -4466,6 +4466,7 @@ function updateExplosion(dt) {
 const driverMats = {
   look: 'driver',
   suits: [new THREE.MeshStandardMaterial({ color: DRIVER_SUITS[CAR_KIND]?.suit ?? 0xc81d25, roughness: 0.85 })],     // (his team's suit; red in the Caterham)
+  torso: suitTorsoMaterial(CAR_KIND),                     // (the TTF-05's: printed with its stripes and sponsors)
   helmet: new THREE.MeshPhysicalMaterial({ color: 0xf2f2f2, roughness: 0.25, clearcoat: 1 }),
   visor: new THREE.MeshStandardMaterial({ color: 0x111418, metalness: 0.6, roughness: 0.1 }),
   glove: new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.7 }),
