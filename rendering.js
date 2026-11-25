@@ -39,7 +39,7 @@ import { TuningSheet, withTune, loadTune, BUILD as TUNING_BUILD } from './tuning
 import { CrushFrame, BUILD as SOFTBODY_BUILD } from './softbody.js';
 import { PitStop, SEPANG_PIT, Person as PersonFigure, climbOutKeys, makeAxe, BUILD as PITS_BUILD } from './pits.js';
 import { RaceControl, BUILD as RACECONTROL_BUILD } from './racecontrol.js';
-import { buildF1Body, buildF05Body, bodyForKind, WHEEL_LAYOUT, DRIVER_SUITS, buildF1Cockpit, buildF1RimGeometry, tyreGeometry, F1_CAR, CATERHAM_CAR, ENGINES, withEngine, STOCK_ENGINE, specForKind, BUILD as F1_BUILD } from './f1.js';
+import { buildF1Body, buildF05Body, bodyForKind, WHEEL_LAYOUT, DRIVER_SUITS, RIM_STYLES, buildF1Cockpit, buildF1RimGeometry, tyreGeometry, F1_CAR, CATERHAM_CAR, ENGINES, withEngine, STOCK_ENGINE, specForKind, BUILD as F1_BUILD } from './f1.js';
 import * as groundFile from './ground.js';
 import * as tyresFile from './tyres.js';
 import * as cockpitFile from './cockpit.js';
@@ -62,7 +62,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 114;
+const BUILD = 115;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -1170,7 +1170,10 @@ function buildCar() {
   // (a real tyre's shape: rounded shoulders, bulging sidewalls)
   const tyreGeo = tyreGeometry(WHEEL_RADIUS, WHEEL_WIDTH, RIM_R * 0.99);
   // (the TT-05's grooves: painted by the tyre compounds, see tyres.js and the TyreLooks below)
-  const rimGeo = IS_F1 ? buildF1RimGeometry(RIM_R, WHEEL_WIDTH) : buildRimGeometry(RIM_R, WHEEL_WIDTH);
+  // (each TTF on wheels in the style of its own year's: see RIM_STYLES in f1.js)
+  const rimStyle = RIM_STYLES[CAR_KIND];
+  const rimGeo = IS_F1 ? buildF1RimGeometry(RIM_R, WHEEL_WIDTH, rimStyle) : buildRimGeometry(RIM_R, WHEEL_WIDTH);
+  if (rimStyle) MAT.rim.color.setHex(rimStyle.color);
   // (old spokes: kept but hidden, the rim has its own now)
   const spokeGeo = new THREE.BoxGeometry(0.001, 0.001, 0.001);
 

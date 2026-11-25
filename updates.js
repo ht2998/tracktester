@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 162;
+export const BUILD = 163;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 134, date: '25 Nov 2026', title: 'Wheels of their year',
+    items: [
+      ['Each TTF on its own rims', 'Thirteen-inch, in the style of each car\'s year: the TTF-88 on silver magnesium wheels with ten thin straight spokes, the TTF-94 on silver cross-spoked wheels (the spokes crossing in a lattice), the TTF-05 on dark anthracite wheels whose six spokes split in two at the rim', 'new'],
+    ],
+  },
   {
     id: 133, date: '25 Nov 2026', title: 'Team race suits',
     items: [

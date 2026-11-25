@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 77;
+export const BUILD = 78;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -1731,7 +1731,17 @@ export const bodyForKind = (kind) => ({ f05: buildF05Body, f94: buildF94Body, p7
 
 // a plain F1 rim of the time: a shallow dish with six slim spokes and a
 // big single centre nut (r: its radius, w: its width)
-export function buildF1RimGeometry(r, w) {
+// EACH TTF'S WHEELS, in the style of its year's: thirteen-inch, as every
+// car's was then. The TTF-88's after the 1988 magnesium wheels: silver,
+// ten thin straight spokes. The TTF-94's after the 1994 cross-spoked ones:
+// silver, its spokes crossing in a lattice. The TTF-05's: dark anthracite,
+// six spokes, each splitting in two at the rim
+export const RIM_STYLES = {
+  f1: { pattern: 'straight', spokes: 10, color: 0xb9bcc1 },
+  f94: { pattern: 'cross', spokes: 10, color: 0xc7c9cc },
+  f05: { pattern: 'split', spokes: 6, color: 0x2e3035 },
+};
+export function buildF1RimGeometry(r, w, style = { pattern: 'straight', spokes: 6 }) {
   const parts = [
     new THREE.CylinderGeometry(r, r, w * 0.92, 28, 1, true).rotateZ(Math.PI / 2),                 // the barrel
     new THREE.TorusGeometry(r, 0.012, 6, 28).rotateY(Math.PI / 2).translate(w * 0.46, 0, 0),        // its lips
@@ -1739,10 +1749,25 @@ export function buildF1RimGeometry(r, w) {
     new THREE.CylinderGeometry(r * 0.3, r * 0.3, 0.05, 16).rotateZ(Math.PI / 2).translate(w * 0.18, 0, 0),   // the hub
     new THREE.CylinderGeometry(0.045, 0.05, 0.07, 6).rotateZ(Math.PI / 2).translate(w * 0.24, 0, 0),         // the centre nut
   ];
-  for (let k = 0; k < 6; k++) {
-    const a = (k / 6) * Math.PI * 2;
-    const sp = new THREE.BoxGeometry(0.02, r * 0.72, 0.03).translate(0, r * 0.62, 0).rotateX(a).translate(w * 0.16, 0, 0);
-    parts.push(sp);
+  // (a spoke from the hub at angle a0, radius r0 out to the rim at a1, r1; across the wheel's face, at x)
+  const spoke = (a0, r0, a1, r1, t, d, x) => {
+    const y0 = Math.cos(a0) * r0, z0 = Math.sin(a0) * r0, y1 = Math.cos(a1) * r1, z1 = Math.sin(a1) * r1;
+    const L = Math.hypot(y1 - y0, z1 - z0);
+    return new THREE.BoxGeometry(d, L, t).translate(0, L / 2, 0).rotateX(Math.atan2(z1 - z0, y1 - y0)).translate(x, y0, z0);
+  };
+  const n = style.spokes, x = w * 0.16;
+  for (let k = 0; k < n; k++) {
+    const a = (k / n) * Math.PI * 2;
+    if (style.pattern === 'cross') {
+      // (two crossing ways round: one layer leaning forward, one back, a touch apart, so they lattice)
+      parts.push(spoke(a, r * 0.26, a + 0.42, r * 0.97, 0.018, 0.016, x + 0.006), spoke(a, r * 0.26, a - 0.42, r * 0.97, 0.018, 0.016, x - 0.006));
+    } else if (style.pattern === 'split') {
+      // (out from the hub as one, then forking into a Y at the rim)
+      const m = r * 0.62;
+      parts.push(spoke(a, r * 0.26, a, m, 0.04, 0.026, x), spoke(a, m, a + 0.2, r * 0.97, 0.022, 0.022, x), spoke(a, m, a - 0.2, r * 0.97, 0.022, 0.022, x));
+    } else {
+      parts.push(spoke(a, r * 0.26, a, r * 0.97, 0.018, 0.02, x));
+    }
   }
   return mergeAll(parts.map((g) => g.index ? g.toNonIndexed() : g));
 }

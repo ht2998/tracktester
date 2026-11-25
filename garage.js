@@ -7,11 +7,11 @@
 // has several cars dropping down again. Pick one and it fires up: a
 // couple of big revs, then it settles to idle.
 // =====================================================================
-export const BUILD = 13;
+export const BUILD = 14;
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { bodyForKind, WHEEL_LAYOUT, buildF1RimGeometry, tyreGeometry } from './f1.js';
+import { bodyForKind, WHEEL_LAYOUT, buildF1RimGeometry, tyreGeometry, RIM_STYLES } from './f1.js';
 
 // THE COLLECTION. kind: a car you can drive (the rest are coming soon).
 // (made-up names, no real makes)
@@ -284,8 +284,8 @@ export class Garage {
     const car = new THREE.Group();
     bodyForKind(kind)(car, () => {});
     const r = 0.33, tyre = new THREE.MeshStandardMaterial({ color: 0x18181a, roughness: 0.85 });
-    const rimM = new THREE.MeshStandardMaterial({ color: 0xc9ccd0, roughness: 0.3, metalness: 0.85 });
-    const rimGeo = buildF1RimGeometry(r * 0.6, 0.3);
+    const rimM = new THREE.MeshStandardMaterial({ color: RIM_STYLES[kind]?.color ?? 0xc9ccd0, roughness: 0.3, metalness: 0.85 });
+    const rimGeo = buildF1RimGeometry(r * 0.6, 0.3, RIM_STYLES[kind]);
     (WHEEL_LAYOUT[kind] || WHEEL_LAYOUT.f1).forEach(([x, z, w]) => {
       const t = new THREE.Mesh(tyreGeometry(r, w, r * 0.6).rotateZ(-Math.PI / 2), tyre);      // (built round x: turned back to the old upright cylinder's axis, which is turned below)
       t.rotation.z = Math.PI / 2; t.position.set(x, r, z); t.castShadow = true;
@@ -522,6 +522,6 @@ export class Garage {
     this.renderer.render(this.scene, this.camera);
   }
 }
-const THUMB_KEY = 'tracktester-thumb-3-';   // (a new number when a car's looks change)
+const THUMB_KEY = 'tracktester-thumb-4-';   // (a new number when a car's looks change)
 const FAR = new THREE.Vector3(1e5, 0, 1e5);
 const SIZE = new THREE.Vector2();
