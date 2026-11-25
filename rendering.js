@@ -62,7 +62,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 111;
+const BUILD = 112;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -2606,10 +2606,12 @@ const looseWheels = [0, 1, 2, 3].map(() => new LooseWheel(scene, {
   tyreGeo: carModel.tyres.geometry, tyreMat: carModel.tyres.material,
   radius: WHEEL_RADIUS * 0.66, tyreRadius: WHEEL_RADIUS,
 }));
+for (const w of looseWheels) w.wallHit = (a, b, v, r) => wallHit(a, b, v, r, 0.45);
 const ENGINE_BAY = IS_F1 ? new THREE.Vector3(0, 0.55, -0.85) : new THREE.Vector3(0, 0.62, 0.95);   // (the TT-88's engine sits behind the driver)
 
 // Sparks and flying metal when the engine blows
 const debris = new EngineDebris(scene, { maxSparks: isMobile ? 140 : 220, chunkCount: isMobile ? 8 : 12 });
+debris.wallHit = (a, b, v, r) => wallHit(a, b, v, r, 0.3);
 debris.setViewport(renderer.domElement.height, camera.fov);
 let debrisPending = false;
 let bodySparks = 0;   // sparks owed from bodywork scraping the road   // set when the engine blows, fired once the engine bay position is known
@@ -3042,6 +3044,77 @@ let hardestHit = 0;
 let sweptFromX = null, sweptFromZ = null;
 // how tall each kind of barrier is (m): fly higher than that and you clear it
 const BARRIER_TOP = { armco: 0.97, tyres: 0.99, concrete: 1.37, bollard: 0.5, fence: 4, building: 50, tree: 50 };   // (as tall as each is built)
+// BITS OF CAR AND THE BARRIERS: anything flying off a car (a panel, a wing,
+// a wheel, the engine, a chunk of it) stops at a barrier, a wall or a tree
+// instead of passing through it: it bounces back off it, and only clears it
+// if it's flying higher than the top. Checked along the way it went since
+// last time (prev to pos), so a fast one can't skip through between frames.
+// pos and vel are changed in place; r: how big it is. True if it hit.
+const _wp = { x: 0, y: 0, z: 0 };
+// THE CARS, as boxes, for the same: yours and the computer cars. (Only
+// coming at one from outside counts, so a bit breaking off inside a car
+// still flies out; and a car driving into a bit lying there knocks it on.)
+let carBoxTick = 0, carBoxAt = -1, carBoxList = [];          // (worked out once a frame)
+function carBoxes() {
+  if (carBoxAt === carBoxTick) return carBoxList;
+  carBoxAt = carBoxTick; carBoxList = [];
+  // (each car's box: half its length and width, how high it stands, and how fast it's going, in the world)
+  const add = (P, L, W, top) => {
+    const h = P.heading, ux = Math.sin(h), uz = Math.cos(h), vy = P.vy || 0;
+    carBoxList.push({ x: P.x, z: P.z, ux, uz, L, W, top: groundAt(P.x, P.z) + top, sx: P.vx * ux + vy * Math.cos(h), sz: P.vx * uz - vy * Math.sin(h) });
+  };
+  add(physics, heavyMode ? 3.5 : IS_F1 ? 2.45 : 1.75, heavyMode ? 1.7 : 0.92, heavyMode ? 2.4 : IS_F1 ? 0.95 : 1.1);
+  for (const c of aiField?.cars || []) if (!c.parked) add(c.physics, IS_F1 ? 2.45 : 1.75, 0.92, IS_F1 ? 0.95 : 1.1);
+  return carBoxList;
+}
+const inCar = (b, x, z, r) => { const dx = x - b.x, dz = z - b.z, la = dx * b.ux + dz * b.uz, lb = dx * b.uz - dz * b.ux; return Math.abs(la) < b.L + r && Math.abs(lb) < b.W + r ? [la, lb] : null; };
+function wallHit(prev, pos, vel, r = 0.15, bounce = 0.3) {
+  const dx = pos.x - prev.x, dy = pos.y - prev.y, dz = pos.z - prev.z;
+  const steps = Math.min(16, Math.max(1, Math.ceil(Math.hypot(dx, dz) / 0.1)));
+  for (let s = 1; s <= steps; s++) {
+    const t = s / steps;
+    _wp.x = prev.x + dx * t; _wp.y = prev.y + dy * t; _wp.z = prev.z + dz * t;
+    for (const c of collidersNear(_wp.x, _wp.z)) {
+      if (c.kind === 'bollard' || c.minX > 1e5) continue;                   // (a cone gets knocked, not hit like a wall)
+      if (!(_wp.x > c.minX - r && _wp.x < c.maxX + r && _wp.z > c.minZ - r && _wp.z < c.maxZ + r)) continue;
+      const top = groundAt((c.minX + c.maxX) / 2, (c.minZ + c.maxZ) / 2) + (BARRIER_TOP[c.kind] ?? 50);
+      if (_wp.y - r * 0.5 > top) continue;                                   // (over the top of it)
+      let nx, nz, pen;
+      if (c.ob) {
+        const o = c.ob, ax = o.ux, az = o.uz, bx = o.uz, bz = -o.ux;
+        const la = (_wp.x - o.x) * ax + (_wp.z - o.z) * az, lb = (_wp.x - o.x) * bx + (_wp.z - o.z) * bz;
+        const pa = o.hl + r - Math.abs(la), pb = o.hw + r - Math.abs(lb);
+        if (pa <= 0 || pb <= 0) continue;
+        if (pb < pa) { nx = bx * Math.sign(lb || 1); nz = bz * Math.sign(lb || 1); pen = pb; } else { nx = ax * Math.sign(la || 1); nz = az * Math.sign(la || 1); pen = pa; }
+      } else {
+        const f = [[_wp.x - (c.minX - r), -1, 0], [(c.maxX + r) - _wp.x, 1, 0], [_wp.z - (c.minZ - r), 0, -1], [(c.maxZ + r) - _wp.z, 0, 1]];
+        const m = f.reduce((a, b) => (b[0] < a[0] ? b : a)); pen = m[0]; nx = m[1]; nz = m[2];
+      }
+      // out onto the side it came from, and bounced back off it (skidding along it a little)
+      pos.x = _wp.x + nx * (pen + 0.01); pos.y = _wp.y; pos.z = _wp.z + nz * (pen + 0.01);
+      const vn = vel.x * nx + vel.z * nz;
+      if (vn < 0) { vel.x -= (1 + bounce) * vn * nx; vel.z -= (1 + bounce) * vn * nz; vel.x *= 0.75; vel.z *= 0.75; }
+      return true;
+    }
+    // a car
+    for (const b of carBoxes()) {
+      if (_wp.y - r * 0.5 > b.top) continue;
+      const now = inCar(b, _wp.x, _wp.z, r);
+      if (!now) continue;
+      // (where it was a moment ago, against where the car was: inside already means it started there)
+      if (inCar({ ...b, x: b.x - b.sx / 60, z: b.z - b.sz / 60 }, prev.x, prev.z, r)) continue;
+      const [la, lb] = now, pa = b.L + r - Math.abs(la), pb = b.W + r - Math.abs(lb);
+      let nx, nz, pen;
+      if (pb < pa) { const sg = Math.sign(lb || 1); nx = b.uz * sg; nz = -b.ux * sg; pen = pb; } else { const sg = Math.sign(la || 1); nx = b.ux * sg; nz = b.uz * sg; pen = pa; }
+      pos.x = _wp.x + nx * (pen + 0.01); pos.y = _wp.y; pos.z = _wp.z + nz * (pen + 0.01);
+      // bounced off it as off a moving wall: its speed counts
+      const rvx = vel.x - b.sx, rvz = vel.z - b.sz, vn = rvx * nx + rvz * nz;
+      if (vn < 0) { vel.x -= (1 + bounce) * vn * nx; vel.z -= (1 + bounce) * vn * nz; vel.y = Math.max(vel.y, Math.min(4, -vn * 0.25)); }
+      return true;
+    }
+  }
+  return false;
+}
 function collide(now) {
   const toX = physics.x, toZ = physics.z;
   const fromX = sweptFromX, fromZ = sweptFromZ;
@@ -4164,12 +4237,16 @@ function snapWing(part) {
   showToast(part === 'rear' ? 'REAR WING GONE' : 'FRONT WING DAMAGED');
 }
 const _q = new THREE.Quaternion(), _wv = new THREE.Vector3(), _q0 = new THREE.Quaternion(), _fb = new THREE.Box3(), _fa = new THREE.Vector3(), _fc = new THREE.Vector3();
+const _fprev = new THREE.Vector3();
 function updateFlyingParts(dt) {
+  carBoxTick++;
   updateFallingTrees(dt);
   for (const p of flyingParts) {
     if (p.rest) continue;
     p.v.y -= 9.81 * dt;
+    _fprev.copy(p.obj.position);
     p.obj.position.addScaledVector(p.v, dt);
+    if (wallHit(_fprev, p.obj.position, p.v, p.obj === engineBlock ? 0.35 : 0.2, 0.25)) p.w.multiplyScalar(0.7);
     _wv.copy(p.w).multiplyScalar(dt);
     _q.setFromAxisAngle(_wv.clone().normalize(), _wv.length() || 0);
     if (_wv.lengthSq() > 0) p.obj.quaternion.premultiply(_q);

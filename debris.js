@@ -19,7 +19,7 @@ function slopeAt(x, z) {
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 4;
+export const BUILD = 5;
 
 const GRAVITY = 9.81;
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -490,7 +490,10 @@ export class EngineDebris {
     const floor = ground + (p.settling ? p.restHeight : p.radius);
     const onGround = p.pos.y <= floor + 0.002;
     p.vel.y -= GRAVITY * dt;
+    const px = p.pos.x, py = p.pos.y, pz = p.pos.z;
     p.pos.addScaledVector(p.vel, dt);
+    // (a barrier in the way: it bounces back off it, not through it)
+    this.wallHit?.({ x: px, y: py, z: pz }, p.pos, p.vel, p.radius || 0.08);
 
     // Hit the ground: bounce, losing energy each time
     if (p.pos.y < floor) {

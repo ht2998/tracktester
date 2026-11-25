@@ -14,7 +14,7 @@ import { groundAt } from './ground.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 5;
+export const BUILD = 6;
 
 const rand = (a, b) => a + Math.random() * (b - a);
 
@@ -249,10 +249,16 @@ export class LooseWheel {
     const sp2 = Math.hypot(this.vx, this.vz);
     const k = sp2 > 1e-6 ? Math.max(0, sp2 - slow * dt) / sp2 : 0;
     this.vx *= k; this.vz *= k;
+    const px = this.x, py = this.y, pz = this.z;
     this.x += this.vx * dt; this.z += this.vz * dt;
     // Hops and bounces
     this.vy -= 9.81 * dt;
     this.y += this.vy * dt;
+    // (a barrier in the way: it bounces back off it, not through it)
+    if (this.wallHit) {
+      const P = { x: this.x, y: this.y, z: this.z }, V = { x: this.vx, y: this.vy, z: this.vz };
+      if (this.wallHit({ x: px, y: py, z: pz }, P, V, r)) { this.x = P.x; this.z = P.z; this.vx = V.x; this.vz = V.z; this.leanSpeed += 0.6; }
+    }
     const restY = groundAt(this.x, this.z) + r * Math.cos(this.lean) + (this.tyreOn ? 0.17 : 0.1) * this.scale * Math.sin(this.lean);   // lying flat: half its width up
     // the bounce: a tyre full of air springs back up, a flat one barely, a bare rim a little
     const e = this.tyreOn ? 0.12 + 0.5 * this.pressure : 0.35;
