@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 161;
+export const BUILD = 162;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 133, date: '25 Nov 2026', title: 'Team race suits',
+    items: [
+      ['Drivers in their team\'s colours', 'Each TTF\'s driver now wears his team\'s suit, in the cockpit, in the Garage and when he climbs out: white with red for the TTF-88, red with white for the TTF-94, light blue with yellow for the TTF-05', 'new'],
+    ],
+  },
   {
     id: 132, date: '25 Nov 2026', title: 'New liveries for the TTFs',
     items: [

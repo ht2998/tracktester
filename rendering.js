@@ -39,7 +39,7 @@ import { TuningSheet, withTune, loadTune, BUILD as TUNING_BUILD } from './tuning
 import { CrushFrame, BUILD as SOFTBODY_BUILD } from './softbody.js';
 import { PitStop, SEPANG_PIT, Person as PersonFigure, climbOutKeys, makeAxe, BUILD as PITS_BUILD } from './pits.js';
 import { RaceControl, BUILD as RACECONTROL_BUILD } from './racecontrol.js';
-import { buildF1Body, buildF05Body, bodyForKind, WHEEL_LAYOUT, buildF1Cockpit, buildF1RimGeometry, tyreGeometry, F1_CAR, CATERHAM_CAR, ENGINES, withEngine, STOCK_ENGINE, specForKind, BUILD as F1_BUILD } from './f1.js';
+import { buildF1Body, buildF05Body, bodyForKind, WHEEL_LAYOUT, DRIVER_SUITS, buildF1Cockpit, buildF1RimGeometry, tyreGeometry, F1_CAR, CATERHAM_CAR, ENGINES, withEngine, STOCK_ENGINE, specForKind, BUILD as F1_BUILD } from './f1.js';
 import * as groundFile from './ground.js';
 import * as tyresFile from './tyres.js';
 import * as cockpitFile from './cockpit.js';
@@ -62,7 +62,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 113;
+const BUILD = 114;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -1215,7 +1215,7 @@ const cockpit = new Cockpit(carModel.car, MAT, { isMobile, redline: CATERHAM.red
 if (IS_F1) cockpit.group.visible = false;   // (the TT-88 has its own cockpit:)
 // THE TT-88's COCKPIT (f1.js): the wheel, the lever on the right, the
 // driver's arms fighting the car, his head thrown about
-const f1Cockpit = IS_F1 ? buildF1Cockpit(carModel.car, { paddles: PADDLES, ...(IS_F05 ? { wheelTilt: 0 } : {}) }) : null;
+const f1Cockpit = IS_F1 ? buildF1Cockpit(carModel.car, { paddles: PADDLES, ...(IS_F05 ? { wheelTilt: 0 } : {}), ...(DRIVER_SUITS[CAR_KIND] ? { suit: DRIVER_SUITS[CAR_KIND].suit } : {}) }) : null;
 // (the TTP-70's driver sits on the right, further back and a little higher)
 if (CLOSED_RHD && f1Cockpit) f1Cockpit.group.position.set(-0.27, -0.04, IS_P91 ? -0.29 : -0.24);     // (the TT-05 changes gear on paddles)
 const washerBody = WASHER ? buildWasher(carModel.car) : null;
@@ -4462,7 +4462,7 @@ function updateExplosion(dt) {
 // Blown up with him still in it: he doesn't make it.
 const driverMats = {
   look: 'driver',
-  suits: [new THREE.MeshStandardMaterial({ color: 0xc81d25, roughness: 0.85 })],
+  suits: [new THREE.MeshStandardMaterial({ color: DRIVER_SUITS[CAR_KIND]?.suit ?? 0xc81d25, roughness: 0.85 })],     // (his team's suit; red in the Caterham)
   helmet: new THREE.MeshPhysicalMaterial({ color: 0xf2f2f2, roughness: 0.25, clearcoat: 1 }),
   visor: new THREE.MeshStandardMaterial({ color: 0x111418, metalness: 0.6, roughness: 0.1 }),
   glove: new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.7 }),

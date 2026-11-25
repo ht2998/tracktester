@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 75;
+export const BUILD = 76;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -271,6 +271,14 @@ export const P91_CAR = {
 export const STOCK_ENGINE = { caterham: 'duratec', f1: 'turboV6', f05: 'v10x', f94: 'v12', p70: 'flat12', p91: 'rotary4' };
 export const specForKind = (kind) => ({ f05: F05_CAR, f94: F94_CAR, p70: P70_CAR, p91: P91_CAR, f1: F1_CAR }[kind] || CATERHAM_CAR);
 // where each single-seater's wheels are: [x, z, width] (left, right; front then back)
+// THE DRIVERS' RACE SUITS: in each team's colours (suit, and the trim on
+// his helmet): white and red for the TTF-88, red and white for the TTF-94,
+// light blue and yellow for the TTF-05
+export const DRIVER_SUITS = {
+  f1: { suit: 0xf2f2ee, trim: 0xe0231b },
+  f94: { suit: 0xc8141c, trim: 0xf4f4f0 },
+  f05: { suit: 0x3aa6e6, trim: 0xf6c51a },
+};
 export const WHEEL_LAYOUT = {
   f1: [[0.88, 1.62, 0.3], [-0.88, 1.62, 0.3], [0.88, -1.28, 0.42], [-0.88, -1.28, 0.42]],
   f05: [[0.73, 1.67, 0.28], [-0.73, 1.67, 0.28], [0.73, -1.43, 0.35], [-0.73, -1.43, 0.35]],
@@ -493,7 +501,7 @@ export function buildF1Body(car, addPanel) {
     rain: new THREE.MeshStandardMaterial({ color: 0x4a0a0a, emissive: 0xff1a10, emissiveIntensity: 0 }),
   };
   MAT.seat = new THREE.MeshStandardMaterial({ color: 0x24262c, roughness: 0.9 });   // (the seat and the cockpit's padded rim)
-  MAT.suit = new THREE.MeshStandardMaterial({ color: 0xd8231c, roughness: 0.8 });   // (the driver's overalls)
+  MAT.suit = new THREE.MeshStandardMaterial({ color: DRIVER_SUITS.f1.suit, roughness: 0.8 });   // (the driver's overalls: the team's)
   MAT.dark = new THREE.MeshStandardMaterial({ color: 0x050506, roughness: 0.8, side: THREE.DoubleSide });
   const add = (geo, mat, shadow = true) => {
     const m = new THREE.Mesh(geo, mat); m.castShadow = shadow; m.receiveShadow = true; car.add(m);
@@ -884,7 +892,7 @@ export function buildF05Body(car, addPanel) {
     exhaust: new THREE.MeshStandardMaterial({ color: 0x5a4a40, roughness: 0.5, metalness: 0.8, emissive: 0xff5a10, emissiveIntensity: 0 }),
     rain: new THREE.MeshStandardMaterial({ color: 0x4a0a0a, emissive: 0xff1a10, emissiveIntensity: 0 }),
     seat: new THREE.MeshStandardMaterial({ color: 0x24262c, roughness: 0.9 }),
-    suit: new THREE.MeshStandardMaterial({ color: 0x1f4fa6, roughness: 0.8 }),
+    suit: new THREE.MeshStandardMaterial({ color: DRIVER_SUITS.f05.suit, roughness: 0.8 }),
     dark: new THREE.MeshStandardMaterial({ color: 0x050506, roughness: 0.8, side: THREE.DoubleSide }),
     camera: new THREE.MeshStandardMaterial({ color: 0xe8461a, roughness: 0.4 }),
   };
@@ -1307,7 +1315,7 @@ export function buildF94Body(car, addPanel) {
     exhaust: new THREE.MeshStandardMaterial({ color: 0x5a4a40, roughness: 0.5, metalness: 0.8, emissive: 0xff5a10, emissiveIntensity: 0 }),
     rain: new THREE.MeshStandardMaterial({ color: 0x4a0a0a, emissive: 0xff1a10, emissiveIntensity: 0 }),
     seat: new THREE.MeshStandardMaterial({ color: 0x24262c, roughness: 0.9 }),
-    suit: new THREE.MeshStandardMaterial({ color: 0xb8121b, roughness: 0.8 }),
+    suit: new THREE.MeshStandardMaterial({ color: DRIVER_SUITS.f94.suit, roughness: 0.8 }),
     dark: new THREE.MeshStandardMaterial({ color: 0x050506, roughness: 0.8 }),
   };
   const add = (geo, mat, shadow = true) => {
@@ -1350,7 +1358,7 @@ export function buildF94Body(car, addPanel) {
   dAdd(new THREE.BoxGeometry(0.25, 0.12, 0.03).rotateX(-0.45).translate(0, 0.56, 0.46), MAT.carbon);
   const helmet = add(new THREE.SphereGeometry(0.135, 20, 16).scale(1, 1.05, 1.1).translate(0, 0.71, -0.03), MAT.helmet);
   const visor = add(new THREE.SphereGeometry(0.137, 20, 10, -0.9 + Math.PI / 2, 1.8, 1.1, 0.5).scale(1, 1.05, 1.1).translate(0, 0.71, -0.03), MAT.visor);
-  const stripe = add(new THREE.TorusGeometry(0.135, 0.012, 6, 24, Math.PI).rotateY(Math.PI / 2).rotateZ(Math.PI / 2).scale(1, 1.05, 1.1).translate(0, 0.71, -0.03), MAT.blue);
+  const stripe = add(new THREE.TorusGeometry(0.135, 0.012, 6, 24, Math.PI).rotateY(Math.PI / 2).rotateZ(Math.PI / 2).scale(1, 1.05, 1.1).translate(0, 0.71, -0.03), MAT.yellow);   // (white, like his suit's trim)
   const mirrors = {};
   for (const s of [1, -1]) {
     const stalk = add(rod([s * 0.32, 0.56, 0.5], [s * 0.46, 0.63, 0.52], 0.01), MAT.carbon);
@@ -1930,14 +1938,14 @@ export function buildF1() {
 // and harder it's going and over bumps), the right hand going to the lever
 // for every gear change. His head is shaken about with it (the camera).
 // =====================================================================
-export function buildF1Cockpit(car, { paddles = false, wheelTilt = -0.5 } = {}) {
+export function buildF1Cockpit(car, { paddles = false, wheelTilt = -0.5, suit = 0xc81d25 } = {}) {
   const group = new THREE.Group();
   car.add(group);
   const M = {
     carbon: new THREE.MeshStandardMaterial({ color: 0x15161a, roughness: 0.45, metalness: 0.3 }),
     pad: new THREE.MeshStandardMaterial({ color: 0x23252b, roughness: 0.95 }),
-    // (dressed as the Caterham's driver: red race suit, black gloves)
-    suit: new THREE.MeshStandardMaterial({ color: 0xc81d25, roughness: 0.85 }),
+    // (his race suit: the team's colours (red, as the Caterham's driver, if none), black gloves)
+    suit: new THREE.MeshStandardMaterial({ color: suit, roughness: 0.85 }),
     glove: new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.7 }),
     grip: new THREE.MeshStandardMaterial({ color: 0x18181a, roughness: 0.9 }),
     steel: new THREE.MeshStandardMaterial({ color: 0x9a9da3, roughness: 0.3, metalness: 0.9 }),
