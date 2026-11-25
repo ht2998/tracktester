@@ -21,11 +21,19 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 168;
+export const BUILD = 169;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 139, date: '25 Nov 2026', title: 'TTF-05 suit and helmet',
+    items: [
+      ['A proper team suit', 'The TTF-05\'s driver wears a new suit, as you see when he climbs out: sky blue, dark navy down each side, yellow panels on the shoulders and a yellow band across the back under his number. TELESPEED is big across his belly; ELX, VALCOR and KORVANE are on one side of his chest, the team\'s own badge, FLORO and TEMPRA on the other; the team name and KORVANE are on his back', 'new'],
+      ['His helmet', 'A rounder helmet with a chin guard and a little lip at the back, painted in his colours: a blue crown with PURE SPIRIT across the brow, a red band round the middle with a yellow stripe through it, a pale blue chequer below and a yellow rim. The visor is tinted gold', 'new'],
+      ['New sponsors', 'Three new names: LEASEWAY (leasing), FLORO (fashion) and TEMPRA (watches). On the car, KORVANE is now on the nose, TEMPRA by the cockpit, FLORO on the pods, TELESPEED on the front wing\'s endplates, and the team\'s badge on the engine cover. PURE SPIRIT on the nose is bigger and runs right up to its badge', 'new'],
+    ],
+  },
   {
     id: 138, date: '25 Nov 2026', title: 'TTF-05 gills and winglets',
     items: [
