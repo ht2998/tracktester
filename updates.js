@@ -21,11 +21,20 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 169;
+export const BUILD = 170;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 140, date: '25 Nov 2026', title: 'The TTF-94, measured',
+    items: [
+      ['A truer shape', 'The TTF-94\'s body is now shaped from measurements of the real 1994 car, taken at 100 points from the nose to the gearbox: a taller nose, the cockpit set further forward, the airbox rising straight up behind the driver\'s head as part of the bodywork, and sidepods with flat tops and sharp edges that start further forward with raked, dark mouths, and tuck in underneath toward the back', 'new'],
+      ['Sat further forward', 'The driver sits 45 cm further forward, where the real car has him: the in-car view, the T-cam and the bonnet camera have moved with him', 'new'],
+      ['Its real colours', 'All red, as the real car: no white flashes. The front wing is black with a yellow stripe; the rear wing\'s endplates are white over black. VESPERO runs along the engine cover, SOLVARA is on the nose and low on the pods, ARDENTA on the pods\' sides', 'new'],
+      ['Sponsors in shape', 'Sponsors laid on the bodywork of the TTF-94 and TTF-88 are now drawn to the shape of the panel they sit on, so none of them are stretched', 'new'],
+    ],
+  },
   {
     id: 139, date: '25 Nov 2026', title: 'TTF-05 suit and helmet',
     items: [

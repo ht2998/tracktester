@@ -39,7 +39,7 @@ import { TuningSheet, withTune, loadTune, BUILD as TUNING_BUILD } from './tuning
 import { CrushFrame, BUILD as SOFTBODY_BUILD } from './softbody.js';
 import { PitStop, SEPANG_PIT, Person as PersonFigure, climbOutKeys, makeAxe, BUILD as PITS_BUILD } from './pits.js';
 import { RaceControl, BUILD as RACECONTROL_BUILD } from './racecontrol.js';
-import { buildF1Body, buildF05Body, bodyForKind, WHEEL_LAYOUT, DRIVER_SUITS, RIM_STYLES, suitTorsoMaterial, helmetMaterial, buildF1Cockpit, buildF1RimGeometry, tyreGeometry, F1_CAR, CATERHAM_CAR, ENGINES, withEngine, STOCK_ENGINE, specForKind, BUILD as F1_BUILD } from './f1.js';
+import { buildF1Body, buildF05Body, bodyForKind, WHEEL_LAYOUT, DRIVER_SUITS, RIM_STYLES, suitTorsoMaterial, helmetMaterial, F94_DRIVER_DZ, buildF1Cockpit, buildF1RimGeometry, tyreGeometry, F1_CAR, CATERHAM_CAR, ENGINES, withEngine, STOCK_ENGINE, specForKind, BUILD as F1_BUILD } from './f1.js';
 import * as groundFile from './ground.js';
 import * as tyresFile from './tyres.js';
 import * as cockpitFile from './cockpit.js';
@@ -62,7 +62,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 117;
+const BUILD = 118;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -1220,7 +1220,8 @@ if (IS_F1) cockpit.group.visible = false;   // (the TT-88 has its own cockpit:)
 // driver's arms fighting the car, his head thrown about
 const f1Cockpit = IS_F1 ? buildF1Cockpit(carModel.car, { paddles: PADDLES, ...(IS_F05 ? { wheelTilt: 0 } : {}), ...(DRIVER_SUITS[CAR_KIND] ? { suit: DRIVER_SUITS[CAR_KIND].suit } : {}) }) : null;
 // (the TTP-70's driver sits on the right, further back and a little higher)
-if (CLOSED_RHD && f1Cockpit) f1Cockpit.group.position.set(-0.27, -0.04, IS_P91 ? -0.29 : -0.24);     // (the TT-05 changes gear on paddles)
+if (CLOSED_RHD && f1Cockpit) f1Cockpit.group.position.set(-0.27, -0.04, IS_P91 ? -0.29 : -0.24);
+if (IS_F94 && f1Cockpit) f1Cockpit.group.position.z = F94_DRIVER_DZ;     // (the TTF-94's driver sits further forward, as the real car's)     // (the TT-05 changes gear on paddles)
 const washerBody = WASHER ? buildWasher(carModel.car) : null;
 // (your TT-88's driver moves with the cockpit's own body and arms: the body's still one is for other cars)
 if (f1Cockpit && carModel.car.userData.f1?.driver) carModel.car.userData.f1.driver.visible = false;
@@ -4126,6 +4127,11 @@ const F1_VIEWS = CLOSED_RHD ? {
   bonnet: { spot: new THREE.Vector3(0, 0.67, 1.67), pitch: -0.07 },
   cockpit: { spot: new THREE.Vector3(0, 0.88, 0.02), pitch: -0.27 },
   tcam: { spot: new THREE.Vector3(0, 1.1, -0.5), pitch: -0.1 },
+} : IS_F94 ? {
+  // (the TTF-94: him sat further forward, the nose taller; the T-cam on the airbox's top)
+  bonnet: { spot: new THREE.Vector3(0, 0.82, 1.4), pitch: -0.07 },
+  cockpit: { spot: new THREE.Vector3(0, 0.9, 0.02 + F94_DRIVER_DZ), pitch: -0.27 },
+  tcam: { spot: new THREE.Vector3(0, 1.13, -0.05), pitch: -0.1 },
 } : {
   bonnet: { spot: new THREE.Vector3(0, 0.62, 0.95), pitch: -0.06 },
   cockpit: { spot: new THREE.Vector3(0, 0.88, 0.02), pitch: -0.27 },     // (his eye well above the cockpit's sides, as a real driver's is)
@@ -4535,7 +4541,7 @@ function updateDriverEscape(dt) {
   if (bigHitT > 0.5) bigHitDone = false;
   if (!driverOut && how) {
     // out on the side away from the track
-    const seat = carModel.car.localToWorld(new THREE.Vector3(IS_F1 ? 0 : -0.18, 0, IS_F1 ? -0.1 : -0.45));
+    const seat = carModel.car.localToWorld(new THREE.Vector3(IS_F1 ? 0 : -0.18, 0, IS_F1 ? -0.1 + (IS_F94 ? F94_DRIVER_DZ : 0) : -0.45));
     const person = new PersonFigure(driverMats, 0);
     scene.add(person.root);
     let ax = Math.cos(physics.heading), az = -Math.sin(physics.heading);    // (the car's left)
