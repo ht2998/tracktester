@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 158;
+export const BUILD = 159;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 130, date: '25 Nov 2026', title: 'Tuning',
+    items: [
+      ['Tuning, like GT7', 'A Tuning button in the Garage, beside Change car, opens the car\'s settings sheet: tyres; body height, anti-roll bars, compression and rebound damping, spring frequency, camber and toe, front and rear; the limited-slip diff (initial torque, acceleration and braking sensitivity); downforce front and rear on cars with wings; engine output and a power restrictor; ballast and where it sits; brake balance; and every gear ratio and the final gear. Changes go on the car at once, the power, weight and top speed shown as you go, and they\'re kept for each car. Reset to stock puts it back as built', 'new'],
+    ],
+  },
   {
     id: 129, date: '25 Nov 2026', title: 'Limp when knocked flying',
     items: [

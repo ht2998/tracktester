@@ -35,7 +35,8 @@ import { setGround, groundAt, lieOnGround } from './ground.js';
 import * as packFile from './assets.js';
 import { AIField, BUILD as AI_BUILD } from './ai.js';
 import { Garage, BUILD as GARAGE_BUILD } from './garage.js';
-import { CrushFrame } from './softbody.js';
+import { TuningSheet, withTune, loadTune, BUILD as TUNING_BUILD } from './tuning.js';
+import { CrushFrame, BUILD as SOFTBODY_BUILD } from './softbody.js';
 import { PitStop, SEPANG_PIT, Person as PersonFigure, climbOutKeys, makeAxe, BUILD as PITS_BUILD } from './pits.js';
 import { RaceControl, BUILD as RACECONTROL_BUILD } from './racecontrol.js';
 import { buildF1Body, buildF05Body, bodyForKind, WHEEL_LAYOUT, buildF1Cockpit, buildF1RimGeometry, tyreGeometry, F1_CAR, CATERHAM_CAR, ENGINES, withEngine, STOCK_ENGINE, specForKind, BUILD as F1_BUILD } from './f1.js';
@@ -61,7 +62,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 106;
+const BUILD = 107;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -70,7 +71,7 @@ const updateScreen = startUpdates({
   'smoke.js': smokeFile.BUILD, 'hud.js': hudFile.BUILD, 'oil.js': oilFile.BUILD,
   'skids.js': skidsFile.BUILD, 'scenery.js': sceneryFile.BUILD, 'grass.js': grassFile.BUILD,
   'sky.js': skyFile.BUILD, 'debris.js': debrisFile.BUILD, 'touch.js': touchFile.BUILD,
-  'rain.js': rainFile.BUILD, 'effects.js': effectsFile.BUILD, 'cockpit.js': cockpitFile.BUILD, 'tyres.js': tyresFile.BUILD, 'sepang.js': sepangFile.BUILD, 'flora.js': floraFile.BUILD, 'racingline.js': racingLineFile.BUILD, 'ground.js': groundFile.BUILD, 'assets.js': packFile.BUILD, 'ai.js': AI_BUILD, 'f1.js': F1_BUILD, 'garage.js': GARAGE_BUILD, 'pits.js': PITS_BUILD, 'trackside.js': TRACKSIDE_BUILD, 'racecontrol.js': RACECONTROL_BUILD,
+  'rain.js': rainFile.BUILD, 'effects.js': effectsFile.BUILD, 'cockpit.js': cockpitFile.BUILD, 'tyres.js': tyresFile.BUILD, 'sepang.js': sepangFile.BUILD, 'flora.js': floraFile.BUILD, 'racingline.js': racingLineFile.BUILD, 'ground.js': groundFile.BUILD, 'assets.js': packFile.BUILD, 'ai.js': AI_BUILD, 'f1.js': F1_BUILD, 'garage.js': GARAGE_BUILD, 'tuning.js': TUNING_BUILD, 'softbody.js': SOFTBODY_BUILD, 'pits.js': PITS_BUILD, 'trackside.js': TRACKSIDE_BUILD, 'racecontrol.js': RACECONTROL_BUILD,
 });
 
 // ---------------------------------------------------------------------
@@ -4041,6 +4042,16 @@ const F1_VIEWS = CLOSED_RHD ? {
   tcam: { spot: new THREE.Vector3(0, 0.98, -0.32), pitch: -0.08 },
 };
 let carKind = CAR_KIND, engineKey = STOCK_ENGINE[CAR_KIND];
+// the car's physics: as built, with its engine, then the tuning sheet's settings on top
+function buildSpec() { return washerTuned(withTune(withEngine(specForKind(carKind), engineKey), loadTune(carKind))); }
+// the tuning sheet changed something: on the car at once, wherever it is
+function retune() {
+  physics.spec = buildSpec();
+  engineSound.setSpec?.(physics.spec);
+  racing?.setCar(physics.spec);
+  { let w = 0; for (const [r, nm] of physics.spec.torqueCurve) w = Math.max(w, nm * r * Math.PI / 30); setThrottleFeel(w / 745.7 / (physics.spec.mass / 1000)); }
+  if (garage?.isOpen) garage.showCar(physics.spec);
+}
 refreshEngineList();
 // The side panel's engine list: every engine, except the other vehicle's
 // own until the pack's been opened
@@ -4063,7 +4074,7 @@ function setCar(kind, engine) {
   carKind = kind;
   engineKey = key;
   refreshEngineList();
-  physics.spec = washerTuned(withEngine(specForKind(carKind), engineKey));
+  physics.spec = buildSpec();
   const x = physics.x, z = physics.z, h = physics.heading;
   repairAll();
   physics.x = x; physics.z = z; physics.heading = h;
@@ -4956,7 +4967,7 @@ const aiField = racing ? new AIField(scene, {
 {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem('tracktester-car') || 'null'); } catch (e) { /* storage blocked */ }
-  if (IS_F1 || (saved && saved.engine && saved.engine !== STOCK_ENGINE.caterham)) { setCar(CAR_KIND, saved?.engine); placeAtStart(); }
+  if (IS_F1 || (saved && saved.engine && saved.engine !== STOCK_ENGINE.caterham) || Object.keys(loadTune(CAR_KIND)).length) { setCar(CAR_KIND, saved?.engine); placeAtStart(); }
 }
 
 // THE GARAGE (garage.js): a studio away from the track with your car on a
@@ -4971,6 +4982,13 @@ const garage = new Garage({
     try { localStorage.setItem('tracktester-garage', '1'); } catch (e) { /* storage blocked */ }
     setCar(kind, STOCK_ENGINE[kind]);
   },
+  // TUNING: the settings sheet, beside Change car
+  onTune: (name) => tuning.open(withEngine(specForKind(carKind), engineKey), carKind, name),
+});
+const tuning = new TuningSheet({
+  onChange: () => retune(),
+  onTyres: (id) => { physics.setTyres(id); tyreLooks.apply(id); },
+  tyre: () => physics.tyreCompound,
 });
 let garageOnStart = 0;
 

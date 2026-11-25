@@ -7,7 +7,7 @@
 // has several cars dropping down again. Pick one and it fires up: a
 // couple of big revs, then it settles to idle.
 // =====================================================================
-export const BUILD = 9;
+export const BUILD = 10;
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -62,10 +62,11 @@ export const CAR_INFO = {
 };
 
 const KEY_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="12" r="4"/><circle cx="7.5" cy="12" r="1.2"/><path d="M11.5 12H21M17.5 12v3M20.5 12v2.4"/></svg>';
+const TUNE_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M5 4v16M12 4v16M19 4v16"/><circle cx="5" cy="9" r="2.2" fill="#15171a"/><circle cx="12" cy="15" r="2.2" fill="#15171a"/><circle cx="19" cy="7" r="2.2" fill="#15171a"/></svg>';
 const CAR_SILHOUETTE = '<svg viewBox="0 0 160 100" width="100%" height="100%"><path d="M18 66c6-12 22-20 40-22l18-12c8-5 26-6 40-2 10 3 18 10 24 18 6 1 12 5 13 11v8c0 3-2 5-5 5H24c-4 0-7-3-6-6z" fill="rgba(255,255,255,0.08)"/><circle cx="48" cy="72" r="10" fill="rgba(255,255,255,0.1)"/><circle cx="122" cy="72" r="10" fill="rgba(255,255,255,0.1)"/></svg>';
 
 const CSS = `
-body.in-garage > *:not(#garage):not(#game):not(canvas):not(style):not(script) { visibility: hidden !important; }
+body.in-garage > *:not(#garage):not(#tune):not(#game):not(canvas):not(style):not(script) { visibility: hidden !important; }
 #garage { position: fixed; inset: 0; z-index: 90; display: none; pointer-events: none; color: #eef0f3;
   font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
 #garage.on { display: block; }
@@ -92,6 +93,7 @@ body.in-garage > *:not(#garage):not(#game):not(canvas):not(style):not(script) { 
   border: 1px solid rgba(255,255,255,0.14); background: rgba(18, 22, 28, 0.72); font-size: 14px; font-weight: 600; letter-spacing: 0.06em;
   backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); transition: background 150ms, border-color 150ms; }
 #garage .g-btn:hover { background: rgba(34, 40, 50, 0.85); border-color: rgba(255,255,255,0.3); }
+#garage .g-mid { display: inline-flex; gap: 12px; }
 #garage .g-btn.go { background: #e5b53d; color: #15171a; border-color: #e5b53d; }
 #garage .g-btn.go:hover { background: #f0c552; }
 #garage .g-hint { position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%); font-size: 11px; letter-spacing: 0.2em; color: #7b8490; pointer-events: none; }
@@ -139,6 +141,7 @@ body.in-garage > *:not(#garage):not(#game):not(canvas):not(style):not(script) { 
   #garage .g-row span:last-child { text-align: left; }
   #garage .g-bar { left: 12px; right: 12px; bottom: 14px; }
   #garage .g-btn { padding: 11px 14px; font-size: 13px; }
+  #garage .g-mid { gap: 8px; } #garage .g-bar { gap: 8px; } #garage .g-mid .g-btn svg { display: none; }
   #garage .g-hint { display: none; }
   #garage .g-pick-head { padding: 14px 16px 6px; }
   #garage .g-cats { padding: 8px 16px 16px; }
@@ -152,8 +155,8 @@ export class Garage {
   // for reflections; getModel(): the car you're in, ready to copy;
   // kind / spec: what you're in; unlocked(kind): whether a hidden car shows;
   // onDrive(): back to the track; onPick(kind): fit another car
-  constructor({ renderer, sound, env, getModel, kind, unlocked, onDrive, onPick, isMobile = false }) {
-    Object.assign(this, { renderer, sound, getModel, kind, unlocked: unlocked || (() => false), onDrive, onPick, isMobile });
+  constructor({ renderer, sound, env, getModel, kind, unlocked, onDrive, onPick, onTune, isMobile = false }) {
+    Object.assign(this, { renderer, sound, getModel, kind, unlocked: unlocked || (() => false), onDrive, onPick, onTune, isMobile });
     this.isOpen = false;
     this.thumbs = {};
     this.time = 0;
@@ -336,10 +339,11 @@ export class Garage {
       <div class="g-title"><div class="g-eyebrow">GARAGE</div><div class="g-name"></div><div class="g-sub"></div><div class="g-rule"></div></div>
       <div class="g-stats"></div>
       <div class="g-hint">DRAG TO LOOK AROUND</div>
-      <div class="g-bar"><label class="g-btn g-clear"><input type="checkbox"> Clear</label><button class="g-btn g-change" type="button">${KEY_ICON}Change car</button><button class="g-btn go g-drive" type="button">Drive &#9656;</button></div>
+      <div class="g-bar"><label class="g-btn g-clear"><input type="checkbox"> Clear</label><span class="g-mid"><button class="g-btn g-tune" type="button">${TUNE_ICON}Tuning</button><button class="g-btn g-change" type="button">${KEY_ICON}Change car</button></span><button class="g-btn go g-drive" type="button">Drive &#9656;</button></div>
       <div class="g-pick"><div class="g-pick-head"><h2>${KEY_ICON}Change car</h2><button class="g-close" type="button" aria-label="Close">&times;</button></div><div class="g-cats"></div></div>`;
     document.body.appendChild(root);
     root.querySelector('.g-change').addEventListener('click', () => this.openPicker());
+    root.querySelector('.g-tune').addEventListener('click', () => this.onTune?.((CAR_INFO[this.kind] || {}).name || this.kind));
     // CLEAR / SOLID: the bodywork see-through, to show the chassis, the cockpit and the engine inside
     const clear = root.querySelector('.g-clear input');
     clear.addEventListener('change', () => { this.setClear(clear.checked); clear.blur(); });

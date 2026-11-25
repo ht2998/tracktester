@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 27;
+export const BUILD = 28;
 
 const G = 9.81;   // gravity, m/s²
 const RPM_PER_RADS = 60 / (2 * Math.PI);
@@ -732,7 +732,9 @@ export class CarPhysics {
       else {
         const knee = 0.3, dv = rate;
         const damp = Math.abs(dv) < knee ? dv : Math.sign(dv) * (knee + 0.5 * (Math.abs(dv) - knee));
-        let f = (i < 2 ? staticF : staticR) + (i < 2 ? susp.springFront : susp.springRear) * comp + (i < 2 ? susp.damperFront : susp.damperRear) * damp;
+        // (squashing: the compression damping; stretching back out: the rebound, if it's set apart)
+        const dc = i < 2 ? (dv >= 0 ? susp.damperFront : susp.reboundFront ?? susp.damperFront) : (dv >= 0 ? susp.damperRear : susp.reboundRear ?? susp.damperRear);
+        let f = (i < 2 ? staticF : staticR) + (i < 2 ? susp.springFront : susp.springRear) * comp + dc * damp;
         if (comp > susp.bumpStop) f += susp.bumpStopRate * (comp - susp.bumpStop);
         // (a tyre and its bump rubber can only push so hard: it squashes)
         Fz[i] = clamp(f, 0, 16000);
@@ -1711,7 +1713,9 @@ export class CarPhysics {
     // (and no power steering: bumps under one front wheel knock the steering
     // a little, a bit of which reaches the tyres)
     const bumpSteer = 0;      // (the kick shows on the steering wheel; feeding it to the tyres made the car nervous)
-    const delta = [d + Math.max(0, ack) + wb[0] * 0.5 + bumpSteer, d + Math.min(0, ack) + wb[1] * 0.5 + bumpSteer, wb[2] * 0.35, wb[3] * 0.35];
+    // (and the toe it's set up with: toe-in (+) points both wheels of an axle in towards the middle)
+    const toeF = s.toeFront || 0, toeR = s.toeRear || 0;
+    const delta = [d + Math.max(0, ack) + wb[0] * 0.5 + bumpSteer - toeF, d + Math.min(0, ack) + wb[1] * 0.5 + bumpSteer + toeF, wb[2] * 0.35 - toeR, wb[3] * 0.35 + toeR];
     const cosD = delta.map(Math.cos), sinD = delta.map(Math.sin);
     const A = [Lf, Lf, -Lr, -Lr], B = [tH, -tH, tH, -tH];
     let sumUseF = 0, sumUseR = 0, sumSlideF = 0, sumSlideR = 0, spinMax = 0, lockAny = false, brkUseF = 0, brkUseR = 0;
@@ -1746,9 +1750,10 @@ export class CarPhysics {
         // force builds more slowly past about 0.3 m/s)
         const dv = W4.roadRate[i] - bodyVel, knee = 0.3;
         const damp = Math.abs(dv) < knee ? dv : Math.sign(dv) * (knee + 0.5 * (Math.abs(dv) - knee));
+        const dc = front ? (dv >= 0 ? susp.damperFront : susp.reboundFront ?? susp.damperFront) : (dv >= 0 ? susp.damperRear : susp.reboundRear ?? susp.damperRear);
         let f = (front ? staticF + aeroF : staticR + aeroR)
           + (front ? susp.springFront : susp.springRear) * comp[i]
-          + (front ? susp.damperFront : susp.damperRear) * damp;
+          + dc * damp;
         if (comp[i] > susp.bumpStop) f += susp.bumpStopRate * (comp[i] - susp.bumpStop);   // hitting the bump stops
         W4.spring[i] = f;
       }
@@ -1805,12 +1810,17 @@ export class CarPhysics {
         const per = sig > 1e-6 ? curve / sig : blendC * Bn;          // force per unit of normalised slip
         let fLong = Fmax * per * sx;
         let fLat = -Fmax * per * sy;
+        // (camber: tilted in, more grip turning and a little less braking and driving)
+        if (s.camberLat) { const ax = i < 2 ? 0 : 1; fLat *= s.camberLat[ax]; fLong *= s.camberLong[ax]; }
         if (gone) { fLong = -Math.sign(vLong) * Math.min(Math.abs(vLong) * 2000, Fz[i] * s.frameGrip); fLat = -Math.sign(vLat) * Math.min(Math.abs(vLat) * 2000, Fz[i] * s.frameGrip); }
         // -- this wheel's spin: driven by the engine (rears, through the
         // limited-slip differential), slowed by the road and the brakes --
         let drive = 0;
         if (i >= 2) {
-          const lock = clamp(s.lsdRate * (W4.omega[2] - W4.omega[3]), -(s.lsdPreload + s.lsdRamp * Math.abs(driveTorque)), s.lsdPreload + s.lsdRamp * Math.abs(driveTorque));
+          // (on the throttle the acceleration sensitivity; off it, the braking sensitivity)
+          const ramp = driveTorque < 0 || brakePedal > 0.05 ? (s.lsdRampBrake ?? s.lsdRamp) : s.lsdRamp;
+          const lim = s.lsdPreload + ramp * (Math.abs(driveTorque) + (s.lsdRampBrake != null && driveTorque >= 0 ? brakePedal * 400 : 0));   // (as built, exactly as before)
+          const lock = clamp(s.lsdRate * (W4.omega[2] - W4.omega[3]), -lim, lim);
           drive = driveTorque / 2 + (i === 2 ? -lock : lock);
         }
         // (the driven wheels also have to spin the engine up: its flywheel and
