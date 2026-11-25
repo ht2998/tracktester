@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 159;
+export const BUILD = 160;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 131, date: '25 Nov 2026', title: 'The TTF-94, smoothed',
+    items: [
+      ['One smooth body', 'The TTF-94 is rebuilt the way the TTF-05 was: one flowing skin from the nose to the gearbox instead of separate pieces. A low, round nose, low cockpit sides with the driver\'s shoulders showing, long rounded sidepods with their mouths set back, no crease anywhere, tapering gently into the engine cover, and the tall airbox over his head. Red, with white flashes along the pods and over the nose. Every bit of it dents', 'new'],
+    ],
+  },
   {
     id: 130, date: '25 Nov 2026', title: 'Tuning',
     items: [
