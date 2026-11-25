@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 26;
+export const BUILD = 27;
 
 const G = 9.81;   // gravity, m/s²
 const RPM_PER_RADS = 60 / (2 * Math.PI);
@@ -462,6 +462,9 @@ export class CarPhysics {
       }
       // Off-centre: the front wheel on that side gets knocked back too
       if (Math.abs(across) > 0.5 && v > 5) bend(wheelNear(true, across > 0), (v - 5) * 0.0025, across > 0 ? 1 : -1);
+      // (and the wheel itself: its rim bent, its tyre cut, on that corner; both if head on)
+      if (Math.abs(across) > 0.4) this.damageWheel(wheelNear(true, across > 0), (v - 7) / 24);
+      else if (v > 14) for (const left of [true, false]) this.damageWheel(wheelNear(true, left), (v - 14) / 30);
       // A big one head on: the front suspension folds on both sides, and
       // very big ones tear the front wheels off; the engine takes the hit too
       if (v > 16) {
@@ -500,6 +503,7 @@ export class CarPhysics {
       if (this.spec.engineRear && v > 28) this.knockEngineOut();
       if (v > 7) this.fuelLeak = Math.min(0.6, this.fuelLeak + (v - 7) * 0.025);
       if (Math.abs(across) > 0.5 && v > 5) bend(wheelNear(false, across > 0), (v - 5) * 0.0025, across > 0 ? 1 : -1);
+      if (Math.abs(across) > 0.4) this.damageWheel(wheelNear(false, across > 0), (v - 8) / 26);
       crushWing('rear', Math.max(0, v - 2.5) * 0.08);
     } else {
       const left = zone === 'left';
@@ -517,6 +521,7 @@ export class CarPhysics {
       }
       if (front && along > 1.2) crushWing(left ? 'fl' : 'fr', Math.max(0, v - 4) * 0.07);
       if (v > 8) this.puncture(i, 0.04 * (v - 8));
+      this.damageWheel(i, (v - 5) / 22);                 // (the wheel takes the hit first: rim and tyre)
     }
     // Fire: only some crashes, and where the hit was. A hard hit at the
     // engine's end can light the engine bay; a hard hit at the back, or a
@@ -979,6 +984,7 @@ export class CarPhysics {
     // wheel has come off and that corner is scraping along on the frame
     this.tyres = WHEEL_ORDER.map(() => ({
       wear: 0, pressure: 1, leak: 0, blown: false, shred: 0, rim: false, heat: 0, rimWear: 0, detached: false,
+      rimDent: 0, cut: 0,   // (the wheel's own damage: a bent rim, a cut in the tyre)
       temp: AMBIENT_TEMP,   // tread temperature, °C
     }));
     this.wheelLoad = [0, 0, 0, 0];
@@ -1015,6 +1021,27 @@ export class CarPhysics {
     return TYRES[this.tyreCompound].kind === 'dirt' ? sf.dirtTyreDrag : sf.drag;
   }
 
+  // THE WHEEL ITSELF HIT (not only what holds it on): amount 0-1+.
+  // The rim bends (it wobbles as it turns, scrubs, grips less, and air
+  // seeps out past the bent edge); bent far enough it cracks and the tyre
+  // goes at once. The tyre can be cut too: a slash lets it down fast, a
+  // gash bursts it.
+  damageWheel(i, amount) {
+    const t = this.tyres[i];
+    if (this.damageOff || !t || t.detached || !(amount > 0)) return;
+    const before = t.rimDent || 0;
+    t.rimDent = Math.min(1, before + amount * (0.5 + 0.5 * Math.random()));
+    if (t.rimDent > 0.15 && !t.blown && t.pressure > 0) t.leak = Math.max(t.leak, t.rimDent * 0.05);   // (the bead won't seal on a bent rim)
+    if (!t.blown && !t.rim) {
+      if (t.rimDent >= 0.9) this.blowout(i);                         // (the rim's cracked)
+      else if (Math.random() < amount * 0.7) {
+        t.cut = Math.min(1, (t.cut || 0) + amount);
+        if (t.cut > 0.55) this.blowout(i); else this.puncture(i, 0.08 + amount * 0.3);
+      }
+    }
+    if (t.rimDent - before > 0.02) this.events.push({ type: 'wheelDamage', wheel: i, rimDent: t.rimDent, was: before });
+  }
+
   // A tyre bursts: all the air goes at once, and the rubber starts to shred
   blowout(wheel) {
     if (this.damageOff) return;
@@ -1036,7 +1063,8 @@ export class CarPhysics {
     const compound = TYRES[this.tyreCompound];
     const wearGrip = 1 - 0.35 * Math.pow(t.wear, 1.4);          // worn tyres grip less
     const pressureGrip = 0.5 + 0.5 * Math.pow(t.pressure, 0.6);  // a flat still grips, badly
-    return compound.grip * wearGrip * pressureGrip * this.tempGrip(t);
+    const dentGrip = 1 - 0.2 * (t.rimDent || 0);                 // a bent rim: the contact patch hops about
+    return compound.grip * wearGrip * pressureGrip * dentGrip * this.tempGrip(t);
   }
 
   // The temperature range the fitted tyres work best in, °C { lo, hi }
@@ -1317,7 +1345,10 @@ export class CarPhysics {
     // hold some opposite lock to go straight)
     const wb = this.wheelBend;
     const pull = 0.5 * (wb[0] + wb[1]) + 0.35 * (wb[2] + wb[3]);
-    const target = c.steer * steerLimit + pull + (frontRims ? (Math.random() - 0.5) * 0.02 * frontRims : 0);
+    // (a bent front rim wobbles the steering once a turn)
+    const W4a = this.w4?.angle;
+    const wobble = W4a ? 0.012 * ((this.tyres[0].rimDent || 0) * Math.sin(W4a[0]) + (this.tyres[1].rimDent || 0) * Math.sin(W4a[1])) : 0;
+    const target = c.steer * steerLimit + pull + wobble + (frontRims ? (Math.random() - 0.5) * 0.02 * frontRims : 0);
     const turningIn = !countersteering && Math.abs(target) > Math.abs(this.steer)
       && Math.sign(target) === Math.sign(this.steer || target);
     const rate = (turningIn ? s.steerSpeed / Math.pow(speedFactor, 1.5) : s.steerSpeed) * (1 - 0.35 * frontRims);
@@ -1939,7 +1970,7 @@ export class CarPhysics {
         + s.tyreWearBrake * loadShare * braking * braking * dist)  // braking: the loaded fronts most
         + s.tyreWearSkid * Math.sqrt(Math.max(loadShare, 0)) * slip * h
         + s.tyreWearFlat * (1 - t.pressure) * (1 - t.pressure) * dist;   // driving on a flat chews it up
-      wear += 0.004 * Math.abs(this.wheelBend[i]) * dist;    // a bent wheel scrubs along sideways
+      wear += 0.004 * Math.abs(this.wheelBend[i]) * dist + 0.002 * (t.rimDent || 0) * dist;   // (bent: it scrubs along sideways)    // a bent wheel scrubs along sideways
       t.wear = Math.min(1, t.wear + wear * compound.wear * this.wearScale() * overheat);
 
       // Slow puncture: air escapes, more slowly as the tyre empties

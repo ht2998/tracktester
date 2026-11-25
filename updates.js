@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 156;
+export const BUILD = 157;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 128, date: '25 Nov 2026', title: 'Wheels and tyres take damage',
+    items: [
+      ['Bent rims and cut tyres', 'A crash now hurts the wheel itself, not only what holds it on. A bent rim wobbles as it turns (you\'ll feel it in the steering on a front one), grips less, scrubs its tyre and lets air seep out; bend it far enough and it cracks and the tyre goes at once. The tyre can be cut too: a slash lets it down quickly, a gash bursts it. A new wheel at the pits fixes both', 'new'],
+    ],
+  },
   {
     id: 127, date: '25 Nov 2026', title: 'Detailed crush (a setting)',
     items: [

@@ -61,7 +61,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 104;
+const BUILD = 105;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -1795,10 +1795,15 @@ function updateWheels(steer, spin) {
     wheelRot.setFromEuler(wheelEuler);
     wheelMatrix.compose(wheelPos, wheelRot, ONE);
     carModel.calipers.setMatrixAt(i, wheelMatrix);
+    // A bent rim: the wheel wobbles as it turns, and it's out of round (a
+    // flat in it, going round with it)
+    const dent = tyre.rimDent || 0, ang0 = physics.w4 ? physics.w4.angle[pi] : spin;
+    const yawW = yawBent + dent * 0.1 * Math.sin(ang0), camW = camber + dent * 0.07 * Math.cos(ang0);
+    if (dent > 0) wheelScale.y *= 1 - 0.1 * dent;
     for (let k = 0; k < 2; k++) {
       // (each wheel turns at its own speed: a locked wheel stops, a spinning one blurs)
       const turned = (physics.w4 ? physics.w4.angle[pi] : spin) + k * Math.PI / 2;
-      wheelEuler.set(turnRound ? -turned : turned, yawBent + (turnRound ? Math.PI : 0), camber);
+      wheelEuler.set(turnRound ? -turned : turned, yawW + (turnRound ? Math.PI : 0), camW);
       wheelRot.setFromEuler(wheelEuler);
       wheelMatrix.compose(wheelPos, wheelRot, wheelScale);
       if (k === 0) {
@@ -2425,7 +2430,11 @@ function crushBreaks() {
   if (gone(0.45, 0.12, 2.5, 0.22, 0.08)) physics.breakWing('fl');
   if (gone(-0.45, 0.12, 2.5, 0.22, 0.08)) physics.breakWing('fr');
   if (gone(0, 0.7, -1.8, 0.25, 0.08)) physics.breakWing('rear');
-  for (const [x, , z, isFront] of WHEELS) if (gone(x * 0.75, 0.33, z, 0.2, 0.1)) physics.tearWheel(physicsWheel(x, isFront));
+  for (const [x, , z, isFront] of WHEELS) {
+    const wi = physicsWheel(x, isFront), moved = crushFrame.offset(x * 0.75, 0.33, z, _cfo.set(0, 0, 0)).length();
+    if (gone(x * 0.75, 0.33, z, 0.2, 0.1)) physics.tearWheel(wi);
+    else if (moved > 0.05) physics.damageWheel(wi, moved * 4);       // (pushed in on it: the wheel itself is bent and cut)
+  }
   if (gone(0.5, 0.62, 0.5, 0.12, 0.06)) snapMirror('l');
   if (gone(-0.5, 0.62, 0.5, 0.12, 0.06)) snapMirror('r');
 }
@@ -4952,7 +4961,7 @@ const pits = sepang ? (() => {
       tyreChoices: () => Object.entries(TYRES).filter(([, t]) => (IS_F1 ? ['slick', 'wet'] : ['road', 'slick', 'wet']).includes(t.kind)).map(([id, t]) => [id, t.name, t.kind]),
       fitTyre: (pi, id) => {
         if (id && id !== physics.tyreCompound) { physics.tyreCompound = id; tyreLooks.apply(id); }
-        physics.tyres[pi] = { wear: 0, pressure: 1, leak: 0, blown: false, shred: 0, rim: false, heat: 0, rimWear: 0, detached: false, temp: AMBIENT_TEMP };
+        physics.tyres[pi] = { wear: 0, pressure: 1, leak: 0, blown: false, shred: 0, rim: false, heat: 0, rimWear: 0, detached: false, rimDent: 0, cut: 0, temp: AMBIENT_TEMP };
         physics.tyreSink[pi] = 0;
       },
       repairSusp: (pi) => { physics.suspDamage[pi] = 0; physics.wheelBend[pi] = 0; },
@@ -5184,6 +5193,7 @@ renderer.setAnimationLoop(() => {
       engineSound.playBlowout();
       blowoutPending.push(e.wheel);
     }
+    if (e.type === 'wheelDamage' && e.rimDent > 0.3 && e.was <= 0.3) showToast(['FRONT LEFT', 'FRONT RIGHT', 'REAR LEFT', 'REAR RIGHT'][e.wheel] + ' WHEEL BENT');
     if (e.type === 'wheelOff') wheelOffPending.push({ i: e.wheel, torn: !!e.torn });
     if (e.type === 'wingOff') snapWing(e.part);
     // a knock on the side can take a mirror off (the TT-88's)
