@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 70;
+export const BUILD = 71;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -977,7 +977,10 @@ export function buildF05Body(car, addPanel) {
       g.fillText(text, tx, h / 2 - (sub ? h * 0.1 : -h * 0.03));
       if (sub) { g.font = `700 ${h * 0.17}px Arial, Helvetica, sans-serif`; g.fillStyle = text === 'HALDEN' ? '#d81e1e' : ink; const tw = g.measureText(text).width; g.fillText(sub.split('').join(String.fromCharCode(8202)), tx + 4, h / 2 + h * 0.27); }
       const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
-      return new THREE.MeshStandardMaterial({ map: t, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, roughness: 0.3, side: THREE.DoubleSide });
+      // (solid, not see-through: drawn with the car's own paint, so smoke, fire
+      // and dust in front hide it just as they hide the body; its letters cut
+      // out where the picture's empty)
+      return new THREE.MeshStandardMaterial({ map: t, alphaTest: 0.5, alphaToCoverage: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, roughness: 0.3, side: THREE.DoubleSide });
     };
     // (a decal over part of the skin: rows along z0..z1, across the section's points k0..k1, lifted just off it)
     const onSkin = (secOf, z0, z1, k0, k1, mat, sx) => {
@@ -1374,7 +1377,7 @@ export function buildP70Body(car, addPanel) {
   add(smoothBody(-1.98, -0.72, 30, (z) => ({ w: 0.62, top: TOP(z) + 0.006, bot: TOP(z) - 0.02, sq: 2.4 })), MAT.yellow);
   for (const s of [1, -1]) add(rod([s * 0.6, 0.6, 0.7], [s * 0.5, 0.88, 0.3], 0.025), MAT.blue);        // the screen's pillars
   // the doors' shut lines, and a white roundel with a number on each
-  const roundel = new THREE.MeshStandardMaterial({ roughness: 0.4, transparent: true, map: (() => {
+  const roundel = new THREE.MeshStandardMaterial({ roughness: 0.4, alphaTest: 0.5, alphaToCoverage: true, map: (() => {
     const c = document.createElement('canvas'); c.width = 128; c.height = 128; const g = c.getContext('2d');
     g.clearRect(0, 0, 128, 128); g.fillStyle = '#f4f4f0'; g.beginPath(); g.arc(64, 64, 60, 0, Math.PI * 2); g.fill();
     g.fillStyle = '#111'; g.font = 'bold 74px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('7', 64, 70);

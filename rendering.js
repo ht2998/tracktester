@@ -62,7 +62,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 107;
+const BUILD = 108;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -4811,7 +4811,7 @@ function addPaintScratch(at, nx, nz, size = 1) {
   const hit = Array.isArray(res) ? res[0] : null;
   if (!hit || !hit.face) return;
   const m = new THREE.Mesh(scratchGeo, scratchMat);
-  m.renderOrder = 2;
+  m.renderOrder = -1;          // (soft-edged, so see-through: but drawn before smoke and flames, which then cover it)
   const p = carModel.car.worldToLocal(hit.point.clone());
   const n = hit.face.normal.clone();                       // (in the panel's own frame: the panels sit in the car's frame)
   m.position.copy(p).addScaledVector(n, 0.004);
