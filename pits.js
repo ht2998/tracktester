@@ -26,7 +26,7 @@
 // a smashed radiator): the team retire the car. DNF on the standings, and
 // they push it back into the garage.
 // =====================================================================
-export const BUILD = 26;
+export const BUILD = 27;
 
 import * as THREE from 'three';
 
@@ -287,7 +287,7 @@ export class Person {
     const now = car(toW(this.x, this.z)), next = car(toW(this.x + sx * step, this.z + sz * step));
     if (Math.abs(next[0]) > L || Math.abs(next[1]) > W) { this.roundWay = null; return [sx, sz]; }
     // (going to the car on purpose: a medic, a marshal, the crane's man)
-    const goal = car(toW(tx, tz)); if (Math.abs(goal[0]) < L + 0.3 && Math.abs(goal[1]) < W + 0.3) return [sx, sz];
+    const goal = car(toW(tx, tz)); if (Math.abs(goal[0]) < L + 0.6 && Math.abs(goal[1]) < W + 0.6) return [sx, sz];   // (wider than the box he keeps out of, so a spot just beside it is never out of reach)
     // heading into it: walk along whichever face he's at, toward the nearer corner
     const dw = [toW(this.x + sx, this.z + sz)[0] - toW(this.x, this.z)[0], toW(this.x + sx, this.z + sz)[1] - toW(this.x, this.z)[1]];
     let ga = dw[0] * fx + dw[1] * fz, gb = dw[0] * fz - dw[1] * fx;          // (the way he wants to go, in the car's frame)
@@ -560,6 +560,11 @@ export class Person {
         const step = Math.min(d, v * dt);
         let sx = dx / d, sz = dz / d;
         if (a.stagger) { const w = Math.sin(this.t * 2.3) * 0.55 + Math.sin(this.t * 5.7) * 0.2; const c = Math.cos(w), s2 = Math.sin(w); [sx, sz] = [sx * c + sz * s2, -sx * s2 + sz * c]; }
+        // (never stuck for good: if he's made no headway for a few seconds,
+        // going round whatever it is, he goes straight on past it)
+        a.best = Math.min(a.best ?? Infinity, d);
+        if (d < a.best + 0.001 && d < (a.mark ?? Infinity) - 0.3) { a.mark = d; a.still = 0; } else a.still = (a.still || 0) + dt;
+        if (a.still > 2.5) a.through = true;
         if (!a.through) [sx, sz] = this.steerRound(sx, sz, step, tx, tz);
         this.x += sx * step; this.z += sz * step;
         speed = v;

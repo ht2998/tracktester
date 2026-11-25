@@ -34,7 +34,7 @@ import { Person, makeExtinguisher } from './pits.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 11;
+export const BUILD = 12;
 
 const std = (color, rough = 0.6, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: rough, ...extra });
 const boxAt = (w, h, d, x = 0, y = 0, z = 0) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
@@ -2120,9 +2120,9 @@ export class RaceControl {
     this.hooks.toast?.('RESTART: BACK ON THE GRID');
   }
 
-  // EVERYONE HOME (the car reset): every rescue vehicle back where it's
+  // THE VEHICLES HOME (the car reset): every rescue vehicle back where it's
   // parked at once, whatever it was doing (a wreck on the hook or the bed is
-  // put down where it is), the marshals and medics gone, the track green
+  // put down where it is). Nothing else: not the marshals, not the barriers
   allHome() {
     for (const [v, park] of [[this.sc, this.parkSC], [this.ambulance, this.parkAmb]]) {
       v.state = 'parked'; v.mode = 'free'; v.route = []; v.legs = null; v.v = 0; v.x = park.x; v.z = park.z; v.heading = Math.PI; this.place(v); v.flash(0, false);
@@ -2139,10 +2139,9 @@ export class RaceControl {
       c.turntable.rotation.y = 0; c.boom.rotation.x = 0; c.setExtend(0); c.setOutriggers(0); c.out = 0; c.setSlings?.(0); c.pose(); this.place(c); c.flash(0, false);
     }
     this.crane = null; this.hookLift = null; this.liftedPlayer = 0;
-    for (const r of this.runners) { r.done = true; r.person.root.visible = false; }
-    if (this.medics) { if (this.medics.stretcher) this.medics.stretcher.visible = false; this.medics = null; }
-    this.jobs.clear();
-    if (this.phase !== 'green') this.setPhase('green');
+    // (only the vehicles: marshals on foot and the barriers being mended carry on as they were.
+    // With the safety car back in, its period's over)
+    if (this.phase === 'sc' || this.phase === 'vsc') this.setPhase('green');
   }
 
   // ---- your penalties ----

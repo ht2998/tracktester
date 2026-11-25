@@ -62,7 +62,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 110;
+const BUILD = 111;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -5044,7 +5044,17 @@ raceControl = sepang && aiField && trackside ? new RaceControl(scene, {
     // the repair crew at work: every barrier within a few metres straightened a little
     repairBarrier: (rep, k) => { const seen = new Set(); for (const c of COLLIDERS) { if (!c.repair || c.maxX < rep.x - 5 || c.minX > rep.x + 5 || c.maxZ < rep.z - 5 || c.minZ > rep.z + 5) continue; const key = c.part || c; if (seen.has(key)) continue; seen.add(key); c.repair({ x: rep.x, z: rep.z }, k); } },
     ...driverHooks,
-    blocked: (x, z, r = 0.3) => { for (const c of collidersNear(x, z)) if (x > c.minX - r && x < c.maxX + r && z > c.minZ - r && z < c.maxZ + r) return c; return null; },
+    // (what's in the way of someone on foot: a turned barrier or stand is tested
+    // as it actually stands, not as the square round it, or a diagonal one
+    // walls off a whole field and the marshals can't find a way through)
+    blocked: (x, z, r = 0.3) => {
+      for (const c of collidersNear(x, z)) {
+        if (!(x > c.minX - r && x < c.maxX + r && z > c.minZ - r && z < c.maxZ + r)) continue;
+        if (c.ob) { const o = c.ob, dx = x - o.x, dz = z - o.z; if (Math.abs(dx * o.ux + dz * o.uz) > o.hl + r || Math.abs(dx * o.uz - dz * o.ux) > o.hw + r) continue; }
+        return c;
+      }
+      return null;
+    },
     medicsDone: () => { if (driverOut && !driverOut.gone) { scene.remove(driverOut.person.root); driverOut.gone = true; showToast('THE DRIVER\'S BEEN TAKEN TO THE MEDICAL CENTRE: HE\'S OK'); } },
     toast: (t) => { if (t) showToast(t); },
     penalty: (sec, why) => aiField.addPenalty(sec, why),

@@ -8,7 +8,7 @@
     "debris.js": 4,
     "effects.js": 5,
     "sky.js": 6,
-    "rendering.js": 110,
+    "rendering.js": 111,
     "rain.js": 4,
     "hud.js": 18,
     "physics.js": 28,
@@ -27,10 +27,10 @@
     "ai.js": 15,
     "f1.js": 73,
     "garage.js": 10,
-    "pits.js": 26,
+    "pits.js": 27,
     "trackside.js": 7,
     "assets.js": 1,
-    "racecontrol.js": 11,
+    "racecontrol.js": 12,
     "softbody.js": 3,
     "tuning.js": 1
   }
