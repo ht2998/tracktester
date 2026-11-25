@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 76;
+export const BUILD = 77;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -856,7 +856,8 @@ function decalOnSkin(car, addPanel, sk, secOf, z0, z1, k0, k1, mat, sx) {
 function flatDecal(w, h, x, y, z, mat, face = 'side', tilt = 0) {
   const g = new THREE.PlaneGeometry(w, h);
   if (face === 'side') g.rotateY(Math.sign(x || 1) * Math.PI / 2);
-  else { g.rotateX(-Math.PI / 2).rotateY(Math.PI); if (tilt) g.rotateX(tilt); g.translate(0, Math.cos(tilt) * 0.012, Math.sin(tilt) * 0.012); }   // (just off the element's face)
+  else { g.rotateZ(Math.PI).rotateX(-Math.PI / 2).rotateY(Math.PI); if (tilt) g.rotateX(tilt);   // (on top: read from the front)
+    g.translate(0, Math.cos(tilt) * 0.012, Math.sin(tilt) * 0.012); }   // (just off the element's face)
   const m = new THREE.Mesh(g.translate(x, y, z), mat); m.renderOrder = 2; return m;
 }
 
@@ -1196,9 +1197,9 @@ export function buildF05Body(car, addPanel) {
       const fw = new THREE.Mesh(new THREE.PlaneGeometry(0.36, 0.09).rotateX(-Math.PI / 2).rotateY(Math.PI).rotateX(0.06).translate(sx * 0.45, 0.108, 2.6), decal('ARDENTA', '#15214e', 'diamond', 512, 128));
       fw.renderOrder = 2; wingDecals.push([fw, sx > 0 ? 'fl' : 'fr']);
     }
-    // the main sponsor (the tobacco brand) across the rear wing's top flap, read from behind
+    // the main sponsor (the tobacco brand) across the rear wing's top flap, read from the front (as in the Garage)
     { const n = new THREE.Vector3(0, Math.cos(0.5), Math.sin(0.5)).multiplyScalar(0.011);
-      const rw = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.15).rotateX(-Math.PI / 2).rotateY(Math.PI).rotateX(0.5).translate(n.x, 0.82 + n.y, -1.85 + n.z), decal('AZURA', '#ffffff', 'diamond'));
+      const rw = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.15).rotateZ(Math.PI).rotateX(-Math.PI / 2).rotateY(Math.PI).rotateX(0.5).translate(n.x, 0.82 + n.y, -1.85 + n.z), decal('AZURA', '#ffffff', 'diamond'));
       rw.renderOrder = 2; wingDecals.push([rw, 'rear']); }
   }
   // the gearbox at the back, its rain light, the floor, the plank, the diffuser and its fences
@@ -1420,7 +1421,7 @@ export function buildF94Body(car, addPanel) {
       const tp = flatDecal(0.3, 0.1, sx * 0.512, 0.6, -2.02, sponsorDecal('VALCOR', '#ffffff', 768, 256)); wings.rear.add(tp);
       const fe = flatDecal(0.16, 0.16, sx * 0.785, 0.14, 2.4, sponsorBadge('ORBIXA')); (sx > 0 ? wings.fl : wings.fr).add(fe);
     }
-    // across the rear wing's top element, read from behind
+    // across the rear wing's top element, read from the front
     { const rw = flatDecal(0.84, 0.16, 0, 1.012, -2.22, sponsorDecal('VESPERO', '#ffffff'), 'top', 0.7); wings.rear.add(rw); }
   }
   return { helmet: [helmet, visor, stripe], rainMat: MAT.rain, exhaustMat: MAT.exhaust, mats: MAT, wings, mirrors, driver };
