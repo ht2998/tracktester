@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 152;
+export const BUILD = 153;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 125, date: '25 Nov 2026', title: 'A crush frame (first try)',
+    items: [
+      ['The TTF-05 crumples for real', 'A first try at crashing the way BeamNG does it: the TTF-05 has a skeleton of points through its body joined by beams, each as strong as that part of a real car (the nose made to crumple, the sidepods firmer, the cockpit tub as good as unbreakable). A crash drives the wall into it as far as the hit takes it: the beams bend, stay bent and snap, and the body follows, so the nose folds back onto the tub, a side hit pushes the sidepod in, and no two crashes look alike', 'new'],
+    ],
+  },
   {
     id: 124, date: '25 Nov 2026', title: 'Out cold, and out of the car properly',
     items: [

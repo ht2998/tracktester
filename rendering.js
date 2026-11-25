@@ -35,6 +35,7 @@ import { setGround, groundAt, lieOnGround } from './ground.js';
 import * as packFile from './assets.js';
 import { AIField, BUILD as AI_BUILD } from './ai.js';
 import { Garage, BUILD as GARAGE_BUILD } from './garage.js';
+import { CrushFrame } from './softbody.js';
 import { PitStop, SEPANG_PIT, Person as PersonFigure, climbOutKeys, makeAxe, BUILD as PITS_BUILD } from './pits.js';
 import { RaceControl, BUILD as RACECONTROL_BUILD } from './racecontrol.js';
 import { buildF1Body, buildF05Body, bodyForKind, WHEEL_LAYOUT, buildF1Cockpit, buildF1RimGeometry, tyreGeometry, F1_CAR, CATERHAM_CAR, ENGINES, withEngine, STOCK_ENGINE, specForKind, BUILD as F1_BUILD } from './f1.js';
@@ -60,7 +61,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 101;
+const BUILD = 102;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -2330,6 +2331,7 @@ function dentOffset(x, y, z, out) {
   }
   const l = out.length();
   if (l > 0.95) out.multiplyScalar(0.95 / l);                                 // metal only goes so far (a big crash pushes the front right in)
+  if (crushFrame) return crushFrame.offset(x, y, z, out);                    // (a car with a crush frame: it does the rest)
   // AN F1 NOSE HIT HEAD ON: it's a crash structure, and it concertinas.
   // The tip's pushed straight back, the rest of the nose folding up
   // behind it in wrinkles, bulging out a little as it goes, down to the
@@ -2344,6 +2346,12 @@ function dentOffset(x, y, z, out) {
   return out;
 }
 let noseCrush = 0;                                     // (m the F1 nose has been pushed back)
+// THE CRUSH FRAME (softbody.js), for the cars that have one: the TT-05 first
+const crushFrame = IS_F05 ? new CrushFrame({
+  min: [-0.95, 0.05, -2.1], max: [0.95, 1.05, 2.9], n: [5, 3, 11],
+  rigid: (x, y, z) => z > -0.45 && z < 0.85 && Math.abs(x) < 0.4,                 // (the tub: carbon, as good as unbreakable)
+  soft: (x, y, z) => (z > 1.2 ? 1 : z > 0.85 ? 0.6 : z < -1.4 ? 0.55 : Math.abs(x) > 0.4 ? 0.45 : 0.1),   // (the nose crumples; the pods, the back, give some)
+}) : null;
 const NOSE_TIP = IS_F05 ? 2.76 : IS_F94 ? 2.63 : IS_P70 ? 2.13 : IS_P91 ? 2.36 : 2.52, NOSE_BASE = IS_F05 ? 1.25 : IS_F94 ? 1.2 : IS_P70 ? 1.45 : IS_P91 ? 1.6 : 1.15;
 const bodyOriginals = new Map();
 function reshapeBody() {
@@ -2385,8 +2393,10 @@ function dentBody(x, y, z, dx, dz, depth, radius) {
   if (dents.length > 40) dents.shift();
   reshapeBody();
 }
+const _cfp = new THREE.Vector3();
 function clearDents() {
   dents.length = 0;
+  crushFrame?.reset();
   noseCrush = 0;
   scratchList.length = 0;
   reshapeBody();
@@ -2653,7 +2663,7 @@ function updateSmoke(dt) {
   // the pressurised coolant bursting out: a pink spray with a cloud of steam
   if (coolantBurst > 0) {
     coolantBurst -= dt;
-    coolantMist.emitFrom('radiator', radiatorWorld, 1, carVelocity, dt);
+    if (!IS_F1) coolantMist.emitFrom('radiator', radiatorWorld, 1, carVelocity, dt);    // (racing cars run on water: theirs bursts out as steam, not a pink spray)
   }
   coolantMist.update(dt);
   steam.emitFrom('radiator', radiatorWorld, coolantBurst > 0 ? 1 : physics.steam, carVelocity, dt);
@@ -3009,12 +3019,15 @@ function collide(now) {
       // (the harder the hit, the deeper and wider: and a big one crumples
       // the car further back in steps, like a real crumple zone folding up)
       if (hitSpeed > 3) {
+        const k0px = k.px, k0pz = k.pz;
         const depth = Math.min(0.55, (hitSpeed - 3) * 0.018);
         const radius = 0.2 + Math.min(0.55, hitSpeed * 0.014);
         const NOSE = IS_F1 ? 2.35 : 1.5, TAIL = IS_F1 ? -1.9 : -1.5;
         const folds = hitSpeed > 28 ? 3 : hitSpeed > 16 ? 2 : 1;
         for (let k = 0; k < folds; k++) {
           const f = 1 - k * 0.3, back = k * (IS_F1 ? 0.6 : 0.45);
+          // (a car with a crush frame: the wall driven into it, once, and the body follows)
+          if (crushFrame) { if (k === 0) { const lp = carModel.car.worldToLocal(_cfp.set(k0px, 0.4, k0pz)); crushFrame.impact(lp.x, 0.4, lp.z, nl, nf, hitSpeed); reshapeBody(); } continue; }
           if (zone === 'front' && IS_F1 && k === 0) noseCrush = Math.min(1.2, noseCrush + (hitSpeed - 3) * 0.022 * Math.max(0, -nf));
           if (zone === 'front') dentBody(Math.max(-0.28, Math.min(0.28, across)) * f, 0.4, NOSE - back, nl, nf, depth * f, radius);
           else if (zone === 'rear') dentBody(Math.max(-0.7, Math.min(0.7, across)) * f, 0.52, TAIL + back, nl, nf, depth * 0.9 * f, radius);
