@@ -21,11 +21,18 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 167;
+export const BUILD = 168;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 138, date: '25 Nov 2026', title: 'TTF-05 gills and winglets',
+    items: [
+      ['Real gills', 'The gills down the back of the TTF-05\'s sidepods are now proper louvres: seven blue lips pressed out of the bodywork, flush at the front and lifted open at the back, each a dark slot facing the rear', 'new'],
+      ['Winglets in blue', 'The horn winglets beside the airbox, the winglets on the pods and the flip-ups ahead of the rear wheels are now painted in the car\'s blue instead of bare carbon', 'new'],
+    ],
+  },
   {
     id: 137, date: '25 Nov 2026', title: 'The TTF-05 repainted',
     items: [

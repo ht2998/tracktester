@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 83;
+export const BUILD = 84;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -1109,31 +1109,41 @@ export function buildF05Body(car, addPanel) {
   const stripe = add(new THREE.TorusGeometry(0.135, 0.012, 6, 24, Math.PI).rotateY(Math.PI / 2).rotateZ(Math.PI / 2).scale(1, 1.05, 1.1).translate(0, 0.73, -0.02), MAT.yellow);
 
   for (const s of [1, -1]) {
-    // the gills: slotted into the upper rear of the pod, between its crown and the crease
-    // (each one a dark slot laid along the skin itself, over the pod's
-    // crown and down its shoulder, just proud of the surface)
-    for (let k = 0; k < 6; k++) {
-      const z = -0.5 - k * 0.09, u = upper(z), pts = [];
-      for (let i = 3 * S + 1; i <= 4 * S + 2; i++) {
-        const a = u[i - 1], b = u[i + 1], tx = b[0] - a[0], ty = b[1] - a[1], l = Math.hypot(tx, ty) || 1;
-        pts.push([u[i][0] - ty / l * 0.004, u[i][1] + tx / l * 0.004, z]);
-      }
-      for (let i = 0; i < pts.length - 1; i++) add(mirrorX(rod(pts[i], pts[i + 1], 0.009), s), MAT.dark, false);
-    }
+    // THE GILLS: a row of louvres down the upper rear of each pod, over its crown and
+    // down its shoulder. Each one a blue lip pressed out of the bodywork: flush at its
+    // front edge, lifted clear at its back, so it's a slit that opens up toward the
+    // rear; dark inside, so you see into the slot
+    { const lipMat = MAT.blue.clone(); lipMat.side = THREE.DoubleSide;
+      const lift = (p, a, b, h) => { const tx = b[0] - a[0], ty = b[1] - a[1], l = Math.hypot(tx, ty) || 1; return [p[0] - ty / l * h, p[1] + tx / l * h]; };
+      for (let k = 0; k < 7; k++) {
+        const z0 = -0.42 - k * 0.075, z1 = z0 - 0.05, h = 0.028 + 0.004 * k / 6;      // (front edge, back edge, how far the back stands open)
+        const uf = upper(z0), ub = upper(z1), P = [], Q = [], R = [], P2 = [];
+        for (let i = 3 * S; i <= 4 * S + 2; i++) {
+          const nb = (u) => [u[Math.max(0, i - 1)], u[Math.min(u.length - 1, i + 1)]];
+          const [a0, b0] = nb(uf), [a1, b1] = nb(ub);
+          const f = lift(uf[i], a0, b0, 0.003), q = lift(ub[i], a1, b1, 0.003), r = lift(ub[i], a1, b1, h), f2 = lift(uf[i], a0, b0, 0.002);
+          P.push([f[0], f[1], z0]); Q.push([q[0], q[1], z1]); R.push([r[0], r[1], z1]); P2.push([f2[0], f2[1], z0]);
+        }
+        const n = P.length - 1;
+        add(mirrorX(grid([P, R], n), s), lipMat, false);                                 // (the lip)
+        add(mirrorX(grid([Q, R], n), s), MAT.dark, false);                               // (the slot's open back)
+        add(mirrorX(grid([P2, Q.map((q) => [q[0], q[1] - 0.001, q[2]])], n), s), MAT.dark, false);     // (the inside, under the lip)
+        for (const e of [0, n]) { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute([...P[e], ...Q[e], ...R[e]], 3)); g.computeVertexNormals(); add(mirrorX(g, s), MAT.dark, false); }   // (its ends closed)
+      } }
     // the exhaust out through the top, toward the back
     { const z = -1.12, x = (xc(z) + CW(z)) / 2, y = surfY(z, x) - 0.03;
       add(mirrorX(new THREE.CylinderGeometry(0.05, 0.058, 0.08, 14, 1, true).rotateX(-0.6).translate(x, y + 0.02, z), s), MAT.exhaust);
       add(mirrorX(new THREE.CircleGeometry(0.048, 14).rotateX(-Math.PI / 2 - 0.6).translate(x, y + 0.05, z - 0.02), s), MAT.dark, false); }
     // the flip-up: where the crease runs out, ahead of the back wheel
     { const z = -1.15, y = ycr(z);
-      add(mirrorX(box(0.26, 0.012, 0.15, xo(z) + 0.11, y + 0.01, z, -0.25), s), MAT.carbon);
-      add(mirrorX(box(0.012, 0.17, 0.22, xo(z) + 0.24, y + 0.03, z - 0.02), s), MAT.carbon);
-      add(mirrorX(box(0.012, 0.09, 0.4, xo(z) + 0.004, y - 0.035, z + 0.18), s), MAT.carbon); }
+      add(mirrorX(box(0.26, 0.012, 0.15, xo(z) + 0.11, y + 0.01, z, -0.25), s), MAT.blue);
+      add(mirrorX(box(0.012, 0.17, 0.22, xo(z) + 0.24, y + 0.03, z - 0.02), s), MAT.blue);
+      add(mirrorX(box(0.012, 0.09, 0.4, xo(z) + 0.004, y - 0.035, z + 0.18), s), MAT.blue); }
     // the winglet on the pod's top
     // (its pillar standing on the bodywork, a little into it; the wing across its top)
     { const z = -0.72, x = xc(-0.72) - 0.03, y = surfY(z, x);       // (right above the gills)
-      add(mirrorX(plate([[z + 0.07, y - 0.02], [z + 0.05, y + 0.12], [z - 0.07, y + 0.13], [z - 0.08, y - 0.02]], x, 0.012), s), MAT.carbon);
-      add(mirrorX(box(0.16, 0.012, 0.11, x + 0.05, y + 0.13, z, -0.3, 0, -0.25), s), MAT.carbon); }
+      add(mirrorX(plate([[z + 0.07, y - 0.02], [z + 0.05, y + 0.12], [z - 0.07, y + 0.13], [z - 0.08, y - 0.02]], x, 0.012), s), MAT.blue);
+      add(mirrorX(box(0.16, 0.012, 0.11, x + 0.05, y + 0.13, z, -0.3, 0, -0.25), s), MAT.blue); }
     // bargeboards: tall curved carbon panels behind the front wheels, on the floor
     // (the big one: tall at the front, its top sweeping down and back to the pod's mouth, a slot cut in it)
     add(mirrorX(plate([[1.22, 0.11], [1.24, 0.3], [1.16, 0.4], [1.0, 0.43], [0.84, 0.36], [0.74, 0.22], [0.72, 0.11]], 0.46), s), MAT.carbon);
@@ -1197,8 +1207,8 @@ export function buildF05Body(car, addPanel) {
   // beside the airbox's mouth and rising diagonally up and out over the pod
   for (const sx of [1, -1]) {
     const z = -0.37, rx = 0.24, ry = surfY(z, rx) - 0.01, A = 0.6, L = 0.17;   // (low on the side, beside the airbox)
-    add(mirrorX(box(L, 0.014, 0.15, rx + Math.cos(A) * L / 2, ry + Math.sin(A) * L / 2, z, 0, 0, A), sx), MAT.carbon);
-    add(mirrorX(box(0.008, 0.07, 0.12, rx + Math.cos(A) * L, ry + Math.sin(A) * L + 0.02, z), sx), MAT.carbon);     // (a little plate on its tip)
+    add(mirrorX(box(L, 0.014, 0.15, rx + Math.cos(A) * L / 2, ry + Math.sin(A) * L / 2, z, 0, 0, A), sx), MAT.blue);
+    add(mirrorX(box(0.008, 0.07, 0.12, rx + Math.cos(A) * L, ry + Math.sin(A) * L + 0.02, z), sx), MAT.blue);     // (a little plate on its tip)
   }
   // THE SPONSORS: made-up names and badges, painted on the car's own
   // surfaces (laid on the skin, following its curves): big on the pods'
