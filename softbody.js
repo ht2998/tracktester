@@ -11,25 +11,33 @@
 // lattice around it was. Between crashes it sleeps and costs nothing.
 // (Car's own space: x = left, y = up, z = forward.)
 // =====================================================================
-export const BUILD = 1;
+export const BUILD = 2;
 
 export class CrushFrame {
   // box: { min: [x, y, z], max: [x, y, z] }, n: [nx, ny, nz] points along each;
   // rigid(x, y, z): true for points held still (the tub); soft(x, y, z): how
   // easily the beams there bend (1 = a crumple zone, ~0 = very stiff)
-  constructor({ min, max, n, rigid, soft }) {
-    this.min = min; this.max = max; this.n = n;
+  // (steps / iters: how finely the crash is worked through; buckle: how far
+  // squeezed metal folds sideways instead of just shortening, into creases)
+  constructor({ min, max, n, rigid, soft, steps = 24, iters = 6, buckle = 0 }) {
+    this.min = min; this.max = max; this.n = n; this.steps = steps; this.iters = iters; this.buckle = buckle;
     const [nx, ny, nz] = n, N = nx * ny * nz;
     this.rest = new Float32Array(N * 3);   // (where each point started)
     this.pos = new Float32Array(N * 3);    // (where it is now)
     this.fixed = new Uint8Array(N);
     this.give = new Float32Array(N);
+    // (which way each point folds when it's squeezed: a gentle wave through
+    // the car, so neighbours fold together into ridges and valleys a hand's
+    // width apart, as metal concertinas, not each its own way into shards)
+    this.fold = new Float32Array(N * 3);
     const at = (i, j, k) => (k * ny + j) * nx + i;
     this.at = at;
     for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
       const p = at(i, j, k), x = min[0] + (max[0] - min[0]) * i / (nx - 1), y = min[1] + (max[1] - min[1]) * j / (ny - 1), z = min[2] + (max[2] - min[2]) * k / (nz - 1);
       this.rest.set([x, y, z], p * 3); this.pos.set([x, y, z], p * 3);
       this.fixed[p] = rigid(x, y, z) ? 1 : 0; this.give[p] = soft(x, y, z);
+      const fx = Math.sin(z * 18 + y * 3), fy = Math.sin(z * 14.4 + x * 18 + 1), fz = Math.sin(x * 18 + y * 6 + 2), fl = Math.hypot(fx, fy, fz) || 1;
+      this.fold.set([fx / fl, fy / fl, fz / fl], p * 3);
     }
     // beams to every neighbour round about (along the edges, across the faces, through the middle)
     const b = [];
@@ -66,27 +74,49 @@ export class CrushFrame {
       start = Math.min(start, P[p * 3] * dx + P[p * 3 + 2] * dz);
     }
     if (!isFinite(start)) return 0;
-    const steps = 24;
+    const steps = this.steps, F = this.fold, bk = this.buckle;
+    // (only the part of the car the crash can reach is worked through: the
+    // rest is held where it is, so a nose hit doesn't cost the whole car)
+    const act = this._act || (this._act = new Uint8Array(N)), list = [];
+    for (let p = 0; p < N; p++) {
+      const ox = P[p * 3] - px, oz = P[p * 3 + 2] - pz;
+      act[p] = !this.fixed[p] && P[p * 3] * dx + P[p * 3 + 2] * dz - start < depth + 0.9 && Math.abs(ox * dz - oz * dx) < 1.4 ? 1 : 0;
+    }
+    for (let m = 0; m < M; m++) if (!this.broken[m] && (act[B[m * 2]] || act[B[m * 2 + 1]])) list.push(m);
     for (let s = 1; s <= steps; s++) {
       const wall = start + depth * s / steps;
       // the points the wall has reached are pushed along with it (those in its width)
       for (let p = 0; p < N; p++) {
-        if (this.fixed[p]) continue;
+        if (!act[p]) continue;
         const ox = P[p * 3] - px, oz = P[p * 3 + 2] - pz, side = Math.abs(ox * dz - oz * dx);
         if (side > 0.9) continue;
         const d = P[p * 3] * dx + P[p * 3 + 2] * dz;
         if (d < wall) { const push = (wall - d) * (side < 0.6 ? 1 : (0.9 - side) / 0.3); P[p * 3] += dx * push; P[p * 3 + 2] += dz * push; }
       }
       // the beams pull back toward their lengths; past a little strain they stay bent; past a lot they snap
-      for (let it = 0; it < 6; it++) for (let m = 0; m < M; m++) {
+      for (let it = 0; it < this.iters; it++) for (let q = 0; q < list.length; q++) {
+        const m = list[q];
         if (this.broken[m]) continue;
-        const a = B[m * 2], c = B[m * 2 + 1], fa = this.fixed[a], fc = this.fixed[c];
+        const a = B[m * 2], c = B[m * 2 + 1], fa = !act[a], fc = !act[c];
         if (fa && fc) continue;
         const vx = P[c * 3] - P[a * 3], vy = P[c * 3 + 1] - P[a * 3 + 1], vz = P[c * 3 + 2] - P[a * 3 + 2];
-        const L = Math.hypot(vx, vy, vz) || 1e-6, rest = this.len[m];
+        const L = Math.sqrt(vx * vx + vy * vy + vz * vz) || 1e-6, rest = this.len[m];
         const strain = (L - rest) / rest, soft = (this.give[a] + this.give[c]) / 2;
         // (bent for good: the beam's own length gives way to the squeeze, more so where it's soft)
-        if (Math.abs(strain) > 0.04) this.len[m] += (L - rest) * (0.25 + 0.6 * soft);
+        if (Math.abs(strain) > 0.04) {
+          this.len[m] += (L - rest) * (0.25 + 0.6 * soft);
+          // (squeezed: it folds out sideways too, each end its own way, into a crease)
+          // (only across the beam: along it, it's just shorter)
+          if (bk && strain < 0) {
+            const f = bk * (rest - L) * soft, ux = vx / L, uy = vy / L, uz = vz / L;
+            for (const [n, fixedN] of [[a, fa], [c, fc]]) {
+              if (fixedN) continue;
+              let gx = F[n * 3], gy = F[n * 3 + 1], gz = F[n * 3 + 2];
+              const along = gx * ux + gy * uy + gz * uz; gx -= ux * along; gy -= uy * along; gz -= uz * along;
+              P[n * 3] += gx * f; P[n * 3 + 1] += gy * f; P[n * 3 + 2] += gz * f;
+            }
+          }
+        }
         if (strain > 0.9 || strain < -0.85) { this.broken[m] = 1; continue; }
         const corr = (L - this.len[m]) / L, wa = fa ? 0 : 1, wc = fc ? 0 : 1, w = wa + wc;
         const k = 0.5 * corr / w;

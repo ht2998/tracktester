@@ -61,7 +61,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 103;
+const BUILD = 104;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -2355,12 +2355,25 @@ function dentOffset(x, y, z, out) {
   return out;
 }
 let noseCrush = 0;                                     // (m the F1 nose has been pushed back)
-// THE CRUSH FRAME (softbody.js), for the cars that have one: the TT-05 first
-const crushFrame = IS_F05 ? new CrushFrame({
-  min: [-0.95, 0.05, -2.1], max: [0.95, 1.05, 2.9], n: [5, 3, 11],
+// THE CRUSH FRAME (softbody.js): the full soft-body crush, a fine lattice of
+// points (about every 17 cm) through the whole car, its metal creasing and
+// folding as it's squeezed. Heavy, so it's a setting ("Detailed crush", on
+// the cars that have one: the TT-05 first); off, the car dents the old way.
+let detailCrush = false;
+try { detailCrush = localStorage.getItem('tracktester-crush') === 'full'; } catch (e) { /* storage blocked */ }
+const makeCrushFrame = () => new CrushFrame({
+  min: [-0.95, 0.05, -2.1], max: [0.95, 1.05, 2.9], n: [12, 7, 30], steps: 16, iters: 5, buckle: 0.3,
   rigid: (x, y, z) => z > -0.45 && z < 0.85 && Math.abs(x) < 0.4,                 // (the tub: carbon, as good as unbreakable)
   soft: (x, y, z) => (z > 1.2 ? 1 : z > 0.85 ? 0.6 : z < -1.4 ? 0.55 : Math.abs(x) > 0.4 ? 0.45 : 0.1),   // (the nose crumples; the pods, the back, give some)
-}) : null;
+});
+let crushFrame = IS_F05 && detailCrush ? makeCrushFrame() : null;
+function setDetailCrush(on) {
+  detailCrush = on;
+  try { localStorage.setItem('tracktester-crush', on ? 'full' : 'simple'); } catch (e) { /* storage blocked */ }
+  if (!IS_F05) return;
+  crushFrame = on ? makeCrushFrame() : null;
+  clearDents();                                                               // (starts fresh, the new way)
+}
 const NOSE_TIP = IS_F05 ? 2.76 : IS_F94 ? 2.63 : IS_P70 ? 2.13 : IS_P91 ? 2.36 : 2.52, NOSE_BASE = IS_F05 ? 1.25 : IS_F94 ? 1.2 : IS_P70 ? 1.45 : IS_P91 ? 1.6 : 1.15;
 const bodyOriginals = new Map();
 function reshapeBody() {
@@ -3161,6 +3174,8 @@ const hud = new Hud({
   onAssist: (name, on) => { physics.assists[name] = on; },
   onEngine: (key) => { if (ENGINES[key]) { setCar(carKind, key); showToast(ENGINES[key].name.toUpperCase()); } },
   damageOn,
+  detailCrush: IS_F05 ? detailCrush : null,
+  onDetailCrush: (on) => { setDetailCrush(on); showToast(on ? 'DETAILED CRUSH ON' : 'DETAILED CRUSH OFF: SIMPLE DENTS'); },
   // (only the public codes work here)
   onCode: (c) => { const k = String(c || '').toUpperCase().replace(/\s+/g, ''); return (k === 'CATERHAM' || k === 'WASHED') && enterCode(k); },
   onDamage: (on) => {

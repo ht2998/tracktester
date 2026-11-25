@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 17;
+export const BUILD = 18;
 
 const COLORS = {
   face: '#15181c',
@@ -721,7 +721,7 @@ function roundRect(g, x, y, w, h, r) {
 export class Hud {
   constructor({ redline, maxSpeed = 240, onTransmission, onAssist, onTyres, tyreOptions = {}, compact = false,
                 timeSpeeds = [60], onSky = {}, onWhatsNew = null, track = 'test', onTrack = null,
-                damageOn = true, onDamage = null, onEngine = null, onCode = null, clearView = null, onClear = null }) {
+                damageOn = true, onDamage = null, onEngine = null, onCode = null, clearView = null, onClear = null, detailCrush = null, onDetailCrush = null }) {
     this.timeSpeeds = timeSpeeds;
     this.onSky = onSky;
     this.onTyres = onTyres;
@@ -858,6 +858,18 @@ export class Hud {
     const damageInput = damageBox.querySelector('input');
     damageInput.checked = damageOn;
     damageInput.addEventListener('change', () => { onDamage?.(damageInput.checked); damageInput.blur(); });
+
+    // Detailed crush: the full soft-body crush (only on cars that have one)
+    let crushBox = null;
+    if (detailCrush != null) {
+      crushBox = document.createElement('div');
+      crushBox.className = 'tyre-box';
+      crushBox.innerHTML = `<label class="tw-check"><input type="checkbox" id="crush-toggle"> Detailed crush</label>`
+        + `<span class="gb-note">Ticked: the full simulation, the metal creasing and folding where it's hit (heavier: may stutter for a moment in a crash on slower phones). Unticked: simple dents</span>`;
+      const ci = crushBox.querySelector('input');
+      ci.checked = !!detailCrush;
+      ci.addEventListener('change', () => { onDetailCrush?.(ci.checked); ci.blur(); });
+    }
 
     // Clear / solid: see through the bodywork to the chassis inside (only on cars that have their insides built)
     let clearBox = null;
@@ -1017,7 +1029,7 @@ export class Hud {
     newsBtn.textContent = "What's new";
     newsBtn.addEventListener('click', () => { newsBtn.blur(); onWhatsNew?.(); });
 
-    panel.append(trackHeading, trackBox, gearHeading, gearGroup, assistHeading, ...assistButtons, damageBox, ...(clearBox ? [clearBox] : []), tyreHeading, tyreBox, engineHeading, engineBox, skyHeading, skyBox, codeBox, newsBtn);
+    panel.append(trackHeading, trackBox, gearHeading, gearGroup, assistHeading, ...assistButtons, damageBox, ...(crushBox ? [crushBox] : []), ...(clearBox ? [clearBox] : []), tyreHeading, tyreBox, engineHeading, engineBox, skyHeading, skyBox, codeBox, newsBtn);
     this.side.append(handle, panel);
     document.body.appendChild(this.side);
 

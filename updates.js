@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 155;
+export const BUILD = 156;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 127, date: '25 Nov 2026', title: 'Detailed crush (a setting)',
+    items: [
+      ['Detailed crush', 'A new tickbox in the side panel on the TTF-05. Ticked: the full simulation, a fine frame through the whole car, so the metal creases and folds where it\'s hit and a nose concertinas. It\'s heavier, so a big crash may stutter for a moment on slower phones. Unticked (the default): the simple dents from before', 'new'],
+    ],
+  },
   {
     id: 126, date: '25 Nov 2026', title: 'What the crush tears off',
     items: [
