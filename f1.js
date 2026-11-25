@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 71;
+export const BUILD = 72;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -904,7 +904,7 @@ export function buildF05Body(car, addPanel) {
   ];
   add(loft(airbox, 1.0, 40, 8, true), MAT.blue);
   add(loft([{ z: -0.3, w: 0.17, h: 0.13, y: 0.79 }, { z: -0.36, w: 0.17, h: 0.13, y: 0.79 }], 1.2, 20, 1, false), MAT.dark, false);
-  add(box(0.1, 0.06, 0.16, 0, 1.05, -0.5), MAT.camera);                       // (the camera pod)
+  add(box(0.1, 0.06, 0.16, 0, 1.05, -0.5), MAT.camera).name = 'tcamPod';      // (the camera pod: hidden in the T-cam's own view, as it's the camera)
   // a little fin along the cover's spine, behind the airbox
   // (rising out of the cover behind the airbox and sweeping up and back to
   // meet the rear wing: its root sunk into the cover, its top a straight line)

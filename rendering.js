@@ -62,7 +62,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 108;
+const BUILD = 109;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -5301,6 +5301,9 @@ renderer.setAnimationLoop(() => {
     // the TT-88: the driver's helmet hidden in his own view; exhausts glowing with the revs and boost
     const F = carModel.car.userData.f1;
     for (const m of F.helmet) m.visible = cameraMode !== 'cockpit' && !driverOut && !WASHER;     // (and not there at all once he's out)
+    // (the camera pod the T-cam looks out of: not in its own picture)
+    F.tcamPod ??= carModel.car.getObjectByName('tcamPod') || false;
+    if (F.tcamPod) F.tcamPod.visible = cameraMode !== 'tcam';
     if (washerBody) {
       // (the machine is all there is to see: anything of the car a repair put back stays hidden under it)
       for (const c of carModel.car.children) if (c !== washerBody.group) c.visible = false;
