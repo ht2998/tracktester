@@ -21,11 +21,18 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 171;
+export const BUILD = 172;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 142, date: '26 Nov 2026', title: 'Two cars, measured closer',
+    items: [
+      ['The TTF-94, closer to the real car', 'The TTF-94\'s body is now shaped from 250 measured slices instead of 100, and the nose is measured slice by slice too. Our reference turned out to be about a fifth too wide, so the body is now set to the real car\'s proportions: slimmer sidepods sitting just inside the wheels, a slimmer nose, and the mouths raked back from the nose to the full width of the pods', 'new'],
+      ['The TTF-88, closer too', 'The TTF-88 is now shaped from 250 measured slices as well: the nose measured all the way to its tip, square-cut fronts on the pods, and the engine cover and the back of the pods following the real car more closely', 'new'],
+    ],
+  },
   {
     id: 141, date: '25 Nov 2026', title: 'The TTF-20, and a new garage',
     items: [
