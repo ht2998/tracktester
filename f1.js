@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 81;
+export const BUILD = 82;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -1155,14 +1155,15 @@ export function buildF05Body(car, addPanel) {
     { z: -1.05, w: 0.3, h: 0.08, y: 0.6 },
   ];
   add(loft(airbox, 1.0, 40, 8, true), MAT.blue);
-  // its base carried 30 cm further forward: a shoulder down each side of his head, flowing
-  // out of the airbox's sides and tapering down into the cockpit's rim beside his helmet
-  for (const sx of [1, -1]) add(loft([
-    { z: -0.36, w: 0.15, h: 0.3, y: 0.62, x: sx * 0.165 },
-    { z: -0.24, w: 0.12, h: 0.21, y: 0.62, x: sx * 0.18 },
-    { z: -0.13, w: 0.1, h: 0.12, y: 0.62, x: sx * 0.19 },
-    { z: -0.02, w: 0.08, h: 0.04, y: 0.62, x: sx * 0.2 },
-  ], 1.0, 24, 8, true), MAT.blue);
+  // its base: solid down to the bodywork under the intake (no gap), and carried 30 cm
+  // further forward than the intake itself, sloping down to finish just behind his helmet
+  add(loft([
+    { z: -0.5, w: 0.3, h: 0.24, y: 0.6 },
+    { z: -0.36, w: 0.3, h: 0.22, y: 0.6 },
+    { z: -0.24, w: 0.28, h: 0.17, y: 0.6 },
+    { z: -0.14, w: 0.25, h: 0.09, y: 0.6 },
+    { z: -0.06, w: 0.22, h: 0.03, y: 0.6 },
+  ], 0.6, 32, 8, true), MAT.blue);
   add(loft([{ z: -0.3, w: 0.17, h: 0.13, y: 0.79 }, { z: -0.36, w: 0.17, h: 0.13, y: 0.79 }], 1.2, 20, 1, false), MAT.dark, false);
   add(box(0.1, 0.06, 0.16, 0, 1.05, -0.5), MAT.camera).name = 'tcamPod';      // (the camera pod: hidden in the T-cam's own view, as it's the camera)
   // THE SPINE: out of the back of the airbox and down the middle of the
