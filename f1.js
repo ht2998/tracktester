@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 84;
+export const BUILD = 87;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
