@@ -62,7 +62,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 109;
+const BUILD = 110;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -1215,7 +1215,7 @@ const cockpit = new Cockpit(carModel.car, MAT, { isMobile, redline: CATERHAM.red
 if (IS_F1) cockpit.group.visible = false;   // (the TT-88 has its own cockpit:)
 // THE TT-88's COCKPIT (f1.js): the wheel, the lever on the right, the
 // driver's arms fighting the car, his head thrown about
-const f1Cockpit = IS_F1 ? buildF1Cockpit(carModel.car, { paddles: PADDLES }) : null;
+const f1Cockpit = IS_F1 ? buildF1Cockpit(carModel.car, { paddles: PADDLES, ...(IS_F05 ? { wheelTilt: 0 } : {}) }) : null;
 // (the TTP-70's driver sits on the right, further back and a little higher)
 if (CLOSED_RHD && f1Cockpit) f1Cockpit.group.position.set(-0.27, -0.04, IS_P91 ? -0.29 : -0.24);     // (the TT-05 changes gear on paddles)
 const washerBody = WASHER ? buildWasher(carModel.car) : null;

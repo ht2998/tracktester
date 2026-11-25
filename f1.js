@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 72;
+export const BUILD = 73;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -1779,7 +1779,7 @@ export function buildF1() {
 // and harder it's going and over bumps), the right hand going to the lever
 // for every gear change. His head is shaken about with it (the camera).
 // =====================================================================
-export function buildF1Cockpit(car, { paddles = false } = {}) {
+export function buildF1Cockpit(car, { paddles = false, wheelTilt = -0.5 } = {}) {
   const group = new THREE.Group();
   car.add(group);
   const M = {
@@ -1808,7 +1808,7 @@ export function buildF1Cockpit(car, { paddles = false } = {}) {
   // rotary knobs and buttons round it, and the gear paddles behind
   const column = new THREE.Group();
   column.position.set(0, 0.47, 0.45);
-  column.rotation.x = -0.5;                        // tilted back towards him, below his eye line
+  column.rotation.x = wheelTilt;                   // tilted back towards him, below his eye line (the TT-05's stands straight up, facing him)
   group.add(column);
   add(new THREE.CylinderGeometry(0.018, 0.018, 0.2, 10).rotateX(Math.PI / 2).translate(0, 0, 0.1), M.steel, column);
   const wheel = new THREE.Group();
