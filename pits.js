@@ -26,7 +26,7 @@
 // a smashed radiator): the team retire the car. DNF on the standings, and
 // they push it back into the garage.
 // =====================================================================
-export const BUILD = 25;
+export const BUILD = 26;
 
 import * as THREE from 'three';
 
@@ -345,91 +345,158 @@ export class Person {
     return out;
   }
   knock(vx, vy, vz) {
-    const r = this.rag;
-    if (r && r.up > 0) { r.up = 0; }
+    const r = this.rag, R = Math.random;
     const f = vx * Math.sin(this.face) + vz * Math.cos(this.face), s = vx * Math.cos(this.face) - vz * Math.sin(this.face);
-    const R = Math.random;
-    if (!r) {
-      this.rag = { hx: this.x, hy: null, hz: this.z, ax: this.p.tilt || 0, az: this.p.roll || 0, vx, vy, vz, wx: f * 1.6 + (R() - 0.5) * 3, wz: -s * 1.6 + (R() - 0.5) * 3,
-        t: 0, rest: 0, up: 0, seed: R() * 10, j: {} };
-    } else { r.vx += vx; r.vy += vy; r.vz += vz; r.wx += f * 1.6; r.wz -= s * 1.6; r.rest = 0; r.t = 0; }
+    if (!r || r.up > 0) {
+      // (gone loose from wherever he is now, every joint where it was)
+      this.rag = { t: 0, rest: 0, up: 0, ...this.ragPoints() };
+      const g = this.rag, P = g.pos, Q = g.prev, dt = 1 / 60;
+      // the push, and a spin from it (the hit's low on him: his legs go, he goes over)
+      const wx = f * 1.6 + (R() - 0.5) * 3, wz = -s * 1.6 + (R() - 0.5) * 3;
+      const px = P[0], py = P[1], pz = P[2];
+      for (let i = 0; i < P.length; i += 3) {
+        const ry = P[i + 1] - py;
+        const ux = vx + (R() - 0.5) * 0.6 - wz * ry * 0.5 * Math.cos(this.face) - wx * ry * 0.5 * Math.sin(this.face);
+        const uz = vz + (R() - 0.5) * 0.6 + wz * ry * 0.5 * Math.sin(this.face) - wx * ry * 0.5 * Math.cos(this.face);
+        Q[i] = P[i] - ux * dt; Q[i + 1] = P[i + 1] - (vy + (R() - 0.5) * 0.4) * dt; Q[i + 2] = P[i + 2] - uz * dt;
+        void px; void pz;
+      }
+    } else {
+      for (let i = 0; i < r.pos.length; i += 3) { r.prev[i] -= vx / 60; r.prev[i + 1] -= vy / 60; r.prev[i + 2] -= vz / 60; }
+      r.rest = 0;
+    }
     this.anim = null;
   }
   get ragdolled() { return !!this.rag; }
+  // THE RAGDOLL'S POINTS: every joint, where it is on him now. Torso: the
+  // hips' middle, chest, both shoulders, both hips; then the top of his
+  // head, and elbows, wrists, knees and ankles. Held to each other by their
+  // bones' lengths and nothing else: every joint's loose
+  ragPoints() {
+    this.root.updateMatrixWorld(true);
+    // (a torn-off limb's joints aren't on him any more: they hang below where it was)
+    let last = null;
+    const W = (g, x, y, z) => (last = g?.parent ? g.localToWorld(new THREE.Vector3(x, y, z)) : last.clone().add(new THREE.Vector3(0, y, 0)));
+    const T = this.torso, H = this.hips;
+    const pts = [
+      W(H, 0, 0, 0), W(T, 0, 0.5, 0), W(T, 0.235, 0.5, 0), W(T, -0.235, 0.5, 0), W(H, 0.1, -0.02, 0), W(H, -0.1, -0.02, 0),   // 0-5 torso
+      W(T, 0, 0.86, 0),                                                                                                     // 6 head
+      ...[[this.shL, this.elL], [this.shR, this.elR]].flatMap(([u, l]) => { last = W(this.torso, u === this.shL ? 0.235 : -0.235, 0.5, 0); return [W(u, 0, -0.29, 0), W(l, 0, -0.29, 0)]; }),   // 7-10 elbows, wrists
+      ...[[this.thL, this.knL], [this.thR, this.knR]].flatMap(([u, l]) => { last = W(this.hips, u === this.thL ? 0.1 : -0.1, -0.02, 0); return [W(u, 0, -0.45, 0), W(l, 0, -0.45, 0)]; }),     // 11-14 knees, ankles
+    ];
+    const pos = new Float32Array(pts.length * 3);
+    pts.forEach((p, i) => pos.set([p.x, p.y, p.z], i * 3));
+    // the bones (rest lengths from the body as built, not as posed)
+    const torso = [[0, 0, 0], [0, 0.5, 0], [0.235, 0.5, 0], [-0.235, 0.5, 0], [0.1, -0.02, 0], [-0.1, -0.02, 0]];
+    const links = [];
+    for (let a = 0; a < 6; a++) for (let b = a + 1; b < 6; b++) {
+      const A = torso[a], B = torso[b], up = (a >= 1 && a <= 3) !== (b >= 1 && b <= 3);
+      links.push([a, b, Math.hypot(A[0] - B[0], A[1] - B[1]), up ? 0.35 : 1]);   // (the spine bends a little; shoulders and pelvis stay their shape)
+    }
+    links.push([1, 6, 0.36, 1], [2, 7, 0.29, 1], [7, 8, 0.29, 1], [3, 9, 0.29, 1], [9, 10, 0.29, 1],
+      [4, 11, 0.45, 1], [11, 12, 0.45, 1], [5, 13, 0.45, 1], [13, 14, 0.45, 1]);
+    // (only as far as joints go: an elbow or knee folds right up but not
+    // through itself, the head flops but not into the chest)
+    const least = [[0, 6, 0.62], [2, 8, 0.12], [3, 10, 0.12], [4, 12, 0.3], [5, 14, 0.3], [2, 6, 0.2], [3, 6, 0.2]];
+    return { pos, prev: Float32Array.from(pos), links, least };
+  }
   updateRag(dt, groundAt) {
-    const r = this.rag, root = this.root;
+    const r = this.rag, root = this.root, P = r.pos, Q = r.prev, n = P.length / 3;
     r.t += dt;
-    const gy = groundAt(r.hx, r.hz);
-    if (r.hy == null) r.hy = gy + 0.95 + (this.p.lift || 0);
-    const lying = Math.abs(Math.sin(r.ax)) > 0.8 || Math.abs(Math.sin(r.az)) > 0.8;
+    const q = Person._q || (Person._q = { a: new THREE.Quaternion(), b: new THREE.Quaternion(), m: new THREE.Matrix4(), x: new THREE.Vector3(), y: new THREE.Vector3(), z: new THREE.Vector3(), d: new THREE.Vector3(), down: new THREE.Vector3(0, -1, 0), up: new THREE.Vector3(0, 1, 0) });
     if (r.up > 0) {
-      // getting up: rolls over, pushes up off the ground, stands
+      // getting up: from however he lies, round to standing, every joint back
       r.up += dt / 1.6;
       const e = Math.min(1, r.up), ee = e * e * (3 - 2 * e);
-      r.ax = r.ax0 * (1 - ee); r.az = r.az0 * (1 - ee); r.hy = r.hy0 + (0.95 - r.hy0) * ee;
-      for (const [k, v] of Object.entries(r.j)) { const j = this[k]; j.rotation.set(v[0] * (1 - ee), 0, v[2] * (1 - ee)); }
-      if (e >= 1) {
-        this.rag = null; this.p.tilt = 0; this.p.roll = 0;
-        return false;
-      }
-    } else {
-      // the body: thrown, falling, tumbling, then on the ground
-      r.vy -= 9.81 * dt;
-      r.hx += r.vx * dt; r.hy += r.vy * dt; r.hz += r.vz * dt;
-      r.ax += r.wx * dt; r.az += r.wz * dt;
-      // the lowest of him: his feet, his head, or his hips if he's flat
-      const feetY = r.hy - 0.95 * Math.cos(r.ax) * Math.cos(r.az), headY = r.hy + 0.8 * Math.cos(r.ax) * Math.cos(r.az);
-      const low = Math.min(feetY, headY, r.hy - 0.12);
-      if (low < gy) {
-        r.hy += gy - low;
-        if (r.vy < 0) r.vy = -r.vy * (r.vy < -4 ? 0.3 : 0);
-        r.vx *= Math.exp(-dt * 6); r.vz *= Math.exp(-dt * 6);
-        r.wx *= Math.exp(-dt * 5); r.wz *= Math.exp(-dt * 5);
-        // gravity lays him down: on his back or front, whichever's nearer
-        const onSide = Math.abs(Math.sin(r.az)) > 0.8;
-        if (!onSide) {
-          let tx = r.ax, best = Infinity;
-          for (const c0 of [Math.PI / 2, -Math.PI / 2]) { const c1 = c0 + Math.round((r.ax - c0) / (2 * Math.PI)) * 2 * Math.PI; if (Math.abs(c1 - r.ax) < best) { best = Math.abs(c1 - r.ax); tx = c1; } }
-          r.ax += (tx - r.ax) * Math.min(1, dt * 3);
-          r.az += (Math.round(r.az / Math.PI) * Math.PI - r.az) * Math.min(1, dt * 3);
-        }
-        const slow = Math.hypot(r.vx, r.vz) < 0.3 && Math.abs(r.vy) < 0.5;
-        if (slow && lying) r.rest += dt;
-      }
-      // the arms and legs: flailing in the air, flopping limp on the ground
-      const air = low > gy + 0.05;
-      const fl = (k, i) => Math.sin(r.t * (7 + i * 1.3) + r.seed + i * 2.1);
-      const want = air ? {
-        shL: [-1.2 + fl(0, 0) * 1.4, 0, 0.9 + fl(0, 1) * 0.6], shR: [-1.2 + fl(0, 2) * 1.4, 0, -0.9 + fl(0, 3) * 0.6],
-        elL: [-0.6 - Math.abs(fl(0, 4)), 0, 0], elR: [-0.6 - Math.abs(fl(0, 5)), 0, 0],
-        thL: [-0.6 + fl(0, 6) * 0.8, 0, 0.2], thR: [-0.4 + fl(0, 7) * 0.8, 0, -0.2], knL: [0.6 + Math.abs(fl(0, 8)), 0, 0], knR: [0.5 + Math.abs(fl(0, 9)), 0, 0],
-        head: [fl(0, 10) * 0.5, 0, fl(0, 11) * 0.4],
-      } : {
-        shL: [-0.2 + Math.sin(r.seed) * 0.6, 0, 1.15 + Math.sin(r.seed * 2) * 0.3], shR: [-0.3 + Math.sin(r.seed * 3) * 0.6, 0, -1.1 - Math.sin(r.seed * 5) * 0.3],
-        elL: [-0.3 - Math.abs(Math.sin(r.seed * 7)) * 0.6, 0, 0], elR: [-0.25 - Math.abs(Math.sin(r.seed * 11)) * 0.6, 0, 0],
-        thL: [-0.15 - Math.abs(Math.sin(r.seed * 13)) * 0.4, 0, 0.18], thR: [0.05, 0, -0.12], knL: [0.25 + Math.abs(Math.sin(r.seed * 17)) * 0.6, 0, 0], knR: [0.1, 0, 0],
-        head: [Math.sin(r.seed * 19) * 0.3, 0, Math.sin(r.seed * 23) * 0.6],
-      };
-      const k = Math.min(1, dt * (air ? 10 : 6));
-      for (const [name, v] of Object.entries(want)) {
-        const j = this[name], cur = r.j[name] || [j.rotation.x, 0, j.rotation.z];
-        cur[0] += (v[0] - cur[0]) * k; cur[2] += (v[2] - cur[2]) * k; r.j[name] = cur;
-        j.rotation.set(cur[0], 0, cur[2]);
-      }
-      this.torso.rotation.set(0, 0, 0); this.hips.rotation.set(0, 0, 0);
-      // lain there a while: up he gets
-      // (killed: he stays down. The pit crew are needed for the stops, so a
-      // crewman who's been hit that hard is down a good while, then back to it)
-      if (r.rest > (this.dead ? (this.role && !this.torn ? 25 : Infinity) : 3.5)) { r.up = 1e-6; r.ax0 = r.ax; r.az0 = r.az; r.hy0 = r.hy; this.dead = false; }
+      q.a.setFromEuler(new THREE.Euler(0, this.face, 0, 'YXZ'));
+      root.quaternion.slerpQuaternions(r.q0, q.a, ee);
+      const gy = groundAt(r.x0, r.z0);
+      root.position.set(r.x0, r.y0 + (gy - r.y0) * ee, r.z0);
+      for (const [k, v] of r.j0) this[k].quaternion.slerpQuaternions(v, q.b.identity(), ee);
+      this.x = r.x0; this.z = r.z0; this.moving = 0;
+      if (e >= 1) { this.rag = null; this.p.tilt = 0; this.p.roll = 0; root.rotation.set(0, this.face, 0); return false; }
+      return true;
     }
-    // placed by his hips: the feet are wherever the tilt puts them
-    root.rotation.set(r.ax, this.face, r.az, 'YXZ');
-    root.updateMatrix();
-    const off = new THREE.Vector3(0, 0.95, 0).applyEuler(root.rotation);
-    root.position.set(r.hx - off.x, r.hy - off.y, r.hz - off.z);
-    this.x = root.position.x; this.z = root.position.z;
-    this.moving = 0;
+    // THE POINTS: falling, held together by their bones, stopped by the ground
+    const steps = 2, h = Math.min(dt, 1 / 30) / steps;
+    let fast = 0;
+    for (let s = 0; s < steps; s++) {
+      for (let i = 0; i < n; i++) {
+        const k = i * 3;
+        for (let c = 0; c < 3; c++) {
+          const x = P[k + c], v = (x - Q[k + c]) * 0.995;
+          Q[k + c] = x; P[k + c] = x + v + (c === 1 ? -9.81 * h * h : 0);
+        }
+      }
+      for (let it = 0; it < 6; it++) {
+        for (const [a, b, L, k] of r.links) this.ragLink(P, a, b, L, k, false);
+        for (const [a, b, L] of r.least) this.ragLink(P, a, b, L, 1, true);
+        for (let i = 0; i < n; i++) {
+          const k = i * 3, gy = groundAt(P[k], P[k + 2]) + (i === 6 ? 0.11 : i >= 11 ? 0.05 : 0.07);
+          if (P[k + 1] < gy) {
+            P[k + 1] = gy;
+            // (the ground grips what's on it: it slides to a stop, and doesn't bounce)
+            P[k] -= (P[k] - Q[k]) * 0.5; P[k + 2] -= (P[k + 2] - Q[k + 2]) * 0.5;
+            if (Q[k + 1] < gy) Q[k + 1] = gy;
+          }
+        }
+      }
+    }
+    for (let i = 0; i < n; i++) { const k = i * 3; fast = Math.max(fast, Math.hypot(P[k] - Q[k], P[k + 1] - Q[k + 1], P[k + 2] - Q[k + 2]) / h); }
+    // THE BODY FROM THEM: hips and chest turned to where their points are,
+    // each arm, leg and the head pointed down its bone at the next one
+    const V = (i, out) => out.set(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]);
+    const frame = (l, rr, top, bot, out) => {
+      V(top, q.y).sub(V(bot, q.d)).normalize();
+      V(l, q.x).sub(V(rr, q.d)); q.x.addScaledVector(q.y, -q.x.dot(q.y)).normalize();
+      q.z.crossVectors(q.x, q.y);
+      return out.setFromRotationMatrix(q.m.makeBasis(q.x, q.y, q.z));
+    };
+    const Qh = frame(4, 5, 1, 0, new THREE.Quaternion()), Qt = frame(2, 3, 1, 0, new THREE.Quaternion());
+    root.quaternion.copy(Qh);
+    V(0, q.d); root.position.copy(q.d).sub(new THREE.Vector3(0, 0.95, 0).applyQuaternion(Qh));
+    this.hips.quaternion.identity();
+    this.torso.quaternion.copy(Qh).invert().multiply(Qt);
+    const bone = (j, parentQ, a, b, rest) => {
+      if (!j) return parentQ;
+      V(b, q.d).sub(V(a, q.x));
+      if (q.d.lengthSq() < 1e-8) return parentQ;
+      q.d.normalize().applyQuaternion(q.a.copy(parentQ).invert());
+      j.quaternion.setFromUnitVectors(rest, q.d);
+      return parentQ.clone().multiply(j.quaternion);
+    };
+    for (const [sh, el, a, m, w] of [['shL', 'elL', 2, 7, 8], ['shR', 'elR', 3, 9, 10]]) { const qs = bone(this[sh], Qt, a, m, q.down); bone(this[el], qs, m, w, q.down); }
+    for (const [th, kn, a, m, w] of [['thL', 'knL', 4, 11, 12], ['thR', 'knR', 5, 13, 14]]) { const qs = bone(this[th], Qh, a, m, q.down); bone(this[kn], qs, m, w, q.down); }
+    // (the head: from the neck to the top of it)
+    { const neck = new THREE.Vector3(0, 0.63, 0).applyQuaternion(Qt).add(V(0, q.y)); q.d.copy(V(6, q.x)).sub(neck).normalize().applyQuaternion(q.a.copy(Qt).invert()); this.head.quaternion.setFromUnitVectors(q.up, q.d); }
+    // (for everything else that asks where he is and how he lies)
+    r.hx = P[0]; r.hy = P[1]; r.hz = P[2];
+    const e = new THREE.Euler().setFromQuaternion(Qh, 'YXZ'); r.ax = e.x; r.az = e.z;
+    this.p.tilt = e.x; this.p.roll = e.z;
+    this.x = root.position.x; this.z = root.position.z; this.moving = 0;
+    // lain there a while, still: up he gets
+    // (killed: he stays down. The pit crew are needed for the stops, so a
+    // crewman who's been hit that hard is down a good while, then back to it)
+    if (fast < 0.3) r.rest += dt; else r.rest = 0;
+    if (r.rest > (this.dead ? (this.role && !this.torn ? 25 : Infinity) : 3.5)) {
+      r.up = 1e-6; this.dead = false;
+      // (he gets up facing the way his body lies)
+      q.d.set(0, 0, 1).applyQuaternion(Qh); if (Math.abs(q.d.y) > 0.7) q.d.set(0, 1, 0).applyQuaternion(Qh).negate();
+      this.face = Math.atan2(q.d.x, q.d.z);
+      r.q0 = root.quaternion.clone(); r.x0 = P[0]; r.z0 = P[2]; r.y0 = root.position.y;
+      r.j0 = ['torso', 'head', 'shL', 'elL', 'shR', 'elR', 'thL', 'knL', 'thR', 'knR'].filter((k) => this[k]).map((k) => [k, this[k].quaternion.clone()]);
+    }
     return true;
+  }
+  // a bone between two points: pulled back to its length (or, for a joint's
+  // limit, only pushed apart when they come too close)
+  ragLink(P, a, b, L, k, atLeast) {
+    const ax = a * 3, bx = b * 3, dx = P[bx] - P[ax], dy = P[bx + 1] - P[ax + 1], dz = P[bx + 2] - P[ax + 2];
+    const d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-6;
+    if (atLeast && d >= L) return;
+    const c = (d - L) / d * 0.5 * k;
+    P[ax] += dx * c; P[ax + 1] += dy * c; P[ax + 2] += dz * c;
+    P[bx] -= dx * c; P[bx + 1] -= dy * c; P[bx + 2] -= dz * c;
   }
 
   update(dt, groundAt, ctx) {

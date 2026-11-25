@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 157;
+export const BUILD = 158;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 129, date: '25 Nov 2026', title: 'Limp when knocked flying',
+    items: [
+      ['A real ragdoll', 'Someone knocked flying is no longer a stiff board with waving arms: every joint goes loose (neck, spine, shoulders, elbows, hips, knees), each part flung and falling on its own and flopping onto the ground however it lands. Elbows and knees still only fold the way they can. Getting up, he rolls round from however he lies', 'new'],
+    ],
+  },
   {
     id: 128, date: '25 Nov 2026', title: 'Wheels and tyres take damage',
     items: [
