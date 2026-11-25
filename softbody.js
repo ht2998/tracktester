@@ -11,7 +11,7 @@
 // lattice around it was. Between crashes it sleeps and costs nothing.
 // (Car's own space: x = left, y = up, z = forward.)
 // =====================================================================
-export const BUILD = 2;
+export const BUILD = 3;
 
 export class CrushFrame {
   // box: { min: [x, y, z], max: [x, y, z] }, n: [nx, ny, nz] points along each;
@@ -64,7 +64,7 @@ export class CrushFrame {
     const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
     // how far the wall gets in: the energy, soaked up by the crumpling
     const depth = Math.min(1.5, 0.0013 * speed * speed);
-    if (depth < 0.01) return 0;
+    if (depth < 0.025) return 0;                                              // (a scrape: nothing to crush)
     const P = this.pos, N = this.fixed.length, M = this.len.length, B = this.beams;
     // the wall's plane starts where the car's outermost point along the push is, by the contact
     let start = Infinity;
@@ -124,6 +124,13 @@ export class CrushFrame {
         P[c * 3] -= vx * k * wc; P[c * 3 + 1] -= vy * k * wc; P[c * 3 + 2] -= vz * k * wc;
       }
     }
+    // (the part of the car that can have moved: the points worked through, and a lattice cell round them)
+    const R = this.rest, cell = [0, 1, 2].map((d) => (this.max[d] - this.min[d]) / (this.n[d] - 1));
+    const reach = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+    for (let p = 0; p < N; p++) if (act[p]) for (let d = 0; d < 3; d++) { reach[d] = Math.min(reach[d], R[p * 3 + d] - cell[d]); reach[d + 3] = Math.max(reach[d + 3], R[p * 3 + d] + cell[d]); }
+    // (the frame's edges: what's past them follows the nearest points, so reach out to infinity there)
+    for (let d = 0; d < 3; d++) { if (reach[d] <= this.min[d]) reach[d] = -Infinity; if (reach[d + 3] >= this.max[d]) reach[d + 3] = Infinity; }
+    this.reach = reach;
     this.changed = true;
     return depth;
   }

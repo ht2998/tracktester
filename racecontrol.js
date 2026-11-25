@@ -34,7 +34,7 @@ import { Person, makeExtinguisher } from './pits.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 10;
+export const BUILD = 11;
 
 const std = (color, rough = 0.6, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: rough, ...extra });
 const boxAt = (w, h, d, x = 0, y = 0, z = 0) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
@@ -1919,7 +1919,7 @@ export class RaceControl {
       addMesh(stretcher, roundBox(0.6, 0.08, 2.0, 0.03, 0, 0.0, 0), std(0xe8e8e2, 0.6));
       addMesh(stretcher, roundBox(0.56, 0.06, 1.9, 0.02, 0, 0.06, 0), std(0xd23a1f, 0.7));
       for (const sx of [-0.31, 0.31]) addMesh(stretcher, new THREE.CylinderGeometry(0.02, 0.02, 2.4, 6).rotateX(Math.PI / 2).translate(sx, 0, 0), std(0xa4a8ae, 0.3, { metalness: 0.8 }), false);
-      stretcher.visible = false; this.scene.add(stretcher);
+      stretcher.visible = false; this.scene.add(stretcher); M.stretcher = stretcher;
     }
     let carried = false;
     const h0 = Math.atan2(door[0] - body[0], door[1] - body[1]);
@@ -2118,6 +2118,31 @@ export class RaceControl {
     this.sc.green(false);
     this.ai.restartFromGrid?.();
     this.hooks.toast?.('RESTART: BACK ON THE GRID');
+  }
+
+  // EVERYONE HOME (the car reset): every rescue vehicle back where it's
+  // parked at once, whatever it was doing (a wreck on the hook or the bed is
+  // put down where it is), the marshals and medics gone, the track green
+  allHome() {
+    for (const [v, park] of [[this.sc, this.parkSC], [this.ambulance, this.parkAmb]]) {
+      v.state = 'parked'; v.mode = 'free'; v.route = []; v.legs = null; v.v = 0; v.x = park.x; v.z = park.z; v.heading = Math.PI; this.place(v); v.flash(0, false);
+    }
+    this.sc.green?.(false);
+    const T = this.truck;
+    if (T.load?.kind === 'ai' && T.load.car) T.load.car.lift = 0;
+    Object.assign(T, { state: 'parked', mode: 'free', route: [], legs: null, v: 0, load: null, toPits: null, x: this.parkTruck.x, z: this.parkTruck.z, heading: Math.PI });
+    this.place(T); T.flash(0, false);
+    for (const c of this.cranes) {
+      if (c.w?.kind === 'ai' && c.w.car) c.w.car.lift = 0;
+      if (c.w?.obj && c.w.kind !== 'player' && c.w.kind !== 'ai') c.w.obj.position.y = this.groundAt(c.w.obj.position.x, c.w.obj.position.z);
+      Object.assign(c, { state: 'parked', w: null, legs: null, v: 0, t: 0, lift: 0, offset: null, useTruck: null, x: c.park.x, z: c.park.z, heading: c.parkHeading ?? c.heading });
+      c.turntable.rotation.y = 0; c.boom.rotation.x = 0; c.setExtend(0); c.setOutriggers(0); c.out = 0; c.setSlings?.(0); c.pose(); this.place(c); c.flash(0, false);
+    }
+    this.crane = null; this.hookLift = null; this.liftedPlayer = 0;
+    for (const r of this.runners) { r.done = true; r.person.root.visible = false; }
+    if (this.medics) { if (this.medics.stretcher) this.medics.stretcher.visible = false; this.medics = null; }
+    this.jobs.clear();
+    if (this.phase !== 'green') this.setPhase('green');
   }
 
   // ---- your penalties ----

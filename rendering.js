@@ -61,7 +61,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 105;
+const BUILD = 106;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -819,15 +819,21 @@ function smoothNormals(g) {
   g.computeVertexNormals();
   const pos = g.attributes.position, nor = g.attributes.normal;
   if (!pos || !nor || !pos.array || !nor.array) return;
-  const P = pos.array, N = nor.array, groups = new Map();
-  for (let i = 0; i < pos.count; i++) {
-    const key = `${Math.round(P[i * 3] * 2e3)},${Math.round(P[i * 3 + 1] * 2e3)},${Math.round(P[i * 3 + 2] * 2e3)}`;
-    let list = groups.get(key);
-    if (!list) groups.set(key, list = []);
-    list.push(i);
+  const P = pos.array, N = nor.array;
+  // (which points sit on top of each other: worked out once per mesh, as
+  // denting moves them together, and it was the slowest part of a crash)
+  let groups = g.userData.weld;
+  if (!groups) {
+    const byKey = new Map();
+    for (let i = 0; i < pos.count; i++) {
+      const key = `${Math.round(P[i * 3] * 2e3)},${Math.round(P[i * 3 + 1] * 2e3)},${Math.round(P[i * 3 + 2] * 2e3)}`;
+      let list = byKey.get(key);
+      if (!list) byKey.set(key, list = []);
+      list.push(i);
+    }
+    groups = g.userData.weld = [...byKey.values()].filter((l) => l.length > 1);
   }
-  for (const list of groups.values()) {
-    if (list.length < 2) continue;
+  for (const list of groups) {
     let x = 0, y = 0, z = 0;
     for (const i of list) { x += N[i * 3]; y += N[i * 3 + 1]; z += N[i * 3 + 2]; }
     const l = Math.hypot(x, y, z) || 1;
@@ -2367,7 +2373,7 @@ let noseCrush = 0;                                     // (m the F1 nose has bee
 let detailCrush = false;
 try { detailCrush = localStorage.getItem('tracktester-crush') === 'full'; } catch (e) { /* storage blocked */ }
 const makeCrushFrame = () => new CrushFrame({
-  min: [-0.95, 0.05, -2.1], max: [0.95, 1.05, 2.9], n: [12, 7, 30], steps: 16, iters: 5, buckle: 0.3,
+  min: [-0.95, 0.05, -2.1], max: [0.95, 1.05, 2.9], n: [12, 7, 30], steps: 10, iters: 4, buckle: 0.3,
   rigid: (x, y, z) => z > -0.45 && z < 0.85 && Math.abs(x) < 0.4,                 // (the tub: carbon, as good as unbreakable)
   soft: (x, y, z) => (z > 1.2 ? 1 : z > 0.85 ? 0.6 : z < -1.4 ? 0.55 : Math.abs(x) > 0.4 ? 0.45 : 0.1),   // (the nose crumples; the pods, the back, give some)
 });
@@ -2381,12 +2387,29 @@ function setDetailCrush(on) {
 }
 const NOSE_TIP = IS_F05 ? 2.76 : IS_F94 ? 2.63 : IS_P70 ? 2.13 : IS_P91 ? 2.36 : 2.52, NOSE_BASE = IS_F05 ? 1.25 : IS_F94 ? 1.2 : IS_P70 ? 1.45 : IS_P91 ? 1.6 : 1.15;
 const bodyOriginals = new Map();
-function reshapeBody() {
+// (each panel's box on the car, so a hit only reshapes the panels it reaches)
+const panelBoxes = new Map();
+function panelBox(m, orig) {
+  let b = panelBoxes.get(m);
+  if (b) return b;
+  const sx = m.scale.x || 1, sy = m.scale.y || 1, sz = m.scale.z || 1;
+  b = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < orig.length; i += 3) {
+    const x = m.position.x + orig[i] * sx, y = m.position.y + orig[i + 1] * sy, z = m.position.z + orig[i + 2] * sz;
+    if (x < b[0]) b[0] = x; if (y < b[1]) b[1] = y; if (z < b[2]) b[2] = z;
+    if (x > b[3]) b[3] = x; if (y > b[4]) b[4] = y; if (z > b[5]) b[5] = z;
+  }
+  panelBoxes.set(m, b);
+  return b;
+}
+// reach: [minX, minY, minZ, maxX, maxY, maxZ] of the car the hit can have moved (none: all of it)
+function reshapeBody(reach) {
   for (const m of carModel.crush.panels) {
     const pos = m.geometry.attributes.position;
     if (!pos || !pos.array) continue;
     let orig = bodyOriginals.get(m);
     if (!orig) { orig = Float32Array.from(pos.array); bodyOriginals.set(m, orig); }
+    if (reach) { const b = panelBox(m, orig); if (b[3] < reach[0] || b[0] > reach[3] || b[4] < reach[1] || b[1] > reach[4] || b[5] < reach[2] || b[2] > reach[5]) continue; }
     const a = pos.array, sx = m.scale.x || 1, sy = m.scale.y || 1, sz = m.scale.z || 1;
     for (let i = 0; i < pos.count; i++) {
       const lx = orig[i * 3], ly = orig[i * 3 + 1], lz = orig[i * 3 + 2];
@@ -2414,11 +2437,24 @@ function reshapeBody() {
   placeScratches();
 }
 // A hit at (x, y, z) on the car, pushing in along (dx, dz), depth in metres
+let dentBatch = null;            // (a hit's folds, gathered to reshape once)
 function dentBody(x, y, z, dx, dz, depth, radius) {
   const l = Math.hypot(dx, dz) || 1;
+  if (dents.length >= 40) { dents.shift(); dentBatch = 'all'; }   // (an old dent goes: everything it touched changes)
   dents.push({ x, y, z, dx: dx / l, dy: 0, dz: dz / l, depth, r: radius, seed: Math.random() * 100 });
-  if (dents.length > 40) dents.shift();
-  reshapeBody();
+  const e = radius * 2.2 + 0.05;                                   // (past this a dent moves nothing)
+  if (dentBatch === 'all') return;
+  dentBatch ??= [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+  dentBatch[0] = Math.min(dentBatch[0], x - e); dentBatch[1] = Math.min(dentBatch[1], y - e); dentBatch[2] = Math.min(dentBatch[2], z - e);
+  dentBatch[3] = Math.max(dentBatch[3], x + e); dentBatch[4] = Math.max(dentBatch[4], y + e); dentBatch[5] = Math.max(dentBatch[5], z + e);
+}
+function flushDents() {
+  if (!dentBatch) return;
+  const reach = dentBatch === 'all' ? undefined : dentBatch.slice();
+  // (an F1 nose pushed back: the whole nose moves)
+  if (reach && noseCrush > 0) reach[5] = Math.max(reach[5], 4), reach[2] = Math.min(reach[2], NOSE_BASE - 0.1), reach[0] = Math.min(reach[0], -1.2), reach[3] = Math.max(reach[3], 1.2), reach[1] = -1, reach[4] = Math.max(reach[4], 2);
+  dentBatch = null;
+  reshapeBody(reach);
 }
 const _cfp = new THREE.Vector3(), _cfo = new THREE.Vector3();
 // WHAT THE CRUSH TEARS OFF: anything fixed where the frame has been pushed
@@ -3071,12 +3107,13 @@ function collide(now) {
         for (let k = 0; k < folds; k++) {
           const f = 1 - k * 0.3, back = k * (IS_F1 ? 0.6 : 0.45);
           // (a car with a crush frame: the wall driven into it, once, and the body follows)
-          if (crushFrame) { if (k === 0) { const lp = carModel.car.worldToLocal(_cfp.set(k0px, 0.4, k0pz)); crushFrame.impact(lp.x, 0.4, lp.z, nl, nf, hitSpeed); reshapeBody(); crushBreaks(); } continue; }
+          if (crushFrame) { if (k === 0 && hitSpeed > 4.5) { const lp = carModel.car.worldToLocal(_cfp.set(k0px, 0.4, k0pz)); if (crushFrame.impact(lp.x, 0.4, lp.z, nl, nf, hitSpeed) > 0) { reshapeBody(crushFrame.reach); crushBreaks(); } } continue; }
           if (zone === 'front' && IS_F1 && k === 0) noseCrush = Math.min(1.2, noseCrush + (hitSpeed - 3) * 0.022 * Math.max(0, -nf));
           if (zone === 'front') dentBody(Math.max(-0.28, Math.min(0.28, across)) * f, 0.4, NOSE - back, nl, nf, depth * f, radius);
           else if (zone === 'rear') dentBody(Math.max(-0.7, Math.min(0.7, across)) * f, 0.52, TAIL + back, nl, nf, depth * 0.9 * f, radius);
           else if (k === 0) dentBody(zone === 'left' ? 0.45 : -0.45, 0.42, Math.max(-1.3, Math.min(1.45, along)), nl, nf, depth * 0.7, radius);
         }
+        flushDents();
       }
     }
     // A proper hit: the barrier reacts (dents, squashes, cracks)
@@ -5073,6 +5110,7 @@ renderer.setAnimationLoop(() => {
   if (wasTapped('camera')) switchCamera();
   if (wasTapped('reset')) {
     repairAll();
+    raceControl?.allHome?.();       // (no crane coming for a car that's been put right)
     placeAtStart();
     pits?.reset();
     if (heavyMode) heavyPhys.place(physics.x, physics.z, physics.heading);   // (the heavy goes back too)
