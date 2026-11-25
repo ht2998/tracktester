@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 79;
+export const BUILD = 80;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -954,23 +954,25 @@ export function buildF05Body(car, addPanel) {
   // the undercut, the middle underneath), swept from the nose's tip to
   // the back, then mirrored. Each strip of it painted as the real car
   const K = (vals) => curveAny(Z.map((z, i) => [z, vals[i]]));
-  const Z = [0.66, 0.4, 0.05, -0.25, -0.55, -0.9, -1.3, -1.75];
-  const yTop = K([0.64, 0.64, 0.64, 0.72, 0.73, 0.62, 0.5, 0.36]);
+  // (the shape measured off a reference of the real car, slice by slice, at 60
+  // points from the pods' mouths back and 40 down the nose: see the notes)
+  const Z = [0.5, 0.464, 0.429, 0.393, 0.358, 0.322, 0.286, 0.251, 0.215, 0.18, 0.144, 0.108, 0.073, 0.037, 0.002, -0.034, -0.069, -0.105, -0.141, -0.176, -0.212, -0.247, -0.283, -0.319, -0.354, -0.39, -0.425, -0.461, -0.497, -0.532, -0.568, -0.603, -0.639, -0.675, -0.71, -0.746, -0.781, -0.817, -0.853, -0.888, -0.924, -0.959, -0.995, -1.031, -1.066, -1.102, -1.137, -1.173, -1.208, -1.244, -1.28, -1.315, -1.351, -1.386, -1.422, -1.458, -1.493, -1.529, -1.564, -1.6];
+  const yTop = K([0.712, 0.712, 0.712, 0.712, 0.712, 0.712, 0.712, 0.712, 0.712, 0.712, 0.712, 0.712, 0.711, 0.709, 0.707, 0.704, 0.699, 0.69, 0.683, 0.679, 0.677, 0.671, 0.66, 0.646, 0.628, 0.608, 0.585, 0.565, 0.549, 0.538, 0.528, 0.518, 0.509, 0.499, 0.49, 0.482, 0.472, 0.461, 0.45, 0.441, 0.435, 0.429, 0.424, 0.418, 0.413, 0.407, 0.402, 0.398, 0.395, 0.394, 0.392, 0.391, 0.39, 0.388, 0.387, 0.385, 0.384, 0.383, 0.381, 0.38]);
   const x1 = K([0.33, 0.33, 0.32, 0.3, 0.27, 0.22, 0.16, 0.09]), y1 = K([0.56, 0.57, 0.58, 0.64, 0.64, 0.56, 0.46, 0.33]);
-  const CW = K([0.31, 0.31, 0.29, 0.19, 0.17, 0.15, 0.12, 0.08]);        // (the tub's walls, then the engine cover's half-width)
-  const xc = K([0.5, 0.54, 0.55, 0.5, 0.41, 0.31, 0.22, 0.12]), yc = K([0.52, 0.53, 0.52, 0.48, 0.44, 0.39, 0.34, 0.28]);
-  const xo = K([0.6, 0.68, 0.69, 0.65, 0.57, 0.45, 0.32, 0.2]), ycr = K([0.3, 0.3, 0.3, 0.31, 0.32, 0.33, 0.33, 0.26]);
+  const CW = K([0.255, 0.255, 0.255, 0.255, 0.255, 0.255, 0.255, 0.255, 0.255, 0.255, 0.255, 0.255, 0.253, 0.247, 0.237, 0.223, 0.213, 0.203, 0.19, 0.158, 0.128, 0.107, 0.11, 0.118, 0.137, 0.152, 0.172, 0.183, 0.19, 0.193, 0.19, 0.193, 0.198, 0.202, 0.207, 0.198, 0.205, 0.222, 0.238, 0.235, 0.212, 0.192, 0.178, 0.165, 0.15, 0.135, 0.124, 0.116, 0.112, 0.108, 0.105, 0.101, 0.097, 0.093, 0.091, 0.09, 0.09, 0.09, 0.09, 0.09]);        // (the tub's walls, then the engine cover's half-width)
+  const xc = K([0.412, 0.416, 0.42, 0.425, 0.43, 0.436, 0.44, 0.443, 0.445, 0.447, 0.447, 0.447, 0.446, 0.442, 0.435, 0.427, 0.42, 0.413, 0.403, 0.384, 0.365, 0.35, 0.348, 0.348, 0.353, 0.356, 0.36, 0.359, 0.355, 0.348, 0.338, 0.33, 0.322, 0.317, 0.316, 0.309, 0.304, 0.302, 0.303, 0.294, 0.274, 0.253, 0.239, 0.227, 0.215, 0.202, 0.192, 0.184, 0.177, 0.171, 0.164, 0.158, 0.151, 0.145, 0.139, 0.134, 0.129, 0.124, 0.12, 0.115]), yc = K([0.543, 0.554, 0.563, 0.569, 0.572, 0.573, 0.574, 0.575, 0.575, 0.574, 0.571, 0.568, 0.564, 0.559, 0.555, 0.552, 0.548, 0.544, 0.535, 0.53, 0.52, 0.512, 0.501, 0.489, 0.476, 0.462, 0.45, 0.441, 0.433, 0.426, 0.418, 0.411, 0.403, 0.392, 0.372, 0.352, 0.329, 0.3, 0.27, 0.258, 0.26, 0.264, 0.261, 0.257, 0.255, 0.251, 0.25, 0.25, 0.252, 0.255, 0.257, 0.26, 0.262, 0.265, 0.267, 0.27, 0.272, 0.275, 0.277, 0.28]);
+  const xo = K([0.569, 0.576, 0.584, 0.595, 0.606, 0.616, 0.625, 0.631, 0.636, 0.639, 0.64, 0.64, 0.639, 0.637, 0.634, 0.631, 0.627, 0.622, 0.616, 0.61, 0.602, 0.594, 0.586, 0.577, 0.569, 0.56, 0.548, 0.535, 0.519, 0.503, 0.485, 0.466, 0.445, 0.432, 0.426, 0.42, 0.403, 0.381, 0.368, 0.353, 0.337, 0.314, 0.3, 0.289, 0.279, 0.27, 0.261, 0.251, 0.242, 0.233, 0.224, 0.214, 0.205, 0.196, 0.186, 0.177, 0.168, 0.159, 0.149, 0.14]), ycr = K([0.36, 0.36, 0.36, 0.36, 0.36, 0.36, 0.36, 0.36, 0.36, 0.36, 0.36, 0.36, 0.36, 0.36, 0.36, 0.36, 0.359, 0.354, 0.335, 0.314, 0.292, 0.282, 0.276, 0.268, 0.261, 0.251, 0.245, 0.239, 0.235, 0.232, 0.228, 0.229, 0.231, 0.226, 0.216, 0.204, 0.201, 0.201, 0.201, 0.2, 0.2, 0.2, 0.2, 0.2, 0.201, 0.203, 0.204, 0.205, 0.206, 0.208, 0.209, 0.21, 0.211, 0.213, 0.214, 0.215, 0.216, 0.218, 0.219, 0.22]);
   const xb = (z) => xo(z) - 0.006 - 0.07 * Math.max(0, Math.min(1, (z - 0.05) / 0.5));       // (the undercut under the pod's front)
   // the cockpit's opening: half its width along the car (closed ahead of it and behind the headrest)
-  const OWc = curveAny([[0.9, 0], [0.74, 0], [0.7, 0.15], [0.5, 0.2], [-0.05, 0.2], [-0.2, 0.06], [-0.3, 0], [-0.5, 0]]);
+  const OWc = curveAny([[0.9, 0], [0.74, 0], [0.7, 0.14], [0.5, 0.165], [-0.05, 0.165], [-0.2, 0.06], [-0.3, 0], [-0.5, 0]]);     // (narrower, as measured)
   const OW = (z) => (z > 0.735 || z < -0.24 ? 0 : Math.max(0, OWc(z)));
   const RIM = 0.64;                                                     // (the high walls: the rim round his shoulders)
   // the nose and the front of the tub: half-width, underside, top
-  const ZA = [2.76, 2.6, 2.3, 1.95, 1.55, 1.2, 0.9, 0.72, 0.68];
+  const ZA = [2.545, 2.493, 2.441, 2.389, 2.337, 2.285, 2.233, 2.182, 2.13, 2.078, 2.026, 1.974, 1.922, 1.87, 1.818, 1.766, 1.714, 1.662, 1.61, 1.558, 1.507, 1.455, 1.403, 1.351, 1.299, 1.247, 1.195, 1.143, 1.091, 1.039, 0.987, 0.935, 0.883, 0.832, 0.78, 0.728, 0.676, 0.624, 0.572, 0.52];
   const KA = (v) => curveAny(ZA.map((z, i) => [z, v[i]]));
-  const hwA = KA([0.05, 0.08, 0.12, 0.15, 0.19, 0.24, 0.29, 0.33, 0.345]);
-  const ybA = KA([0.31, 0.31, 0.32, 0.33, 0.32, 0.25, 0.16, 0.12, 0.11]);
-  const ytA = KA([0.4, 0.45, 0.52, 0.585, 0.625, 0.64, 0.64, 0.64, 0.64]);
+  const hwA = KA([0.037, 0.052, 0.061, 0.066, 0.069, 0.073, 0.077, 0.082, 0.088, 0.096, 0.105, 0.115, 0.125, 0.135, 0.145, 0.152, 0.158, 0.162, 0.166, 0.169, 0.172, 0.176, 0.179, 0.183, 0.186, 0.19, 0.194, 0.198, 0.204, 0.21, 0.215, 0.221, 0.227, 0.233, 0.24, 0.246, 0.252, 0.258, 0.264, 0.27]);
+  const ybA = KA([0.283, 0.275, 0.271, 0.27, 0.271, 0.273, 0.277, 0.283, 0.289, 0.295, 0.301, 0.306, 0.31, 0.313, 0.314, 0.313, 0.314, 0.313, 0.314, 0.31, 0.309, 0.306, 0.305, 0.299, 0.29, 0.28, 0.271, 0.266, 0.261, 0.257, 0.24, 0.203, 0.159, 0.126, 0.114, 0.11, 0.11, 0.11, 0.11, 0.11]);
+  const ytA = KA([0.313, 0.342, 0.37, 0.395, 0.42, 0.442, 0.463, 0.484, 0.503, 0.522, 0.539, 0.555, 0.57, 0.583, 0.594, 0.604, 0.612, 0.618, 0.625, 0.63, 0.634, 0.637, 0.639, 0.641, 0.642, 0.643, 0.644, 0.644, 0.644, 0.644, 0.644, 0.644, 0.644, 0.639, 0.633, 0.626, 0.621, 0.618, 0.616, 0.615]);
   const secA = (z) => {
     const hw = hwA(z), yb = ybA(z), yt = ytA(z), h = yt - yb, o = OW(z);
     return [[o, yt], [Math.max(o + 0.02, hw * 0.6), yt - 0.006], [hw * 0.88, yt - h * 0.1], [hw * 0.98, yt - h * 0.3], [hw, yb + h * 0.5],
@@ -992,7 +994,7 @@ export function buildF05Body(car, addPanel) {
     }
     return out;
   };
-  const upper = (z) => sample(z > 0.67 ? secA(z) : secB(z)).map((p) => [p[0], p[1], z]);
+  const upper = (z) => sample(z > 0.51 ? secA(z) : secB(z)).map((p) => [p[0], p[1], z]);
   // (the height of the skin's top at x across, at z along: so parts sit right on it)
   const surfY = (z, x) => {
     // (along the top of the section, middle outward, to where it passes over x)
@@ -1027,8 +1029,8 @@ export function buildF05Body(car, addPanel) {
     g.setIndex(idx); g.computeVertexNormals(); return g;
   };
   const rowsA = [], rowsB = [];
-  for (let i = 0; i <= 44; i++) { const z = 2.76 + (0.68 - 2.76) * i / 44; rowsA.push({ z, pts: sample(secA(z)) }); }
-  for (let i = 0; i <= 64; i++) { const z = 0.66 + (-1.75 - 0.66) * i / 64; rowsB.push({ z, pts: sample(secB(z)) }); }
+  for (let i = 0; i <= 44; i++) { const z = 2.545 + (0.52 - 2.545) * i / 44; rowsA.push({ z, pts: sample(secA(z)) }); }
+  for (let i = 0; i <= 80; i++) { const z = 0.5 + (-1.6 - 0.5) * i / 80; rowsB.push({ z, pts: sample(secB(z)) }); }
   for (const s of [1, -1]) {
     for (const [rows, paint] of [[rowsA, paintA], [rowsB, paintB], [[rowsA[rowsA.length - 1], rowsB[0]], (seg, z, x) => (x > 0.36 ? -1 : 4)]]) {     // (the pod's mouth itself left open: see the intakes)
       const m = new THREE.Mesh(mirrorX(skin(rows, paint), s), PAINT); m.castShadow = true; m.receiveShadow = true; car.add(m); addPanel(m);
@@ -1055,9 +1057,9 @@ export function buildF05Body(car, addPanel) {
     { const r = rowsB[rowsB.length - 1], sh = new THREE.Shape(); sh.moveTo(0, r.pts[0][1]); for (const p of r.pts) sh.lineTo(p[0], p[1]);
       add(mirrorX(new THREE.ShapeGeometry(sh).translate(0, 0, r.z), s), MAT.dark, false); }
   }
-  add(loft([{ z: 2.765, w: 0.1, h: 0.09, y: 0.31 }, { z: 2.7, w: 0.105, h: 0.095, y: 0.308 }], SMOOTH, 40, 6, true), MAT.blue);     // (the tip, closed)
+  add(loft([{ z: 2.55, w: 0.074, h: 0.03, y: 0.283 }, { z: 2.5, w: 0.1, h: 0.065, y: 0.276 }], SMOOTH, 40, 6, true), MAT.blue);     // (the tip, closed)
   // the navy stripe down the nose's top, thin, laid on it
-  { const rows = []; for (let i = 0; i <= 30; i++) { const z = 2.62 - i * (2.62 - 0.8) / 30, y = ytA(z) + 0.003, w = 0.035 + 0.05 * i / 30; rows.push([[-w, y - 0.004, z], [0, y, z], [w, y - 0.004, z]]); }
+  { const rows = []; for (let i = 0; i <= 30; i++) { const z = 2.45 - i * (2.45 - 0.8) / 30, y = ytA(z) + 0.003, w = 0.035 + 0.05 * i / 30; rows.push([[-w, y - 0.004, z], [0, y, z], [w, y - 0.004, z]]); }
     add(grid(rows, 2, true), MAT.navy, false); }
   // INSIDE THE COCKPIT: lined in black carbon all round, so from his seat
   // you see the inside of the tub, not through it: the walls dropping
@@ -1155,14 +1157,13 @@ export function buildF05Body(car, addPanel) {
   add(loft(airbox, 1.0, 40, 8, true), MAT.blue);
   add(loft([{ z: -0.3, w: 0.17, h: 0.13, y: 0.79 }, { z: -0.36, w: 0.17, h: 0.13, y: 0.79 }], 1.2, 20, 1, false), MAT.dark, false);
   add(box(0.1, 0.06, 0.16, 0, 1.05, -0.5), MAT.camera).name = 'tcamPod';      // (the camera pod: hidden in the T-cam's own view, as it's the camera)
-  // a little fin along the cover's spine, behind the airbox
-  // (rising out of the cover behind the airbox and sweeping up and back to
-  // meet the rear wing: its root sunk into the cover, its top a straight line)
-  { const pts = [], N = 14;
-    // (its top edge carrying on the line of the airbox's top, out of the back of it)
-    for (let i = 0; i <= N; i++) { const z = -0.65 - i / N * 1.0; pts.push([z, yTop(z) - 0.025]); }
-    pts.push([-1.65, 0.8], [-0.65, 0.86]);
-    add(plate(pts, 0, 0.02), MAT.navy); }     // (navy, like the wing it runs into)
+  // THE SPINE: out of the back of the airbox and down the middle of the
+  // engine cover to the gearbox, narrow and rounded, at the heights the
+  // reference car's measured at (its top from 0.9 m behind the airbox down to 0.4 at the back)
+  { const top = curveAny([[-0.6, 0.86], [-0.75, 0.78], [-0.98, 0.68], [-1.2, 0.58], [-1.4, 0.44], [-1.58, 0.39]]);
+    const secs = [];
+    for (let i = 0; i <= 10; i++) { const z = -0.6 - i / 10 * 0.98, b = yTop(z) - 0.03; secs.push({ z, w: 0.17 - 0.09 * i / 10, h: Math.max(0.02, top(z) - b), y: b }); }
+    add(loft(secs, 1.1, 24, 10, true), MAT.blue); }
   // the yellow carried on from the tub: a line down each side of the
   // airbox and along the engine cover's edge to the back, laid on the skin
   { const stripe = MAT.yellow.clone(); stripe.side = THREE.DoubleSide;
@@ -1209,7 +1210,7 @@ export function buildF05Body(car, addPanel) {
       // the wings' endplates, flat on their outsides
       const rp = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.2).rotateY(sx * Math.PI / 2).translate(sx * 0.479, 0.74, -1.77), plate); rp.renderOrder = 2; wingDecals.push([rp, 'rear']);
       const tp = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.1).rotateY(sx * Math.PI / 2).translate(sx * 0.479, 0.5, -1.86), decal('VALCOR', '#ffffff', '', 768, 256)); tp.renderOrder = 2; wingDecals.push([tp, 'rear']);
-      const fp = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.15).rotateY(sx * Math.PI / 2).translate(sx * 0.724, 0.19, 2.46), decal('VELTRIS', '#ffffff', 'diamond', 512, 256)); fp.renderOrder = 2; wingDecals.push([fp, sx > 0 ? 'fl' : 'fr']);
+      const fp = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.15).rotateY(sx * Math.PI / 2).translate(sx * 0.724, 0.22, 2.31), decal('VELTRIS', '#ffffff', 'diamond', 512, 256)); fp.renderOrder = 2; wingDecals.push([fp, sx > 0 ? 'fl' : 'fr']);
     }
     // and the rest of them: the title sponsor along the engine cover and
     // across the rear wing, the others on the pods' tops, the nose, the
@@ -1220,11 +1221,11 @@ export function buildF05Body(car, addPanel) {
       onSkin(secB, -1.0, -1.58, 2 * S, 3 * S + 2, title, sx);           // (the cover's flank, behind the gills)
       onSkin(secB, 0.48, -0.2, 2 * S, 3 * S, pods, sx);                   // (the pod's top, ahead of the gills)
       onSkin(secA, 2.25, 1.62, S + 1, 2 * S, noseTop, sx);                // (the nose's shoulders)
-      onSkin(secB, 0.62, 0.28, S, 2 * S - 1, pit, sx);                    // (the cockpit's side)
+      onSkin(secB, 0.49, 0.18, S, 2 * S - 1, pit, sx);                    // (the cockpit's side)
       // the airbox's sides
       const ab = new THREE.Mesh(new THREE.PlaneGeometry(0.26, 0.08).rotateY(sx * Math.PI / 2).translate(sx * 0.163, 0.9, -0.58), box2); ab.renderOrder = 2; car.add(ab);
       // the front wing's main plane, on top
-      const fw = new THREE.Mesh(new THREE.PlaneGeometry(0.36, 0.09).rotateX(-Math.PI / 2).rotateY(Math.PI).rotateX(0.06).translate(sx * 0.45, 0.108, 2.6), decal('ARDENTA', '#15214e', 'diamond', 512, 128));
+      const fw = new THREE.Mesh(new THREE.PlaneGeometry(0.36, 0.09).rotateX(-Math.PI / 2).rotateY(Math.PI).rotateX(0.06).translate(sx * 0.45, 0.138, 2.45), decal('ARDENTA', '#15214e', 'diamond', 512, 128));
       fw.renderOrder = 2; wingDecals.push([fw, sx > 0 ? 'fl' : 'fr']);
     }
     // the main sponsor (the tobacco brand) across the rear wing's top flap, read from the front (as in the Garage)
@@ -1252,15 +1253,16 @@ export function buildF05Body(car, addPanel) {
   for (const g of Object.values(wings)) car.add(g);
   for (const [m, w] of wingDecals) wings[w].add(m);       // (the endplates' sponsors go with their wings)
   const addTo = (g, geo, mat) => { const m = add(geo, mat); g.add(m); return m; };
-  for (const s of [1, -1]) add(box(0.015, 0.22, 0.16, s * 0.06, 0.22, 2.5, 0.2), MAT.navy);
-  add(loft([{ z: 2.72, w: 0.3, h: 0.025, y: 0.13 }, { z: 2.42, w: 0.3, h: 0.025, y: 0.155 }], 0.3, 12, 2, false), MAT.navy);
+  // (moved to where the reference's are: 15 cm back with the shorter nose, and 3 cm higher)
+  for (const s of [1, -1]) add(box(0.015, 0.22, 0.16, s * 0.07, 0.23, 2.39, 0.2), MAT.navy);
+  add(loft([{ z: 2.57, w: 0.3, h: 0.025, y: 0.16 }, { z: 2.27, w: 0.3, h: 0.025, y: 0.185 }], 0.3, 12, 2, false), MAT.navy);
   for (const s of [1, -1]) {
     const g = s > 0 ? wings.fl : wings.fr;
-    addTo(g, box(0.56, 0.022, 0.36, s * 0.43, 0.095, 2.55, 0.06, -s * 0.03), MAT.blue);
-    addTo(g, box(0.5, 0.015, 0.18, s * 0.45, 0.16, 2.37, 0.42, -s * 0.05), MAT.blue);
-    addTo(g, box(0.36, 0.012, 0.11, s * 0.5, 0.2, 2.27, 0.7, -s * 0.05), MAT.navy);
-    addTo(g, plate([[2.76, 0.04], [2.78, 0.16], [2.72, 0.27], [2.6, 0.31], [2.38, 0.3], [2.24, 0.24], [2.2, 0.1], [2.24, 0.04]], s * 0.715, 0.014), MAT.navy);   // the big navy endplate
-    addTo(g, box(0.06, 0.012, 0.4, s * 0.695, 0.05, 2.48), MAT.carbon);
+    addTo(g, box(0.56, 0.022, 0.36, s * 0.43, 0.125, 2.4, 0.06, -s * 0.03), MAT.blue);
+    addTo(g, box(0.5, 0.015, 0.18, s * 0.45, 0.19, 2.22, 0.42, -s * 0.05), MAT.blue);
+    addTo(g, box(0.36, 0.012, 0.11, s * 0.5, 0.23, 2.12, 0.7, -s * 0.05), MAT.navy);
+    addTo(g, plate([[2.61, 0.07], [2.63, 0.19], [2.57, 0.3], [2.45, 0.34], [2.23, 0.33], [2.09, 0.27], [2.05, 0.13], [2.09, 0.07]], s * 0.715, 0.014), MAT.navy);   // the big navy endplate
+    addTo(g, box(0.06, 0.012, 0.4, s * 0.695, 0.08, 2.33), MAT.carbon);
   }
   // --- THE REAR WING: set well forward, navy endplates, dark planes,
   // a white lip on the top flap; the beam wing below; louvres in the plates

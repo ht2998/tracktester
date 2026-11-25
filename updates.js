@@ -21,11 +21,17 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 164;
+export const BUILD = 165;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 136, date: '25 Nov 2026', title: 'The TTF-05, measured',
+    items: [
+      ['A truer shape', 'The TTF-05\'s body is now shaped from measurements of the real 2005 car, taken at 100 points from the nose to the gearbox: a shorter nose (21 cm shorter) that drops to the tip, a narrower cockpit opening, sidepods that start further back and pull in tightly toward the rear, and a spine running from the airbox down the engine cover. The front wing sits a little further back and higher, under the new nose', 'new'],
+    ],
+  },
   {
     id: 135, date: '25 Nov 2026', title: 'The TTF-05 driver\'s suit',
     items: [
