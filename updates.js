@@ -21,11 +21,19 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 165;
+export const BUILD = 166;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 137, date: '25 Nov 2026', title: 'The TTF-05 repainted',
+    items: [
+      ['Its proper colours', 'The TTF-05 now wears its team\'s real colour layout: a deeper, brighter blue over the top, the pods and the airbox; yellow down the nose\'s sides and the tub, running back as a band along each shoulder of the engine cover; a blue band down the top of the nose; dark navy along the bottom edges and on the endplates', 'new'],
+      ['New sponsor names', 'PURE SPIRIT is the main sponsor now, big on the pods, along the nose and on the front wing; ELX is the fuel, on the nose\'s sides; TELESPEED runs across the rear wing in lime green. The driver\'s suit has the new names too', 'new'],
+      ['A longer airbox', 'The airbox\'s base now reaches 30 cm further forward, a blue shoulder down each side of the driver\'s head that tapers into the cockpit\'s rim', 'new'],
+    ],
+  },
   {
     id: 136, date: '25 Nov 2026', title: 'The TTF-05, measured',
     items: [

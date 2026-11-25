@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 80;
+export const BUILD = 81;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -775,7 +775,7 @@ const LOGO = {
     g.fillStyle = '#ffffff'; g.font = `italic 900 ${d * 0.56}px Arial, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('K', x + d * 0.5, y + d * 0.43); g.textAlign = 'left';
     g.strokeStyle = ink; g.lineWidth = d * 0.06; g.beginPath(); for (let k = 0; k <= 20; k++) { const u = k / 20; g.lineTo(x + u * d, y + d * 0.88 + Math.sin(u * 12) * d * 0.04); } g.stroke(); },
   // fuel: a red drop with a flame of orange and yellow inside it
-  HALDEN: (g, x, y, d) => { const drop = (s, c) => { g.fillStyle = c; g.beginPath(); g.moveTo(x + d / 2, y + d * (0.5 - 0.48 * s)); g.bezierCurveTo(x + d / 2 + d * 0.42 * s, y + d * (0.5 - 0.05 * s), x + d / 2 + d * 0.38 * s, y + d * (0.52 + 0.45 * s), x + d / 2, y + d * (0.52 + 0.45 * s)); g.bezierCurveTo(x + d / 2 - d * 0.38 * s, y + d * (0.52 + 0.45 * s), x + d / 2 - d * 0.42 * s, y + d * (0.5 - 0.05 * s), x + d / 2, y + d * (0.5 - 0.48 * s)); g.fill(); };
+  ELX: (g, x, y, d) => { const drop = (s, c) => { g.fillStyle = c; g.beginPath(); g.moveTo(x + d / 2, y + d * (0.5 - 0.48 * s)); g.bezierCurveTo(x + d / 2 + d * 0.42 * s, y + d * (0.5 - 0.05 * s), x + d / 2 + d * 0.38 * s, y + d * (0.52 + 0.45 * s), x + d / 2, y + d * (0.52 + 0.45 * s)); g.bezierCurveTo(x + d / 2 - d * 0.38 * s, y + d * (0.52 + 0.45 * s), x + d / 2 - d * 0.42 * s, y + d * (0.5 - 0.05 * s), x + d / 2, y + d * (0.5 - 0.48 * s)); g.fill(); };
     drop(1, '#d81e1e'); g.save(); g.translate(0, d * 0.12); drop(0.55, '#ff9a14'); drop(0.3, '#ffe14a'); g.restore(); },
   // electronics: a hexagon round a chevron
   VELTRIS: (g, x, y, d, ink) => { g.strokeStyle = ink; g.lineWidth = d * 0.08; g.beginPath(); for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2 + Math.PI / 6; g.lineTo(x + d / 2 + Math.cos(a) * d * 0.44, y + d / 2 + Math.sin(a) * d * 0.44); } g.closePath(); g.stroke();
@@ -789,11 +789,13 @@ const LOGO = {
   // an energy drink: two flames, red over orange
   ARDENTA: (g, x, y, d) => { const f = (s, ox, c) => { g.fillStyle = c; g.beginPath(); g.moveTo(x + d * ox, y + d * 0.95); g.quadraticCurveTo(x + d * (ox - 0.3 * s), y + d * 0.5, x + d * (ox + 0.05), y + d * (1 - 0.95 * s)); g.quadraticCurveTo(x + d * (ox + 0.35 * s), y + d * 0.55, x + d * ox, y + d * 0.95); g.fill(); }; f(1, 0.45, '#ff9a14'); f(0.75, 0.55, '#d81e1e'); },
   // a satellite network: a tilted orbit round a planet
+  // PHONES (the TTF-05's): a lime speed-swoosh round a dot
+  TELESPEED: (g, x, y, d) => { g.strokeStyle = '#c6f23a'; g.lineCap = 'round'; for (let k = 0; k < 3; k++) { g.lineWidth = d * (0.1 - k * 0.025); g.beginPath(); g.arc(x + d * 0.42, y + d * 0.55, d * (0.2 + k * 0.13), -2.4, 0.3); g.stroke(); } g.fillStyle = '#c6f23a'; g.beginPath(); g.arc(x + d * 0.42, y + d * 0.55, d * 0.09, 0, 7); g.fill(); },
   ORBIXA: (g, x, y, d, ink) => { g.fillStyle = '#29c4f6'; g.beginPath(); g.arc(x + d / 2, y + d / 2, d * 0.22, 0, 7); g.fill(); g.strokeStyle = ink; g.lineWidth = d * 0.06; g.beginPath(); g.ellipse(x + d / 2, y + d / 2, d * 0.46, d * 0.17, -0.5, 0, 7); g.stroke(); g.fillStyle = ink; g.beginPath(); g.arc(x + d * 0.88, y + d * 0.3, d * 0.06, 0, 7); g.fill(); },
   // the tyres: a tread-ringed wheel, in yellow
   VALCOR: (g, x, y, d) => { g.strokeStyle = '#f6c51a'; g.lineWidth = d * 0.14; g.beginPath(); g.arc(x + d / 2, y + d / 2, d * 0.36, 0, 7); g.stroke(); g.fillStyle = '#f6c51a'; for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2; g.save(); g.translate(x + d / 2 + Math.cos(a) * d * 0.45, y + d / 2 + Math.sin(a) * d * 0.45); g.rotate(a); g.fillRect(-d * 0.04, -d * 0.05, d * 0.08, d * 0.1); g.restore(); } g.beginPath(); g.arc(x + d / 2, y + d / 2, d * 0.1, 0, 7); g.fill(); },
   // TOBACCO (the TTF-05's): three pale-blue curls rising in a ring
-  AZURA: (g, x, y, d) => { g.fillStyle = '#7fd0f5'; g.beginPath(); g.arc(x + d / 2, y + d / 2, d * 0.46, 0, 7); g.fill(); g.strokeStyle = '#ffffff'; g.lineWidth = d * 0.07; g.lineCap = 'round';
+  'PURE SPIRIT': (g, x, y, d) => { g.fillStyle = '#7fd0f5'; g.beginPath(); g.arc(x + d / 2, y + d / 2, d * 0.46, 0, 7); g.fill(); g.strokeStyle = '#ffffff'; g.lineWidth = d * 0.07; g.lineCap = 'round';
     for (let k = 0; k < 3; k++) { g.beginPath(); for (let i = 0; i <= 16; i++) { const u = i / 16; g.lineTo(x + d * (0.3 + k * 0.2) + Math.sin(u * 6 + k) * d * 0.06, y + d * (0.82 - u * 0.62)); } g.stroke(); } },
   // TOBACCO (the TTF-88's and TTF-94's): a gold crown over a red shield with a white V
   VESPERO: (g, x, y, d) => { g.fillStyle = '#d2111c'; g.beginPath(); g.moveTo(x + d * 0.18, y + d * 0.3); g.lineTo(x + d * 0.82, y + d * 0.3); g.lineTo(x + d * 0.82, y + d * 0.62); g.quadraticCurveTo(x + d * 0.8, y + d * 0.86, x + d * 0.5, y + d * 0.98); g.quadraticCurveTo(x + d * 0.2, y + d * 0.86, x + d * 0.18, y + d * 0.62); g.closePath(); g.fill();
@@ -807,7 +809,7 @@ const LOGO = {
     g.fillStyle = '#ffffff'; g.beginPath(); g.moveTo(x + d * 0.45, y + d * 0.2); g.bezierCurveTo(x + d * 0.7, y + d * 0.5, x + d * 0.62, y + d * 0.8, x + d * 0.45, y + d * 0.8); g.bezierCurveTo(x + d * 0.28, y + d * 0.8, x + d * 0.2, y + d * 0.5, x + d * 0.45, y + d * 0.2); g.fill();
     g.fillStyle = '#ffd21a'; g.beginPath(); g.moveTo(x + d * 0.55, y + d * 0.52); g.lineTo(x + d * 0.9, y + d * 0.38); g.lineTo(x + d * 0.84, y + d * 0.5); g.lineTo(x + d * 0.92, y + d * 0.52); g.lineTo(x + d * 0.6, y + d * 0.62); g.closePath(); g.fill(); },
 };
-const SUB = { HALDEN: 'PETROLEUM', KORVANE: 'LOGISTICS', VALCOR: 'TYRES', ZEPHRA: 'MOBILE', TERAVO: 'BANK', SOLVARA: 'FUELS', TORRIN: 'OIL' };
+const SUB = { ELX: 'PETROLEUM', KORVANE: 'LOGISTICS', VALCOR: 'TYRES', ZEPHRA: 'MOBILE', TERAVO: 'BANK', SOLVARA: 'FUELS', TORRIN: 'OIL' };
 // a sponsor's decal: its badge and its name (and what it is, under it)
 // (solid, not see-through: drawn with the car's own paint, so smoke, fire
 // and dust in front hide it just as they hide the body; cut out where the
@@ -827,7 +829,7 @@ function sponsorDecal(text, ink, w = 1024, h = 256, { name = true } = {}) {
     while (g.measureText(text).width > room && fs > 16) { fs -= 4; g.font = `italic 900 ${fs}px Arial, Helvetica, sans-serif`; }
     g.fillStyle = ink; g.textBaseline = 'middle';
     g.fillText(text, tx, h / 2 - (sub ? h * 0.1 : -h * 0.03));
-    if (sub) { g.font = `700 ${h * 0.17}px Arial, Helvetica, sans-serif`; g.fillStyle = text === 'HALDEN' ? '#d81e1e' : ink; g.fillText(sub.split('').join(String.fromCharCode(8202)), tx + 4, h / 2 + h * 0.27); }
+    if (sub) { g.font = `700 ${h * 0.17}px Arial, Helvetica, sans-serif`; g.fillStyle = text === 'ELX' ? '#d81e1e' : ink; g.fillText(sub.split('').join(String.fromCharCode(8202)), tx + 4, h / 2 + h * 0.27); }
   }
   return sponsorMat(c);
 }
@@ -860,10 +862,10 @@ export function suitTorsoMaterial(kind) {
     for (const off of [0, -W, W]) g.drawImage(t, u * W + off - w / 2, y, w, h);
   };
   // (up the picture runs up him unevenly: the chest is about 0.4 to 0.55 of the way down it)
-  put('AZURA', 0, H * 0.4, 230, 58, '#ffffff');         // (the chest)
-  put('HALDEN', 0, H * 0.53, 170, 42, '#15214e');       // (under it)
+  put('PURE SPIRIT', 0, H * 0.4, 230, 58, '#ffffff');         // (the chest)
+  put('ELX', 0, H * 0.53, 170, 42, '#15214e');       // (under it)
   put('ZEPHRA', 0, H * 0.63, 150, 38, '#15214e');       // (the belly)
-  put('AZURA', 0.5, H * 0.42, 280, 70, '#ffffff');      // (the back)
+  put('PURE SPIRIT', 0.5, H * 0.42, 280, 70, '#ffffff');      // (the back)
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
   return new THREE.MeshStandardMaterial({ map: t, roughness: 0.8 });
 }
@@ -911,10 +913,10 @@ export function buildF05Body(car, addPanel) {
   // its bottom; a wide light-blue front wing with big navy endplates; a
   // navy-endplated rear wing set well forward
   const MAT = {
-    blue: new THREE.MeshPhysicalMaterial({ color: 0x1f8fd6, roughness: 0.26, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.06 }),      // (the light blue)
-    yellow: new THREE.MeshPhysicalMaterial({ color: 0xf6c51a, roughness: 0.22, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.06 }),
+    blue: new THREE.MeshPhysicalMaterial({ color: 0x1272e8, roughness: 0.26, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.06 }),      // (the bright, deep sky blue)
+    yellow: new THREE.MeshPhysicalMaterial({ color: 0xf2c200, roughness: 0.22, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.06 }),
     white: new THREE.MeshPhysicalMaterial({ color: 0xf2f3f0, roughness: 0.25, metalness: 0.05, clearcoat: 1, clearcoatRoughness: 0.08 }),
-    navy: new THREE.MeshPhysicalMaterial({ color: 0x15214e, roughness: 0.26, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.06 }),
+    navy: new THREE.MeshPhysicalMaterial({ color: 0x07102e, roughness: 0.26, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.06 }),
     carbon: new THREE.MeshStandardMaterial({ color: 0x111215, roughness: 0.4, metalness: 0.35 }),
     steel: new THREE.MeshStandardMaterial({ color: 0x8d9096, roughness: 0.35, metalness: 0.9 }),
     glass: new THREE.MeshStandardMaterial({ color: 0x3a4a52, roughness: 0.05, metalness: 0.3, transparent: true, opacity: 0.45 }),
@@ -1010,17 +1012,18 @@ export function buildF05Body(car, addPanel) {
     return new THREE.ExtrudeGeometry(sh, { depth: t, bevelEnabled: false, curveSegments: 4 }).translate(0, 0, -t / 2).rotateY(-Math.PI / 2).translate(x, 0, 0); };
   // the paint of each strip: 0 yellow, 1 light blue, 2 navy, 3 carbon, 4 dark
   const PAINT = [MAT.yellow, MAT.blue, MAT.navy, MAT.carbon, MAT.dark];
-  // (the nose: light blue at the front and down its lower sides, yellow over the top behind;
-  // the body: yellow over the cockpit, along the engine cover and onto the pods' tops, light blue below)
-  const paintA = (seg, z) => (seg === 6 ? 3 : z > 1.95 ? 1 : seg >= 4 && z > 1.15 ? 1 : 0);
-  const paintB = (seg, z) => (seg === 0 ? 0 : seg === 1 ? (z > -0.95 ? 0 : 1) : seg === 2 ? (z > 0.05 ? 0 : 1) : seg === 6 ? 3 : seg === 5 ? 2 : 1);
+  // (the nose: yellow down its sides, a blue band along the top carrying the main sponsor, navy underneath;
+  // the body: blue over the top, a yellow band along each shoulder of the cover (the tub's whole side
+  // ahead of the pods), the pods and airbox blue, the bottom edge navy)
+  const paintA = (seg, z) => (seg === 6 ? 3 : seg === 5 ? 2 : seg === 0 && z < 2.38 ? 1 : 0);
+  const paintB = (seg, z, x, y) => (seg === 0 ? 1 : seg === 1 ? 0 : seg === 2 ? (z > 0.12 ? 0 : 1) : seg === 6 ? 3 : seg === 5 ? (y < 0.17 ? 2 : 1) : 1);
   const skin = (rows, paint) => {
     const pos = [], lists = PAINT.map(() => []);
     for (const r of rows) for (const p of r.pts) pos.push(p[0], p[1], r.z);
     const W = NP + 1;
     for (let i = 0; i < rows.length - 1; i++) for (let k = 0; k < NP; k++) {
       const p0 = i * W + k, p1 = p0 + W, seg = Math.min(6, Math.floor(k / S));
-      const m = paint(seg, (rows[i].z + rows[i + 1].z) / 2, rows[i].pts[k][0]); if (m < 0) continue;       // (-1: left open)
+      const m = paint(seg, (rows[i].z + rows[i + 1].z) / 2, rows[i].pts[k][0], (rows[i].pts[k][1] + rows[i].pts[k + 1][1]) / 2); if (m < 0) continue;       // (-1: left open)
       lists[m].push(p0, p0 + 1, p1, p0 + 1, p1 + 1, p1);
     }
     const g = new THREE.BufferGeometry(), idx = [];
@@ -1057,10 +1060,7 @@ export function buildF05Body(car, addPanel) {
     { const r = rowsB[rowsB.length - 1], sh = new THREE.Shape(); sh.moveTo(0, r.pts[0][1]); for (const p of r.pts) sh.lineTo(p[0], p[1]);
       add(mirrorX(new THREE.ShapeGeometry(sh).translate(0, 0, r.z), s), MAT.dark, false); }
   }
-  add(loft([{ z: 2.55, w: 0.074, h: 0.03, y: 0.283 }, { z: 2.5, w: 0.1, h: 0.065, y: 0.276 }], SMOOTH, 40, 6, true), MAT.blue);     // (the tip, closed)
-  // the navy stripe down the nose's top, thin, laid on it
-  { const rows = []; for (let i = 0; i <= 30; i++) { const z = 2.45 - i * (2.45 - 0.8) / 30, y = ytA(z) + 0.003, w = 0.035 + 0.05 * i / 30; rows.push([[-w, y - 0.004, z], [0, y, z], [w, y - 0.004, z]]); }
-    add(grid(rows, 2, true), MAT.navy, false); }
+  add(loft([{ z: 2.55, w: 0.074, h: 0.03, y: 0.283 }, { z: 2.5, w: 0.1, h: 0.065, y: 0.276 }], SMOOTH, 40, 6, true), MAT.yellow);     // (the tip, closed)
   // INSIDE THE COCKPIT: lined in black carbon all round, so from his seat
   // you see the inside of the tub, not through it: the walls dropping
   // straight down from the rim, the floor, the front bulkhead closing it
@@ -1155,6 +1155,14 @@ export function buildF05Body(car, addPanel) {
     { z: -1.05, w: 0.3, h: 0.08, y: 0.6 },
   ];
   add(loft(airbox, 1.0, 40, 8, true), MAT.blue);
+  // its base carried 30 cm further forward: a shoulder down each side of his head, flowing
+  // out of the airbox's sides and tapering down into the cockpit's rim beside his helmet
+  for (const sx of [1, -1]) add(loft([
+    { z: -0.36, w: 0.15, h: 0.3, y: 0.62, x: sx * 0.165 },
+    { z: -0.24, w: 0.12, h: 0.21, y: 0.62, x: sx * 0.18 },
+    { z: -0.13, w: 0.1, h: 0.12, y: 0.62, x: sx * 0.19 },
+    { z: -0.02, w: 0.08, h: 0.04, y: 0.62, x: sx * 0.2 },
+  ], 1.0, 24, 8, true), MAT.blue);
   add(loft([{ z: -0.3, w: 0.17, h: 0.13, y: 0.79 }, { z: -0.36, w: 0.17, h: 0.13, y: 0.79 }], 1.2, 20, 1, false), MAT.dark, false);
   add(box(0.1, 0.06, 0.16, 0, 1.05, -0.5), MAT.camera).name = 'tcamPod';      // (the camera pod: hidden in the T-cam's own view, as it's the camera)
   // THE SPINE: out of the back of the airbox and down the middle of the
@@ -1203,10 +1211,10 @@ export function buildF05Body(car, addPanel) {
       const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
       const m = new THREE.Mesh(g, mat); m.renderOrder = 2; car.add(m); addPanel(m); return m;
     };
-    const flank = decal('AZURA', '#ffffff', 'ring'), nose = decal('VELTRIS', '#15214e', 'diamond'), plate = decal('ORBIXA', '#ffffff', 'ring', 512, 256);
+    const flank = decal('PURE SPIRIT', '#ffffff', 'ring'), nose = decal('ELX', '#07102e', 'diamond'), plate = decal('PURE SPIRIT', '#ffffff', 'ring', 512, 256);
     for (const sx of [1, -1]) {
-      onSkin(secB, 0.15, -0.75, 5 * S, 6 * S - 1, flank, sx);              // (the navy flank, under the crease)
-      onSkin(secA, 1.5, 0.95, 3 * S, 4 * S, nose, sx);                     // (the nose's side)
+      onSkin(secB, 0.3, -0.4, 4 * S, 6 * S - 2, flank, sx);            // (the main sponsor, big, down the pod's blue side)
+      onSkin(secA, 1.5, 0.95, 2 * S, 4 * S, nose, sx);                     // (the nose's yellow side: the fuel)
       // the wings' endplates, flat on their outsides
       const rp = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.2).rotateY(sx * Math.PI / 2).translate(sx * 0.479, 0.74, -1.77), plate); rp.renderOrder = 2; wingDecals.push([rp, 'rear']);
       const tp = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.1).rotateY(sx * Math.PI / 2).translate(sx * 0.479, 0.5, -1.86), decal('VALCOR', '#ffffff', '', 768, 256)); tp.renderOrder = 2; wingDecals.push([tp, 'rear']);
@@ -1215,22 +1223,29 @@ export function buildF05Body(car, addPanel) {
     // and the rest of them: the title sponsor along the engine cover and
     // across the rear wing, the others on the pods' tops, the nose, the
     // cockpit's sides, the airbox, the front wing
-    const navyInk = '#15214e', title = decal('ZEPHRA', navyInk, 'diamond'), pods = decal('HALDEN', navyInk, 'ring');
+    const navyInk = '#07102e', title = decal('ZEPHRA', '#ffffff', 'diamond'), pods = decal('VELTRIS', '#ffffff', 'ring');
     const noseTop = decal('TERAVO', navyInk, 'ring'), pit = decal('QUANTEX', navyInk, 'diamond', 512, 128), box2 = decal('NOVIK', '#ffffff', 'ring', 512, 160);
     for (const sx of [1, -1]) {
       onSkin(secB, -1.0, -1.58, 2 * S, 3 * S + 2, title, sx);           // (the cover's flank, behind the gills)
       onSkin(secB, 0.48, -0.2, 2 * S, 3 * S, pods, sx);                   // (the pod's top, ahead of the gills)
-      onSkin(secA, 2.25, 1.62, S + 1, 2 * S, noseTop, sx);                // (the nose's shoulders)
+      onSkin(secA, 2.0, 1.45, S + 1, 2 * S, noseTop, sx);                 // (the nose's shoulders, on the yellow)
       onSkin(secB, 0.49, 0.18, S, 2 * S - 1, pit, sx);                    // (the cockpit's side)
       // the airbox's sides
       const ab = new THREE.Mesh(new THREE.PlaneGeometry(0.26, 0.08).rotateY(sx * Math.PI / 2).translate(sx * 0.163, 0.9, -0.58), box2); ab.renderOrder = 2; car.add(ab);
       // the front wing's main plane, on top
-      const fw = new THREE.Mesh(new THREE.PlaneGeometry(0.36, 0.09).rotateX(-Math.PI / 2).rotateY(Math.PI).rotateX(0.06).translate(sx * 0.45, 0.138, 2.45), decal('ARDENTA', '#15214e', 'diamond', 512, 128));
+      const fw = new THREE.Mesh(new THREE.PlaneGeometry(0.36, 0.09).rotateX(-Math.PI / 2).rotateY(Math.PI).rotateX(0.06).translate(sx * 0.45, 0.138, 2.45), decal('PURE SPIRIT', '#ffffff', 'diamond', 512, 128));
       fw.renderOrder = 2; wingDecals.push([fw, sx > 0 ? 'fl' : 'fr']);
     }
-    // the main sponsor (the tobacco brand) across the rear wing's top flap, read from the front (as in the Garage)
+    // the main sponsor along the nose's blue top band, reading from the front back
+    { const pos = [], uv = [], idx = [], NZ = 24, NX = 6, tex = decal('PURE SPIRIT', '#ffffff', 'ring');
+      for (let i = 0; i <= NZ; i++) { const z = 2.28 - i * (2.28 - 1.3) / NZ, w = Math.min(0.055, hwA(z) * 0.5);
+        for (let k = 0; k <= NX; k++) { const x = -w + 2 * w * k / NX; pos.push(x, surfY(z, Math.abs(x)) + 0.005, z); uv.push(i / NZ, 1 - k / NX); } }
+      for (let i = 0; i < NZ; i++) for (let k = 0; k < NX; k++) { const p0 = i * (NX + 1) + k, p1 = p0 + NX + 1; idx.push(p0, p0 + 1, p1, p0 + 1, p1 + 1, p1); }
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
+      const m = new THREE.Mesh(g, tex); m.renderOrder = 2; car.add(m); addPanel(m); }
+    // the phone company across the rear wing's top flap, lime on navy, read from the front (as in the Garage)
     { const n = new THREE.Vector3(0, Math.cos(0.5), Math.sin(0.5)).multiplyScalar(0.011);
-      const rw = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.15).rotateZ(Math.PI).rotateX(-Math.PI / 2).rotateY(Math.PI).rotateX(0.5).translate(n.x, 0.82 + n.y, -1.85 + n.z), decal('AZURA', '#ffffff', 'diamond'));
+      const rw = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.15).rotateZ(Math.PI).rotateX(-Math.PI / 2).rotateY(Math.PI).rotateX(0.5).translate(n.x, 0.82 + n.y, -1.85 + n.z), decal('TELESPEED', '#c6f23a', 'diamond'));
       rw.renderOrder = 2; wingDecals.push([rw, 'rear']); }
   }
   // the gearbox at the back, its rain light, the floor, the plank, the diffuser and its fences
