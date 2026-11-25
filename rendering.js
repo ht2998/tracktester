@@ -61,7 +61,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 102;
+const BUILD = 103;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -938,6 +938,15 @@ function buildCar() {
     // THE TT-88's body (f1.js): every painted panel can be dented
     const panels = [];
     const body = bodyForKind(CAR_KIND)(car, (m) => panels.push(m));
+    // (a car with a crush frame: everything on its body goes where the frame
+    // takes it, every winglet, gill, vane and sponsor's badge, not only the
+    // painted skin, so nothing's left floating where it was; except what
+    // comes off whole: the wings, the mirrors, and the driver and engine inside)
+    if (CAR_KIND === 'f05') {
+      const keep = new Set(panels), whole = new Set();
+      for (const g of [...Object.values(body.wings || {}), body.driver, body.engine, ...Object.values(body.mirrors || {}).map((mm) => mm.pod)]) g?.traverse?.((o) => whole.add(o));
+      car.traverse((o) => { if (o.isMesh && !o.isInstancedMesh && !keep.has(o) && !whole.has(o)) panels.push(o); });
+    }
     crush = { panels, grille: new THREE.Object3D(), lamps: [], tail: [] };
     // (a single-seater has no headlights; the long-distance cars do, in their noses)
     headLens = body.lampMat || new THREE.MeshStandardMaterial({ color: 0x000000 });
@@ -2393,7 +2402,20 @@ function dentBody(x, y, z, dx, dz, depth, radius) {
   if (dents.length > 40) dents.shift();
   reshapeBody();
 }
-const _cfp = new THREE.Vector3();
+const _cfp = new THREE.Vector3(), _cfo = new THREE.Vector3();
+// WHAT THE CRUSH TEARS OFF: anything fixed where the frame has been pushed
+// too far, or its beams have snapped round it, comes away (a wing, a
+// wheel, a mirror)
+function crushBreaks() {
+  if (!crushFrame || physics.damageOff) return;
+  const gone = (x, y, z, far, frac) => crushFrame.offset(x, y, z, _cfo.set(0, 0, 0)).length() > far || crushFrame.brokenNear(x, y, z, 0.55) > frac;
+  if (gone(0.45, 0.12, 2.5, 0.22, 0.08)) physics.breakWing('fl');
+  if (gone(-0.45, 0.12, 2.5, 0.22, 0.08)) physics.breakWing('fr');
+  if (gone(0, 0.7, -1.8, 0.25, 0.08)) physics.breakWing('rear');
+  for (const [x, , z, isFront] of WHEELS) if (gone(x * 0.75, 0.33, z, 0.2, 0.1)) physics.tearWheel(physicsWheel(x, isFront));
+  if (gone(0.5, 0.62, 0.5, 0.12, 0.06)) snapMirror('l');
+  if (gone(-0.5, 0.62, 0.5, 0.12, 0.06)) snapMirror('r');
+}
 function clearDents() {
   dents.length = 0;
   crushFrame?.reset();
@@ -3027,7 +3049,7 @@ function collide(now) {
         for (let k = 0; k < folds; k++) {
           const f = 1 - k * 0.3, back = k * (IS_F1 ? 0.6 : 0.45);
           // (a car with a crush frame: the wall driven into it, once, and the body follows)
-          if (crushFrame) { if (k === 0) { const lp = carModel.car.worldToLocal(_cfp.set(k0px, 0.4, k0pz)); crushFrame.impact(lp.x, 0.4, lp.z, nl, nf, hitSpeed); reshapeBody(); } continue; }
+          if (crushFrame) { if (k === 0) { const lp = carModel.car.worldToLocal(_cfp.set(k0px, 0.4, k0pz)); crushFrame.impact(lp.x, 0.4, lp.z, nl, nf, hitSpeed); reshapeBody(); crushBreaks(); } continue; }
           if (zone === 'front' && IS_F1 && k === 0) noseCrush = Math.min(1.2, noseCrush + (hitSpeed - 3) * 0.022 * Math.max(0, -nf));
           if (zone === 'front') dentBody(Math.max(-0.28, Math.min(0.28, across)) * f, 0.4, NOSE - back, nl, nf, depth * f, radius);
           else if (zone === 'rear') dentBody(Math.max(-0.7, Math.min(0.7, across)) * f, 0.52, TAIL + back, nl, nf, depth * 0.9 * f, radius);

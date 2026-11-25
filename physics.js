@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 25;
+export const BUILD = 26;
 
 const G = 9.81;   // gravity, m/s²
 const RPM_PER_RADS = 60 / (2 * Math.PI);
@@ -1129,6 +1129,19 @@ export class CarPhysics {
 
   // Health hits zero: something lets go inside. No more power until reset.
   // the engine torn out of the car in a huge crash: it's gone (and burning)
+  // BROKEN OFF BY THE CRUSH FRAME (a car with one: what's attached where its
+  // beams have snapped, or bent too far, comes away)
+  tearWheel(i) {
+    if (this.damageOff || this.tyres[i].detached) return;
+    this.suspDamage[i] = 1; this.tyres[i].detached = true;
+    this.events.push({ type: 'wheelOff', wheel: i, torn: true });
+  }
+  breakWing(part) {
+    if (this.damageOff || !this.spec.wings || this.wingDamage[part] >= 1) return;
+    this.wingDamage[part] = 1;
+    if (part === 'rear') this.aeroLoss.rear = 0.8; else this.aeroLoss.front = Math.min(0.9, this.aeroLoss.front + 0.45);
+    this.events.push({ type: 'wingOff', part });
+  }
   // THE CAR GOES UP (after a long fire, or a dead stop from 150+): every
   // wheel torn off, the engine thrown out, the fuel gone. A burnt shell.
   explode() {
