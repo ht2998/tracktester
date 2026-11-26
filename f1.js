@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 93;
+export const BUILD = 94;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -2493,12 +2493,13 @@ export function buildF1Cockpit(car, { paddles = false, wheelTilt = -0.5, suit = 
   const pedalZ = paddles ? 1.18 : 1.08, pedalY = paddles ? 0.27 : 0.19;
   const pedalAt = paddles ? { brake: 0.07, throttle: -0.07 } : { clutch: 0.1, brake: 0.0, throttle: -0.09 };
   const pedals = {};
-  add(box(0.34, 0.02, 0.22, 0, pedalY - 0.05, pedalZ), M.carbon);                   // the pedal box floor
+  // (no pedals and no pedal floor shown: they're down in the footwell, out of sight, with his feet)
   for (const [k, x] of Object.entries(pedalAt)) {
     const pv = new THREE.Group(); pv.position.set(x, pedalY - 0.04, pedalZ); group.add(pv);
     add(new THREE.CylinderGeometry(0.008, 0.008, 0.1, 6).translate(0, 0.05, 0), M.steel, pv);
     add(new THREE.BoxGeometry(k === 'throttle' ? 0.05 : 0.065, 0.075, 0.012).translate(0, 0.1, 0.005), k === 'brake' ? M.steel : M.carbon, pv);
     pv.rotation.x = 0.35;                              // (leaning back toward his feet)
+    pv.visible = false;
     pedals[k] = pv;
   }
   // his feet: racing boots, resting on the pedals
