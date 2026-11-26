@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 103;
+export const BUILD = 104;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -917,6 +917,21 @@ function sweptSkin(car, addPanel, add, PAINT, cfg) {
     { const r = rowsB[rowsB.length - 1], sh = new THREE.Shape(); sh.moveTo(0, r.pts[0][1]); for (const p of r.pts) sh.lineTo(p[0], p[1]);
       add(mirrorX(new THREE.ShapeGeometry(sh).translate(0, 0, r.z), s), PAINT[3], false); }
   }
+  // UNDER THE SKIN: the car's frame, a second, darker shell a few centimetres inside
+  // the bodywork (aluminium and carbon), out of sight until a piece of the skin is torn
+  // off: then it's what you see through the hole, not the ground. It dents with the
+  // skin but doesn't tear (userData.noTear)
+  { const frame = new THREE.MeshStandardMaterial({ color: 0x3a3d42, roughness: 0.55, metalness: 0.6, side: THREE.DoubleSide });
+    frame.userData.shell = true;                     // (the Garage's Clear sees through it too)
+    const inset = (pts, z) => {
+      let lo = Infinity, hi = -Infinity; for (const p of pts) { lo = Math.min(lo, p[1]); hi = Math.max(hi, p[1]); }
+      const cy = (lo + hi) / 2;
+      return pts.map(([x, y]) => { const dx = x, dy = y - cy, l = Math.hypot(dx, dy); const k = l > 0.05 ? (l - 0.03) / l : 0.4; return [dx * k, cy + dy * k, z]; });
+    };
+    for (const s of [1, -1]) {
+      const rows = [...rowsA, ...rowsB].map((r) => inset(r.pts, r.z));
+      const m = new THREE.Mesh(mirrorX(grid(rows, NP), s), frame); m.receiveShadow = true; m.userData.noTear = true; car.add(m); addPanel(m);
+    } }
   // (one sheet: where the pieces meet (the two halves down the middle, the nose, the
   // join and the body), their shading is shared, so no seam shows; sharp edges stay sharp)
   if (cfg.weld) { weldNormals(sheet, 0.5); car.userData.skinSheet = sheet; }   // (kept: shared again after every dent)

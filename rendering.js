@@ -62,7 +62,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 122;
+const BUILD = 123;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -2541,7 +2541,7 @@ function tearChunks() {
   const centre = car.getWorldPosition(new THREE.Vector3());
   let made = 0;
   for (const m of carModel.crush.panels) {
-    if (!m.visible || m.parent !== car) continue;      // (the body's own panels: not a wing, nor one lying on the track)
+    if (!m.visible || m.parent !== car || m.userData.noTear) continue;      // (the body's own panels: not a wing, nor one lying on the track; the frame under the skin stays)
     const orig = bodyOriginals.get(m);
     if (!orig) continue;
     for (const ch of tearPanel(m, orig)) {
@@ -2571,6 +2571,8 @@ function tearChunks() {
     }
   }
   if (!made) return;
+  // (the skin torn open: what's under it shows, the frame and, where it has one built, the engine)
+  const bay = car.getObjectByName('bay'); if (bay) bay.visible = true;
   // (not too many lying about: the oldest tidied away)
   let count = 0;
   for (let i = flyingParts.length - 1; i >= 0; i--) {
@@ -2581,6 +2583,7 @@ function tearChunks() {
 }
 function clearDents() {
   for (const m of carModel.crush?.panels || []) mendPanel(m);     // (the torn-off bodywork back)
+  { const bay = carModel.car.getObjectByName('bay'); if (bay) bay.visible = false; }   // (and the engine out of sight under it again)
   dents.length = 0;
   crushFrame?.reset();
   noseCrush = 0;
