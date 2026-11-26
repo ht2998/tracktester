@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 182;
+export const BUILD = 183;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
@@ -31,6 +31,7 @@ export const UPDATES = [
     items: [
       ['The TTF-94\'s V12, inside', 'The TTF-94 now has its 3.5-litre V12 built in under the engine cover: two banks of six at 75 degrees, red crackle-finish cam covers, the intake trumpets in the V under the airbox and twelve exhaust pipes sweeping back to the exits. Tick Clear in the Garage to see it through the bodywork', 'new'],
       ['A smoother TTF-20', 'The TTF-20\'s body behind the nose is now shaped from 250 measured slices and smoothed into one fair sheet: the slim waisted sidepods, the coke-bottle squeeze to the back, the engine cover running down to the gearbox. Its slender raised nose is kept, smoothed. The bodywork now comes right down onto the floor, and the sidepods\' inlets are real hollow openings with a dark duct and the radiator behind', 'new'],
+      ['DAS, working by itself', 'The TTF-20\'s dual-axis steering now works on its own. The front wheels are set up toed out a little, for a sharper turn-in; flat out on a straight the system pulls the steering wheel back and the front wheels line up dead straight, for less drag and tyre scrub. Touch the brake or turn in and it pushes forward again at once. A DAS lamp at the top right lights while it\'s working, and you can see the wheel move in the cockpit', 'new'],
       ['Its airbox and fin', 'The tall, round-shouldered airbox right over the driver\'s head is its own piece again, with its dark intake facing forward, and behind it the shark fin runs straight back along the engine cover, as on the real car', 'new'],
     ],
   },

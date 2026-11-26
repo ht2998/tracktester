@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 101;
+export const BUILD = 102;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -212,6 +212,10 @@ export const F20_CAR = {
   frontStiffness: 82000, rearStiffness: 95000,
   shiftTime: { manual: 0.03, auto: 0.08 },
   fuelCapacity: 110,
+  // DUAL-AXIS STEERING: set up with the fronts toed out (sharper into a corner);
+  // on a straight the system pulls the wheel back and they line up straight (less
+  // drag and scrub, the tyres kept cooler), pushed forward again before the braking
+  toeFront: -0.3 * Math.PI / 180, das: true,
 };
 // THE TT-94: an original 1994 V12 Formula 1 car (a tribute to the cars of
 // that year: no real make, badges or livery). On slicks, with the
@@ -2702,7 +2706,8 @@ export function buildF1Cockpit(car, { paddles = false, wheelTilt = -0.5, suit = 
     head,                                          // how far his head is thrown about (car's frame): add to the eye
     // a gear change: his right hand goes to the lever
     onShift(direction) { shift = 0; shiftDir = direction > 0 ? 1 : -1; },
-    update(dt, { steer = 0, maxSteer = 0.36, speed = 0, slip = 0, bump = 0, gear = 'N', rpm = 0, redline = 12500, kmh = 0, limp = false, throttle = 0, brake = 0, clutch = 0 }) {
+    update(dt, { steer = 0, maxSteer = 0.36, speed = 0, slip = 0, bump = 0, gear = 'N', rpm = 0, redline = 12500, kmh = 0, limp = false, throttle = 0, brake = 0, clutch = 0, das = 0 }) {
+      column.position.z = 0.45 - 0.04 * das;          // (dual-axis steering: the wheel pulled back toward him on the straights)
       t += dt;
       // the pedals pressed as far as he's pressing them, his feet on them
       // (the right foot across to the brake in the TT-88, back to the throttle after)

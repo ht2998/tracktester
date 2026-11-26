@@ -62,7 +62,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 120;
+const BUILD = 121;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -1805,7 +1805,7 @@ function updateWheels(steer, spin) {
     const camber = -Math.sign(x) * sd * 0.28;
     if (sd > 0) { wheelPos.x -= Math.sign(x) * 0.05 * sd; wheelPos.y -= 0.03 * sd; }
     // the tuning sheet's camber (the top leaning in) and toe (pointing in)
-    const look = physics.spec.look, cam = look ? (isFront ? look.camF : look.camR) : 0, toeT = look ? (isFront ? look.toeF : look.toeR) * 2 : 0;
+    const look = physics.spec.look, cam = look ? (isFront ? look.camF : look.camR) : 0, toeT = (look ? (isFront ? look.toeF : look.toeR) * 2 : 0) + (isFront ? ((physics.spec.toeFront || 0) + (physics.dasToe || 0)) * 4 : 0);   // (and the set-up toe, and dual-axis steering's, shown larger so it can be seen)
     const yawBent = (isFront ? steer : 0) + toe - Math.sign(x) * toeT;
     // the caliper: steers with the wheel, but doesn't spin
     wheelEuler.set(0, yawBent, camber);
@@ -2498,6 +2498,32 @@ function crushBreaks() {
   }
   if (gone(0.5, 0.62, 0.5, 0.12, 0.06)) snapMirror('l');
   if (gone(-0.5, 0.62, 0.5, 0.12, 0.06)) snapMirror('r');
+}
+// DUAL-AXIS STEERING (the TTF-20): it works itself. Flat out on a straight (fast,
+// the wheel straight, no brake, hardly any cornering force, for a moment) the wheel
+// is pulled back and the front wheels line up straight, taking off the toe-out they
+// run for the corners: less drag and tyre scrub. Touch the brake, turn in, or slow
+// down and it's pushed forward again at once. A lamp shows it at work
+let dasT = 0, dasHold = 0, dasLamp = null;
+function updateDas(dt, input) {
+  if (!physics.spec.das) { physics.dasToe = 0; dasT = 0; if (dasLamp) dasLamp.style.display = 'none'; return; }
+  const lat = Math.abs(physics.yawRate * physics.vx) / 9.81;
+  const want = physics.speedKmh > 140 && Math.abs(physics.steer) < 0.025 && (input?.brake || 0) < 0.05 && lat < 0.35 && !physics.air;
+  dasHold = want ? dasHold + dt : 0;
+  const on = dasHold > 0.35;
+  dasT += ((on ? 1 : 0) - dasT) * Math.min(1, dt * (on ? 7 : 14));        // (pulled in a fifth of a second; pushed back quicker)
+  physics.dasToe = -(physics.spec.toeFront || 0) * dasT;
+  if (typeof document === 'undefined') return;
+  if (!dasLamp) {
+    dasLamp = document.createElement('div');
+    dasLamp.textContent = 'DAS';
+    Object.assign(dasLamp.style, { position: 'fixed', right: '12px', top: isMobile ? '112px' : '150px', padding: '2px 8px', borderRadius: '6px', font: '700 12px system-ui, sans-serif', letterSpacing: '1px', zIndex: 20, pointerEvents: 'none', transition: 'background 0.15s, color 0.15s' });
+    document.body.appendChild(dasLamp);
+  }
+  const lit = dasT > 0.5;
+  dasLamp.style.display = '';
+  dasLamp.style.background = lit ? '#00a19b' : 'rgba(20,21,24,0.55)';
+  dasLamp.style.color = lit ? '#fff' : 'rgba(255,255,255,0.4)';
 }
 // TORN OFF IN CHUNKS: bodywork crushed too far comes away. Each torn piece
 // is the very bit of the skin that was there, its own shape and colour,
@@ -5507,7 +5533,9 @@ renderer.setAnimationLoop(() => {
       washerBody.drum.rotation.z -= physics.vx * dt * 0.6;
     }
     F.exhaustMat.emissiveIntensity = Math.max(0, physics.rpm / physics.spec.redline - 0.55) * 3 * (0.5 + (physics.boost || 0));
+    updateDas(dt, input);
     f1Cockpit.update(dt, {
+      das: dasT,
       steer: physics.steer, maxSteer: physics.spec.maxSteer, speed: physics.vx, slip: physics.vy,
       bump: Math.abs(physics.ground.rate || 0) * 0.02 + Math.abs(bodyLean.heave) * 2,
       gear: physics.gearLabel, rpm: physics.rpm, redline: physics.spec.redline, kmh: physics.speedKmh, limp: driverDead,

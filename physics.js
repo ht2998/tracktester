@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 28;
+export const BUILD = 29;
 
 const G = 9.81;   // gravity, m/s²
 const RPM_PER_RADS = 60 / (2 * Math.PI);
@@ -344,6 +344,7 @@ export class CarPhysics {
     this.fuelLeak = 0;        // litres per second leaking from a split fuel cell (rear hits)
     this.fires = [];          // crash fires besides the engine bay's: { kind: 'fuel' | 'oil', at: [x, y, z] (car's frame), level, t }
     this.wheelBend = [0, 0, 0, 0];   // each wheel knocked out of line, radians (+ = toe out to the left)
+    this.dasToe = 0;                 // (dual-axis steering: extra front toe-in it adds, radians; set by the game)
     this.suspDamage = [0, 0, 0, 0];  // each corner's suspension, bent (0) to torn off (1): the wheel leans, grips less, and at 1 comes off
     this.wingDamage = { fl: 0, fr: 0, rear: 0 };   // a car with wings (the TT-88): each crushed (0) to snapped off (1)
     this.aeroLoss = { front: 0, rear: 0 };         // how much of its downforce it's lost with them
@@ -1714,7 +1715,7 @@ export class CarPhysics {
     // a little, a bit of which reaches the tyres)
     const bumpSteer = 0;      // (the kick shows on the steering wheel; feeding it to the tyres made the car nervous)
     // (and the toe it's set up with: toe-in (+) points both wheels of an axle in towards the middle)
-    const toeF = s.toeFront || 0, toeR = s.toeRear || 0;
+    const toeF = (s.toeFront || 0) + (this.dasToe || 0), toeR = s.toeRear || 0;
     const delta = [d + Math.max(0, ack) + wb[0] * 0.5 + bumpSteer - toeF, d + Math.min(0, ack) + wb[1] * 0.5 + bumpSteer + toeF, wb[2] * 0.35 - toeR, wb[3] * 0.35 + toeR];
     const cosD = delta.map(Math.cos), sinD = delta.map(Math.sin);
     const A = [Lf, Lf, -Lr, -Lr], B = [tH, -tH, tH, -tH];
