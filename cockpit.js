@@ -20,7 +20,7 @@ import * as THREE from 'three';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 14;
+export const BUILD = 15;
 
 const DRIVER_X = -0.18;
 // The steering wheel's centre and tilt
@@ -406,7 +406,6 @@ export class Cockpit {
       foot.add(sole);
       foot.add(mesh(new THREE.CylinderGeometry(0.042, 0.045, 0.07, 14), boot, 0, 0.03, 0));   // ankle of the boot
       this.driver.add(thigh, shin, knee, foot);
-      for (const m of [thigh, shin, knee, foot]) m.visible = false;   // (his legs: kept out of sight)
       return { thigh, shin, knee, foot, at: new THREE.Vector3() };
     });
     this.hornPress = 0;

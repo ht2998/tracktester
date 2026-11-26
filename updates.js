@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 183;
+export const BUILD = 184;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
@@ -50,7 +50,7 @@ export const UPDATES = [
     items: [
       ['Bodywork rips off', 'Crush a car badly enough and the bodywork tears away: the crumpled part comes off as a shower of pieces, each one the very bit of skin that was there, in its own colours and shape, flung off with the car\'s speed, tumbling and skidding to a stop. The car is left with a hole where it was. A repair puts it all back. Every car', 'new'],
       ['Smoother bodies', 'The TTF-94 and TTF-88 no longer look sliced: their bodywork is one smooth, continuous sheet', 'new'],
-      ['Out of sight', 'The drivers\' legs are no longer shown, in every car; in the Formula cars the pedals and the pedal floor are gone from view too', 'new'],
+      ['Legs inside the car', 'The drivers\' legs no longer show through the bodywork: they\'re kept inside the tub, down in the footwell, in every car. In the Formula cars the pedals and the pedal floor are gone from view', 'new'],
     ],
   },
   {

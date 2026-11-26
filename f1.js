@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 102;
+export const BUILD = 103;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -605,8 +605,8 @@ export function buildF1Body(car, addPanel) {
   add(box(0.34, 0.05, 0.36, 0, 0.1, 0.1 + DZ), MAT.seat, false);
   add(box(0.36, 0.42, 0.05, 0, 0.3, -0.07 + DZ, -0.32), MAT.seat, false);
   for (const sx of [1, -1]) add(box(0.04, 0.16, 0.36, sx * 0.17, 0.18, 0.08 + DZ), MAT.seat, false);
-  // his legs, forward and a little raised, under the scuttle (always there)
-  // (his legs: out of sight, down in the footwell)
+  // his legs, forward and a little raised, under the scuttle (always there), kept inside the tub
+  legsInside(sk, add, MAT.suit, DZ, [0.18, 0.28, 0.2]);
   // his body, arms and a wheel (the computer drivers' and the Garage's cars;
   // the player's car has its own moving ones in the cockpit, so the game hides this)
   const driver = new THREE.Group(); driver.position.set(0, -0.02, DZ);
@@ -771,6 +771,24 @@ function spineGeometry(z0, z1, n, half) {
   for (let i = 0; i < n; i++) for (let k = 0; k < W - 1; k++) { const a = i * W + k, b = a + W; if (z1 < z0) idx.push(a, a + 1, b, a + 1, b + 1, b); else idx.push(a, b, a + 1, a + 1, b, b + 1); }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
   return g;
+}
+
+// HIS LEGS, kept inside the bodywork: each point of them pulled in and down
+// where the tub is narrower or lower than he is, so no part of him shows
+// through the skin. [x, y, z] in the car; r: the leg's thickness there
+function legInside(sk, [x, y, z], r) {
+  const u = sk.upper(z);                          // (the section there: the top's middle, round and down to underneath)
+  let hw = 0; for (const p of u) if (Math.abs(p[1] - y) < 0.06) hw = Math.max(hw, p[0]);
+  if (hw > 0) x = Math.sign(x) * Math.min(Math.abs(x), Math.max(0.02, hw - r - 0.025));
+  const top = sk.surfY(z, Math.abs(x)), floor = u[u.length - 1][1];
+  y = Math.max(floor + r + 0.01, Math.min(y, top - r - 0.02));
+  return [x, y, z];
+}
+function legsInside(sk, add, mat, DZ, [y0, y1, y2], zf = 1.0) {
+  for (const sx of [1, -1]) {
+    const a = legInside(sk, [sx * 0.08, y0, 0.02 + DZ], 0.055), b = legInside(sk, [sx * 0.09, y1, 0.55 + DZ], 0.055), c = legInside(sk, [sx * 0.07, y2, zf + DZ], 0.045);
+    add(rod(a, b, 0.055), mat, false); add(rod(b, c, 0.045), mat, false);
+  }
 }
 
 // MEASURED SECTIONS for sweptSkin: eight points a slice ({ x0..x7, y0..y7 }
@@ -1705,7 +1723,7 @@ export function buildF20Body(car, addPanel) {
   add(new THREE.CylinderGeometry(0.2, 0.2, 0.05, 12, 1, true, -0.8, 1.6).rotateX(-0.3).translate(0, 0.77, 1.06), MAT.glass, false);
   add(box(0.3, 0.05, 0.34, 0, 0.18, 0.08 + DZ), MAT.seat, false);
   add(box(0.32, 0.4, 0.05, 0, 0.38, -0.12 + DZ, -0.36), MAT.seat, false);
-  // (his legs: out of sight, down in the footwell)
+  legsInside(sk, add, MAT.suit, DZ, [0.24, 0.34, 0.3], 1.02);      // (his legs, kept inside the tub)
   const driver = new THREE.Group(); driver.position.set(0, 0.04, DZ);
   car.add(driver);
   const dAdd = (geo, mat) => { const m = new THREE.Mesh(geo, mat); m.castShadow = false; driver.add(m); return m; };
@@ -1865,7 +1883,7 @@ export function buildF94Body(car, addPanel) {
   add(new THREE.CylinderGeometry(0.24, 0.24, 0.1, 12, 1, true, -0.95, 1.9).rotateX(-0.3).translate(0, 0.79, 0.93), MAT.glass, false);
   add(box(0.32, 0.05, 0.34, 0, 0.13, 0.08 + DZ), MAT.seat, false);
   add(box(0.34, 0.4, 0.05, 0, 0.33, -0.12 + DZ, -0.36), MAT.seat, false);
-  // (his legs: out of sight, down in the footwell)
+  legsInside(sk, add, MAT.suit, DZ, [0.2, 0.3, 0.24], 1.02);       // (his legs, kept inside the tub)
   const driver = new THREE.Group(); driver.position.z = DZ;
   car.add(driver);
   const dAdd = (geo, mat) => { const m = new THREE.Mesh(geo, mat); m.castShadow = false; driver.add(m); return m; };
@@ -2652,8 +2670,6 @@ export function buildF1Cockpit(car, { paddles = false, wheelTilt = -0.5, suit = 
     _k.copy(L.hip).addScaledVector(_d, a).addScaledVector(_u, h);
     bone(L.thigh, L.hip, _k, 0.065); bone(L.shin, _k, ankle, 0.048); L.knee.position.copy(_k);
   };
-  // (his legs and feet are kept out of sight: only his top half shows)
-  for (const m of [...feet, ...legs.flatMap((l) => [l.thigh, l.shin, l.knee])]) m.visible = false;
   legs.forEach((L, i) => placeLeg(L, new THREE.Vector3(i === 0 ? pedalAt.throttle : (paddles ? pedalAt.brake : pedalAt.clutch), pedalY + 0.06, pedalZ - 0.03)));   // (where they start)
   // the driver: shoulders and chest just under the rim, arms to the wheel
   // (sat back in the tub, not hunched over the wheel: his back against the
@@ -2702,7 +2718,7 @@ export function buildF1Cockpit(car, { paddles = false, wheelTilt = -0.5, suit = 
   const gripPt = new THREE.Vector3(), knobPt = new THREE.Vector3();
   return {
     group,
-    driverParts: [chest, back, neck, ...arms.flatMap((a) => [a.upper, a.fore, a.elbow, a.hand])],   // (him, without the wheel: for climbing out)
+    driverParts: [chest, back, neck, ...feet, ...legs.flatMap((l) => [l.thigh, l.shin, l.knee]), ...arms.flatMap((a) => [a.upper, a.fore, a.elbow, a.hand])],   // (him, without the wheel: for climbing out)
     head,                                          // how far his head is thrown about (car's frame): add to the eye
     // a gear change: his right hand goes to the lever
     onShift(direction) { shift = 0; shiftDir = direction > 0 ? 1 : -1; },
