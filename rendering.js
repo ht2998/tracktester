@@ -62,7 +62,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 121;
+const BUILD = 122;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -2427,6 +2427,7 @@ function panelBox(m, orig) {
 // reach: [minX, minY, minZ, maxX, maxY, maxZ] of the car the hit can have moved (none: all of it)
 function reshapeBody(reach) {
   for (const m of carModel.crush.panels) {
+    if (m.userData.debris) continue;                  // (broken off and lying about: not part of the car any more)
     const pos = m.geometry.attributes.position;
     if (!pos || !pos.array) continue;
     let orig = bodyOriginals.get(m);
@@ -4374,7 +4375,25 @@ const _fprev = new THREE.Vector3();
 function updateFlyingParts(dt) {
   carBoxTick++;
   updateFallingTrees(dt);
+  const now = clock.elapsedTime, h = physics.heading, fx = Math.sin(h), fz = Math.cos(h);
+  const halfL = IS_F1 ? 2.5 : 1.9, halfW = IS_F1 ? 0.95 : 0.85, carSp = carVelocity.length();
   for (const p of flyingParts) {
+    // DEBRIS: once off the car it isn't the car's any more: no dents, no tearing, no
+    // part of its damage. It lies where it fell, and the car (yours) knocks it about
+    if (!p.debris) { p.debris = true; p.born = now; p.obj.traverse((o) => { o.userData.debris = true; }); }
+    if (carSp > 1 && now - p.born > 0.6 && !p.obj.userData.held) {
+      const dx = p.obj.position.x - physics.x, dz = p.obj.position.z - physics.z;
+      const along = dx * fx + dz * fz, across = dx * fz - dz * fx;
+      if (Math.abs(along) < halfL && Math.abs(across) < halfW && p.obj.position.y < groundAt(p.obj.position.x, p.obj.position.z) + 1.1) {
+        const side = Math.sign(across) || 1;
+        p.v.copy(carVelocity).multiplyScalar(0.9 + Math.random() * 0.3);
+        p.v.x += fz * side * (1.5 + Math.random() * 2.5); p.v.z += -fx * side * (1.5 + Math.random() * 2.5);
+        p.v.y = 1.2 + Math.random() * 2.5 + carSp * 0.05;
+        p.w.set((Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20);
+        p.rest = false; p.born = now;
+        if (carSp > 6) { chipVel.copy(p.v).multiplyScalar(0.5); chips.spawn({ x: p.obj.position.x, z: p.obj.position.z }, chipVel, 2); }
+      }
+    }
     if (p.rest) continue;
     p.v.y -= 9.81 * dt;
     _fprev.copy(p.obj.position);
@@ -4946,6 +4965,7 @@ function clearFlyingParts() {
     if (cw.parent !== carModel.car) carModel.car.add(cw);
     cw.quaternion.identity();
   });
+  carModel.car.traverse((o) => { o.userData.debris = false; });     // (everything on the car is the car's again)
 }
 // A mirror knocked off: the pod flies off, the bare stalk stays
 function snapMirror(side) {
@@ -4965,6 +4985,7 @@ function fitMirror(side) {
   if (k >= 0) flyingParts.splice(k, 1);
   carModel.car.add(m.pod);
   m.pod.position.set(0, 0, 0); m.pod.quaternion.identity(); m.pod.visible = true;
+  m.pod.traverse((o) => { o.userData.debris = false; });
   m.stalk.visible = true;
   m.off = false;
 }
@@ -4978,6 +4999,7 @@ function fitWing(part) {
     if (i >= 0) flyingParts.splice(i, 1);
     carModel.car.add(g);
     g.position.set(0, 0, 0); g.quaternion.identity(); g.visible = true;
+    g.traverse((o) => { o.userData.debris = false; });     // (on the car again)
     physics.wingDamage[k] = 0;
   }
   if (part === 'front') physics.aeroLoss.front = 0; else physics.aeroLoss.rear = 0;
