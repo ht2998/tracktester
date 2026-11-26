@@ -2505,12 +2505,12 @@ function crushBreaks() {
 // to rest; the panel keeps the hole. (softbody.js tearPanel)
 const CHUNK_MAX = isMobile ? 40 : 90;                  // (lying about at once; the oldest go)
 const chunkMats = new Map();
-const _tc = new THREE.Vector3(), _tq = new THREE.Quaternion(), _tw = new THREE.Vector3();
+const _chC = new THREE.Vector3(), _chQ = new THREE.Quaternion(), _chW = new THREE.Vector3();
 function tearChunks() {
   if (physics.damageOff || WASHER || !carModel.crush?.panels) return;
   const car = carModel.car;
   car.updateMatrixWorld();
-  car.getWorldQuaternion(_tq);
+  car.getWorldQuaternion(_chQ);
   const centre = car.getWorldPosition(new THREE.Vector3());
   let made = 0;
   for (const m of carModel.crush.panels) {
@@ -2530,14 +2530,14 @@ function tearChunks() {
       if (!mat) { mat = ch.mat.clone(); mat.side = THREE.DoubleSide; chunkMats.set(ch.mat, mat); }   // (seen from inside too, now it's loose)
       const piece = new THREE.Mesh(g, mat);
       piece.castShadow = true;
-      piece.position.copy(car.localToWorld(_tc.set(cx, cy, cz)));
-      piece.quaternion.copy(_tq);
+      piece.position.copy(car.localToWorld(_chC.set(cx, cy, cz)));
+      piece.quaternion.copy(_chQ);
       scene.add(piece);
       // flung outward from the car, and up, carrying some of its speed
-      _tw.copy(piece.position).sub(centre); _tw.y = 0; _tw.normalize();
+      _chW.copy(piece.position).sub(centre); _chW.y = 0; _chW.normalize();
       const out = 2 + Math.random() * 5;
       const v = new THREE.Vector3().copy(carVelocity).multiplyScalar(0.45 + Math.random() * 0.3)
-        .add(new THREE.Vector3(_tw.x * out + (Math.random() - 0.5) * 3, 1.5 + Math.random() * 4, _tw.z * out + (Math.random() - 0.5) * 3));
+        .add(new THREE.Vector3(_chW.x * out + (Math.random() - 0.5) * 3, 1.5 + Math.random() * 4, _chW.z * out + (Math.random() - 0.5) * 3));
       flyingParts.push({ obj: piece, v, w: new THREE.Vector3((Math.random() - 0.5) * 26, (Math.random() - 0.5) * 26, (Math.random() - 0.5) * 26), rest: false, chunk: true });
       if (made < 12) { chipVel.copy(v).multiplyScalar(0.6); chips.spawn({ x: piece.position.x, z: piece.position.z }, chipVel, 3); }
       made++;
