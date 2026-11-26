@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 104;
+export const BUILD = 105;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -2582,7 +2582,7 @@ export function buildF1() {
 // and harder it's going and over bumps), the right hand going to the lever
 // for every gear change. His head is shaken about with it (the camera).
 // =====================================================================
-export function buildF1Cockpit(car, { paddles = false, wheelTilt = -0.5, suit = 0xc81d25 } = {}) {
+export function buildF1Cockpit(car, { paddles = false, wheelTilt = -0.5, suit = 0xc81d25, hPattern = false } = {}) {
   const group = new THREE.Group();
   car.add(group);
   const M = {
@@ -2728,6 +2728,14 @@ export function buildF1Cockpit(car, { paddles = false, wheelTilt = -0.5, suit = 
   const POLE = [new THREE.Vector3(-1, -0.6, -0.3), new THREE.Vector3(1, -0.6, -0.3)];
   const head = new THREE.Vector3();
   const pedalPress = { throttle: 0, brake: 0, clutch: 0, across: 0 };
+  // AN H-PATTERN GATE (hPattern): the lever's place for each gear, across (c: the gate,
+  // left to right) and along (r: forward 1, back -1); a change goes back to the middle,
+  // across, and into the new gear, as a real one does
+  const HPOS = (g) => { if (g === 'R') return [-2, 1]; const n = parseInt(g, 10); if (!(n > 0)) return [0, 0]; return [Math.floor((n - 1) / 2) - 1, n % 2 ? 1 : -1]; };
+  let hFrom = [0, 0], hTo = [0, 0], hT = 1, lastGear = null;
+  // CHANGING DOWN, HEEL AND TOE: still on the brake, the right foot rolls across to
+  // stab the throttle while the left dips the clutch, the revs matched for the lower gear
+  let blip = 1;
   let t = 0, shift = 1, shiftDir = 0, fight = 0, panelClock = 0, wheelAngle = 0, bumpS = 0;
   const headV = new THREE.Vector3(), headAim = new THREE.Vector3();
   const gripPt = new THREE.Vector3(), knobPt = new THREE.Vector3();
@@ -2736,13 +2744,19 @@ export function buildF1Cockpit(car, { paddles = false, wheelTilt = -0.5, suit = 
     driverParts: [chest, back, neck, ...feet, ...legs.flatMap((l) => [l.thigh, l.shin, l.knee]), ...arms.flatMap((a) => [a.upper, a.fore, a.elbow, a.hand])],   // (him, without the wheel: for climbing out)
     head,                                          // how far his head is thrown about (car's frame): add to the eye
     // a gear change: his right hand goes to the lever
-    onShift(direction) { shift = 0; shiftDir = direction > 0 ? 1 : -1; },
+    onShift(direction) { shift = 0; shiftDir = direction > 0 ? 1 : -1; if (direction < 0) blip = 0; },
     update(dt, { steer = 0, maxSteer = 0.36, speed = 0, slip = 0, bump = 0, gear = 'N', rpm = 0, redline = 12500, kmh = 0, limp = false, throttle = 0, brake = 0, clutch = 0, das = 0 }) {
       column.position.z = 0.45 - 0.04 * das;          // (dual-axis steering: the wheel pulled back toward him on the straights)
       t += dt;
       // the pedals pressed as far as he's pressing them, his feet on them
       // (the right foot across to the brake in the TT-88, back to the throttle after)
       if (limp) { throttle = 0; brake = 0; clutch = 0; }
+      // (the heel-and-toe on a change down: the clutch dipped, the throttle stabbed)
+      blip = Math.min(1, blip + dt / 0.4);
+      const stab = blip < 1 && !limp ? Math.max(0, Math.sin(Math.PI * Math.min(1, Math.max(0, (blip - 0.15) / 0.45)))) : 0;
+      if (blip < 0.8 && !paddles && !limp) clutch = Math.max(clutch, 1);
+      throttle = Math.max(throttle, stab * 0.7);
+      if (hPattern && gear !== lastGear) { if (lastGear !== null) { hFrom = HPOS(lastGear); hTo = HPOS(gear); hT = 0; } else hFrom = hTo = HPOS(gear); lastGear = gear; }
       pedalPress.throttle += (throttle - pedalPress.throttle) * Math.min(1, dt * 18);
       pedalPress.brake += (brake - pedalPress.brake) * Math.min(1, dt * 18);
       pedalPress.clutch += (clutch - pedalPress.clutch) * Math.min(1, dt * 18);
@@ -2753,6 +2767,7 @@ export function buildF1Cockpit(car, { paddles = false, wheelTilt = -0.5, suit = 
         const k = i === 1 ? (paddles ? 'brake' : 'clutch') : 'throttle';
         let x = pedalAt[k], press = pedalPress[k];
         if (i === 0 && !paddles) { x += (pedalAt.brake - pedalAt.throttle) * pedalPress.across; press = press * (1 - pedalPress.across) + pedalPress.brake * pedalPress.across; }
+        if (i === 0 && !paddles && stab > 0 && pedalPress.across > 0.3) { x += (pedalAt.throttle - x) * 0.45 * stab; press = Math.max(press, 0.5 + 0.3 * stab); }   // (heel and toe: rolled across onto the throttle)
         const a = 0.35 + 0.45 * press;
         footPt.set(x, pedalY - 0.04 + Math.cos(a) * 0.1, pedalZ + Math.sin(a) * 0.1 - 0.06);
         feet[i].position.copy(footPt); feet[i].rotation.x = a - 0.35;
@@ -2786,6 +2801,13 @@ export function buildF1Cockpit(car, { paddles = false, wheelTilt = -0.5, suit = 
         const pull = shift < 1 ? Math.sin(Math.PI * shift) : 0;
         paddleMeshes.forEach((m, k) => { m.position.z = (k === 0) === (shiftDir > 0) ? -0.012 * pull : 0; });
       }
+      if (hPattern) {
+        // the lever through the gate: back to the middle, across, then into the gear
+        hT = Math.min(1, hT + dt / 0.42);
+        const k = hT * 3, [c0, r0] = hFrom, [c1, r1] = hTo;
+        const c = k < 1 ? c0 : k < 2 ? c0 + (c1 - c0) * (k - 1) : c1, r = k < 1 ? r0 * (1 - k) : k < 2 ? 0 : r1 * (k - 2);
+        lever.rotation.x = -r * 0.3; lever.rotation.z = -c * 0.2;
+      }
       for (let i = 0; i < 2; i++) {
         wheel.localToWorld(gripPt.set(i === 0 ? -0.125 : 0.125, 0, -0.03));
         group.worldToLocal(gripPt);
@@ -2796,11 +2818,11 @@ export function buildF1Cockpit(car, { paddles = false, wheelTilt = -0.5, suit = 
           shift = Math.min(1, shift + dt / 0.5);
           const out = shift < 0.3 ? shift / 0.3 : shift > 0.7 ? (1 - shift) / 0.3 : 1;
           const throwL = shift > 0.3 && shift < 0.7 ? Math.sin(Math.PI * (shift - 0.3) / 0.4) : 0;
-          lever.rotation.x = -shiftDir * 0.35 * throwL;
+          if (!hPattern) lever.rotation.x = -shiftDir * 0.35 * throwL;
           lever.updateMatrixWorld(true);
           knob.getWorldPosition(knobPt); group.worldToLocal(knobPt);
           gripPt.lerp(knobPt, Math.min(1, out));
-        } else if (i === 0 && !paddles) lever.rotation.x = 0;
+        } else if (i === 0 && !paddles && !hPattern) lever.rotation.x = 0;
         if (limp) gripPt.set(i === 0 ? -0.1 : 0.1, 0.36, 0.12);          // (hands fallen off the wheel, into his lap)
         reach(i, gripPt, POLE[i]);
       }

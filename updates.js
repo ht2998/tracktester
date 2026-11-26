@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 187;
+export const BUILD = 188;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
@@ -49,6 +49,8 @@ export const UPDATES = [
     id: 143, date: '26 Nov 2026', title: 'Torn to pieces',
     items: [
       ['Bodywork rips off', 'Crush a car badly enough and the bodywork tears away: the crumpled part comes off as a shower of pieces, each one the very bit of skin that was there, in its own colours and shape, flung off with the car\'s speed, tumbling and skidding to a stop. The car is left with a hole where it was. A repair puts it all back. Every car', 'new'],
+      ['Heel and toe', 'Changing down, the drivers now do it properly: still on the brake, the right foot rolls across and stabs the throttle while the left dips the clutch. In the paddle-shift cars the throttle is blipped on each change down', 'new'],
+      ['The TTF-88\'s gate', 'The TTF-88\'s gear lever now moves through a real H-pattern: back to the middle, across the gate and forward or back into the gear, and it stays where the gear is', 'new'],
       ['No holes to nowhere', 'Where bodywork is torn off you now see what\'s underneath it, the car\'s dark frame and, on the cars that have one built in, the engine, instead of looking straight through to the ground', 'new'],
       ['Slam it', 'Negative camber in the tuning sheet now goes all the way to 15°, so you can slam a car. Past about 6° it\'s for the look: the tyres ride on their edges and grip falls away', 'new'],
       ['Debris is debris', 'Anything that breaks off a car, a wing, a mirror, a wheel\'s link, a chunk of bodywork, is no longer counted as part of the car: it takes no more dents and isn\'t torn again, and it lies on the track as debris. Drive into it and you knock it flying', 'new'],
