@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 92;
+export const BUILD = 93;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -602,10 +602,7 @@ export function buildF1Body(car, addPanel) {
   add(box(0.36, 0.42, 0.05, 0, 0.3, -0.07 + DZ, -0.32), MAT.seat, false);
   for (const sx of [1, -1]) add(box(0.04, 0.16, 0.36, sx * 0.17, 0.18, 0.08 + DZ), MAT.seat, false);
   // his legs, forward and a little raised, under the scuttle (always there)
-  for (const sx of [1, -1]) {
-    add(rod([sx * 0.08, 0.18, 0.02 + DZ], [sx * 0.09, 0.28, 0.55 + DZ], 0.055), MAT.suit, false);
-    add(rod([sx * 0.09, 0.28, 0.55 + DZ], [sx * 0.07, 0.2, 1.0 + DZ], 0.045), MAT.suit, false);
-  }
+  // (his legs: out of sight, down in the footwell)
   // his body, arms and a wheel (the computer drivers' and the Garage's cars;
   // the player's car has its own moving ones in the cockpit, so the game hides this)
   const driver = new THREE.Group(); driver.position.set(0, -0.02, DZ);
@@ -708,20 +705,27 @@ export function buildF1Body(car, addPanel) {
 // SHARED SHADING across separate pieces of one surface: every vertex sitting
 // at the same spot as others gets the average of their normals (only those
 // within about 60 degrees of its own, so a real edge stays crisp)
-function weldNormals(geos, minDot = 0.5) {
-  const map = new Map(), q = (v) => Math.round(v * 2e4);
-  geos.forEach((g) => {
-    const p = g.attributes.position?.array, n = g.attributes.normal?.array; if (!p || !n) return;
-    for (let i = 0; i < p.length; i += 3) { const k = q(p[i]) + ',' + q(p[i + 1]) + ',' + q(p[i + 2]); let l = map.get(k); if (!l) map.set(k, l = []); l.push([n, i]); }
-  });
-  for (const l of map.values()) {
-    if (l.length < 2) continue;
-    const own = l.map(([n, i]) => [n[i], n[i + 1], n[i + 2]]);
-    l.forEach(([n, i], a) => {
-      let x = 0, y = 0, z = 0;
-      for (const o of own) if (o[0] * own[a][0] + o[1] * own[a][1] + o[2] * own[a][2] >= minDot) { x += o[0]; y += o[1]; z += o[2]; }
-      const d = Math.hypot(x, y, z) || 1; n[i] = x / d; n[i + 1] = y / d; n[i + 2] = z / d;
+export function weldNormals(geos, minDot = 0.5) {
+  // (which points sit together: found once, while the skin is as built; dents
+  // move such points together, so they stay together)
+  if (!geos.groups) {
+    const map = new Map(), q = (v) => Math.round(v * 2e4);
+    geos.forEach((g, gi) => {
+      const p = g.attributes.position?.array; if (!p) return;
+      for (let i = 0; i < p.length; i += 3) { const k = q(p[i]) + ',' + q(p[i + 1]) + ',' + q(p[i + 2]); let l = map.get(k); if (!l) map.set(k, l = []); l.push(gi, i); }
     });
+    geos.groups = [...map.values()].filter((l) => l.length > 2);
+  }
+  const own = [];
+  for (const l of geos.groups) {
+    own.length = 0;
+    for (let j = 0; j < l.length; j += 2) { const n = geos[l[j]].attributes.normal?.array; if (!n) return; own.push(n[l[j + 1]], n[l[j + 1] + 1], n[l[j + 1] + 2]); }
+    for (let j = 0, a = 0; j < l.length; j += 2, a += 3) {
+      let x = 0, y = 0, z = 0;
+      for (let b = 0; b < own.length; b += 3) if (own[b] * own[a] + own[b + 1] * own[a + 1] + own[b + 2] * own[a + 2] >= minDot) { x += own[b]; y += own[b + 1]; z += own[b + 2]; }
+      const d = Math.hypot(x, y, z) || 1, n = geos[l[j]].attributes.normal.array, i = l[j + 1];
+      n[i] = x / d; n[i + 1] = y / d; n[i + 2] = z / d;
+    }
   }
   for (const g of geos) if (g.attributes.normal) g.attributes.normal.needsUpdate = true;
 }
@@ -829,7 +833,7 @@ function sweptSkin(car, addPanel, add, PAINT, cfg) {
   }
   // (one sheet: where the pieces meet (the two halves down the middle, the nose, the
   // join and the body), their shading is shared, so no seam shows; sharp edges stay sharp)
-  if (cfg.weld) weldNormals(sheet, 0.5);
+  if (cfg.weld) { weldNormals(sheet, 0.5); car.userData.skinSheet = sheet; }   // (kept: shared again after every dent)
   // (the tip, closed)
   { const z = N.z[0], hw = hwA(z), yb = ybA(z), yt = ytA(z);
     add(loft([{ z: z + 0.005, w: hw * 2, h: yt - yb, y: yb }, { z: z - 0.04, w: hw * 2.05, h: yt - yb + 0.005, y: yb - 0.002 }], 0.8, 40, 6, true), PAINT[cfg.tipPaint ?? 0]); }
@@ -1648,10 +1652,7 @@ export function buildF20Body(car, addPanel) {
   add(new THREE.CylinderGeometry(0.2, 0.2, 0.05, 12, 1, true, -0.8, 1.6).rotateX(-0.3).translate(0, 0.77, 1.06), MAT.glass, false);
   add(box(0.3, 0.05, 0.34, 0, 0.18, 0.08 + DZ), MAT.seat, false);
   add(box(0.32, 0.4, 0.05, 0, 0.38, -0.12 + DZ, -0.36), MAT.seat, false);
-  for (const sx of [1, -1]) {
-    add(rod([sx * 0.08, 0.24, 0.02 + DZ], [sx * 0.09, 0.34, 0.55 + DZ], 0.055), MAT.suit, false);
-    add(rod([sx * 0.09, 0.34, 0.55 + DZ], [sx * 0.07, 0.3, 1.02 + DZ], 0.045), MAT.suit, false);
-  }
+  // (his legs: out of sight, down in the footwell)
   const driver = new THREE.Group(); driver.position.set(0, 0.04, DZ);
   car.add(driver);
   const dAdd = (geo, mat) => { const m = new THREE.Mesh(geo, mat); m.castShadow = false; driver.add(m); return m; };
@@ -1795,10 +1796,7 @@ export function buildF94Body(car, addPanel) {
   add(new THREE.CylinderGeometry(0.24, 0.24, 0.1, 12, 1, true, -0.95, 1.9).rotateX(-0.3).translate(0, 0.79, 0.93), MAT.glass, false);
   add(box(0.32, 0.05, 0.34, 0, 0.13, 0.08 + DZ), MAT.seat, false);
   add(box(0.34, 0.4, 0.05, 0, 0.33, -0.12 + DZ, -0.36), MAT.seat, false);
-  for (const sx of [1, -1]) {
-    add(rod([sx * 0.08, 0.2, 0.02 + DZ], [sx * 0.09, 0.3, 0.55 + DZ], 0.055), MAT.suit, false);
-    add(rod([sx * 0.09, 0.3, 0.55 + DZ], [sx * 0.07, 0.24, 1.02 + DZ], 0.045), MAT.suit, false);
-  }
+  // (his legs: out of sight, down in the footwell)
   const driver = new THREE.Group(); driver.position.z = DZ;
   car.add(driver);
   const dAdd = (geo, mat) => { const m = new THREE.Mesh(geo, mat); m.castShadow = false; driver.add(m); return m; };
@@ -2525,6 +2523,8 @@ export function buildF1Cockpit(car, { paddles = false, wheelTilt = -0.5, suit = 
     _k.copy(L.hip).addScaledVector(_d, a).addScaledVector(_u, h);
     bone(L.thigh, L.hip, _k, 0.065); bone(L.shin, _k, ankle, 0.048); L.knee.position.copy(_k);
   };
+  // (his legs and feet are kept out of sight: only his top half shows)
+  for (const m of [...feet, ...legs.flatMap((l) => [l.thigh, l.shin, l.knee])]) m.visible = false;
   legs.forEach((L, i) => placeLeg(L, new THREE.Vector3(i === 0 ? pedalAt.throttle : (paddles ? pedalAt.brake : pedalAt.clutch), pedalY + 0.06, pedalZ - 0.03)));   // (where they start)
   // the driver: shoulders and chest just under the rim, arms to the wheel
   // (sat back in the tub, not hunched over the wheel: his back against the
@@ -2573,7 +2573,7 @@ export function buildF1Cockpit(car, { paddles = false, wheelTilt = -0.5, suit = 
   const gripPt = new THREE.Vector3(), knobPt = new THREE.Vector3();
   return {
     group,
-    driverParts: [chest, back, neck, ...feet, ...legs.flatMap((l) => [l.thigh, l.shin, l.knee]), ...arms.flatMap((a) => [a.upper, a.fore, a.elbow, a.hand])],   // (him, without the wheel: for climbing out)
+    driverParts: [chest, back, neck, ...arms.flatMap((a) => [a.upper, a.fore, a.elbow, a.hand])],   // (him, without the wheel: for climbing out)
     head,                                          // how far his head is thrown about (car's frame): add to the eye
     // a gear change: his right hand goes to the lever
     onShift(direction) { shift = 0; shiftDir = direction > 0 ? 1 : -1; },

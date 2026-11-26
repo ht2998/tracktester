@@ -36,10 +36,10 @@ import * as packFile from './assets.js';
 import { AIField, BUILD as AI_BUILD } from './ai.js';
 import { Garage, BUILD as GARAGE_BUILD } from './garage.js';
 import { TuningSheet, withTune, loadTune, BUILD as TUNING_BUILD } from './tuning.js';
-import { CrushFrame, BUILD as SOFTBODY_BUILD } from './softbody.js';
+import { CrushFrame, tearPanel, mendPanel, BUILD as SOFTBODY_BUILD } from './softbody.js';
 import { PitStop, SEPANG_PIT, Person as PersonFigure, climbOutKeys, makeAxe, BUILD as PITS_BUILD } from './pits.js';
 import { RaceControl, BUILD as RACECONTROL_BUILD } from './racecontrol.js';
-import { buildF1Body, buildF05Body, bodyForKind, WHEEL_LAYOUT, DRIVER_SUITS, RIM_STYLES, suitTorsoMaterial, helmetMaterial, F94_DRIVER_DZ, F20_DRIVER_DZ, F88_DRIVER_DZ, P70_DRIVER_DZ, buildF1Cockpit, buildF1RimGeometry, tyreGeometry, F1_CAR, CATERHAM_CAR, ENGINES, withEngine, STOCK_ENGINE, specForKind, BUILD as F1_BUILD } from './f1.js';
+import { weldNormals, buildF1Body, buildF05Body, bodyForKind, WHEEL_LAYOUT, DRIVER_SUITS, RIM_STYLES, suitTorsoMaterial, helmetMaterial, F94_DRIVER_DZ, F20_DRIVER_DZ, F88_DRIVER_DZ, P70_DRIVER_DZ, buildF1Cockpit, buildF1RimGeometry, tyreGeometry, F1_CAR, CATERHAM_CAR, ENGINES, withEngine, STOCK_ENGINE, specForKind, BUILD as F1_BUILD } from './f1.js';
 import * as groundFile from './ground.js';
 import * as tyresFile from './tyres.js';
 import * as cockpitFile from './cockpit.js';
@@ -62,7 +62,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 119;
+const BUILD = 120;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -2442,6 +2442,8 @@ function reshapeBody(reach) {
     smoothNormals(m.geometry);
     m.geometry.computeBoundingSphere?.();
   }
+  // (a one-sheet skin: its pieces' shading shared again where they meet)
+  if (carModel.car.userData.skinSheet) weldNormals(carModel.car.userData.skinSheet, 0.5);
   // Parts carried on the metal
   const c = carModel.crush;
   const carried = [c.grille, ...c.lamps, ...c.tail];
@@ -2477,6 +2479,7 @@ function flushDents() {
   if (reach && noseCrush > 0) reach[5] = Math.max(reach[5], 4), reach[2] = Math.min(reach[2], NOSE_BASE - 0.1), reach[0] = Math.min(reach[0], -1.2), reach[3] = Math.max(reach[3], 1.2), reach[1] = -1, reach[4] = Math.max(reach[4], 2);
   dentBatch = null;
   reshapeBody(reach);
+  tearChunks();
 }
 const _cfp = new THREE.Vector3(), _cfo = new THREE.Vector3();
 // WHAT THE CRUSH TEARS OFF: anything fixed where the frame has been pushed
@@ -2496,7 +2499,61 @@ function crushBreaks() {
   if (gone(0.5, 0.62, 0.5, 0.12, 0.06)) snapMirror('l');
   if (gone(-0.5, 0.62, 0.5, 0.12, 0.06)) snapMirror('r');
 }
+// TORN OFF IN CHUNKS: bodywork crushed too far comes away. Each torn piece
+// is the very bit of the skin that was there, its own shape and colour,
+// thrown off the car in a shower with the car's speed, tumbling, skidding
+// to rest; the panel keeps the hole. (softbody.js tearPanel)
+const CHUNK_MAX = isMobile ? 40 : 90;                  // (lying about at once; the oldest go)
+const chunkMats = new Map();
+const _tc = new THREE.Vector3(), _tq = new THREE.Quaternion(), _tw = new THREE.Vector3();
+function tearChunks() {
+  if (physics.damageOff || WASHER || !carModel.crush?.panels) return;
+  const car = carModel.car;
+  car.updateMatrixWorld();
+  car.getWorldQuaternion(_tq);
+  const centre = car.getWorldPosition(new THREE.Vector3());
+  let made = 0;
+  for (const m of carModel.crush.panels) {
+    if (!m.visible || m.parent !== car) continue;      // (the body's own panels: not a wing, nor one lying on the track)
+    const orig = bodyOriginals.get(m);
+    if (!orig) continue;
+    for (const ch of tearPanel(m, orig)) {
+      const n = ch.tris.length / 3;
+      if (n < 2) continue;                               // (a sliver: just gone)
+      let cx = 0, cy = 0, cz = 0;
+      for (let i = 0; i < ch.tris.length; i += 3) { cx += ch.tris[i]; cy += ch.tris[i + 1]; cz += ch.tris[i + 2]; }
+      cx /= n; cy /= n; cz /= n;
+      const pts = new Float32Array(ch.tris.length);
+      for (let i = 0; i < ch.tris.length; i += 3) { pts[i] = ch.tris[i] - cx; pts[i + 1] = ch.tris[i + 1] - cy; pts[i + 2] = ch.tris[i + 2] - cz; }
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pts, 3)); g.computeVertexNormals();
+      let mat = chunkMats.get(ch.mat);
+      if (!mat) { mat = ch.mat.clone(); mat.side = THREE.DoubleSide; chunkMats.set(ch.mat, mat); }   // (seen from inside too, now it's loose)
+      const piece = new THREE.Mesh(g, mat);
+      piece.castShadow = true;
+      piece.position.copy(car.localToWorld(_tc.set(cx, cy, cz)));
+      piece.quaternion.copy(_tq);
+      scene.add(piece);
+      // flung outward from the car, and up, carrying some of its speed
+      _tw.copy(piece.position).sub(centre); _tw.y = 0; _tw.normalize();
+      const out = 2 + Math.random() * 5;
+      const v = new THREE.Vector3().copy(carVelocity).multiplyScalar(0.45 + Math.random() * 0.3)
+        .add(new THREE.Vector3(_tw.x * out + (Math.random() - 0.5) * 3, 1.5 + Math.random() * 4, _tw.z * out + (Math.random() - 0.5) * 3));
+      flyingParts.push({ obj: piece, v, w: new THREE.Vector3((Math.random() - 0.5) * 26, (Math.random() - 0.5) * 26, (Math.random() - 0.5) * 26), rest: false, chunk: true });
+      if (made < 12) { chipVel.copy(v).multiplyScalar(0.6); chips.spawn({ x: piece.position.x, z: piece.position.z }, chipVel, 3); }
+      made++;
+    }
+  }
+  if (!made) return;
+  // (not too many lying about: the oldest tidied away)
+  let count = 0;
+  for (let i = flyingParts.length - 1; i >= 0; i--) {
+    if (!flyingParts[i].chunk) continue;
+    if (++count > CHUNK_MAX) { scene.remove(flyingParts[i].obj); flyingParts[i].obj.geometry?.dispose(); flyingParts.splice(i, 1); }
+  }
+  engineSound.playClunk?.();
+}
 function clearDents() {
+  for (const m of carModel.crush?.panels || []) mendPanel(m);     // (the torn-off bodywork back)
   dents.length = 0;
   crushFrame?.reset();
   noseCrush = 0;
@@ -3202,7 +3259,7 @@ function collide(now) {
         for (let k = 0; k < folds; k++) {
           const f = 1 - k * 0.3, back = k * (IS_F1 ? 0.6 : 0.45);
           // (a car with a crush frame: the wall driven into it, once, and the body follows)
-          if (crushFrame) { if (k === 0 && hitSpeed > 4.5) { const lp = carModel.car.worldToLocal(_cfp.set(k0px, 0.4, k0pz)); if (crushFrame.impact(lp.x, 0.4, lp.z, nl, nf, hitSpeed) > 0) { reshapeBody(crushFrame.reach); crushBreaks(); } } continue; }
+          if (crushFrame) { if (k === 0 && hitSpeed > 4.5) { const lp = carModel.car.worldToLocal(_cfp.set(k0px, 0.4, k0pz)); if (crushFrame.impact(lp.x, 0.4, lp.z, nl, nf, hitSpeed) > 0) { reshapeBody(crushFrame.reach); crushBreaks(); tearChunks(); } } continue; }
           if (zone === 'front' && IS_F1 && k === 0) noseCrush = Math.min(1.2, noseCrush + (hitSpeed - 3) * 0.022 * Math.max(0, -nf));
           if (zone === 'front') dentBody(Math.max(-0.28, Math.min(0.28, across)) * f, 0.4, NOSE - back, nl, nf, depth * f, radius);
           else if (zone === 'rear') dentBody(Math.max(-0.7, Math.min(0.7, across)) * f, 0.52, TAIL + back, nl, nf, depth * 0.9 * f, radius);

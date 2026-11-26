@@ -1,14 +1,14 @@
 {
   "_note": "The latest version of each file. The game checks this (bypassing the browser's saved copies) against the files it actually loaded.",
   "files": {
-    "cockpit.js": 13,
+    "cockpit.js": 14,
     "godrays.js": 1,
     "scenery.js": 9,
-    "updates.js": 173,
+    "updates.js": 174,
     "debris.js": 5,
     "effects.js": 6,
     "sky.js": 6,
-    "rendering.js": 119,
+    "rendering.js": 120,
     "rain.js": 4,
     "hud.js": 18,
     "physics.js": 28,
@@ -25,13 +25,13 @@
     "racingline.js": 6,
     "ground.js": 1,
     "ai.js": 15,
-    "f1.js": 92,
+    "f1.js": 93,
     "garage.js": 22,
     "pits.js": 28,
     "trackside.js": 7,
     "assets.js": 1,
     "racecontrol.js": 12,
-    "softbody.js": 3,
+    "softbody.js": 4,
     "tuning.js": 2
   }
 }

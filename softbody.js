@@ -11,7 +11,7 @@
 // lattice around it was. Between crashes it sleeps and costs nothing.
 // (Car's own space: x = left, y = up, z = forward.)
 // =====================================================================
-export const BUILD = 3;
+export const BUILD = 4;
 
 export class CrushFrame {
   // box: { min: [x, y, z], max: [x, y, z] }, n: [nx, ny, nz] points along each;
@@ -165,4 +165,55 @@ export class CrushFrame {
     return n ? b / n : 0;
   }
   reset() { this.pos.set(this.rest); this.len.set(this.len0); this.broken.fill(0); this.changed = true; }
+}
+
+// =====================================================================
+// TORN OFF IN CHUNKS: where the bodywork has been crushed too far (moved
+// more than `far` from where it was built, or stretched or squashed by
+// more than `strain` along any edge), its triangles are torn out of the
+// panel (left in the index as nothing, so the colours' ranges still hold)
+// and handed back gathered into chunks about `cell` across, each with the
+// colour (material) it was painted, in the car's own space. The panel keeps
+// a hole where they were. Undo with mendPanel.
+// m: the panel mesh; orig: its points as built (in its own frame)
+// =====================================================================
+export function tearPanel(m, orig, { far = 0.42, strain = 0.55, cell = 0.16 } = {}) {
+  const g = m.geometry, pos = g.attributes.position, idx = g.index;
+  if (!pos || !pos.array || !idx || !idx.array || !orig) return [];
+  const a = pos.array, ix = idx.array, sx = m.scale.x || 1, sy = m.scale.y || 1, sz = m.scale.z || 1;
+  g.userData.whole ??= Array.from(ix);                       // (as built: for the repair)
+  const groups = (g.groups || []).slice().sort((p, q) => p.start - q.start);
+  const matAt = (t) => { for (const gr of groups) if (t >= gr.start && t < gr.start + gr.count) return gr.materialIndex; return 0; };
+  const P = (i, src) => [m.position.x + src[i * 3] * sx, m.position.y + src[i * 3 + 1] * sy, m.position.z + src[i * 3 + 2] * sz];
+  const chunks = new Map();
+  let torn = 0;
+  for (let t = 0; t < ix.length; t += 3) {
+    const i0 = ix[t], i1 = ix[t + 1], i2 = ix[t + 2];
+    if (i0 === i1 && i1 === i2) continue;                     // (already gone)
+    const c = [P(i0, a), P(i1, a), P(i2, a)], o = [P(i0, orig), P(i1, orig), P(i2, orig)];
+    let moved = 0, stretch = 0;
+    for (let k = 0; k < 3; k++) {
+      moved = Math.max(moved, Math.hypot(c[k][0] - o[k][0], c[k][1] - o[k][1], c[k][2] - o[k][2]));
+      const n = (k + 1) % 3, lo = Math.hypot(o[n][0] - o[k][0], o[n][1] - o[k][1], o[n][2] - o[k][2]), lc = Math.hypot(c[n][0] - c[k][0], c[n][1] - c[k][1], c[n][2] - c[k][2]);
+      if (lo > 0.004) stretch = Math.max(stretch, Math.abs(lc / lo - 1));
+    }
+    if (moved < far && stretch < strain) continue;
+    // torn out: into the chunk for where it was on the car, and its colour
+    const mi = matAt(t), cx = (o[0][0] + o[1][0] + o[2][0]) / 3, cy = (o[0][1] + o[1][1] + o[2][1]) / 3, cz = (o[0][2] + o[1][2] + o[2][2]) / 3;
+    const key = `${mi}|${Math.floor(cx / cell)}|${Math.floor(cy / cell)}|${Math.floor(cz / cell)}`;
+    let ch = chunks.get(key);
+    if (!ch) chunks.set(key, ch = { mat: Array.isArray(m.material) ? m.material[mi] : m.material, tris: [] });
+    ch.tris.push(...c[0], ...c[1], ...c[2]);
+    ix[t + 1] = i0; ix[t + 2] = i0;
+    torn++;
+  }
+  if (torn) idx.needsUpdate = true;
+  return [...chunks.values()];
+}
+// (the panel whole again, as built)
+export function mendPanel(m) {
+  const g = m.geometry, w = g.userData.whole, idx = g.index;
+  if (!w || !idx || !idx.array) return;
+  for (let i = 0; i < w.length; i++) idx.array[i] = w[i];
+  idx.needsUpdate = true;
 }
