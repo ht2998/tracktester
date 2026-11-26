@@ -4,7 +4,7 @@
     "cockpit.js": 15,
     "godrays.js": 1,
     "scenery.js": 9,
-    "updates.js": 185,
+    "updates.js": 186,
     "debris.js": 5,
     "effects.js": 6,
     "sky.js": 6,
@@ -32,6 +32,6 @@
     "assets.js": 1,
     "racecontrol.js": 12,
     "softbody.js": 4,
-    "tuning.js": 2
+    "tuning.js": 3
   }
 }

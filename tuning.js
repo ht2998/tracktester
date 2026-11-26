@@ -7,7 +7,7 @@
 // the car was built, so a car nobody's tuned drives as it always did.
 // =====================================================================
 import { TYRES } from './physics.js';
-export const BUILD = 2;
+export const BUILD = 3;
 
 const KEY = 'tracktester-tune-';
 export function loadTune(kind) {
@@ -27,7 +27,7 @@ const freqOf = (k, m) => Math.sqrt(k / m) / (2 * Math.PI);
 const arbMax = (s) => { const a = Math.max(s.suspension.arbFront, s.suspension.arbRear); return a > 0 ? a / 0.45 : 0.6 * (s.suspension.springFront + s.suspension.springRear) / 2; };
 const peakPower = (curve) => { let w = 0; for (const [r, nm] of curve) w = Math.max(w, nm * r * Math.PI / 30); return w; };
 // (camber: lateral grip gained (or lost) against none at all; best near 3°)
-const camberLat = (deg) => 1 + 0.07 * (1 - ((deg - 3) / 3) ** 2);
+const camberLat = (deg) => Math.max(0.45, 1 + 0.07 * (1 - ((deg - 3) / 3) ** 2));   // (slammed, past about 6°: the tyre on its edge, grip falling away)
 const camberLong = (deg) => 1 - 0.014 * deg;
 
 export function stockTune(s) {
@@ -186,7 +186,7 @@ const PAIRS = [
     ['comp', 'Damping (compression)', '%', 10, 60, 1, 0, 'How fast it lets the spring squash'],
     ['reb', 'Damping (rebound)', '%', 10, 70, 1, 0, 'How fast it lets it spring back'],
     ['freq', 'Natural frequency', 'Hz', null, null, 0.05, 2, 'The springs: higher is stiffer'],
-    ['camber', 'Negative camber', '°', 0, 6, 0.1, 1, 'Tilted in at the top: more grip in corners, less in a straight line'],
+    ['camber', 'Negative camber', '°', 0, 15, 0.1, 1, 'Tilted in at the top: more grip in corners, less in a straight line. Past about 6° it\'s for the look (slammed): the tyre rides on its edge and grip falls away'],
     ['toe', 'Toe', '°', -1, 1, 0.05, 2, 'In (+): steadier. Out (-): turns in sharper'],
   ]],
 ];
