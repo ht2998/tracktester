@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 178;
+export const BUILD = 179;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
@@ -31,7 +31,7 @@ export const UPDATES = [
     items: [
       ['One smooth sheet', 'The TTF-94 and TTF-88 are smoother again: their engine covers and sidepod tops now flow into each other as one surface, without the lumps', 'new'],
       ['The TTF-94\'s airbox', 'Taller and rounded on top, as on the real car: its face stands upright over the driver\'s helmet, with the dark intake in it, and its spine runs back down into the engine cover', 'new'],
-      ['The TTF-94\'s sidepods, flat-fronted', 'Each sidepod now starts at a flat, upright front, with the radiator\'s inlet a real hole in it: a flat slot low down, a dark duct behind it and the radiator at the back, so you can see into it', 'new'],
+      ['The TTF-94\'s sidepods, flat-fronted', 'Each sidepod now starts at a flat, upright front, with the radiator\'s inlet a real hole in it: big and round-cornered, toward the inner side, a dark duct behind it and the radiator at the back, so you can see into it', 'new'],
       ['The TTF-88\'s roll hoop', 'Back, as the real car has it: a slim blade rising behind the driver\'s head, open through the middle, its front edge upright and its back raked', 'new'],
       ['The TTF-88, whiter', 'The TTF-88\'s livery is now mostly white: red only over the top of the nose, the engine cover and the tops of the sidepods', 'new'],
     ],
