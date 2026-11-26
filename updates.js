@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 180;
+export const BUILD = 181;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
@@ -29,6 +29,7 @@ export const UPDATES = [
   {
     id: 145, date: '26 Nov 2026', title: 'The TTF-20, measured closer',
     items: [
+      ['The TTF-94\'s V12, inside', 'The TTF-94 now has its 3.5-litre V12 built in under the engine cover: two banks of six at 75 degrees, red crackle-finish cam covers, the intake trumpets in the V under the airbox and twelve exhaust pipes sweeping back to the exits. Tick Clear in the Garage to see it through the bodywork', 'new'],
       ['A smoother TTF-20', 'The TTF-20\'s body behind the nose is now shaped from 250 measured slices and smoothed into one fair sheet: the slim waisted sidepods, the coke-bottle squeeze to the back, the engine cover running down to the gearbox. Its slender raised nose is kept as it was', 'new'],
       ['Its airbox and fin', 'The tall, round-shouldered airbox right over the driver\'s head is its own piece again, with its dark intake facing forward, and behind it the shark fin runs straight back along the engine cover, as on the real car', 'new'],
     ],
