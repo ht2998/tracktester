@@ -23,6 +23,7 @@ import { startUpdates, BUILD as UPDATES_BUILD } from './updates.js';
 import { GodRays, BUILD as GODRAYS_BUILD } from './godrays.js';
 import { RainSystem } from './rain.js';
 import { buildSepang } from './sepang.js';
+import { buildSuzuka, BUILD as SUZUKA_BUILD } from './suzuka.js';
 import { paintFlag, FLAG_NAMES, BUILD as TRACKSIDE_BUILD } from './trackside.js';
 import * as sepangFile from './sepang.js';
 import { buildFlora } from './flora.js';
@@ -62,7 +63,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 126;
+const BUILD = 127;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -71,7 +72,7 @@ const updateScreen = startUpdates({
   'smoke.js': smokeFile.BUILD, 'hud.js': hudFile.BUILD, 'oil.js': oilFile.BUILD,
   'skids.js': skidsFile.BUILD, 'scenery.js': sceneryFile.BUILD, 'grass.js': grassFile.BUILD,
   'sky.js': skyFile.BUILD, 'debris.js': debrisFile.BUILD, 'touch.js': touchFile.BUILD,
-  'rain.js': rainFile.BUILD, 'effects.js': effectsFile.BUILD, 'cockpit.js': cockpitFile.BUILD, 'tyres.js': tyresFile.BUILD, 'sepang.js': sepangFile.BUILD, 'flora.js': floraFile.BUILD, 'racingline.js': racingLineFile.BUILD, 'ground.js': groundFile.BUILD, 'assets.js': packFile.BUILD, 'ai.js': AI_BUILD, 'f1.js': F1_BUILD, 'garage.js': GARAGE_BUILD, 'tuning.js': TUNING_BUILD, 'softbody.js': SOFTBODY_BUILD, 'pits.js': PITS_BUILD, 'trackside.js': TRACKSIDE_BUILD, 'racecontrol.js': RACECONTROL_BUILD,
+  'rain.js': rainFile.BUILD, 'effects.js': effectsFile.BUILD, 'cockpit.js': cockpitFile.BUILD, 'tyres.js': tyresFile.BUILD, 'sepang.js': sepangFile.BUILD, 'suzuka.js': SUZUKA_BUILD, 'flora.js': floraFile.BUILD, 'racingline.js': racingLineFile.BUILD, 'ground.js': groundFile.BUILD, 'assets.js': packFile.BUILD, 'ai.js': AI_BUILD, 'f1.js': F1_BUILD, 'garage.js': GARAGE_BUILD, 'tuning.js': TUNING_BUILD, 'softbody.js': SOFTBODY_BUILD, 'pits.js': PITS_BUILD, 'trackside.js': TRACKSIDE_BUILD, 'racecontrol.js': RACECONTROL_BUILD,
 });
 
 // ---------------------------------------------------------------------
@@ -114,8 +115,10 @@ scene.fog = new THREE.Fog(0x9ec9ef, 40, 160);   // distant things fade into the 
 // Picked in the side panel; the page reloads to build the other one.
 const TRACK_KEY = 'tracktester-track';
 let TRACK = 'test';
-try { if (localStorage.getItem(TRACK_KEY) === 'sepang') TRACK = 'sepang'; } catch (e) { /* storage blocked: use the test area */ }
-const SEPANG = TRACK === 'sepang';
+try { const t = localStorage.getItem(TRACK_KEY); if (t === 'sepang' || t === 'suzuka') TRACK = t; } catch (e) { /* storage blocked: use the test area */ }
+// (SEPANG: on a circuit, Sepang or Suzuka: both built by sepang.js's buildCircuit)
+const SEPANG = TRACK === 'sepang' || TRACK === 'suzuka';
+const SUZUKA = TRACK === 'suzuka';
 
 // Reflections: gives the car paint and metal something to reflect
 const pmrem = new THREE.PMREMGenerator(renderer);
@@ -287,7 +290,7 @@ if (!SEPANG) scene.add(grid);
 // (gravel stone colours, for the textures and the loose stones)
 const GRAVEL_SHADES = ['#9c8158', '#c9b086', '#a88d61', '#d8c39c', '#8a7350', '#bfa476', '#b39769'];
 const beforeTrack = new Set(scene.children);
-const sepang = SEPANG ? buildSepang(scene, { isMobile, gravelMaps: makeGravelMaps() }) : null;
+const sepang = SEPANG ? (SUZUKA ? buildSuzuka : buildSepang)(scene, { isMobile, gravelMaps: makeGravelMaps() }) : null;
 // The ground's hills and dips, for everything that sits on it (ground.js)
 if (sepang) setGround(sepang.heightAt);
 // The racing line, braking zones, corner panel, distance boards and old
@@ -568,7 +571,7 @@ const flora = (() => {
     // thick woods further out: lots of trees in simpler shapes, kept well
     // away from the track (you see them across the run-offs and beyond)
     const woods = buildFlora(scene, {
-      isMobile, style: 'tropical', forest: true, groves: false, seed: 77,
+      isMobile, style: SUZUKA ? 'temperate' : 'tropical', forest: true, groves: false, seed: 77,
       area: { minX: minX - 600, maxX: maxX + 600, minZ: minZ - 600, maxZ: maxZ + 600 },
       colliders,
       canPlace: (x, z) => {
@@ -578,7 +581,7 @@ const flora = (() => {
       },
     });
     const near = buildFlora(scene, {
-      isMobile, style: 'tropical',
+      isMobile, style: SUZUKA ? 'temperate' : 'tropical',
       area: { minX: minX - 260, maxX: maxX + 260, minZ: minZ - 260, maxZ: maxZ + 260 },
       colliders,
       canPlace: (x, z, clear) => {

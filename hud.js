@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 18;
+export const BUILD = 19;
 
 const COLORS = {
   face: '#15181c',
@@ -1013,7 +1013,7 @@ export class Hud {
     trackBox.className = 'tyre-box';
     const trackSel = document.createElement('select');
     trackSel.setAttribute('aria-label', 'Track');
-    trackSel.innerHTML = '<option value="test">Test area</option><option value="sepang">Sepang (flat mock-up)</option>';
+    trackSel.innerHTML = '<option value="test">Test area</option><option value="sepang">Sepang</option><option value="suzuka">Suzuka</option>';
     trackSel.value = track;
     trackSel.addEventListener('change', () => { trackSel.blur(); onTrack?.(trackSel.value); });
     const trackNote = document.createElement('span');

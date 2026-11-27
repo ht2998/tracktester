@@ -35,7 +35,7 @@ import { Person } from './pits.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 7;
+export const BUILD = 8;
 
 export const FLAG_NAMES = {
   green: 'GREEN FLAG', yellow: 'YELLOW FLAG', yellow2: 'DOUBLE YELLOW', red: 'RED FLAG', blue: 'BLUE FLAG',
@@ -72,7 +72,8 @@ const WAVED = new Set(['yellow', 'yellow2', 'blue', 'red', 'chequered', 'oil']);
 // which flags blink on the light panels
 const BLINK = new Set(['yellow', 'yellow2', 'red', 'blue', 'sc', 'vsc']);
 
-export function buildTrackside(scene, { line, kerb, surfaceAt, colliders, corners, startI, heightAt = () => 0, isMobile = false }) {
+export function buildTrackside(scene, { line, kerb, surfaceAt, colliders, corners, startI, heightAt = () => 0, isMobile = false, title = 'SEPANG · TEST TRACK' }) {
+  const TITLE = title;
   const groundAt = heightAt;
   const m = line.length;
   const P = (i) => line[((i % m) + m) % m];
@@ -497,7 +498,7 @@ export function buildTrackside(scene, { line, kerb, surfaceAt, colliders, corner
     // a board on the beam (both sides)
     const sign = new THREE.Mesh(new THREE.PlaneGeometry(8, 0.9), new THREE.MeshStandardMaterial({ roughness: 0.6, map: canvasTexture(256, 32, (g2, w, h) => {
       g2.fillStyle = '#15171a'; g2.fillRect(0, 0, w, h); g2.fillStyle = '#e5b53d'; g2.font = 'bold 22px sans-serif'; g2.textAlign = 'center'; g2.textBaseline = 'middle';
-      g2.fillText('SEPANG · TEST TRACK', w / 2, h / 2 + 1);
+      g2.fillText(TITLE, w / 2, h / 2 + 1);
     }) }));
     sign.position.set(0, 7.05, -0.31); sign.rotation.y = Math.PI;
     const sign2 = sign.clone(); sign2.position.z = 0.31; sign2.rotation.y = 0;

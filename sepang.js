@@ -45,13 +45,16 @@ import { buildTrackside } from './trackside.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 12;
+export const BUILD = 13;
 
 // [x, z] in metres, in driving order (clockwise from the start/finish line)
-const OUTLINE = [[0.0,0.0],[-1.1,-301.1],[1.1,-314.8],[8.2,-326.7],[17.8,-334.5],[30.3,-338.2],[44.0,-337.7],[57.9,-331.6],[67.8,-319.1],[71.6,-303.0],[66.5,-284.9],[51.7,-251.7],[52.7,-240.1],[61.4,-229.8],[72.7,-225.7],[88.2,-227.7],[104.4,-236.7],[134.6,-257.7],[152.7,-266.2],[173.7,-271.1],[194.5,-272.6],[217.9,-270.7],[275.0,-260.6],[301.3,-249.4],[327.7,-232.9],[344.4,-217.1],[362.6,-193.4],[376.0,-169.0],[383.0,-143.9],[416.7,-3.4],[448.9,102.3],[473.0,173.2],[489.5,219.0],[494.5,234.8],[493.2,246.2],[486.2,255.5],[473.6,258.1],[366.4,268.9],[311.1,276.3],[243.7,287.6],[217.3,297.6],[198.1,309.6],[178.0,331.2],[164.1,353.1],[156.7,375.4],[154.0,397.6],[155.8,423.3],[163.8,450.0],[175.5,469.4],[211.0,508.3],[220.2,526.8],[227.5,555.2],[226.4,578.9],[221.5,601.9],[212.3,620.2],[197.7,636.0],[-46.0,819.4],[-57.2,819.6],[-69.5,814.0],[-143.2,773.8],[-149.6,762.9],[-151.5,750.5],[-147.8,566.0],[-154.4,391.9],[-162.4,296.1],[-169.0,286.6],[-180.8,282.8],[-194.9,289.7],[-237.2,354.2],[-253.1,367.8],[-275.7,376.4],[-298.8,379.9],[-331.2,376.5],[-358.1,370.0],[-384.2,361.8],[-416.9,343.1],[-449.7,316.3],[-456.9,302.5],[-458.0,289.7],[-454.3,275.6],[-446.0,264.8],[-257.0,67.5],[-250.5,53.2],[-247.9,34.3],[-251.5,13.2],[-284.6,-66.7],[-289.4,-87.7],[-290.8,-112.4],[-288.9,-133.7],[-278.6,-173.1],[-265.4,-199.4],[-250.1,-215.9],[-217.4,-237.1],[-193.6,-243.6],[-179.4,-243.8],[-164.3,-232.6],[-157.2,-210.8],[-69.8,636.8],[-60.2,649.6],[-40.9,660.0],[-23.8,656.8],[-6.9,642.9],[-1.1,618.2]];
+const SEPANG_OUTLINE = [[0.0,0.0],[-1.1,-301.1],[1.1,-314.8],[8.2,-326.7],[17.8,-334.5],[30.3,-338.2],[44.0,-337.7],[57.9,-331.6],[67.8,-319.1],[71.6,-303.0],[66.5,-284.9],[51.7,-251.7],[52.7,-240.1],[61.4,-229.8],[72.7,-225.7],[88.2,-227.7],[104.4,-236.7],[134.6,-257.7],[152.7,-266.2],[173.7,-271.1],[194.5,-272.6],[217.9,-270.7],[275.0,-260.6],[301.3,-249.4],[327.7,-232.9],[344.4,-217.1],[362.6,-193.4],[376.0,-169.0],[383.0,-143.9],[416.7,-3.4],[448.9,102.3],[473.0,173.2],[489.5,219.0],[494.5,234.8],[493.2,246.2],[486.2,255.5],[473.6,258.1],[366.4,268.9],[311.1,276.3],[243.7,287.6],[217.3,297.6],[198.1,309.6],[178.0,331.2],[164.1,353.1],[156.7,375.4],[154.0,397.6],[155.8,423.3],[163.8,450.0],[175.5,469.4],[211.0,508.3],[220.2,526.8],[227.5,555.2],[226.4,578.9],[221.5,601.9],[212.3,620.2],[197.7,636.0],[-46.0,819.4],[-57.2,819.6],[-69.5,814.0],[-143.2,773.8],[-149.6,762.9],[-151.5,750.5],[-147.8,566.0],[-154.4,391.9],[-162.4,296.1],[-169.0,286.6],[-180.8,282.8],[-194.9,289.7],[-237.2,354.2],[-253.1,367.8],[-275.7,376.4],[-298.8,379.9],[-331.2,376.5],[-358.1,370.0],[-384.2,361.8],[-416.9,343.1],[-449.7,316.3],[-456.9,302.5],[-458.0,289.7],[-454.3,275.6],[-446.0,264.8],[-257.0,67.5],[-250.5,53.2],[-247.9,34.3],[-251.5,13.2],[-284.6,-66.7],[-289.4,-87.7],[-290.8,-112.4],[-288.9,-133.7],[-278.6,-173.1],[-265.4,-199.4],[-250.1,-215.9],[-217.4,-237.1],[-193.6,-243.6],[-179.4,-243.8],[-164.3,-232.6],[-157.2,-210.8],[-69.8,636.8],[-60.2,649.6],[-40.9,660.0],[-23.8,656.8],[-6.9,642.9],[-1.1,618.2]];
 
-const WIDTH = 16;            // track width (m); the start straight is wider
-const STRAIGHT_WIDTH = 22;
+// THE CIRCUIT BEING BUILT (Sepang's, or another's: see buildCircuit): its outline, heights,
+// widths and where its pits and grandstand are. Set at the start of a build
+let D = null;
+let WIDTH = 16;            // track width (m); the start straight is wider
+let STRAIGHT_WIDTH = 22;
 const KERB = 1.3;            // kerb width
 const STEP = 2;              // metres between points along the smoothed centre line
 
@@ -60,7 +63,7 @@ const STEP = 2;              // metres between points along the smoothed centre 
 // its direction, its left side, and how sharply the track turns there
 // ---------------------------------------------------------------------
 function centreLine() {
-  const n = OUTLINE.length;
+  const OUTLINE = D.outline, n = OUTLINE.length;
   const P = (i) => OUTLINE[((i % n) + n) % n];
   const raw = [];
   for (let i = 0; i < n; i++) {
@@ -109,7 +112,7 @@ function centreLine() {
     for (let k = -5; k <= 5; k++) sum += bend[(i + k + m) % m];
     p.curve = sum / 11;
     // the start straight (from the last turn to turn 1) is wider
-    p.width = Math.abs(p.x) < 30 && p.z > -270 && p.z < 300 ? STRAIGHT_WIDTH : WIDTH;
+    p.width = D.widthAt ? D.widthAt(p) : Math.abs(p.x) < 30 && p.z > -270 && p.z < 300 ? STRAIGHT_WIDTH : WIDTH;
   });
   // Ease the width change in and out
   const w = raw.map((p) => p.width);
@@ -274,7 +277,7 @@ function runoffTexture() {
 // chicane, then gently down the back straight and the start straight.
 // (Shaped from circuit guides; the exact survey heights aren't public.)
 // ---------------------------------------------------------------------
-const ELEVATION = [
+const SEPANG_ELEVATION = [
   [0, 6], [250, 6.3], [386, 6.2], [482, 3.2], [600, 1], [720, 0], [865, 1.8], [1100, 3.2],
   [1304, 5.2], [1450, 8.6], [1601, 7], [1780, 7.4], [1956, 8.2], [2286, 9.6], [2395, 10.6],
   [2650, 8.2], [2840, 9.5], [2889, 10.2], [2950, 9.8], [3005, 12.4], [3130, 17.2], [3262, 22],
@@ -283,7 +286,7 @@ const ELEVATION = [
 ];
 function elevationAt(s, L) {
   s = ((s % L) + L) % L;
-  const E = ELEVATION, n = E.length;
+  const E = D.elevation, n = E.length;
   let i = n - 1;
   while (i > 0 && E[i][0] > s) i--;
   const P = (k) => { const kk = ((k % n) + n) % n; return [E[kk][0] + Math.floor(k / n) * L, E[kk][1]]; };
@@ -295,14 +298,21 @@ function elevationAt(s, L) {
   return (2 * t3 - 3 * t2 + 1) * y1 + (t3 - 2 * t2 + t) * m1 + (-2 * t3 + 3 * t2) * y2 + (t3 - t2) * m2;
 }
 
-export function buildSepang(scene, { isMobile = false, gravelMaps = null } = {}) {
+export function buildSepang(scene, opts = {}) {
+  return buildCircuit(scene, { name: 'sepang', outline: SEPANG_OUTLINE, elevation: SEPANG_ELEVATION, official: [1, 2, 3, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15],
+    width: 16, straightWidth: 22, pit: { x0: 13, x1: 24, z0: -215, z1: 175 }, garages: [-186, 150], stand: [-34, -150, 150], standFence: [-14, -200, 200] }, opts);
+}
+// Any circuit, from its data (D): the outline (x, z every few metres, from the start/finish
+// line, the start straight running along -z), the heights along it, the widths, the pits
+export function buildCircuit(scene, data, { isMobile = false, gravelMaps = null } = {}) {
+  D = data; WIDTH = data.width ?? 16; STRAIGHT_WIDTH = data.straightWidth ?? 22;
   startScenery();
   const line = centreLine();
   const m = line.length;
   const corners = findCorners(line);
   // Their official numbers: the long turn 3 shows up as two bends, and the
   // gentle turn 13 is too open to count as one here
-  const OFFICIAL = [1, 2, 3, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15];
+  const OFFICIAL = D.official || [];
   if (corners.length === OFFICIAL.length) corners.forEach((c, i) => { c.number = OFFICIAL[i]; });
   const echoes = [];
 
@@ -547,7 +557,7 @@ export function buildSepang(scene, { isMobile = false, gravelMaps = null } = {})
 
   // --- The pit lane: alongside the start straight on the right (+x),
   // behind the pit wall, with the garages behind it ---
-  const PIT = { x0: 13, x1: 24, z0: -215, z1: 175 };
+  const PIT = D.pit;
   // (in 2 m squares, finer than the ground's own, so it follows every rise
   // and dip of it and the grass never pokes through)
   const pitGeo = new THREE.PlaneGeometry(PIT.x1 - PIT.x0, PIT.z1 - PIT.z0, 6, Math.ceil((PIT.z1 - PIT.z0) / 2));
@@ -606,12 +616,12 @@ export function buildSepang(scene, { isMobile = false, gravelMaps = null } = {})
   // Pit wall (concrete) with a catch fence behind it, then the garages
   echoes.push(...buildConcreteWalls(scene, [[12.2, PIT.z0 + 10, 12.2, PIT.z1 - 10]]));
   echoes.push(...buildFences(scene, [[12.7, PIT.z0 + 10, 12.7, PIT.z1 - 10, -1]]));
-  echoes.push(...buildGarages(scene, PIT.x1, -186, 150));
+  echoes.push(...buildGarages(scene, PIT.x1, D.garages[0], D.garages[1]));
 
   // --- The main grandstand, across the start straight (on the left) ---
-  echoes.push(...buildGrandstand(scene, -34, -150, 150));
+  echoes.push(...buildGrandstand(scene, D.stand[0], D.stand[1], D.stand[2]));
   // a catch fence in front of it
-  echoes.push(...buildFences(scene, [[-14, -200, -14, 200, 1]]));
+  echoes.push(...buildFences(scene, [[D.standFence[0], D.standFence[1], D.standFence[0], D.standFence[2], 1]]));
 
   // --- Puddles (on the track, in the low spots) and mud (on the grass) ---
   // Rain runs downhill: puddles collect where the track dips (lower than
@@ -708,7 +718,7 @@ export function buildSepang(scene, { isMobile = false, gravelMaps = null } = {})
   // --- Trackside: marshal posts and flags, watchtowers, the start gantry,
   // TV cameras, distance boards, advertising (trackside.js) ---
   const finished = finishScenery(echoes);
-  const trackside = buildTrackside(scene, { line, kerb: KERB, surfaceAt: surface, colliders: finished.colliders, corners, startI, heightAt: terrain.heightAt, isMobile });
+  const trackside = buildTrackside(scene, { title: D.title || 'SEPANG · TEST TRACK', line, kerb: KERB, surfaceAt: surface, colliders: finished.colliders, corners, startI, heightAt: terrain.heightAt, isMobile });
 
   return {
     echoes: finished,
