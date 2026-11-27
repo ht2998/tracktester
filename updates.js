@@ -21,11 +21,20 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 189;
+export const BUILD = 190;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 147, date: '27 Nov 2026', title: 'The TTP-70, measured',
+    items: [
+      ['The TTP-70, closer to the real car', 'The TTP-70 is now one smooth skin shaped from 350 measured slices of the real 1970 short-tail car: the long low nose dipping between the front fenders, the headlights under clear covers in them, the bubble cabin with its wraparound screen and side windows, the rear fenders rising to the two fins either side of the short tail, the arches round over the wheels', 'new'],
+      ['Its cockpit', 'Through the glass: the dash with the dials in a binnacle in front of the driver on the right, as on the real car, the bulkhead behind the seats, the wheel, the gear lever down by his right hand', 'new'],
+      ['What shows of the flat-12', 'At the back you can see the big cooling fan lying flat on top of the engine, and the two exhausts poking out under the tail', 'new'],
+      ['Its weight and tracks', 'As the real car: about 800 kg dry, 2.3 m between the axles, tracks of 1.56 and 1.58 m, wider tyres at the back', 'new'],
+    ],
+  },
   {
     id: 146, date: '27 Nov 2026', title: 'The TTF-72',
     items: [
