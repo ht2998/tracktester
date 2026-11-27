@@ -16,7 +16,7 @@
 // area gets broadleaf trees and conifers round its edges.
 import * as THREE from 'three';
 
-export const BUILD = 12;
+export const BUILD = 13;
 
 // The same random numbers every time (so the forest is always the same)
 function seeded(seed) {
@@ -379,18 +379,20 @@ function tallGrass(rand) {
 // is still drawn in full; beyond that it's a simple shape (a trunk and a blob of crown in
 // its colours), there but not in detail, until you come close enough to see the detail
 export const FLORA_CAM = { value: new THREE.Vector3() };
-export const LOD_DIST = 380;     // (the simple shapes only out near the edge of what the camera sees: it draws to 500 m)
+// (how far: set by the game to most of the way into the fog, where the view fades out, so the
+// simple shapes are only out where you can't make out a tree anyway)
+export const FLORA_LOD = { value: 380 };
 function swayMaterial(uniforms, { sway, flutter, side = THREE.FrontSide, roughness = 0.85, map = null, lod = 0 }) {
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness, side, ...(map ? { map, alphaTest: 0.5 } : {}) });
   mat.customProgramCacheKey = () => `sway${sway}-${flutter}-${lod}-${!!map}`;
   mat.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, uniforms, { uCam: FLORA_CAM });
-    shader.vertexShader = 'uniform vec2 uWind;\nuniform float uTime;\nuniform vec3 uCam;\n' + shader.vertexShader.replace('#include <project_vertex>', `
+    Object.assign(shader.uniforms, uniforms, { uCam: FLORA_CAM, uLodD: FLORA_LOD });
+    shader.vertexShader = 'uniform vec2 uWind;\nuniform float uTime;\nuniform vec3 uCam;\nuniform float uLodD;\n' + shader.vertexShader.replace('#include <project_vertex>', `
       vec4 mvPosition = vec4( transformed, 1.0 );
       #ifdef USE_INSTANCING
         mvPosition = instanceMatrix * mvPosition;
         vec3 root = vec3(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2]);
-        ${lod ? `{ float camD = distance(root.xz, uCam.xz); if (${lod === 1 ? 'camD > ' : 'camD <= '}${LOD_DIST.toFixed(1)}) mvPosition = vec4(root, 1.0); }` : ''}
+        ${lod ? `{ float camD = distance(root.xz, uCam.xz); if (${lod === 1 ? 'camD > ' : 'camD <= '}uLodD) mvPosition = vec4(root, 1.0); }` : ''}
         float hgt = max(mvPosition.y - root.y, 0.0);
         vec2 dir = normalize(uWind + vec2(1e-4));
         float wave = sin(uTime * 1.3 - dot(root.xz, dir) * 0.21) * 0.5 + 0.5;

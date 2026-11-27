@@ -62,7 +62,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 125;
+const BUILD = 126;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -2654,6 +2654,7 @@ function updateWind(t) {
   grass.setWind?.(groundWind.x, groundWind.z, t);
   flora.setWind(groundWind.x, groundWind.z, t);
   floraFile.FLORA_CAM?.value.copy(camera.position);     // (the trees' detail by distance)
+  if (floraFile.FLORA_LOD) floraFile.FLORA_LOD.value = scene.fog ? scene.fog.near + (scene.fog.far - scene.fog.near) * 0.8 : 380;   // (simple shapes only deep in the fog)
   for (const [sys, k] of WIND_USERS) { sys.wind = { x: groundWind.x * k, z: groundWind.z * k }; }
 }
 
