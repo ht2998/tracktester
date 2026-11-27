@@ -16,7 +16,7 @@
 // area gets broadleaf trees and conifers round its edges.
 import * as THREE from 'three';
 
-export const BUILD = 11;
+export const BUILD = 12;
 
 // The same random numbers every time (so the forest is always the same)
 function seeded(seed) {
@@ -379,7 +379,7 @@ function tallGrass(rand) {
 // is still drawn in full; beyond that it's a simple shape (a trunk and a blob of crown in
 // its colours), there but not in detail, until you come close enough to see the detail
 export const FLORA_CAM = { value: new THREE.Vector3() };
-export const LOD_DIST = 110;
+export const LOD_DIST = 380;     // (the simple shapes only out near the edge of what the camera sees: it draws to 500 m)
 function swayMaterial(uniforms, { sway, flutter, side = THREE.FrontSide, roughness = 0.85, map = null, lod = 0 }) {
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness, side, ...(map ? { map, alphaTest: 0.5 } : {}) });
   mat.customProgramCacheKey = () => `sway${sway}-${flutter}-${lod}-${!!map}`;
