@@ -2653,6 +2653,7 @@ function updateWind(t) {
   rain.wind = groundWind;
   grass.setWind?.(groundWind.x, groundWind.z, t);
   flora.setWind(groundWind.x, groundWind.z, t);
+  floraFile.FLORA_CAM?.value.copy(camera.position);     // (the trees' detail by distance)
   for (const [sys, k] of WIND_USERS) { sys.wind = { x: groundWind.x * k, z: groundWind.z * k }; }
 }
 

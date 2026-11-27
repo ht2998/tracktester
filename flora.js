@@ -16,7 +16,7 @@
 // area gets broadleaf trees and conifers round its edges.
 import * as THREE from 'three';
 
-export const BUILD = 10;
+export const BUILD = 11;
 
 // The same random numbers every time (so the forest is always the same)
 function seeded(seed) {
@@ -246,7 +246,11 @@ function growTree(rand, kind, { lite = false } = {}) {
       leafB.add(quad, mtx, (x, y, z) => { const rim = Math.min(1, Math.hypot(x / R, (y - cy) / ry, z / R)); return shade(tone, y, base - 1, H, 0.45 + 0.35 * rim); });
     }
   }
-  return { trunk: trunkB.build(), leaves: leafB.build(), needles: !!sp.needles, height: H };
+  // the simple shape, for far off: the trunk and the crown as one blob, in the tree's own colours
+  const far = new Builder(), lg = leafCols[0];
+  far.add(new THREE.CylinderGeometry(r0 * 0.5, r0 * 1.2, base + 0.5, 5, 1), M(0, (base + 0.5) / 2, 0), () => bark);
+  far.add(new THREE.IcosahedronGeometry(1, 1), M(0, cy, 0, R * 0.95, ry * 0.95, R * 0.95), (x, y) => shade(lg, y, base, H, 0.5));
+  return { trunk: trunkB.build(), leaves: leafB.build(), needles: !!sp.needles, height: H, simple: far.build() };
 }
 
 // Conifer: a straight trunk under stacked cones
@@ -320,7 +324,10 @@ function palm(rand, { height = 8, simple = false } = {}) {
     const tone = greens[f % greens.length].clone().multiplyScalar(1 - age * 0.25);
     leafB.add(g, new THREE.Matrix4(), (x, y) => shade(tone, y, H - 3, H + 1, 0.6));
   }
-  return { trunk: trunkB.build(), leaves: leafB.build(), frond: true, height: H };
+  const far = new Builder(), g0 = greens[0];
+  far.add(new THREE.CylinderGeometry(0.22, 0.42, H, 5, 1), M(0, H / 2, 0), () => bark);
+  for (let f = 0; f < 6; f++) { const a = f / 6 * Math.PI * 2; far.add(new THREE.ConeGeometry(0.5, 4, 3, 1), M(Math.cos(a) * 1.8, H - 0.3, Math.sin(a) * 1.8, 1, 1, 0.3, 0, -a, Math.PI / 2 + 0.25), () => g0); }
+  return { trunk: trunkB.build(), leaves: leafB.build(), frond: true, height: H, simple: far.build() };
 }
 
 // A bush: a few lumpy blobs close to the ground
@@ -368,15 +375,22 @@ function tallGrass(rand) {
 
 // The swaying, on the graphics card. sway: how far a part leans per metre
 // of height squared, per m/s of wind; flutter: the quick shiver on top.
-function swayMaterial(uniforms, { sway, flutter, side = THREE.FrontSide, roughness = 0.85, map = null }) {
+// THE DETAIL BY DISTANCE: where the camera is (set every frame), and how far off a tree
+// is still drawn in full; beyond that it's a simple shape (a trunk and a blob of crown in
+// its colours), there but not in detail, until you come close enough to see the detail
+export const FLORA_CAM = { value: new THREE.Vector3() };
+export const LOD_DIST = 110;
+function swayMaterial(uniforms, { sway, flutter, side = THREE.FrontSide, roughness = 0.85, map = null, lod = 0 }) {
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness, side, ...(map ? { map, alphaTest: 0.5 } : {}) });
+  mat.customProgramCacheKey = () => `sway${sway}-${flutter}-${lod}-${!!map}`;
   mat.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, uniforms);
-    shader.vertexShader = 'uniform vec2 uWind;\nuniform float uTime;\n' + shader.vertexShader.replace('#include <project_vertex>', `
+    Object.assign(shader.uniforms, uniforms, { uCam: FLORA_CAM });
+    shader.vertexShader = 'uniform vec2 uWind;\nuniform float uTime;\nuniform vec3 uCam;\n' + shader.vertexShader.replace('#include <project_vertex>', `
       vec4 mvPosition = vec4( transformed, 1.0 );
       #ifdef USE_INSTANCING
         mvPosition = instanceMatrix * mvPosition;
         vec3 root = vec3(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2]);
+        ${lod ? `{ float camD = distance(root.xz, uCam.xz); if (${lod === 1 ? 'camD > ' : 'camD <= '}${LOD_DIST.toFixed(1)}) mvPosition = vec4(root, 1.0); }` : ''}
         float hgt = max(mvPosition.y - root.y, 0.0);
         vec2 dir = normalize(uWind + vec2(1e-4));
         float wave = sin(uTime * 1.3 - dot(root.xz, dir) * 0.21) * 0.5 + 0.5;
@@ -401,12 +415,15 @@ function swayMaterial(uniforms, { sway, flutter, side = THREE.FrontSide, roughne
 export function buildFlora(scene, { isMobile = false, style = 'tropical', area, canPlace, colliders = null, shadows = true, seed = null, density = 1, groves = true, forest = false }) {
   const uniforms = { uWind: { value: new THREE.Vector2() }, uTime: { value: 0 } };
   const rand = seeded(seed ?? (style === 'tropical' ? 1234 : 4321));
+  const L1 = forest ? 0 : 1;          // (by the track: full trees near, simple shapes far; the far forest is simple already)
   const treeMats = {
     trunk: swayMaterial(uniforms, { sway: 0.0002, flutter: 0.0005, roughness: 0.95 }),
+    trunkNear: swayMaterial(uniforms, { sway: 0.0002, flutter: 0.0005, roughness: 0.95, lod: L1 }),
     leaves: swayMaterial(uniforms, { sway: 0.0004, flutter: 0.004, side: THREE.DoubleSide }),
-    cards: swayMaterial(uniforms, { sway: 0.0004, flutter: 0.006, side: THREE.DoubleSide, map: leafTexture(false) }),
-    needles: swayMaterial(uniforms, { sway: 0.0004, flutter: 0.004, side: THREE.DoubleSide, map: leafTexture(true) }),
-    fronds: swayMaterial(uniforms, { sway: 0.0005, flutter: 0.008, side: THREE.DoubleSide, map: frondTexture() }),
+    cards: swayMaterial(uniforms, { sway: 0.0004, flutter: 0.006, side: THREE.DoubleSide, map: leafTexture(false), lod: L1 }),
+    needles: swayMaterial(uniforms, { sway: 0.0004, flutter: 0.004, side: THREE.DoubleSide, map: leafTexture(true), lod: L1 }),
+    fronds: swayMaterial(uniforms, { sway: 0.0005, flutter: 0.008, side: THREE.DoubleSide, map: frondTexture(), lod: L1 }),
+    far: swayMaterial(uniforms, { sway: 0.0003, flutter: 0.001, lod: 2 }),
   };
   // (the leaf cards' shadows: only where there are leaves on them, not their whole squares)
   const cardDepth = (map) => (map ? new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map, alphaTest: 0.5 }) : undefined);
@@ -451,7 +468,8 @@ export function buildFlora(scene, { isMobile = false, style = 'tropical', area, 
   for (const kind of kinds) {
     const isTree = kind.name === 'palm' || kind.name === 'tree';
     const leafMat = kind.model.frond ? treeMats.fronds : kind.model.needles ? treeMats.needles : kind.model.height ? treeMats.cards : treeMats.leaves;
-    const parts = isTree ? [[kind.model.trunk, treeMats.trunk], [kind.model.leaves, leafMat]]
+    const grown = !!kind.model.height && !forest;
+    const parts = isTree ? [[kind.model.trunk, grown ? treeMats.trunkNear : treeMats.trunk], [kind.model.leaves, leafMat], ...(grown && kind.model.simple ? [[kind.model.simple, treeMats.far]] : [])]
       : [[kind.model, kind.name === 'grass' ? grassMat : shrubMat]];
     const meshes = parts.map(([geo, mat]) => {
       const mesh = new THREE.InstancedMesh(geo, mat, Math.max(1, kind.count));
