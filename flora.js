@@ -16,7 +16,7 @@
 // area gets broadleaf trees and conifers round its edges.
 import * as THREE from 'three';
 
-export const BUILD = 9;
+export const BUILD = 10;
 
 // The same random numbers every time (so the forest is always the same)
 function seeded(seed) {
@@ -227,7 +227,7 @@ function growTree(rand, kind, { lite = false } = {}) {
       const p = { x: pts[i].x + (pts[i + 1].x - pts[i].x) * f, y: pts[i].y + (pts[i + 1].y - pts[i].y) * f, z: pts[i].z + (pts[i + 1].z - pts[i].z) * f };
       const tw = new THREE.Vector3(rand() - 0.5, (rand() - 0.3) * 0.8 - (sp.droop || 0) * 0.6, rand() - 0.5).normalize().add(dir).normalize(), tl = L * (0.25 + rand() * 0.2);
       const end = { x: p.x + tw.x * tl, y: p.y + tw.y * tl, z: p.z + tw.z * tl };
-      if (!lite) tube(trunkB, [{ ...p, r: br * 0.35 }, { ...end, r: br * 0.12 }], 3, barkCol);
+      if (!lite && j === 0) tube(trunkB, [{ ...p, r: br * 0.35 }, { ...end, r: br * 0.12 }], 3, barkCol);   // (one twig per bough drawn; the rest hidden in the leaves anyway)
       cards.push(end, { x: (p.x + end.x) / 2, y: (p.y + end.y) / 2, z: (p.z + end.z) / 2 });
     }
     cards.push(pts[BN]);
@@ -237,9 +237,9 @@ function growTree(rand, kind, { lite = false } = {}) {
   // low and inside the crown, lit on top and at its rim
   const quad = new THREE.PlaneGeometry(1, 1);
   for (const c of cards) {
-    const n = Math.max(1, Math.round(sp.cards * (lite ? 0.5 : 1) * (0.6 + rand() * 0.6) / 2));
+    const n = Math.max(1, Math.round(sp.cards * (lite ? 0.5 : 1) * (0.6 + rand() * 0.6) / 4));       // (half as many cards as at first, each bigger)
     for (let m = 0; m < n; m++) {
-      const sz = sp.card * (0.75 + rand() * 0.5) * (lite ? 1.4 : 1);
+      const sz = sp.card * 1.35 * (0.75 + rand() * 0.5) * (lite ? 1.4 : 1);
       const px = c.x + (rand() - 0.5) * sz * 0.8, py = c.y + (rand() - 0.5) * sz * 0.6, pz = c.z + (rand() - 0.5) * sz * 0.8;
       const tone = leafCols[Math.floor(rand() * leafCols.length)];
       const mtx = M(px, py, pz, sz, sz, sz, (rand() - 0.5) * 2.4, rand() * Math.PI * 2, (rand() - 0.5) * 1.2);
@@ -455,8 +455,8 @@ export function buildFlora(scene, { isMobile = false, style = 'tropical', area, 
       : [[kind.model, kind.name === 'grass' ? grassMat : shrubMat]];
     const meshes = parts.map(([geo, mat]) => {
       const mesh = new THREE.InstancedMesh(geo, mat, Math.max(1, kind.count));
-      mesh.castShadow = shadows && isTree && !isMobile && !forest;
-      if (mat.map) mesh.customDepthMaterial = cardDepth(mat.map);
+      // (only the trunks cast shadows: thousands of see-through leaf cards in the shadow pass were the slowness)
+      mesh.castShadow = shadows && isTree && !isMobile && !forest && geo === kind.model.trunk;
       mesh.receiveShadow = true;
       mesh.count = 0;
       scene.add(mesh);
