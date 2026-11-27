@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 190;
+export const BUILD = 191;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
@@ -31,7 +31,8 @@ export const UPDATES = [
     items: [
       ['The TTP-70, closer to the real car', 'The TTP-70 is now one smooth skin shaped from 350 measured slices of the real 1970 short-tail car: the long low nose dipping between the front fenders, the headlights under clear covers in them, the bubble cabin with its wraparound screen and side windows, the rear fenders rising to the two fins either side of the short tail, the arches round over the wheels', 'new'],
       ['Its cockpit', 'Through the glass: the dash with the dials in a binnacle in front of the driver on the right, as on the real car, the bulkhead behind the seats, the wheel, the gear lever down by his right hand', 'new'],
-      ['What shows of the flat-12', 'At the back you can see the big cooling fan lying flat on top of the engine, and the two exhausts poking out under the tail', 'new'],
+      ['Open under the tail', 'The TTP-70\'s tail is no longer a solid block: the deck and the two fins sit over an open bay, as on the real car, with the flat-12 lying low and wide in it, its big cooling fan flat on top, the gearbox, the frame\'s tubes and the two exhausts out the back. Its sides now round under where the real car\'s do, instead of dropping straight down', 'new'],
+      ['The TTP-91, measured too', 'The TTP-91 is now one skin from 350 measured slices of the real 1991 four-rotor car: the long low nose with the headlights under their covers, the bubble cabin, the long flat tail with the gearbox and the diffuser under it, the big wing out behind on its tall endplates. Inside, the dash, the wheel and the seat where the real car has them, the driver on the right; his view from the seat moved to match', 'new'],
       ['Its weight and tracks', 'As the real car: about 800 kg dry, 2.3 m between the axles, tracks of 1.56 and 1.58 m, wider tyres at the back', 'new'],
     ],
   },

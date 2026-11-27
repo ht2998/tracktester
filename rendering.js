@@ -1222,7 +1222,7 @@ if (IS_F1) cockpit.group.visible = false;   // (the TT-88 has its own cockpit:)
 // driver's arms fighting the car, his head thrown about
 const f1Cockpit = IS_F1 ? buildF1Cockpit(carModel.car, { paddles: PADDLES, hPattern: CAR_KIND === 'f1' || IS_F72, ...(IS_F05 || IS_F20 ? { wheelTilt: 0 } : {}), ...(DRIVER_SUITS[CAR_KIND] ? { suit: DRIVER_SUITS[CAR_KIND].suit } : {}) }) : null;
 // (the TTP-70's driver sits on the right, further back and a little higher)
-if (CLOSED_RHD && f1Cockpit) f1Cockpit.group.position.set(-0.27, IS_P91 ? -0.04 : -0.08, IS_P91 ? -0.29 : -0.24 + P70_DRIVER_DZ);
+if (CLOSED_RHD && f1Cockpit) f1Cockpit.group.position.set(IS_P91 ? -0.155 : -0.27, IS_P91 ? 0.06 : -0.08, IS_P91 ? 0.03 : -0.24 + P70_DRIVER_DZ);   // (the TTP-91's where the reference has the seat)
 if (IS_F94 && f1Cockpit) f1Cockpit.group.position.z = F94_DRIVER_DZ;
 if (IS_F72 && f1Cockpit) f1Cockpit.group.position.set(0, 0.06, F72_DRIVER_DZ);     // (the TTF-72's: sat up high)
 if (CAR_KIND === 'f1' && f1Cockpit) f1Cockpit.group.position.set(0, -0.02, F88_DRIVER_DZ);     // (the TTF-88's too)
@@ -4211,7 +4211,7 @@ function repairAll() {
 const F1_VIEWS = CLOSED_RHD ? {
   // (the TTP-70: low over the long nose, and him on the right, under the roof)
   bonnet: { spot: new THREE.Vector3(0, 0.66, 1.5), pitch: -0.05 },
-  cockpit: { spot: new THREE.Vector3(-0.27, IS_P91 ? 0.84 : 0.8, IS_P91 ? -0.22 : -0.22 + P70_DRIVER_DZ), pitch: -0.12 },
+  cockpit: { spot: new THREE.Vector3(IS_P91 ? -0.155 : -0.27, IS_P91 ? 0.86 : 0.8, IS_P91 ? 0.06 : -0.22 + P70_DRIVER_DZ), pitch: -0.12 },
   tcam: { spot: new THREE.Vector3(0, 1.02, -0.6), pitch: -0.08 },
 } : IS_F05 ? {
   // (the TT-05: the bonnet camera on top of the nose, in line with where the
