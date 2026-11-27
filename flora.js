@@ -16,7 +16,7 @@
 // area gets broadleaf trees and conifers round its edges.
 import * as THREE from 'three';
 
-export const BUILD = 5;
+export const BUILD = 6;
 
 // The same random numbers every time (so the forest is always the same)
 function seeded(seed) {
@@ -31,11 +31,11 @@ function seeded(seed) {
 
 // --- Building the models: pieces are added into one list of triangles ---
 class Builder {
-  constructor() { this.pos = []; this.nor = []; this.col = []; }
+  constructor() { this.pos = []; this.nor = []; this.col = []; this.uv = []; }
   // add a (non-indexed) geometry, moved by matrix m, coloured by colour(x, y, z)
   add(geo, m, colour) {
     const g = geo.index ? geo.toNonIndexed() : geo;
-    const P = g.attributes?.position, N = g.attributes?.normal;
+    const P = g.attributes?.position, N = g.attributes?.normal, U = g.attributes?.uv;
     if (!P || !P.array) return this;          // (nothing to add)
     const v = new THREE.Vector3(), n = new THREE.Vector3();
     const nm = new THREE.Matrix3().getNormalMatrix(m);
@@ -47,6 +47,7 @@ class Builder {
       this.nor.push(n.x, n.y, n.z);
       const c = colour(v.x, v.y, v.z);
       this.col.push(c.r, c.g, c.b);
+      if (U && U.array) this.uv.push(U.array[i * 2], U.array[i * 2 + 1]); else this.uv.push(0.5, 0.5);
     }
     return this;
   }
@@ -55,6 +56,7 @@ class Builder {
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
     g.setAttribute('normal', new THREE.Float32BufferAttribute(this.nor, 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
     g.computeBoundingSphere?.();
     return g;
   }
@@ -114,6 +116,137 @@ function broadleaf(rand, { height = 9, leaf = 0x3f6b2a, simple = false } = {}) {
     }
   }
   return { trunk: trunkB.build(), leaves: leafB.build() };
+}
+
+
+// =====================================================================
+// GROWN TREES: each one grown from a seed, so no two are alike (studied off
+// real tree models: a trunk that tapers and wanders, boughs spiralling out
+// of it round the trunk, twigs off the boughs, and the leaves as clusters
+// of leafy cards at the twigs' ends, filling an envelope the shape of the
+// kind of tree). Kinds: oak (wide, low boughs), plane (tall, round), beech
+// (dense dome), birch (slender, pale bark, hanging twigs), poplar (a tall
+// column), pine (bare trunk, flat tiers at the top), rain (the tropical
+// rainforest tree: tall, its crown a broad flat umbrella)
+// =====================================================================
+const SPECIES = {
+  oak:    { h: [11, 16], crown: [0.32, 0.95], wide: 0.5, flat: 0.75, r0: 0.032, boughs: [7, 10], rise: 0.35, twigs: 4, cards: 7, card: 1.5, bark: 0x5a4a3a, leaf: [0x4b7a32, 0x557f36, 0x426f2c] },
+  plane:  { h: [13, 18], crown: [0.36, 0.98], wide: 0.36, flat: 0.95, r0: 0.026, boughs: [7, 9], rise: 0.6, twigs: 4, cards: 6, card: 1.5, bark: 0x8b8670, leaf: [0x5a8a3a, 0x4f7f32] },
+  beech:  { h: [11, 15], crown: [0.3, 0.98], wide: 0.4, flat: 0.85, r0: 0.026, boughs: [8, 11], rise: 0.5, twigs: 4, cards: 7, card: 1.4, bark: 0x7d7b72, leaf: [0x4f8034, 0x5b8b3a] },
+  birch:  { h: [10, 14], crown: [0.3, 0.98], wide: 0.26, flat: 1.1, r0: 0.019, boughs: [8, 11], rise: 0.55, droop: 0.5, twigs: 3, cards: 5, card: 1.1, bark: 0xd8d4c8, leaf: [0x6a9a3e, 0x5e8f38] },
+  poplar: { h: [15, 19], crown: [0.15, 0.99], wide: 0.13, flat: 1.0, r0: 0.022, boughs: [10, 13], rise: 0.85, twigs: 3, cards: 5, card: 1.2, bark: 0x6e6a5c, leaf: [0x4e7d30, 0x5a8836] },
+  pine:   { h: [12, 18], crown: [0.55, 1.0], wide: 0.24, flat: 0.8, r0: 0.024, boughs: [9, 12], rise: 0.12, twigs: 3, cards: 4, card: 1.3, needles: true, bark: 0x6b4a34, leaf: [0x2f5230, 0x355a34] },
+  rain:   { h: [18, 26], crown: [0.6, 1.0], wide: 0.42, flat: 0.45, r0: 0.024, boughs: [6, 8], rise: 0.4, twigs: 4, cards: 7, card: 1.8, bark: 0x7a6a56, leaf: [0x2f5a22, 0x3a6527, 0x2b5320] },
+};
+// the leaves' cards: a cluster of leaves drawn once (pale, so each tree's own green tints it)
+let LEAF_TEX = null, NEEDLE_TEX = null;
+function leafTexture(needles) {
+  if (typeof document === 'undefined') return null;
+  if (needles ? NEEDLE_TEX : LEAF_TEX) return needles ? NEEDLE_TEX : LEAF_TEX;
+  const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
+  const rand = seeded(needles ? 77 : 33);
+  g.clearRect(0, 0, 256, 256);
+  if (needles) {
+    for (let k = 0; k < 9; k++) {                                  // (twigs of needles, fanned)
+      const a = -1.2 + k * 0.3, x0 = 128, y0 = 236, L = 150 + rand() * 60;
+      for (let n = 0; n < 60; n++) {
+        const t = n / 60, x = x0 + Math.sin(a) * L * t, y = y0 - Math.cos(a) * L * t, side = n % 2 ? 1 : -1, l = 18 * (1 - t * 0.5);
+        const v = 170 + rand() * 70; g.strokeStyle = `rgb(${v * 0.85 | 0},${v | 0},${v * 0.8 | 0})`; g.lineWidth = 2;
+        g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l * side + Math.sin(a) * l * 0.5, y + Math.sin(a) * l * side - Math.cos(a) * l * 0.5); g.stroke();
+      }
+    }
+  } else {
+    for (let n = 0; n < 70; n++) {                                  // (leaves, overlapping, every one turned its own way)
+      const x = 30 + rand() * 196, y = 30 + rand() * 196, a = rand() * Math.PI * 2, L = 22 + rand() * 18, W = L * (0.42 + rand() * 0.18);
+      const v = 150 + rand() * 105;
+      g.save(); g.translate(x, y); g.rotate(a);
+      g.fillStyle = `rgb(${v * 0.86 | 0},${v | 0},${v * 0.78 | 0})`;
+      g.beginPath(); g.moveTo(0, -L / 2); g.quadraticCurveTo(W, 0, 0, L / 2); g.quadraticCurveTo(-W, 0, 0, -L / 2); g.fill();
+      g.strokeStyle = `rgba(0,0,0,0.18)`; g.lineWidth = 1.2; g.beginPath(); g.moveTo(0, -L / 2); g.lineTo(0, L / 2); g.stroke();
+      g.restore();
+    }
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  if (needles) NEEDLE_TEX = t; else LEAF_TEX = t;
+  return t;
+}
+// a tapered tube along a list of points (each with its radius)
+function tube(B, pts, sides, colour) {
+  const g = new THREE.BufferGeometry(), pos = [], idx = [], up = new THREE.Vector3(0, 1, 0);
+  const t = new THREE.Vector3(), a = new THREE.Vector3(), b = new THREE.Vector3();
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i], q = pts[Math.min(pts.length - 1, i + 1)], o = pts[Math.max(0, i - 1)];
+    t.set(q.x - o.x, q.y - o.y, q.z - o.z).normalize();
+    a.copy(Math.abs(t.y) > 0.9 ? new THREE.Vector3(1, 0, 0) : up).cross(t).normalize(); b.copy(t).cross(a);
+    for (let k = 0; k < sides; k++) { const ang = k / sides * Math.PI * 2, c = Math.cos(ang) * p.r, s = Math.sin(ang) * p.r; pos.push(p.x + a.x * c + b.x * s, p.y + a.y * c + b.y * s, p.z + a.z * c + b.z * s); }
+  }
+  for (let i = 0; i < pts.length - 1; i++) for (let k = 0; k < sides; k++) { const p0 = i * sides + k, p1 = i * sides + (k + 1) % sides, q0 = p0 + sides, q1 = p1 + sides; idx.push(p0, q0, p1, p1, q0, q1); }
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+  B.add(g, new THREE.Matrix4(), colour);
+}
+function growTree(rand, kind, { lite = false } = {}) {
+  const sp = SPECIES[kind], trunkB = new Builder(), leafB = new Builder();
+  const H = sp.h[0] + rand() * (sp.h[1] - sp.h[0]), R = H * sp.wide * (0.85 + rand() * 0.3);
+  const base = H * sp.crown[0], cy = (base + H) / 2, ry = (H - base) / 2 * sp.flat + (H - base) / 2 * (1 - sp.flat) * 0.5;
+  const bark = col(sp.bark), leafCols = sp.leaf.map(col);
+  const barkCol = (x, y) => shade(bark, y, 0, H, 0.6);
+  // the trunk: tapering, wandering a little as it climbs, up into the crown
+  const lean = [(rand() - 0.5) * 0.06, (rand() - 0.5) * 0.06], r0 = H * sp.r0 * (0.85 + rand() * 0.3);
+  const trunk = [];
+  const TN = lite ? 4 : 9, topY = kind === 'poplar' || kind === 'pine' ? H * 0.97 : H * 0.8;
+  for (let i = 0; i <= TN; i++) {
+    const t = i / TN, y = topY * t, w = Math.sin(t * 5 + rand()) * 0.08 * H * 0.02;
+    trunk.push({ x: lean[0] * y + w, y, z: lean[1] * y + w * 0.6, r: r0 * (i === 0 ? 1.45 : 1 - t * 0.8) });
+  }
+  tube(trunkB, trunk, lite ? 5 : 8, barkCol);
+  const trunkAt = (y) => { const t = Math.min(1, y / topY); const i = Math.min(TN - 1, Math.floor(t * TN)), f = t * TN - i; const a = trunk[i], b = trunk[i + 1]; return { x: a.x + (b.x - a.x) * f, y, z: a.z + (b.z - a.z) * f, r: a.r + (b.r - a.r) * f }; };
+  // where the envelope's edge is, from its middle, in a direction
+  const reach = (dx, dy, dz) => { const L = Math.hypot(dx / R, dy / ry, dz / R); return 1 / (L || 1); };
+  const cards = [];
+  const nB = Math.round((sp.boughs[0] + rand() * (sp.boughs[1] - sp.boughs[0])) * (lite ? 0.6 : 1));
+  for (let k = 0; k < nB; k++) {
+    const t = (k + 0.5) / nB, y0 = base + (topY - base) * (0.05 + 0.9 * t) * (kind === 'pine' ? 1 : 0.92);
+    const ang = k * 2.39996 + rand() * 0.5, out = new THREE.Vector3(Math.cos(ang), 0, Math.sin(ang));
+    const rise = sp.rise + (rand() - 0.5) * 0.25 + (kind === 'pine' ? -t * 0.1 : 0);
+    const dir = out.clone().multiplyScalar(1).add(new THREE.Vector3(0, rise, 0)).normalize();
+    const s = trunkAt(y0);
+    // how far to the envelope's edge from here, along this way
+    const ox = s.x, oy = s.y - cy, oz = s.z;
+    let L = 0.3; while (L < H && Math.hypot((ox + dir.x * L) / R, (oy + dir.y * L) / ry, (oz + dir.z * L) / R) < 0.92) L += 0.25;
+    L *= 0.8 + rand() * 0.2;
+    const pts = [], BN = lite ? 2 : 4, br = Math.max(0.03, s.r * 0.55);
+    for (let i = 0; i <= BN; i++) {
+      const u = i / BN, droop = (sp.droop || 0) * u * u * L * 0.25 + (kind === 'pine' ? u * u * L * 0.08 : 0);
+      pts.push({ x: s.x + dir.x * L * u, y: s.y + dir.y * L * u - droop, z: s.z + dir.z * L * u, r: br * (1 - u * 0.8) });
+    }
+    tube(trunkB, pts, lite ? 3 : 5, barkCol);
+    // twigs off the bough's outer part, each ending in a cluster of leaves
+    const nT = lite ? 1 : sp.twigs;
+    for (let j = 0; j < nT; j++) {
+      const u = 0.45 + 0.55 * (j + rand() * 0.6) / nT, i = Math.min(BN - 1, Math.floor(u * BN)), f = u * BN - i;
+      const p = { x: pts[i].x + (pts[i + 1].x - pts[i].x) * f, y: pts[i].y + (pts[i + 1].y - pts[i].y) * f, z: pts[i].z + (pts[i + 1].z - pts[i].z) * f };
+      const tw = new THREE.Vector3(rand() - 0.5, (rand() - 0.3) * 0.8 - (sp.droop || 0) * 0.6, rand() - 0.5).normalize().add(dir).normalize(), tl = L * (0.25 + rand() * 0.2);
+      const end = { x: p.x + tw.x * tl, y: p.y + tw.y * tl, z: p.z + tw.z * tl };
+      if (!lite) tube(trunkB, [{ ...p, r: br * 0.35 }, { ...end, r: br * 0.12 }], 3, barkCol);
+      cards.push(end, { x: (p.x + end.x) / 2, y: (p.y + end.y) / 2, z: (p.z + end.z) / 2 });
+    }
+    cards.push(pts[BN]);
+  }
+  if (kind === 'poplar' || kind === 'pine') cards.push(trunk[TN]);
+  // the leaves: at each cluster point a few cards, turned every way, each its own green; darker
+  // low and inside the crown, lit on top and at its rim
+  const quad = new THREE.PlaneGeometry(1, 1);
+  for (const c of cards) {
+    const n = Math.max(1, Math.round(sp.cards * (lite ? 0.5 : 1) * (0.6 + rand() * 0.6) / 2));
+    for (let m = 0; m < n; m++) {
+      const sz = sp.card * (0.75 + rand() * 0.5) * (lite ? 1.4 : 1);
+      const px = c.x + (rand() - 0.5) * sz * 0.8, py = c.y + (rand() - 0.5) * sz * 0.6, pz = c.z + (rand() - 0.5) * sz * 0.8;
+      const tone = leafCols[Math.floor(rand() * leafCols.length)];
+      const mtx = M(px, py, pz, sz, sz, sz, (rand() - 0.5) * 2.4, rand() * Math.PI * 2, (rand() - 0.5) * 1.2);
+      leafB.add(quad, mtx, (x, y, z) => { const rim = Math.min(1, Math.hypot(x / R, (y - cy) / ry, z / R)); return shade(tone, y, base - 1, H, 0.45 + 0.35 * rim); });
+    }
+  }
+  return { trunk: trunkB.build(), leaves: leafB.build(), needles: !!sp.needles, height: H };
 }
 
 // Conifer: a straight trunk under stacked cones
@@ -222,8 +355,8 @@ function tallGrass(rand) {
 
 // The swaying, on the graphics card. sway: how far a part leans per metre
 // of height squared, per m/s of wind; flutter: the quick shiver on top.
-function swayMaterial(uniforms, { sway, flutter, side = THREE.FrontSide, roughness = 0.85 }) {
-  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness, side });
+function swayMaterial(uniforms, { sway, flutter, side = THREE.FrontSide, roughness = 0.85, map = null }) {
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness, side, ...(map ? { map, alphaTest: 0.5 } : {}) });
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = 'uniform vec2 uWind;\nuniform float uTime;\n' + shader.vertexShader.replace('#include <project_vertex>', `
@@ -258,29 +391,38 @@ export function buildFlora(scene, { isMobile = false, style = 'tropical', area, 
   const treeMats = {
     trunk: swayMaterial(uniforms, { sway: 0.0002, flutter: 0.0005, roughness: 0.95 }),
     leaves: swayMaterial(uniforms, { sway: 0.0004, flutter: 0.004, side: THREE.DoubleSide }),
+    cards: swayMaterial(uniforms, { sway: 0.0004, flutter: 0.006, side: THREE.DoubleSide, map: leafTexture(false) }),
+    needles: swayMaterial(uniforms, { sway: 0.0004, flutter: 0.004, side: THREE.DoubleSide, map: leafTexture(true) }),
   };
+  // (the leaf cards' shadows: only where there are leaves on them, not their whole squares)
+  const cardDepth = (map) => (map ? new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map, alphaTest: 0.5 }) : undefined);
   const shrubMat = swayMaterial(uniforms, { sway: 0.02, flutter: 0.01 });
   const grassMat = swayMaterial(uniforms, { sway: 0.08, flutter: 0.03, side: THREE.DoubleSide, roughness: 0.9 });
 
   // The kinds of plant (a few shapes of each, so they don't all look alike)
   const kinds = [];
   const addKind = (name, model, count, opts) => kinds.push({ name, model, count: Math.round(count * density * (isMobile ? 0.3 : 1)), ...opts });
+  // (each tree grown from its own seed: several of each kind, so no two stands look alike)
+  const grow = (kind, n, count, opts) => { for (let k = 0; k < n; k++) addKind('tree', growTree(rand, kind, { lite: forest }), count / n, opts); };
   if (forest) {
     const tropical = style === 'tropical';
-    for (let k = 0; k < 3; k++) {
-      if (tropical) addKind('palm', palm(rand, { height: 8 + k * 1.5, simple: true }), 900, { gap: 6, clear: 0, trunkR: 0.3 });
-      addKind('tree', broadleaf(rand, { height: 13 + k * 4, leaf: [0x2f5a22, 0x3a6527, 0x2b5320][k], simple: true }), tropical ? 1100 : 1200, { gap: 7, clear: 0, trunkR: 0.45 });
-    }
+    for (let k = 0; k < 3; k++) if (tropical) addKind('palm', palm(rand, { height: 8 + k * 1.5, simple: true }), 900, { gap: 6, clear: 0, trunkR: 0.3 });
+    if (tropical) grow('rain', 4, 3300, { gap: 8, clear: 0, trunkR: 0.45 });
+    else { grow('oak', 2, 1300, { gap: 8, clear: 0, trunkR: 0.45 }); grow('beech', 2, 1200, { gap: 8, clear: 0, trunkR: 0.4 }); grow('pine', 2, 1100, { gap: 7, clear: 0, trunkR: 0.35 }); }
   } else if (style === 'tropical') {
     for (let k = 0; k < 3; k++) addKind('palm', palm(rand, { height: 7 + k * 1.5 }), 380, { gap: 7, clear: 16, trunkR: 0.3 });
-    for (let k = 0; k < 3; k++) addKind('tree', broadleaf(rand, { height: 10 + k * 3, leaf: [0x3f6b2a, 0x35602a, 0x4a7530][k] }), 300, { gap: 9, clear: 18, trunkR: 0.4 });
+    grow('rain', 4, 640, { gap: 10, clear: 18, trunkR: 0.45 });
+    grow('plane', 2, 260, { gap: 9, clear: 18, trunkR: 0.4 });
     addKind('shrub', shrub(rand, { size: 1.3 }), 900, { gap: 4, clear: 9 });
     addKind('shrub', shrub(rand, { size: 1.6, leaf: 0x35612a }), 700, { gap: 4, clear: 9 });
     addKind('shrub', shrub(rand, { size: 1.2, leaf: 0x3a6a2c, flowers: 0xd6337f }), 500, { gap: 4, clear: 9 });
     addKind('grass', tallGrass(rand), 4000, { gap: 2, clear: 6 });
   } else {
-    for (let k = 0; k < 3; k++) addKind('tree', broadleaf(rand, { height: 9 + k * 2.5, leaf: [0x4a7a32, 0x3d6b2b, 0x557f36][k] }), 260, { gap: 9, clear: 0, trunkR: 0.4 });
-    for (let k = 0; k < 2; k++) addKind('tree', conifer(rand, { height: 10 + k * 4 }), 220, { gap: 8, clear: 0, trunkR: 0.3 });
+    grow('oak', 3, 330, { gap: 9, clear: 0, trunkR: 0.45 });
+    grow('beech', 2, 200, { gap: 9, clear: 0, trunkR: 0.4 });
+    grow('birch', 2, 160, { gap: 6, clear: 0, trunkR: 0.25 });
+    grow('poplar', 1, 90, { gap: 6, clear: 0, trunkR: 0.3 });
+    grow('pine', 2, 200, { gap: 8, clear: 0, trunkR: 0.35 });
     addKind('shrub', shrub(rand, { size: 1.3 }), 700, { gap: 4, clear: 0 });
     addKind('grass', tallGrass(rand), 2500, { gap: 2, clear: 0 });
   }
@@ -292,11 +434,13 @@ export function buildFlora(scene, { isMobile = false, style = 'tropical', area, 
   let total = 0;
   for (const kind of kinds) {
     const isTree = kind.name === 'palm' || kind.name === 'tree';
-    const parts = isTree ? [[kind.model.trunk, treeMats.trunk], [kind.model.leaves, treeMats.leaves]]
+    const leafMat = kind.model.needles ? treeMats.needles : kind.model.height ? treeMats.cards : treeMats.leaves;
+    const parts = isTree ? [[kind.model.trunk, treeMats.trunk], [kind.model.leaves, leafMat]]
       : [[kind.model, kind.name === 'grass' ? grassMat : shrubMat]];
     const meshes = parts.map(([geo, mat]) => {
       const mesh = new THREE.InstancedMesh(geo, mat, Math.max(1, kind.count));
       mesh.castShadow = shadows && isTree && !isMobile && !forest;
+      if (mat.map) mesh.customDepthMaterial = cardDepth(mat.map);
       mesh.receiveShadow = true;
       mesh.count = 0;
       scene.add(mesh);

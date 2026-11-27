@@ -21,11 +21,18 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 191;
+export const BUILD = 192;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 148, date: '27 Nov 2026', title: 'Real-looking trees',
+    items: [
+      ['Every tree grown', 'The trees are no longer lumpy green balls: each one is grown from its own seed, a trunk that tapers and wanders as it climbs, boughs spiralling out round it, twigs off the boughs and clusters of leaves at their ends, so no two look alike. Shaped after real tree models', 'new'],
+      ['Kinds of tree', 'Round the test area: oaks with wide low boughs, beeches, slender pale-barked birches with hanging twigs, tall column poplars and pines with their crowns up top. At Sepang: tall rainforest trees with broad flat crowns and planes among the palms. Their shadows are dappled, leaf by leaf', 'new'],
+    ],
+  },
   {
     id: 147, date: '27 Nov 2026', title: 'The TTP-70, measured',
     items: [
