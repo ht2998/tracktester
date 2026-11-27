@@ -63,7 +63,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 127;
+const BUILD = 128;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -292,7 +292,7 @@ const GRAVEL_SHADES = ['#9c8158', '#c9b086', '#a88d61', '#d8c39c', '#8a7350', '#
 const beforeTrack = new Set(scene.children);
 const sepang = SEPANG ? (SUZUKA ? buildSuzuka : buildSepang)(scene, { isMobile, gravelMaps: makeGravelMaps() }) : null;
 // The ground's hills and dips, for everything that sits on it (ground.js)
-if (sepang) setGround(sepang.heightAt);
+if (sepang) setGround(sepang.heightAt, sepang.deckAt);
 // The racing line, braking zones, corner panel, distance boards and old
 // rubber on the track (racingline.js). On by default; L (or the phone
 // menu) switches the line and the corner panel off and on.

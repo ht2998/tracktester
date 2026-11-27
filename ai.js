@@ -23,7 +23,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 15;
+export const BUILD = 16;
 
 import * as THREE from 'three';
 import { CarPhysics, CATERHAM } from './physics.js';
@@ -563,7 +563,7 @@ export class AIField {
     P.z = p.z + (q.z - p.z) * f + p.nz * c.lateral;
     P.heading = Math.atan2(p.fx, p.fz);
     P.vx = c.speed; P.vy = 0; P.yawRate = 0;
-    P.ground.y = this.hooks.groundHeight ? this.hooks.groundHeight(P.x, P.z) : 0;
+    P.ground.y = this.hooks.groundHeight ? this.hooks.groundHeight(P.x, P.z, (P.ground.y ?? 0) + 0.8) : 0;   // (on a bridge: its deck)
     P.ground.slopeF = P.ground.slopeL = 0;
   }
 

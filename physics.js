@@ -9,7 +9,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 29;
+export const BUILD = 30;
 
 const G = 9.81;   // gravity, m/s²
 const RPM_PER_RADS = 60 / (2 * Math.PI);
@@ -706,7 +706,7 @@ export class CarPhysics {
     // the model's origin (on the ground under the middle when it's upright)
     this.pose.x = F.p[0] - Y[0] * s.cgHeight; this.pose.y = F.p[1] - Y[1] * s.cgHeight; this.pose.z = F.p[2] - Y[2] * s.cgHeight;
     this.pose.q[0] = F.q[1]; this.pose.q[1] = F.q[2]; this.pose.q[2] = F.q[3]; this.pose.q[3] = F.q[0];
-    this.airHeight = this.pose.y - this.groundHeight(this.pose.x, this.pose.z);
+    this.airHeight = this.pose.y - this.groundHeight(this.pose.x, this.pose.z, this.pose.y + 0.5);
   }
 
   // Each small step while free: how hard each wheel's spring presses on
@@ -722,7 +722,7 @@ export class CarPhysics {
       const r = [X[0] * b - Y[0] * cg + Z[0] * a, X[1] * b - Y[1] * cg + Z[1] * a, X[2] * b - Y[2] * cg + Z[2] * a];
       const c = [F.p[0] + r[0], F.p[1] + r[1], F.p[2] + r[2]];
       const vc = add3(F.v, cross3(F.w, r));
-      const ground = this.groundHeight(c[0], c[2]) + this.roadHeight(c[0], c[2]) - this.tyreSink[i];
+      const ground = this.groundHeight(c[0], c[2], c[1] + 0.6) + this.roadHeight(c[0], c[2]) - this.tyreSink[i];
       // how far the spring is squashed (along the strut, which points up the car)
       const up = Math.max(0, Y[1]);
       const comp = (ground - c[1]) * up;
@@ -771,7 +771,7 @@ export class CarPhysics {
     for (const pt of BODY_POINTS) {
       const r = [X[0] * pt[0] + Y[0] * (pt[1] - s.cgHeight) + Z[0] * pt[2], X[1] * pt[0] + Y[1] * (pt[1] - s.cgHeight) + Z[1] * pt[2], X[2] * pt[0] + Y[2] * (pt[1] - s.cgHeight) + Z[2] * pt[2]];
       const wp = [F.p[0] + r[0], F.p[1] + r[1], F.p[2] + r[2]];
-      const gy = this.groundHeight(wp[0], wp[2]);
+      const gy = this.groundHeight(wp[0], wp[2], wp[1] + 0.6);
       const pen = gy - wp[1];
       if (pen <= 0) continue;
       const n = this.groundNormal(wp[0], wp[2]);
@@ -821,7 +821,7 @@ export class CarPhysics {
     const dq = qmul([0, F.w[0], F.w[1], F.w[2]], F.q);
     F.q = qnorm([F.q[0] + 0.5 * dq[0] * h, F.q[1] + 0.5 * dq[1] * h, F.q[2] + 0.5 * dq[2] * h, F.q[3] + 0.5 * dq[3] * h]);
     // never through the ground (a safety net for very hard landings)
-    const lowest = this.groundHeight(F.p[0], F.p[2]) + 0.12;
+    const lowest = this.groundHeight(F.p[0], F.p[2], F.p[1] + 0.6) + 0.12;
     if (F.p[1] < lowest) { F.p[1] = lowest; if (F.v[1] < 0) F.v[1] = 0; }
     // what the car "feels" (for the g-meter and the sounds)
     const fx = Math.sin(this.heading), fz = Math.cos(this.heading);
@@ -832,8 +832,9 @@ export class CarPhysics {
   // Which way the ground faces at a point (for bodywork landing on a slope)
   groundNormal(x, z) {
     const e = 0.5;
-    const dx = (this.groundHeight(x + e, z) - this.groundHeight(x - e, z)) / (2 * e);
-    const dz = (this.groundHeight(x, z + e) - this.groundHeight(x, z - e)) / (2 * e);
+    const hy = this.pose?.y !== undefined ? this.pose.y + 0.6 : undefined;   // (on a bridge: its deck)
+    const dx = (this.groundHeight(x + e, z, hy) - this.groundHeight(x - e, z, hy)) / (2 * e);
+    const dz = (this.groundHeight(x, z + e, hy) - this.groundHeight(x, z - e, hy)) / (2 * e);
     const l = Math.hypot(dx, 1, dz);
     return [-dx / l, 1 / l, -dz / l];
   }
@@ -1386,7 +1387,7 @@ export class CarPhysics {
     const GR = this.ground, gh = [0, 0, 0, 0];
     WHEEL_ORDER.forEach((w, i) => {
       const a = w.front ? s.cgToFront : -s.cgToRear, b = w.side * s.trackHalf;
-      gh[i] = this.groundHeight(this.x + fx * a + lx * b, this.z + fz * a + lz * b);
+      gh[i] = this.groundHeight(this.x + fx * a + lx * b, this.z + fz * a + lz * b, (GR?.y ?? 0) + 0.8);   // (the height it's at: on a bridge, the deck; under it, the road below)
     });
     let launch = null;
     {
