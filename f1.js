@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 108;
+export const BUILD = 109;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -1955,7 +1955,7 @@ export function buildF94Body(car, addPanel) {
   add(box(0.07, 0.04, 0.03, 0, 0.3, -2.14), MAT.rain);
   for (const s of [1, -1]) add(new THREE.CylinderGeometry(0.05, 0.055, 0.2, 12, 1, true).rotateX(Math.PI / 2 - 0.1).translate(s * 0.2, 0.2, -1.95), MAT.exhaust);
   // --- the floor (stepped, the plank) and the diffuser
-  add(box(0.3, 0.012, 2.6, 0, 0.084, -0.1), new THREE.MeshStandardMaterial({ color: 0x6b5a3e, roughness: 0.9 }));   // (the plank, right under the floor)
+  add(box(0.3, 0.012, 2.24, 0, 0.084, -0.08), new THREE.MeshStandardMaterial({ color: 0x6b5a3e, roughness: 0.9 }));   // (the plank, right under the floor)
   add(box(0.95, 0.02, 0.62, 0, 0.13, -1.8, -0.32), MAT.carbon);
   for (const x of [-0.34, -0.12, 0.12, 0.34]) add(box(0.01, 0.15, 0.56, x, 0.12, -1.8), MAT.carbon);
 
