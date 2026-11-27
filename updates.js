@@ -30,6 +30,7 @@ export const UPDATES = [
     id: 148, date: '27 Nov 2026', title: 'Real-looking trees',
     items: [
       ['Every tree grown', 'The trees are no longer lumpy green balls: each one is grown from its own seed, a trunk that tapers and wanders as it climbs, boughs spiralling out round it, twigs off the boughs and clusters of leaves at their ends, so no two look alike. Shaped after real tree models', 'new'],
+      ['New palms', 'The palms are grown too now, after a real palm: a trunk flaring at its foot, tapering up and coated in the stubs of old fronds, and a crown of long arching fronds with their leaflets hanging either side, the young ones standing up, the old ones drooping', 'new'],
       ['Kinds of tree', 'Round the test area: oaks with wide low boughs, beeches, slender pale-barked birches with hanging twigs, tall column poplars and pines with their crowns up top. At Sepang: tall rainforest trees with broad flat crowns and planes among the palms. Their shadows are dappled, leaf by leaf', 'new'],
     ],
   },

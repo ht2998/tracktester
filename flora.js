@@ -16,7 +16,7 @@
 // area gets broadleaf trees and conifers round its edges.
 import * as THREE from 'three';
 
-export const BUILD = 7;
+export const BUILD = 8;
 
 // The same random numbers every time (so the forest is always the same)
 function seeded(seed) {
@@ -263,51 +263,64 @@ function conifer(rand, { height = 11 } = {}) {
 }
 
 // Oil palm: a rough, slightly leaning trunk and a crown of long drooping fronds
-function palm(rand, { height = 8, simple = false } = {}) {
-  const trunkB = new Builder(), leafB = new Builder();
-  const bark = col(0x6b5a44), green = col(0x4f7a2c);
-  const lean = (rand() - 0.5) * 0.25;
-  const segs = simple ? 3 : 6;
-  for (let k = 0; k < segs; k++) {
-    const y = (k / segs) * height;
-    trunkB.add(new THREE.CylinderGeometry(0.26, 0.3, height / segs + 0.02, 7, 1),
-      M(Math.sin(lean) * y * 0.15, y + height / segs / 2, 0, 1, 1, 1, 0, 0, lean * 0.15), () => shade(bark, k, 0, segs, 0.7));
-  }
-  const top = new THREE.Vector3(Math.sin(lean) * height * 0.15, height, 0);
-  const fronds = simple ? 8 : 10 + Math.floor(rand() * 4);
-  for (let f = 0; f < fronds; f++) {
-    const a = (f / fronds) * Math.PI * 2 + rand() * 0.3;
-    const len = 3.6 + rand() * 1.2;
-    const up = 0.5 - rand() * 0.4;
-    // a frond: a tapering strip that rises then droops (4 pieces)
-    let px = top.x, py = top.y, pz = top.z;
-    const pieces = simple ? 2 : 4;
-    for (let s = 0; s < pieces; s++) {
-      const t0 = s / pieces, t1 = (s + 1) / pieces;
-      const segLen = len / pieces;
-      const pitch = up - (t0 + t1) * 0.55;            // droops more towards the tip
-      const w0 = 0.45 * (1 - t0 * 0.8), w1 = 0.45 * (1 - t1 * 0.8);
-      const dx = Math.sin(a) * Math.cos(pitch) * segLen, dy = Math.sin(pitch) * segLen, dz = Math.cos(a) * Math.cos(pitch) * segLen;
-      const sx = Math.cos(a), sz = -Math.sin(a);       // across the frond
-      // (each side of the rib folded down a little, like a real frond's
-      // leaflets hanging either side of it; the edge cut ragged)
-      const fold = 0.32, rag = (t) => 0.75 + 0.25 * Math.abs(Math.sin(t * 37 + f));
-      const quad = new THREE.BufferGeometry();
-      const v = [];
-      for (const side of [-1, 1]) {
-        const e0 = w0 * rag(t0), e1 = w1 * rag(t1);
-        const ax = px, ay = py, az = pz, bx = px + dx, by = py + dy, bz = pz + dz;
-        const cx = ax + side * sx * e0, cy = ay - e0 * fold, cz = az + side * sz * e0;
-        const ex = bx + side * sx * e1, ey = by - e1 * fold, ez = bz + side * sz * e1;
-        v.push(ax, ay, az, cx, cy, cz, ex, ey, ez, ax, ay, az, ex, ey, ez, bx, by, bz);
-      }
-      quad.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
-      quad.computeVertexNormals?.();
-      leafB.add(quad, new THREE.Matrix4(), () => shade(green, s, 0, pieces, 0.7));
-      px += dx; py += dy; pz += dz;
+// Palm (studied off a real palm model): a trunk flaring at its foot and tapering up,
+// wrapped in the stubs of old fronds; at the top a crown of long arching fronds, each a
+// curved stalk with its leaflets hanging either side (a drawn, see-through texture),
+// the young ones standing up, the old ones drooping. Limits: trunk 5-8.5 m, fronds 3.2-5 m
+let FROND_TEX = null;
+function frondTexture() {
+  if (typeof document === 'undefined') return null;
+  if (FROND_TEX) return FROND_TEX;
+  const c = document.createElement('canvas'); c.width = 128; c.height = 512; const g = c.getContext('2d');
+  const rand = seeded(91);
+  g.clearRect(0, 0, 128, 512);
+  for (let y = 6; y < 506; y += 5) {                                // (leaflets both sides of the stalk, longest mid-frond)
+    const t = y / 512, L = 58 * Math.sin(Math.PI * Math.min(1, t * 1.1 + 0.05)) * (0.8 + rand() * 0.3);
+    for (const side of [-1, 1]) {
+      const v = 150 + rand() * 90; g.strokeStyle = `rgb(${v * 0.85 | 0},${v | 0},${v * 0.7 | 0})`; g.lineWidth = 3.2;
+      g.beginPath(); g.moveTo(64, y); g.quadraticCurveTo(64 + side * L * 0.6, y + 6, 64 + side * L, y + 22 + rand() * 8); g.stroke();
     }
   }
-  return { trunk: trunkB.build(), leaves: leafB.build() };
+  g.strokeStyle = 'rgb(150,140,95)'; g.lineWidth = 4; g.beginPath(); g.moveTo(64, 0); g.lineTo(64, 512); g.stroke();
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  return (FROND_TEX = t);
+}
+function palm(rand, { height = 8, simple = false } = {}) {
+  const trunkB = new Builder(), leafB = new Builder();
+  const bark = col(0x6b5a44), boot = col(0x7a6a46), greens = [col(0x4f7a2c), col(0x5a8432), col(0x46702a)];
+  const H = Math.min(8.5, Math.max(5, height * (0.85 + rand() * 0.25)));
+  const lean = [(rand() - 0.5) * 0.08, (rand() - 0.5) * 0.08];
+  // the trunk: flared foot, tapering, leaning a touch and curving back up
+  const pts = [], TN = simple ? 4 : 10;
+  for (let i = 0; i <= TN; i++) { const t = i / TN, y = H * t; pts.push({ x: lean[0] * y - lean[0] * y * t * 0.5, y, z: lean[1] * y - lean[1] * y * t * 0.5, r: 0.36 * (i === 0 ? 1.9 : 1 - t * 0.55) + (t < 0.15 ? 0.25 * (1 - t / 0.15) : 0) }); }
+  tube(trunkB, pts, simple ? 6 : 9, (x, y) => shade(bark, y, 0, H, 0.7));
+  const top = pts[TN];
+  // the stubs of old fronds, spiralling up the trunk (its rough coat)
+  if (!simple) for (let k = 0; k < 26; k++) {
+    const t = 0.25 + 0.72 * k / 26, p = pts[Math.round(t * TN)], a = k * 2.39996;
+    trunkB.add(new THREE.ConeGeometry(0.09, 0.45, 4, 1), M(p.x + Math.cos(a) * p.r, p.y, p.z + Math.sin(a) * p.r, 1, 1, 1, Math.sin(a) * 0.7, 0, -Math.cos(a) * 0.7), () => boot);
+  }
+  // the crown: fronds round the top, the young ones up, the old ones drooping
+  const nF = simple ? 9 : 16 + Math.floor(rand() * 6);
+  for (let f = 0; f < nF; f++) {
+    const a = f * 2.39996 + rand() * 0.3, age = f / nF;                    // (0: youngest, at the top; 1: oldest, lowest)
+    const len = 3.2 + rand() * 1.8, rise = 0.9 - age * 1.5 + (rand() - 0.5) * 0.3;
+    const out = new THREE.Vector3(Math.cos(a), 0, Math.sin(a)), side = new THREE.Vector3(-Math.sin(a), 0, Math.cos(a));
+    const N = simple ? 3 : 7, pos = [], uv = [], idx = [];
+    let p = new THREE.Vector3(top.x, top.y - age * 0.4, top.z), pitch = rise;
+    for (let i = 0; i <= N; i++) {
+      const t = i / N, w = 0.55 * Math.sin(Math.PI * Math.min(1, t * 0.95 + 0.08)), fold = 0.25;
+      for (const sd of [-1, 1]) { pos.push(p.x + side.x * w * sd, p.y - w * fold, p.z + side.z * w * sd); uv.push(sd < 0 ? 0 : 1, t); }
+      pos.push(p.x, p.y, p.z); uv.push(0.5, t);
+      const step = len / N; pitch -= (0.35 + age * 0.25) / N * 2;             // (arching over, the old ones more)
+      p = p.clone().add(out.clone().multiplyScalar(Math.cos(pitch) * step)).add(new THREE.Vector3(0, Math.sin(pitch) * step, 0));
+    }
+    for (let i = 0; i < N; i++) { const a0 = i * 3, b0 = a0 + 3; idx.push(a0, b0, a0 + 2, a0 + 2, b0, b0 + 2, a0 + 2, b0 + 2, a0 + 1, a0 + 1, b0 + 2, b0 + 1); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
+    const tone = greens[f % greens.length].clone().multiplyScalar(1 - age * 0.25);
+    leafB.add(g, new THREE.Matrix4(), (x, y) => shade(tone, y, H - 3, H + 1, 0.6));
+  }
+  return { trunk: trunkB.build(), leaves: leafB.build(), frond: true, height: H };
 }
 
 // A bush: a few lumpy blobs close to the ground
@@ -393,6 +406,7 @@ export function buildFlora(scene, { isMobile = false, style = 'tropical', area, 
     leaves: swayMaterial(uniforms, { sway: 0.0004, flutter: 0.004, side: THREE.DoubleSide }),
     cards: swayMaterial(uniforms, { sway: 0.0004, flutter: 0.006, side: THREE.DoubleSide, map: leafTexture(false) }),
     needles: swayMaterial(uniforms, { sway: 0.0004, flutter: 0.004, side: THREE.DoubleSide, map: leafTexture(true) }),
+    fronds: swayMaterial(uniforms, { sway: 0.0005, flutter: 0.008, side: THREE.DoubleSide, map: frondTexture() }),
   };
   // (the leaf cards' shadows: only where there are leaves on them, not their whole squares)
   const cardDepth = (map) => (map ? new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map, alphaTest: 0.5 }) : undefined);
@@ -436,7 +450,7 @@ export function buildFlora(scene, { isMobile = false, style = 'tropical', area, 
   let total = 0;
   for (const kind of kinds) {
     const isTree = kind.name === 'palm' || kind.name === 'tree';
-    const leafMat = kind.model.needles ? treeMats.needles : kind.model.height ? treeMats.cards : treeMats.leaves;
+    const leafMat = kind.model.frond ? treeMats.fronds : kind.model.needles ? treeMats.needles : kind.model.height ? treeMats.cards : treeMats.leaves;
     const parts = isTree ? [[kind.model.trunk, treeMats.trunk], [kind.model.leaves, leafMat]]
       : [[kind.model, kind.name === 'grass' ? grassMat : shrubMat]];
     const meshes = parts.map(([geo, mat]) => {
