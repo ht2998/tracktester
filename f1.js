@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 115;
+export const BUILD = 116;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -2602,7 +2602,7 @@ export function buildP91Body(car, addPanel) {
   const addTo = (g, geo, mat) => { const m = add(geo, mat); g.add(m); return m; };
   addTo(wings.rear, new THREE.BoxGeometry(1.9, 0.03, 0.36).rotateX(0.16).translate(0, 0.8, -2.12), MAT.yellow);
   addTo(wings.rear, new THREE.BoxGeometry(1.9, 0.018, 0.16).rotateX(0.5).translate(0, 0.86, -2.38), MAT.green);
-  for (const s of [1, -1]) addTo(wings.rear, new THREE.BoxGeometry(0.02, 0.55, 0.95).translate(s * 0.97, 0.64, -2.03), MAT.green);
+  for (const s of [1, -1]) addTo(wings.rear, new THREE.BoxGeometry(0.02, 0.37, 0.63).translate(s * 0.97, 0.73, -2.19), MAT.green);   // (the endplates: a third smaller, their tops kept level with the wing's)
   return { helmet: [helmet, visor, hstripe], rainMat: MAT.rain, exhaustMat: MAT.exhaust, mats: MAT, wings, mirrors, driver, lampMat: MAT.lamp, lampAt: LAMP_AT };
 }
 export const bodyForKind = (kind) => ({ f72: buildF72Body, f20: buildF20Body, f05: buildF05Body, f94: buildF94Body, p70: buildP70Body, p91: buildP91Body }[kind] || buildF1Body);
