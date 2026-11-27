@@ -16,7 +16,7 @@
 // area gets broadleaf trees and conifers round its edges.
 import * as THREE from 'three';
 
-export const BUILD = 8;
+export const BUILD = 9;
 
 // The same random numbers every time (so the forest is always the same)
 function seeded(seed) {
@@ -417,8 +417,8 @@ export function buildFlora(scene, { isMobile = false, style = 'tropical', area, 
   const kinds = [];
   const addKind = (name, model, count, opts) => kinds.push({ name, model, count: Math.round(count * density * (isMobile ? 0.3 : 1)), ...opts });
   // (each tree grown from its own seed: several of each kind, so no two stands look alike)
-  // (by the track three times as many trees as there were: TREES_NEAR)
-  const TREES_NEAR = 3;
+  // (by the track half again as many trees as there were: TREES_NEAR; 3 was too slow)
+  const TREES_NEAR = 1.5;
   const grow = (kind, n, count, opts) => { for (let k = 0; k < n; k++) addKind('tree', growTree(rand, kind, { lite: forest }), count / n * (forest ? 1 : TREES_NEAR), opts); };
   if (forest) {
     const tropical = style === 'tropical';
