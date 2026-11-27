@@ -16,7 +16,7 @@
 // area gets broadleaf trees and conifers round its edges.
 import * as THREE from 'three';
 
-export const BUILD = 6;
+export const BUILD = 7;
 
 // The same random numbers every time (so the forest is always the same)
 function seeded(seed) {
@@ -403,14 +403,16 @@ export function buildFlora(scene, { isMobile = false, style = 'tropical', area, 
   const kinds = [];
   const addKind = (name, model, count, opts) => kinds.push({ name, model, count: Math.round(count * density * (isMobile ? 0.3 : 1)), ...opts });
   // (each tree grown from its own seed: several of each kind, so no two stands look alike)
-  const grow = (kind, n, count, opts) => { for (let k = 0; k < n; k++) addKind('tree', growTree(rand, kind, { lite: forest }), count / n, opts); };
+  // (by the track three times as many trees as there were: TREES_NEAR)
+  const TREES_NEAR = 3;
+  const grow = (kind, n, count, opts) => { for (let k = 0; k < n; k++) addKind('tree', growTree(rand, kind, { lite: forest }), count / n * (forest ? 1 : TREES_NEAR), opts); };
   if (forest) {
     const tropical = style === 'tropical';
     for (let k = 0; k < 3; k++) if (tropical) addKind('palm', palm(rand, { height: 8 + k * 1.5, simple: true }), 900, { gap: 6, clear: 0, trunkR: 0.3 });
     if (tropical) grow('rain', 4, 3300, { gap: 8, clear: 0, trunkR: 0.45 });
     else { grow('oak', 2, 1300, { gap: 8, clear: 0, trunkR: 0.45 }); grow('beech', 2, 1200, { gap: 8, clear: 0, trunkR: 0.4 }); grow('pine', 2, 1100, { gap: 7, clear: 0, trunkR: 0.35 }); }
   } else if (style === 'tropical') {
-    for (let k = 0; k < 3; k++) addKind('palm', palm(rand, { height: 7 + k * 1.5 }), 380, { gap: 7, clear: 16, trunkR: 0.3 });
+    for (let k = 0; k < 3; k++) addKind('palm', palm(rand, { height: 7 + k * 1.5 }), 380 * TREES_NEAR, { gap: 7, clear: 16, trunkR: 0.3 });
     grow('rain', 4, 640, { gap: 10, clear: 18, trunkR: 0.45 });
     grow('plane', 2, 260, { gap: 9, clear: 18, trunkR: 0.4 });
     addKind('shrub', shrub(rand, { size: 1.3 }), 900, { gap: 4, clear: 9 });
