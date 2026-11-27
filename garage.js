@@ -7,7 +7,7 @@
 // has several cars dropping down again. Pick one and it fires up: a
 // couple of big revs, then it settles to idle.
 // =====================================================================
-export const BUILD = 28;
+export const BUILD = 29;
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -23,7 +23,7 @@ const C = (name, year, blurb, kind) => ({ name, year, blurb, ...(kind ? { kind }
 export const SECTIONS = [
   { title: 'By decade', byDecade: true, groups: [
     { cat: 'Formula', cars: [
-      C('TTF-72', 1972, 'Wedge nose, radiators in the sides, inboard brakes'),
+      C('TTF-72', 1972, '3.0 V8, the wedge: radiators in the sides', 'f72'),
       C('TTF-77', 1977, 'Six wheels: four small ones at the front'),
       C('TTF-78', 1978, 'Ground effect: the whole car a wing'),
       C('TTF-83', 1983, 'Arrow-shaped turbo four, refuelled mid-race'),
@@ -172,6 +172,7 @@ export const COLLECTION = SECTIONS.flatMap((s) => s.groups);
 export const CAR_INFO = {
   f1: { name: 'TTF-88', year: 1988, cat: 'Formula', drive: 'Rear-wheel drive' },
   f05: { name: 'TTF-05', year: 2005, cat: 'Formula', drive: 'Rear-wheel drive' },
+  f72: { name: 'TTF-72', year: 1972, cat: 'Formula', drive: 'Rear-wheel drive' },
   f94: { name: 'TTF-94', year: 1994, cat: 'Formula', drive: 'Rear-wheel drive' },
   f20: { name: 'TTF-20', year: 2020, cat: 'Formula', drive: 'Rear-wheel drive' },
   p70: { name: 'TTP-70', year: 1970, cat: 'Prototype', drive: 'Rear-wheel drive' },
@@ -660,6 +661,6 @@ export class Garage {
     this.renderer.render(this.scene, this.camera);
   }
 }
-const THUMB_KEY = 'tracktester-thumb-18-';   // (a new number when a car's looks change)
+const THUMB_KEY = 'tracktester-thumb-19-';   // (a new number when a car's looks change)
 const FAR = new THREE.Vector3(1e5, 0, 1e5);
 const SIZE = new THREE.Vector2();

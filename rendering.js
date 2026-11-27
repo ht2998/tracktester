@@ -39,7 +39,7 @@ import { TuningSheet, withTune, loadTune, BUILD as TUNING_BUILD } from './tuning
 import { CrushFrame, tearPanel, mendPanel, BUILD as SOFTBODY_BUILD } from './softbody.js';
 import { PitStop, SEPANG_PIT, Person as PersonFigure, climbOutKeys, makeAxe, BUILD as PITS_BUILD } from './pits.js';
 import { RaceControl, BUILD as RACECONTROL_BUILD } from './racecontrol.js';
-import { weldNormals, buildF1Body, buildF05Body, bodyForKind, WHEEL_LAYOUT, DRIVER_SUITS, RIM_STYLES, suitTorsoMaterial, helmetMaterial, F94_DRIVER_DZ, F20_DRIVER_DZ, F88_DRIVER_DZ, P70_DRIVER_DZ, buildF1Cockpit, buildF1RimGeometry, tyreGeometry, F1_CAR, CATERHAM_CAR, ENGINES, withEngine, STOCK_ENGINE, specForKind, BUILD as F1_BUILD } from './f1.js';
+import { weldNormals, buildF1Body, buildF05Body, bodyForKind, WHEEL_LAYOUT, DRIVER_SUITS, RIM_STYLES, suitTorsoMaterial, helmetMaterial, F94_DRIVER_DZ, F72_DRIVER_DZ, F20_DRIVER_DZ, F88_DRIVER_DZ, P70_DRIVER_DZ, buildF1Cockpit, buildF1RimGeometry, tyreGeometry, F1_CAR, CATERHAM_CAR, ENGINES, withEngine, STOCK_ENGINE, specForKind, BUILD as F1_BUILD } from './f1.js';
 import * as groundFile from './ground.js';
 import * as tyresFile from './tyres.js';
 import * as cockpitFile from './cockpit.js';
@@ -690,14 +690,15 @@ fenderMat.side = THREE.DoubleSide;
 // WHICH CAR: the Caterham or the TT-88 (f1.js). It's settled when the game
 // starts (picking another car restarts the game), so every part of the
 // game (wheels, brakes, suspension, tyres, damage, cameras) is built for it.
-const CAR_KIND = (() => { try { const c = JSON.parse(localStorage.getItem('tracktester-car') || 'null'); return c && ['f1', 'f05', 'f20', 'f94', 'p70', 'p91'].includes(c.kind) ? c.kind : 'caterham'; } catch (e) { return 'caterham'; } })();
+const CAR_KIND = (() => { try { const c = JSON.parse(localStorage.getItem('tracktester-car') || 'null'); return c && ['f1', 'f05', 'f20', 'f94', 'f72', 'p70', 'p91'].includes(c.kind) ? c.kind : 'caterham'; } catch (e) { return 'caterham'; } })();
 const IS_F05 = CAR_KIND === 'f05';        // (the TT-05: the 2005-style V10 car)
 const IS_F20 = CAR_KIND === 'f20';        // (the TTF-20: the 2020-style hybrid car)
+const IS_F72 = CAR_KIND === 'f72';        // (the TTF-72: the 1972 wedge, a V8 and five gears through a lever)
 const IS_F94 = CAR_KIND === 'f94';        // (the TT-94: the 1994-style V12 car)
 const IS_P70 = CAR_KIND === 'p70';        // (the TTP-70: the 1970 flat-12 prototype; closed, the driver on the right)
 const IS_P91 = CAR_KIND === 'p91';        // (the TTP-91: the 1991 four-rotor Group C car; closed, the driver on the right)
 const CLOSED_RHD = IS_P70 || IS_P91;
-const IS_F1 = CAR_KIND === 'f1' || IS_F05 || IS_F20 || IS_F94 || IS_P70 || IS_P91;    // (the race cars built like the single-seaters: wings, slicks, the cockpit, the lot)
+const IS_F1 = CAR_KIND === 'f1' || IS_F72 || IS_F05 || IS_F20 || IS_F94 || IS_P70 || IS_P91;    // (the race cars built like the single-seaters: wings, slicks, the cockpit, the lot)
 const PADDLES = IS_F05 || IS_F20 || IS_F94;
 // what this car has: the single-seaters have neither headlights nor a horn
 // (their buttons and keys aren't there); the long-distance cars and the road car have both
@@ -1219,10 +1220,11 @@ const cockpit = new Cockpit(carModel.car, MAT, { isMobile, redline: CATERHAM.red
 if (IS_F1) cockpit.group.visible = false;   // (the TT-88 has its own cockpit:)
 // THE TT-88's COCKPIT (f1.js): the wheel, the lever on the right, the
 // driver's arms fighting the car, his head thrown about
-const f1Cockpit = IS_F1 ? buildF1Cockpit(carModel.car, { paddles: PADDLES, hPattern: CAR_KIND === 'f1', ...(IS_F05 || IS_F20 ? { wheelTilt: 0 } : {}), ...(DRIVER_SUITS[CAR_KIND] ? { suit: DRIVER_SUITS[CAR_KIND].suit } : {}) }) : null;
+const f1Cockpit = IS_F1 ? buildF1Cockpit(carModel.car, { paddles: PADDLES, hPattern: CAR_KIND === 'f1' || IS_F72, ...(IS_F05 || IS_F20 ? { wheelTilt: 0 } : {}), ...(DRIVER_SUITS[CAR_KIND] ? { suit: DRIVER_SUITS[CAR_KIND].suit } : {}) }) : null;
 // (the TTP-70's driver sits on the right, further back and a little higher)
 if (CLOSED_RHD && f1Cockpit) f1Cockpit.group.position.set(-0.27, IS_P91 ? -0.04 : -0.08, IS_P91 ? -0.29 : -0.24 + P70_DRIVER_DZ);
 if (IS_F94 && f1Cockpit) f1Cockpit.group.position.z = F94_DRIVER_DZ;
+if (IS_F72 && f1Cockpit) f1Cockpit.group.position.set(0, 0.06, F72_DRIVER_DZ);     // (the TTF-72's: sat up high)
 if (CAR_KIND === 'f1' && f1Cockpit) f1Cockpit.group.position.set(0, -0.02, F88_DRIVER_DZ);     // (the TTF-88's too)
 if (IS_F20 && f1Cockpit) f1Cockpit.group.position.set(0, 0.04, F20_DRIVER_DZ);     // (and the TTF-20's further still, a little higher)     // (the TTF-94's driver sits further forward, as the real car's)     // (the TT-05 changes gear on paddles)
 const washerBody = WASHER ? buildWasher(carModel.car) : null;
@@ -2407,7 +2409,7 @@ function setDetailCrush(on) {
   crushFrame = on ? makeCrushFrame() : null;
   clearDents();                                                               // (starts fresh, the new way)
 }
-const NOSE_TIP = IS_F20 ? 3.05 : IS_F05 ? 2.76 : IS_F94 ? 2.63 : IS_P70 ? 2.13 : IS_P91 ? 2.36 : 2.52, NOSE_BASE = IS_F20 ? 1.4 : IS_F05 ? 1.25 : IS_F94 ? 1.2 : IS_P70 ? 1.45 : IS_P91 ? 1.6 : 1.15;
+const NOSE_TIP = IS_F72 ? 2.3 : IS_F20 ? 3.05 : IS_F05 ? 2.76 : IS_F94 ? 2.63 : IS_P70 ? 2.13 : IS_P91 ? 2.36 : 2.52, NOSE_BASE = IS_F72 ? 1.3 : IS_F20 ? 1.4 : IS_F05 ? 1.25 : IS_F94 ? 1.2 : IS_P70 ? 1.45 : IS_P91 ? 1.6 : 1.15;
 const bodyOriginals = new Map();
 // (each panel's box on the car, so a hit only reshapes the panels it reaches)
 const panelBoxes = new Map();
@@ -4222,6 +4224,11 @@ const F1_VIEWS = CLOSED_RHD ? {
   bonnet: { spot: new THREE.Vector3(0, 0.8, 1.6), pitch: -0.07 },
   cockpit: { spot: new THREE.Vector3(0, 0.95, 0.02 + F20_DRIVER_DZ), pitch: -0.25 },
   tcam: { spot: new THREE.Vector3(0, 1.24, 0.1), pitch: -0.1 },
+} : IS_F72 ? {
+  // (the TTF-72: him sat up high in the slim tub; the T-cam on the airbox's top)
+  bonnet: { spot: new THREE.Vector3(0, 0.5, 1.5), pitch: -0.05 },
+  cockpit: { spot: new THREE.Vector3(0, 0.92, 0.02 + F72_DRIVER_DZ), pitch: -0.22 },
+  tcam: { spot: new THREE.Vector3(0, 1.08, -0.5), pitch: -0.08 },
 } : IS_F94 ? {
   // (the TTF-94: him sat further forward, the nose taller; the T-cam on the airbox's top)
   bonnet: { spot: new THREE.Vector3(0, 0.82, 1.4), pitch: -0.07 },
@@ -4272,7 +4279,7 @@ function refreshEngineList() {
   hud.setEngines(list, engineKey);
 }
 function setCar(kind, engine) {
-  kind = ['f1', 'f05', 'f20', 'f94', 'p70', 'p91'].includes(kind) ? kind : 'caterham';
+  kind = ['f1', 'f05', 'f20', 'f94', 'f72', 'p70', 'p91'].includes(kind) ? kind : 'caterham';
   const key = ENGINES[engine] ? engine : STOCK_ENGINE[kind];
   if (kind !== CAR_KIND) {
     // another car: save it and start the game again with it (so everything
@@ -4655,7 +4662,7 @@ function updateDriverEscape(dt) {
   if (bigHitT > 0.5) bigHitDone = false;
   if (!driverOut && how) {
     // out on the side away from the track
-    const seat = carModel.car.localToWorld(new THREE.Vector3(IS_F1 ? 0 : -0.18, 0, IS_F1 ? -0.1 + (IS_F94 ? F94_DRIVER_DZ : IS_F20 ? F20_DRIVER_DZ : CAR_KIND === 'f1' ? F88_DRIVER_DZ : IS_P70 ? P70_DRIVER_DZ : 0) : -0.45));
+    const seat = carModel.car.localToWorld(new THREE.Vector3(IS_F1 ? 0 : -0.18, 0, IS_F1 ? -0.1 + (IS_F94 ? F94_DRIVER_DZ : IS_F72 ? F72_DRIVER_DZ : IS_F20 ? F20_DRIVER_DZ : CAR_KIND === 'f1' ? F88_DRIVER_DZ : IS_P70 ? P70_DRIVER_DZ : 0) : -0.45));
     const person = new PersonFigure(driverMats, 0);
     scene.add(person.root);
     let ax = Math.cos(physics.heading), az = -Math.sin(physics.heading);    // (the car's left)

@@ -21,11 +21,20 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see below)
-export const BUILD = 188;
+export const BUILD = 189;
 
 // Newest first. Each feature: [short title, what it does, picture]
 // (the pictures are drawn in code: see PICTURES below)
 export const UPDATES = [
+  {
+    id: 146, date: '27 Nov 2026', title: 'The TTF-72',
+    items: [
+      ['A new car: the TTF-72', 'Our tribute to the 1972 champion, in black and gold with our own sponsor: the wedge nose with little winglets at its tip, the radiators moved into pods in the sides with their mouths facing forward, a slim tub with the driver sat up high, and behind him the 3.0 V8 bare, a tall waisted airbox over it, the oil cooler on the gearbox and the wing high on struts. Shaped from 350 measured slices of the real car. Find it in the Garage under 1972', 'new'],
+      ['Driving it', 'It drives like its year: about 450 hp at 10,000-10,800 rpm in 540 kg, peaky, five gears through a lever in a real H-pattern gate, soft suspension that rolls and pitches, 1972 tyres with far less grip than the later cars and only a little downforce, iron brakes that fade when hot. It slides', 'new'],
+      ['Its engine sound', 'The V8 is on the standard engine sound for now: its own is being made', 'new'],
+      ['The TTF-94, closer', 'Between its nose and the cockpit the TTF-94 is shaped closer to the real car: the sidepods\' tops run forward as a shelf to the tub, a raked lip under their much bigger inlets, the floor narrowing toward the nose, the floor and plank up against the body, the bargeboards gone', 'new'],
+    ],
+  },
   {
     id: 145, date: '26 Nov 2026', title: 'The TTF-20, measured closer',
     items: [
