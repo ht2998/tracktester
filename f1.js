@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 114;
+export const BUILD = 115;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -2595,12 +2595,11 @@ export function buildP91Body(car, addPanel) {
   const helmet = add(new THREE.SphereGeometry(0.135, 20, 16).scale(1, 1.05, 1.1).translate(DX, 0.8, 0.0), MAT.helmet);
   const visor = add(new THREE.SphereGeometry(0.137, 20, 10, -0.9 + Math.PI / 2, 1.8, 1.1, 0.5).scale(1, 1.05, 1.1).translate(DX, 0.8, 0.0), MAT.visor);
   const hstripe = add(new THREE.TorusGeometry(0.135, 0.012, 6, 24, Math.PI).rotateY(Math.PI / 2).rotateZ(Math.PI / 2).scale(1, 1.05, 1.1).translate(DX, 0.8, 0.0), MAT.yellow);
-  // "wings": dive planes at the nose's corners, and the big rear wing on its tall endplates
+  // "wings": the big rear wing on its tall endplates (no dive planes: they stuck into the lights)
   // behind the tail (as measured: 1.96 m across, its top 0.88 m up, 2.0 to 2.5 m back)
   const wings = { fl: new THREE.Group(), fr: new THREE.Group(), rear: new THREE.Group() };
   for (const g of Object.values(wings)) car.add(g);
   const addTo = (g, geo, mat) => { const m = add(geo, mat); g.add(m); return m; };
-  for (const s of [1, -1]) addTo(s > 0 ? wings.fl : wings.fr, new THREE.BoxGeometry(0.2, 0.012, 0.16).rotateZ(-s * 0.2).translate(s * 0.86, 0.34, 1.95), MAT.carbon);
   addTo(wings.rear, new THREE.BoxGeometry(1.9, 0.03, 0.36).rotateX(0.16).translate(0, 0.8, -2.12), MAT.yellow);
   addTo(wings.rear, new THREE.BoxGeometry(1.9, 0.018, 0.16).rotateX(0.5).translate(0, 0.86, -2.38), MAT.green);
   for (const s of [1, -1]) addTo(wings.rear, new THREE.BoxGeometry(0.02, 0.55, 0.95).translate(s * 0.97, 0.64, -2.03), MAT.green);
