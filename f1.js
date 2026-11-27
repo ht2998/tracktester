@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 106;
+export const BUILD = 107;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -1950,7 +1950,6 @@ export function buildF94Body(car, addPanel) {
     h0.forEach(([x, y], k) => (k ? sh.lineTo(x * 0.86, y - 0.012) : sh.moveTo(0, y - 0.012)));
     for (let k = h0.length - 1; k >= 0; k--) sh.lineTo(-h0[k][0] * 0.86, h0[k][1] - 0.012);
     add(new THREE.ShapeGeometry(sh).translate(0, 0, 0.256), MAT.dark, false); }
-  for (const s of [1, -1]) add(box(0.012, 0.3, 0.38, s * 0.47, 0.18, 0.72, 0, s * 0.15), MAT.carbon);           // bargeboards, ahead of the pods
   // the gearbox, the rain light, exhausts out low at the back over the diffuser
   add(box(0.22, 0.2, 0.42, 0, 0.22, -1.92), MAT.carbon);
   add(box(0.07, 0.04, 0.03, 0, 0.3, -2.14), MAT.rain);
