@@ -7,7 +7,7 @@
 // has several cars dropping down again. Pick one and it fires up: a
 // couple of big revs, then it settles to idle.
 // =====================================================================
-export const BUILD = 24;
+export const BUILD = 25;
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -660,6 +660,6 @@ export class Garage {
     this.renderer.render(this.scene, this.camera);
   }
 }
-const THUMB_KEY = 'tracktester-thumb-14-';   // (a new number when a car's looks change)
+const THUMB_KEY = 'tracktester-thumb-15-';   // (a new number when a car's looks change)
 const FAR = new THREE.Vector3(1e5, 0, 1e5);
 const SIZE = new THREE.Vector2();

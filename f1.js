@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 105;
+export const BUILD = 106;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -1887,9 +1887,27 @@ export function buildF94Body(car, addPanel) {
     // out over the side ahead of the full pod, dark: the opening into the radiator)
     paint: (part, seg, z, x, y) => (part === 'join' ? 3 : seg === 6 ? 2 : 0),
     // (the pods: flat, upright fronts with the radiators' inlets cut into them: flat slots, low down)
-    face: { tub: 0.255, hole: [0.265, 0.41, 0.22, 0.465, 0.06], depth: 0.34 },   // (the inlet: big, round-cornered, toward the inner side, as measured)
+    face: { tub: 0.255, hole: [0.265, 0.52, 0.22, 0.47, 0.06], depth: 0.34 },   // (the inlet: big, round-cornered, toward the inner side, as measured)
   });
   const { surfY, S } = sk;
+  // AHEAD OF THE PODS, as measured off the reference between the nose and the cockpit:
+  // the pod's top runs forward as a thin shelf over the mouth, its edge sweeping in to the
+  // tub's side by the screen; under the mouth a lower lip, its edge raked forward to the
+  // tub; and under it all the floor, narrowing in plan from the pods to the nose
+  { const plan = (pts, yTop, t, r, mat) => {
+      for (const s of [1, -1]) {
+        const sh = new THREE.Shape(), q = s > 0 ? pts : pts.slice().reverse();
+        q.forEach(([x, z], i) => (i ? sh.lineTo(s * x, z) : sh.moveTo(s * x, z)));
+        add(new THREE.ExtrudeGeometry(sh, { depth: Math.max(0.004, t - 2 * r), bevelEnabled: r > 0, bevelThickness: r, bevelSize: r * 0.9, bevelSegments: 3, curveSegments: 4 })
+          .translate(0, 0, r).rotateX(Math.PI / 2).translate(0, yTop, 0), mat);
+      }
+    };
+    const shelf = [[0.22, 0.47], [0.535, 0.47], [0.4, 0.7], [0.27, 0.92], [0.22, 0.95]];
+    plan(shelf, 0.53, 0.055, 0.022, PAINT[0]);
+    const lip = [[0.22, 0.47], [0.55, 0.47], [0.5, 0.56], [0.42, 0.7], [0.33, 0.84], [0.24, 1.0], [0.2, 1.02]];
+    plan(lip, 0.22, 0.09, 0.03, PAINT[0]);
+    const floor = [[0, -1.2], [0.66, -1.2], [0.66, 0.33], [0.5, 0.56], [0.36, 0.79], [0.22, 1.06], [0, 1.06]];
+    plan(floor, 0.055, 0.02, 0, MAT.carbon); }
   // (all red, as the real one: no flashes; the sponsors give it its white)
   // HIM, AND THE COCKPIT ROUND HIM: sat well forward, as the reference car has him, his
   // head just ahead of the airbox (DZ: how much further forward than the older cars)
@@ -1938,7 +1956,6 @@ export function buildF94Body(car, addPanel) {
   add(box(0.07, 0.04, 0.03, 0, 0.3, -2.14), MAT.rain);
   for (const s of [1, -1]) add(new THREE.CylinderGeometry(0.05, 0.055, 0.2, 12, 1, true).rotateX(Math.PI / 2 - 0.1).translate(s * 0.2, 0.2, -1.95), MAT.exhaust);
   // --- the floor (stepped, the plank) and the diffuser
-  add(box(1.32, 0.02, 2.2, 0, 0.045, -0.1), MAT.carbon);                // (just wider than the pods)
   add(box(0.3, 0.012, 2.6, 0, 0.03, -0.1), new THREE.MeshStandardMaterial({ color: 0x6b5a3e, roughness: 0.9 }));
   add(box(0.95, 0.02, 0.62, 0, 0.13, -1.8, -0.32), MAT.carbon);
   for (const x of [-0.34, -0.12, 0.12, 0.34]) add(box(0.01, 0.15, 0.56, x, 0.12, -1.8), MAT.carbon);
