@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 107;
+export const BUILD = 108;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -1905,9 +1905,9 @@ export function buildF94Body(car, addPanel) {
     const shelf = [[0.22, 0.47], [0.535, 0.47], [0.4, 0.7], [0.27, 0.92], [0.22, 0.95]];
     plan(shelf, 0.53, 0.055, 0.022, PAINT[0]);
     const lip = [[0.22, 0.47], [0.55, 0.47], [0.5, 0.56], [0.42, 0.7], [0.33, 0.84], [0.24, 1.0], [0.2, 1.02]];
-    plan(lip, 0.22, 0.09, 0.03, PAINT[0]);
+    plan(lip, 0.22, 0.11, 0.03, PAINT[0]);
     const floor = [[0, -1.2], [0.66, -1.2], [0.66, 0.33], [0.5, 0.56], [0.36, 0.79], [0.22, 1.06], [0, 1.06]];
-    plan(floor, 0.055, 0.02, 0, MAT.carbon); }
+    plan(floor, 0.11, 0.02, 0, MAT.carbon); }
   // (all red, as the real one: no flashes; the sponsors give it its white)
   // HIM, AND THE COCKPIT ROUND HIM: sat well forward, as the reference car has him, his
   // head just ahead of the airbox (DZ: how much further forward than the older cars)
@@ -1955,7 +1955,7 @@ export function buildF94Body(car, addPanel) {
   add(box(0.07, 0.04, 0.03, 0, 0.3, -2.14), MAT.rain);
   for (const s of [1, -1]) add(new THREE.CylinderGeometry(0.05, 0.055, 0.2, 12, 1, true).rotateX(Math.PI / 2 - 0.1).translate(s * 0.2, 0.2, -1.95), MAT.exhaust);
   // --- the floor (stepped, the plank) and the diffuser
-  add(box(0.3, 0.012, 2.6, 0, 0.03, -0.1), new THREE.MeshStandardMaterial({ color: 0x6b5a3e, roughness: 0.9 }));
+  add(box(0.3, 0.012, 2.6, 0, 0.084, -0.1), new THREE.MeshStandardMaterial({ color: 0x6b5a3e, roughness: 0.9 }));   // (the plank, right under the floor)
   add(box(0.95, 0.02, 0.62, 0, 0.13, -1.8, -0.32), MAT.carbon);
   for (const x of [-0.34, -0.12, 0.12, 0.34]) add(box(0.01, 0.15, 0.56, x, 0.12, -1.8), MAT.carbon);
 
