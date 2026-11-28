@@ -23,7 +23,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 16;
+export const BUILD = 17;
 
 import * as THREE from 'three';
 import { CarPhysics, CATERHAM } from './physics.js';
@@ -173,7 +173,8 @@ function buildAIF1(driver, kind) {
   for (const p of F.parts) {
     // (his own copy of the other materials too, so the whole car can fade when contact is off)
     let mat = p.role === 'paint' ? paint : p.role === 'paint2' ? paint2 : p.role === 'helmet' ? helmet : null;
-    if (!mat) { mat = p.mat.clone(); mat.transparent = true; own.push(mat); }
+    // (a part with several materials, or none: the first, or plain dark)
+    if (!mat) { const base = Array.isArray(p.mat) ? p.mat[0] : p.mat; mat = base?.clone ? base.clone() : new THREE.MeshStandardMaterial({ color: 0x222226, roughness: 0.6 }); mat.transparent = true; own.push(mat); }
     const m = new THREE.Mesh(p.geo, mat);
     m.castShadow = true;
     car.add(m);

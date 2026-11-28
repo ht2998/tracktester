@@ -23,8 +23,9 @@
 //    everyone brakes and turns in, and through the corners along the line.
 //    Rubbered-in track grips a little better. Rain washes it away.
 import * as THREE from 'three';
+import { groundAt } from './ground.js';
 
-export const BUILD = 6;
+export const BUILD = 7;
 
 const G = 9.81;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -62,7 +63,10 @@ function ribbon(pts, a, b, y, uvLen, closed = true) {
     const p = pts[k % pts.length];
     if (k > 0) { const q = pts[(k - 1) % pts.length]; s += Math.hypot(p.x - q.x, p.z - q.z); }
     const aa = typeof a === 'function' ? a(p, k) : a, bb = typeof b === 'function' ? b(p, k) : b;
-    pos.set([p.x + p.nx * aa, y, p.z + p.nz * aa, p.x + p.nx * bb, y, p.z + p.nz * bb], k * 6);
+    const ax = p.x + p.nx * aa, az = p.z + p.nz * aa, bx = p.x + p.nx * bb, bz = p.z + p.nz * bb;
+    // (on a bridge: raised from the ground below to the deck; the ground's added on later)
+    const da = p.deckY != null ? p.deckY - groundAt(ax, az) : 0, db = p.deckY != null ? p.deckY - groundAt(bx, bz) : 0;
+    pos.set([ax, y + da, az, bx, y + db, bz], k * 6);
     uv.set([0, s / uvLen, 1, s / uvLen], k * 4);
     col.set([1, 1, 1, 1, 1, 1, 1, 1], k * 8);
     if (k < n - 1) { const i = k * 2; index.push(i, i + 2, i + 1, i + 1, i + 2, i + 3); }
@@ -135,7 +139,8 @@ export class RacingLine {
     }
     // points, directions and left normals along it
     this.pts = [];
-    for (let i = 0; i < m; i++) { const [x, z] = P(i); this.pts.push({ x, z, i, off: off[i] }); }
+    // (on a bridge's deck: its height, so the line runs over the bridge, not along the ground under it)
+    for (let i = 0; i < m; i++) { const [x, z] = P(i); this.pts.push({ x, z, i, off: off[i], deckY: line[i].deck ? line[i].y : null }); }
     for (let i = 0; i < m; i++) {
       const a = this.pts[(i - 1 + m) % m], b = this.pts[(i + 1) % m], p = this.pts[i];
       const dx = b.x - a.x, dz = b.z - a.z, l = Math.hypot(dx, dz) || 1;

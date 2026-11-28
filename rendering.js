@@ -63,7 +63,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 129;
+const BUILD = 130;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -2989,6 +2989,8 @@ function findContact() {
     if (c.maxX < cx - 2.2 || c.minX > cx + 2.2 || c.maxZ < cz - 2.2 || c.minZ > cz + 2.2) continue;
     if (heavyMode && CRUSHABLE[c.kind]) continue;          // (it just rolls over them: see crushUnder)
     if (bottom > -Infinity && bottom > groundAt((c.minX + c.maxX) / 2, (c.minZ + c.maxZ) / 2) + (BARRIER_TOP[c.kind] ?? 50)) continue;
+    // (up on a bridge: its parapets only stop a car that's up there too, not one on the road below)
+    if (c.y0 !== undefined && (physics.air ? physics.pose.y : physics.ground.y) < c.y0 - 1.5) continue;
     // A turned box (a wall or barrier at an angle): tested in its own frame,
     // so it's hit exactly where it stands
     if (c.ob) {

@@ -45,7 +45,7 @@ import { buildTrackside } from './trackside.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 17;
+export const BUILD = 18;
 
 // [x, z] in metres, in driving order (clockwise from the start/finish line)
 const SEPANG_OUTLINE = [[0.0,0.0],[-1.1,-301.1],[1.1,-314.8],[8.2,-326.7],[17.8,-334.5],[30.3,-338.2],[44.0,-337.7],[57.9,-331.6],[67.8,-319.1],[71.6,-303.0],[66.5,-284.9],[51.7,-251.7],[52.7,-240.1],[61.4,-229.8],[72.7,-225.7],[88.2,-227.7],[104.4,-236.7],[134.6,-257.7],[152.7,-266.2],[173.7,-271.1],[194.5,-272.6],[217.9,-270.7],[275.0,-260.6],[301.3,-249.4],[327.7,-232.9],[344.4,-217.1],[362.6,-193.4],[376.0,-169.0],[383.0,-143.9],[416.7,-3.4],[448.9,102.3],[473.0,173.2],[489.5,219.0],[494.5,234.8],[493.2,246.2],[486.2,255.5],[473.6,258.1],[366.4,268.9],[311.1,276.3],[243.7,287.6],[217.3,297.6],[198.1,309.6],[178.0,331.2],[164.1,353.1],[156.7,375.4],[154.0,397.6],[155.8,423.3],[163.8,450.0],[175.5,469.4],[211.0,508.3],[220.2,526.8],[227.5,555.2],[226.4,578.9],[221.5,601.9],[212.3,620.2],[197.7,636.0],[-46.0,819.4],[-57.2,819.6],[-69.5,814.0],[-143.2,773.8],[-149.6,762.9],[-151.5,750.5],[-147.8,566.0],[-154.4,391.9],[-162.4,296.1],[-169.0,286.6],[-180.8,282.8],[-194.9,289.7],[-237.2,354.2],[-253.1,367.8],[-275.7,376.4],[-298.8,379.9],[-331.2,376.5],[-358.1,370.0],[-384.2,361.8],[-416.9,343.1],[-449.7,316.3],[-456.9,302.5],[-458.0,289.7],[-454.3,275.6],[-446.0,264.8],[-257.0,67.5],[-250.5,53.2],[-247.9,34.3],[-251.5,13.2],[-284.6,-66.7],[-289.4,-87.7],[-290.8,-112.4],[-288.9,-133.7],[-278.6,-173.1],[-265.4,-199.4],[-250.1,-215.9],[-217.4,-237.1],[-193.6,-243.6],[-179.4,-243.8],[-164.3,-232.6],[-157.2,-210.8],[-69.8,636.8],[-60.2,649.6],[-40.9,660.0],[-23.8,656.8],[-6.9,642.9],[-1.1,618.2]];
@@ -334,7 +334,12 @@ export function buildCircuit(scene, data, { isMobile = false, gravelMaps = null 
     for (const p of deckPts) { const d = Math.hypot(p.x - x, p.z - z); if (d < bd) { bd = d; best = p; } }
     if (!best || bd > 6) return null;
     const lat = Math.abs((x - best.x) * best.lx + (z - best.z) * best.lz);
-    return lat <= best.width / 2 + KERB + 0.5 ? best.y : null;
+    if (lat > best.width / 2 + KERB + 0.5) return null;
+    // (between the two nearest points along the road, so the deck's slope is smooth, not in steps)
+    const i = line.indexOf(best), nx = line[(i + 1) % m], pv = line[(i - 1 + m) % m];
+    const along = (x - best.x) * best.ux + (z - best.z) * best.uz, q = along >= 0 ? nx : pv;
+    const seg = Math.hypot(q.x - best.x, q.z - best.z) || 1;
+    return best.y + (q.y - best.y) * Math.min(1, Math.abs(along) / seg);
   } : null;
   // the bridge itself: a concrete deck under the road, its parapets (seen, not hit: a
   // car underneath mustn't run into them)
@@ -351,6 +356,9 @@ export function buildCircuit(scene, data, { isMobile = false, gravelMaps = null 
         const o = sd * (w / 2 - 0.15), par = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.9, len), concrete);
         par.position.set((p.x + q.x) / 2 + p.lx * o, (p.y + q.y) / 2 + 0.45, (p.z + q.z) / 2 + p.lz * o); par.rotation.y = p.heading; par.castShadow = true;
         par.userData.noLift = true; scene.add(par);
+        // (solid, but only for a car up on the deck: y0 is its road's height)
+        const px = (p.x + q.x) / 2 + p.lx * o, pz = (p.z + q.z) / 2 + p.lz * o, hx = Math.abs(p.ux) * len / 2 + 0.3, hz = Math.abs(p.uz) * len / 2 + 0.3;
+        addCollider(px - hx, px + hx, pz - hz, pz + hz, 'concrete', { y0: Math.min(p.y, q.y), ob: { x: px, z: pz, ux: p.ux, uz: p.uz, hl: len / 2, hw: 0.15 } });
       }
     }
   }
@@ -897,7 +905,10 @@ function buildTerrain(line, minX, maxX, minZ, maxZ, cell) {
         if (far && p.y - q.y > 4 && Math.hypot(p.x - q.x, p.z - q.z) < q.width / 2 + 9) seed.add(i);
       }
     });
-    for (const i of seed) for (let k = -6; k <= 6; k++) line[(i + k + m) % m].deck = true;
+    // (the core, right over the road below: the ground ignores it and follows that road; the deck
+    // runs on 20 m past it each way, the ground there still pinned to the upper road, so the
+    // road on and off the bridge is one smooth slope, no dip where they meet)
+    for (const i of seed) { line[i].deckCore = true; for (let k = -10; k <= 10; k++) line[(i + k + m) % m].deck = true; }
   }
   const mean = line.reduce((a, p) => a + p.y, 0) / m;
   // the open plain beyond the hills sits at the lowest point of the circuit,
@@ -931,7 +942,7 @@ function buildTerrain(line, minX, maxX, minZ, maxZ, cell) {
           if (!list) continue;
           for (let k = 0; k < list.length; k += 2) {        // (every other point is plenty)
             const p = line[list[k]];
-            if (p.deck) continue;                            // (a bridge's deck: the ground follows the road under it)
+            if (p.deckCore) continue;                        // (a bridge's deck, over the road below: the ground follows that road)
             const d2 = (p.x - x) * (p.x - x) + (p.z - z) * (p.z - z);
             if (d2 < R * R) {
               const dd = Math.sqrt(d2);
