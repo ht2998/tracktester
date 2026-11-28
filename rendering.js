@@ -63,7 +63,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 132;
+const BUILD = 133;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -1988,7 +1988,7 @@ function updateBlownTyres(dt) {
       // the odd spark at first, more and more as the tyre wears away
       sparkCarry[i] += (4 + 26 * t.shred) * Math.min(1, speed / 12) * dt;
       while (sparkCarry[i] >= 1) {
-        debris.spawnRimSpark(behindWheel, carVelocity, physics.heading);
+        debris.spawnRimSpark(behindWheel, carVelocity, physics.heading, groundAt(behindWheel.x, behindWheel.z));
         sparkCarry[i] -= 1;
         sparked = true;
       }
@@ -2006,7 +2006,7 @@ function updateBlownTyres(dt) {
       // Bare rim: always a shower of sparks while it's moving, more the faster you go
       sparkCarry[i] += (20 + 60 * Math.min(1, speed / 15)) * (1 - 0.5 * rain.wetness) * dt;
       while (sparkCarry[i] >= 1) {
-        debris.spawnRimSpark(behindWheel, carVelocity, physics.heading);
+        debris.spawnRimSpark(behindWheel, carVelocity, physics.heading, groundAt(behindWheel.x, behindWheel.z));
         sparkCarry[i] -= 1;
         sparked = true;
       }
@@ -2076,7 +2076,7 @@ function releaseWheels() {
     const wi = WHEELS.findIndex(([x, , , f]) => physicsWheel(x, f) === i);
     looseWheels[i].release(hubWorld, carVelocity, physics.heading, i % 2 === 0 ? 1 : -1, tyreOn ? 1 : worn, tyreOn ? { pressure: t.pressure, width: WHEEL_WIDTHS[wi] ?? 1, mat: carModel.tyres.material } : null);
     // a burst of sparks as it tears free
-    for (let k = 0; k < 30; k++) debris.spawnRimSpark(hubWorld, carVelocity, physics.heading);
+    for (let k = 0; k < 30; k++) debris.spawnRimSpark(hubWorld, carVelocity, physics.heading, groundAt(hubWorld.x, hubWorld.z));
     debris.sparks.geometry.attributes.aSize.needsUpdate = true;
     engineSound.playClunk();
   }
@@ -4368,7 +4368,7 @@ function scrapeFloor(dt) {
     scrapeCarry[k] += (6 + 60 * press) * Math.min(1, speed / 25) * (1 - 0.6 * rain.wetness) * dt;
     while (scrapeCarry[k] >= 1) {
       plankPt.y = road + 0.01;
-      debris.spawnRimSpark(plankPt, carVelocity, physics.heading);
+      debris.spawnRimSpark(plankPt, carVelocity, physics.heading, road, true);   // (from right under the plank)
       scrapeCarry[k] -= 1;
       sparked = true;
     }
@@ -4454,7 +4454,7 @@ function updateFlyingParts(dt) {
       p.v.y = Math.abs(p.v.y) * 0.25;
       p.v.x *= 0.7; p.v.z *= 0.7;
       p.w.multiplyScalar(0.6);
-      if (p.v.length() > 4) { debris.spawnRimSpark(p.obj.position, p.v, 0); debris.sparks.geometry.attributes.aSize.needsUpdate = true; }
+      if (p.v.length() > 4) { debris.spawnRimSpark(p.obj.position, p.v, 0, groundAt(p.obj.position.x, p.obj.position.z)); debris.sparks.geometry.attributes.aSize.needsUpdate = true; }
       if (p.v.length() < 0.4 && p.w.length() < 0.5) p.rest = true;
     }
   }
@@ -5694,7 +5694,7 @@ renderer.setAnimationLoop(() => {
   if (physics.air && physics.fb.scrape > 1.5 && physics.fb.scrapeAt && surfaceAt(physics.fb.scrapeAt[0], physics.fb.scrapeAt[2]) !== 'grass') {
     bodySparks += Math.min(60, physics.fb.scrape * 6) * dt;
     const at = { x: physics.fb.scrapeAt[0], y: physics.fb.scrapeAt[1] + 0.05, z: physics.fb.scrapeAt[2] };
-    while (bodySparks >= 1) { debris.spawnRimSpark(at, carVelocity, physics.heading); bodySparks -= 1; }
+    while (bodySparks >= 1) { debris.spawnRimSpark(at, carVelocity, physics.heading, at.y - 0.05, true); bodySparks -= 1; }
     debris.sparks.geometry.attributes.aSize.needsUpdate = true;
   }
   engineSound.setRain?.(rain.intensity, rain.wetness, carSpeed, puddleUnder);

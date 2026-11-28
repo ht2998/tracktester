@@ -19,7 +19,7 @@ function slopeAt(x, z) {
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 5;
+export const BUILD = 6;
 
 const GRAVITY = 9.81;
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -407,17 +407,18 @@ export class EngineDebris {
   // from behind the wheel, the way the wheel is turning.
   // origin: just behind the wheel (world), carVel: the car's velocity,
   // heading: which way the car faces
-  spawnRimSpark(origin, carVel, heading) {
+  // groundY: the road's height there (the hills: not 0); low: from right under the car (the plank), skimming the road
+  spawnRimSpark(origin, carVel, heading, groundY = 0, low = false) {
     const i = this.sparkNext;
     this.sparkNext = (this.sparkNext + 1) % this.maxSparks;
     const fx = Math.sin(heading), fz = Math.cos(heading);
     const lx = fz, lz = -fx;
     const back = rand(1.5, 6) * 0.7;             // thrown off the back of the wheel
     const side = rand(-1.5, 1.5);
-    this.sparkPos.set([origin.x + rand(-0.1, 0.1), rand(0.1, 0.3), origin.z + rand(-0.1, 0.1)], i * 3);
+    this.sparkPos.set([origin.x + rand(-0.1, 0.1), groundY + (low ? rand(0.005, 0.03) : rand(0.1, 0.3)), origin.z + rand(-0.1, 0.1)], i * 3);
     this.sparkVel.set([
       carVel.x * 0.9 - fx * back + lx * side,
-      rand(-1, 4) * 0.7,
+      low ? rand(0, 1.6) : rand(-1, 4) * 0.7,
       carVel.z * 0.9 - fz * back + lz * side,
     ], i * 3);
     this.sparkLife[i] = rand(1.0, 2.5);          // as long as the engine's
