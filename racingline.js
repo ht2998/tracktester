@@ -25,7 +25,7 @@
 import * as THREE from 'three';
 import { groundAt } from './ground.js';
 
-export const BUILD = 7;
+export const BUILD = 8;
 
 const G = 9.81;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -946,10 +946,17 @@ export class TrackMap {
     mark(cuts[1], '#ffd23c');
   }
 
-  update(x, z, heading) {
+  update(x, z, heading, others = []) {
     const g = this.cv.getContext('2d'), W = this.cv.width;
     g.clearRect(0, 0, W, W);
     g.drawImage(this.base, 0, 0);
+    // the computer cars: a dot each in its driver's colour (under the player's arrow)
+    g.lineWidth = W * 0.008; g.strokeStyle = '#111';
+    for (const o of others) {
+      const [p, q] = this.map(o.x, o.z);
+      g.fillStyle = '#' + o.colour.toString(16).padStart(6, '0');
+      g.beginPath(); g.arc(p, q, W * 0.024, 0, Math.PI * 2); g.fill(); g.stroke();
+    }
     const [a, b] = this.map(x, z);
     const fx = Math.sin(heading), fz = Math.cos(heading);
     g.fillStyle = '#ffd23c'; g.strokeStyle = '#111'; g.lineWidth = W * 0.01;

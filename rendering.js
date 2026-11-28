@@ -63,7 +63,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 131;
+const BUILD = 132;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -5429,7 +5429,8 @@ renderer.setAnimationLoop(() => {
     const gripNow = 1.3 * TYRES[physics.tyreCompound].grip * (1 - 0.3 * rain.wetness);
     racing.update(dt, physics.x, physics.z, physics.heading, Math.hypot(physics.vx, physics.vy), gripNow, rain.intensity);
     lapTimer.update(dt, physics.x, physics.z);
-    trackMap.update(physics.x, physics.z, physics.heading);
+    trackMap.update(physics.x, physics.z, physics.heading,
+      (aiField?.cars || []).filter((c) => !c.parked).map((c) => ({ x: c.physics.x, z: c.physics.z, colour: c.driver.colour })));
   }
   // Auto: on when it gets dark or rains properly (off again a little later,
   // so they don't flicker at the changeover)
