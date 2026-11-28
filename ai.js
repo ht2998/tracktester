@@ -23,7 +23,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 18;
+export const BUILD = 19;
 
 import * as THREE from 'three';
 import { CarPhysics, CATERHAM } from './physics.js';
@@ -469,6 +469,23 @@ export class AIField {
     return best;
   }
   // count laps as a car passes the start line
+  // THE SKIP (a key): you, put on the track this far ahead of whoever's leading, counted as
+  // that far ahead in the race. Returns where to put the car, or null with no race on
+  jumpAhead(metres = 500) {
+    const race = this.race; if (!race || race.phase !== 'racing' || this.player.finished) return null;
+    const L = this.racing.length, pts = this.racing.pts, m = this.m, s0 = pts[this.startIndex].s;
+    const prog = (t, near) => t.lap * L + ((pts[near].s - s0 + L) % L);
+    let lead = prog(this.player, this.player.near ?? this.startIndex);
+    for (const c of this.cars) if (!c.dnf && !c.finished) lead = Math.max(lead, prog(c, c.near));
+    const want = lead + metres, lap = Math.floor(want / L), rel = want - lap * L;
+    let i = this.startIndex, bd = Infinity;
+    for (let k = 0; k < m; k++) { const d = Math.abs(((pts[k].s - s0 + L) % L) - rel); if (d < bd) { bd = d; i = k; } }
+    // (counted from the line ahead of the start line: the lap it's on, and where on it)
+    this.player.lap = lap; this.player.near = i; this.player.last = i; this.player.s = (i - this.startIndex + m) % m;
+    const p = pts[i], q = pts[(i + 1) % m];
+    return { x: p.x, z: p.z, heading: Math.atan2(q.x - p.x, q.z - p.z) };
+  }
+
   passLine(t, i) {
     const m = this.m, rel = (i - this.startIndex + m) % m, relLast = (t.last - this.startIndex + m) % m;
     if (relLast > m - 40 && rel < 40) t.lap++;

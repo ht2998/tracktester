@@ -63,7 +63,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 134;
+const BUILD = 135;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -3387,7 +3387,7 @@ info.innerHTML =
   'W / S: throttle, brake · A / D: steer<br>' +
   'Space: handbrake · X: clutch · Q / E or , / . : shift<br>' +
   'Reverse: Q from 1st (manual), R (auto, CVT)<br>' +
-  'T: gearbox · arrow on the right: gearbox and assists<br>' +
+  'T: gearbox · arrow on the right: gearbox and assists · J: skip ahead in a race<br>' +
   (HAS_LIGHTS ? 'F: horn · G: lights · ' : '') + 'M: mute · C: camera (drag to look around in the on-car views) · Backspace: reset<br>' +
   '<span id="soundhint" style="color:#ffd76a">Press any key or tap for sound</span>';
 const soundHint = document.getElementById('soundhint');
@@ -5352,6 +5352,17 @@ function clearScratchDecals() { for (const m of scratchDecals) carModel.car.remo
 // RETURN TO TRACK (B, or the phone menu): back onto the track where you
 // are, facing the right way, stopped (no repairs)
 let backToTrack = false;
+// J: in a race, skip ahead: put on the track 500 m in front of the leader, rolling at 120 km/h
+window.addEventListener('keydown', (e) => {
+  if (e.code !== 'KeyJ' || (e.target && e.target.tagName === 'INPUT') || crane) return;
+  const at = aiField?.jumpAhead?.(500); if (!at) return;
+  if (driverOut || driverDead) return;
+  teleportGrace = 0.6;
+  physics.x = at.x; physics.z = at.z; physics.heading = at.heading;
+  physics.vx = 33; physics.vy = 0; physics.yawRate = 0;
+  if (physics.ground) physics.ground.synced = false;
+  showToast('SKIPPED AHEAD: 500 m IN FRONT OF THE LEADER');
+});
 window.addEventListener('keydown', (e) => { if (e.code === 'KeyB' && !(e.target && e.target.tagName === 'INPUT')) backToTrack = true; });
 function returnToTrack() {
   teleportGrace = 0.6;     // (the game moving the car: never a crash)
