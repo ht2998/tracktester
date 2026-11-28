@@ -34,7 +34,7 @@ import { Person, makeExtinguisher } from './pits.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 12;
+export const BUILD = 13;
 
 const std = (color, rough = 0.6, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: rough, ...extra });
 const boxAt = (w, h, d, x = 0, y = 0, z = 0) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
@@ -854,7 +854,7 @@ export class RaceControl {
   // groundAt(x, z), isMobile, pit (the pit lane's layout), hooks:
   //   toast(text), penalty(sec, why), extinguish(kind) ('car' | 'wreck' |
   //   'block'), removeDebris(obj), recoverPlayer(), playerModel()
-  constructor(scene, { line, trackside, aiField, groundAt, hooks = {}, isMobile = false, pit, corners = [] }) {
+  constructor(scene, { line, trackside, aiField, groundAt, hooks = {}, isMobile = false, pit, corners = [], craneSpots = null }) {
     this.scene = scene; this.line = line; this.m = line.length; this.trackside = trackside;
     this.ai = aiField; this.groundAt = groundAt; this.hooks = hooks; this.isMobile = isMobile; this.pit = pit;
     this.phase = 'green';            // green | vsc | sc | red
@@ -907,6 +907,12 @@ export class RaceControl {
     const used = new Set();
     const circ = (a, b) => Math.abs(((a - b) % this.m + this.m * 1.5) % this.m - this.m / 2);
     const spots = [];
+    // (a circuit that keeps its cranes somewhere in particular: the posts nearest there first)
+    for (const [cx, cz] of craneSpots || []) {
+      let best = null, bd = Infinity;
+      for (const p of trackside.posts) { if (used.has(p) || p.i == null) continue; const d = Math.hypot(p.x - cx, p.z - cz); if (d < bd) { bd = d; best = p; } }
+      if (best) { used.add(best); spots.push(best); }
+    }
     for (const cn of want) {
       const apex = cn.apex ?? cn.a;
       let best = null, bd = Infinity;

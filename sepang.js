@@ -45,7 +45,7 @@ import { buildTrackside } from './trackside.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 15;
+export const BUILD = 16;
 
 // [x, z] in metres, in driving order (clockwise from the start/finish line)
 const SEPANG_OUTLINE = [[0.0,0.0],[-1.1,-301.1],[1.1,-314.8],[8.2,-326.7],[17.8,-334.5],[30.3,-338.2],[44.0,-337.7],[57.9,-331.6],[67.8,-319.1],[71.6,-303.0],[66.5,-284.9],[51.7,-251.7],[52.7,-240.1],[61.4,-229.8],[72.7,-225.7],[88.2,-227.7],[104.4,-236.7],[134.6,-257.7],[152.7,-266.2],[173.7,-271.1],[194.5,-272.6],[217.9,-270.7],[275.0,-260.6],[301.3,-249.4],[327.7,-232.9],[344.4,-217.1],[362.6,-193.4],[376.0,-169.0],[383.0,-143.9],[416.7,-3.4],[448.9,102.3],[473.0,173.2],[489.5,219.0],[494.5,234.8],[493.2,246.2],[486.2,255.5],[473.6,258.1],[366.4,268.9],[311.1,276.3],[243.7,287.6],[217.3,297.6],[198.1,309.6],[178.0,331.2],[164.1,353.1],[156.7,375.4],[154.0,397.6],[155.8,423.3],[163.8,450.0],[175.5,469.4],[211.0,508.3],[220.2,526.8],[227.5,555.2],[226.4,578.9],[221.5,601.9],[212.3,620.2],[197.7,636.0],[-46.0,819.4],[-57.2,819.6],[-69.5,814.0],[-143.2,773.8],[-149.6,762.9],[-151.5,750.5],[-147.8,566.0],[-154.4,391.9],[-162.4,296.1],[-169.0,286.6],[-180.8,282.8],[-194.9,289.7],[-237.2,354.2],[-253.1,367.8],[-275.7,376.4],[-298.8,379.9],[-331.2,376.5],[-358.1,370.0],[-384.2,361.8],[-416.9,343.1],[-449.7,316.3],[-456.9,302.5],[-458.0,289.7],[-454.3,275.6],[-446.0,264.8],[-257.0,67.5],[-250.5,53.2],[-247.9,34.3],[-251.5,13.2],[-284.6,-66.7],[-289.4,-87.7],[-290.8,-112.4],[-288.9,-133.7],[-278.6,-173.1],[-265.4,-199.4],[-250.1,-215.9],[-217.4,-237.1],[-193.6,-243.6],[-179.4,-243.8],[-164.3,-232.6],[-157.2,-210.8],[-69.8,636.8],[-60.2,649.6],[-40.9,660.0],[-23.8,656.8],[-6.9,642.9],[-1.1,618.2]];
@@ -483,6 +483,13 @@ export function buildCircuit(scene, data, { isMobile = false, gravelMaps = null 
   // --- Corners: kerbs both sides, sausage kerbs and bollards at the
   // tightest apexes, grass mesh inside, run-off outside, then barriers ---
   const sausages = [], bollards = [];
+  // (a circuit's measured barriers or gravel by kind, on one side, over line points a..b: the distances out)
+  const measured = (kind, side, a, b) => {
+    const arr = D.barriers?.[kind]?.[side > 0 ? 0 : 1]; if (!arr) return [];
+    const out = [];
+    for (let i = a; i <= b; i++) { const p = line[((i % m) + m) % m], v = arr[Math.round(p.s / 6)]; if (v) out.push(v / 2); }
+    return out;
+  };
   corners.forEach((c, ci) => {
     const armcoRuns = [], tyreRuns = [];
     const inside = c.side;                                     // + = left
@@ -494,8 +501,13 @@ export function buildCircuit(scene, data, { isMobile = false, gravelMaps = null 
     // grass-protection mesh on the inside, beyond the kerb
     add(strip(line, c.a + 2, c.b - 2, (p) => inside * (half(p) + KERB), (p) => inside * (half(p) + KERB + 3), 0.002, 1.5, 1.5), netMat, false);
     // run-off outside: gravel at the tight corners (every other one), painted tarmac at the rest
-    const wide = Math.min(26, Math.max(12, 3000 / c.radius));
-    const gravel = c.radius < 140 && ci % 2 === 0;
+    let wide = Math.min(26, Math.max(12, 3000 / c.radius));
+    let gravel = c.radius < 140 && ci % 2 === 0;
+    // (a circuit with its own measured run-offs: gravel where it really has gravel, as wide as it is)
+    if (D.barriers) {
+      const g = measured('gravel', -inside, c.a, c.b);
+      gravel = g.length > 2; if (gravel) wide = Math.max(6, Math.min(40, Math.max(...g) - 6));
+    }
     // the room at each point, smoothed so the edge doesn't zig-zag
     const room = new Map();
     for (let i = c.a - 6; i <= c.b + 6; i++) room.set(((i % m) + m) % m, roomOut(i, -inside, wide));
@@ -516,8 +528,8 @@ export function buildCircuit(scene, data, { isMobile = false, gravelMaps = null 
       const p = line[((i % m) + m) % m];
       run.push(roomAt(p) >= 6 ? [p.x + p.lx * back(p), p.z + p.lz * back(p)] : null);
     }
-    for (let k = 0; k < run.length - 1; k++) if (run[k] && run[k + 1]) armcoRuns.push([run[k][0], run[k][1], run[k + 1][0], run[k + 1][1]]);
-    if (c.radius < 70) {
+    if (!D.barriers) for (let k = 0; k < run.length - 1; k++) if (run[k] && run[k + 1]) armcoRuns.push([run[k][0], run[k][1], run[k + 1][0], run[k + 1][1]]);
+    if (c.radius < 70 && !D.barriers) {
       const front = (p) => -inside * (half(p) + KERB + roomAt(p) + 1.6);
       const tr = [];
       for (let i = c.apex - 10; i <= c.apex + 22; i += 4) {
@@ -544,6 +556,35 @@ export function buildCircuit(scene, data, { isMobile = false, gravelMaps = null 
     if (armcoRuns.length) echoes.push(...buildArmco(scene, armcoRuns));
     if (tyreRuns.length) echoes.push(...buildTyreWalls(scene, tyreRuns));
   });
+
+  // A CIRCUIT'S OWN BARRIERS, where they really are (D.barriers: measured every 6 m along the lap,
+  // how far out from the centre each kind is, left and right): Armco, concrete walls, tyre walls,
+  // catch fences, each laid in runs along the track at its measured distance (none on a bridge)
+  if (D.barriers) {
+    const sOf = [], Lap = line[m - 1].s;
+    const atS = (sv) => { let lo = 0, hi = m - 1; while (lo < hi) { const md = (lo + hi) >> 1; if (line[md].s < sv) lo = md + 1; else hi = md; } return line[lo]; };
+    const runsOf = (kind, side) => {
+      const arr = D.barriers[kind][side > 0 ? 0 : 1], out = [];
+      let prev = null;
+      for (let j = 0; j < arr.length; j++) {
+        const o = arr[j] / 2, sv = j * 6;
+        if (sv > Lap) break;
+        const p = atS(sv);
+        if (!o || p.deck) { prev = null; continue; }
+        const pt = [p.x + p.lx * side * o, p.z + p.lz * side * o, o];
+        if (prev && Math.abs(prev[2] - o) < 3) out.push([prev[0], prev[1], pt[0], pt[1]]);
+        prev = pt;
+      }
+      return out;
+    };
+    void sOf;
+    for (const side of [1, -1]) {
+      const ar = runsOf('armco', side); if (ar.length) echoes.push(...buildArmco(scene, ar));
+      const cw = runsOf('concrete', side); if (cw.length) echoes.push(...buildConcreteWalls(scene, cw));
+      const ty = runsOf('tyres', side).map((r) => (side < 0 ? [r[2], r[3], r[0], r[1]] : r)); if (ty.length) echoes.push(...buildTyreWalls(scene, ty));
+      const fe = runsOf('fence', side).map((r) => [...r, side > 0 ? 1 : -1]); if (fe.length) echoes.push(...buildFences(scene, fe));
+    }
+  }
 
   // Sausage kerbs: low yellow humps with black stripes
   const sausageGeo = new THREE.CylinderGeometry(0.22, 0.22, 1.8, 14, 1, false, 0, Math.PI);
@@ -764,6 +805,7 @@ export function buildCircuit(scene, data, { isMobile = false, gravelMaps = null 
     groundY: -0.04,          // the grass sits just below the track, so they never flicker against each other
     heightAt: terrain.heightAt,   // how high the ground is at a point (the hills and dips)
     deckAt,                  // on a bridge's deck: its height there (else null)
+    craneSpots: D.craneSpots || null,   // where the circuit keeps its recovery cranes (ours park there)
     terrain,
     lengthM: Math.round(line[m - 1].s),
     corners: corners.length,

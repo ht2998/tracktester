@@ -63,7 +63,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 128;
+const BUILD = 129;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -5285,7 +5285,7 @@ const pits = sepang ? (() => {
   });
 })() : null;
 // RACE CONTROL (racecontrol.js): Sepang only, with the computer cars' racing line
-raceControl = sepang && aiField && trackside ? new RaceControl(scene, {
+raceControl = sepang && aiField && trackside ? new RaceControl(scene, { craneSpots: sepang.craneSpots,
   line: sepang.line, trackside, aiField, groundAt, isMobile, pit: SEPANG_PIT, corners: sepang.cornerList || [],
   hooks: {
     driverWaiting: () => !!driverOut && !driverOut.gone,
