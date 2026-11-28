@@ -22,7 +22,7 @@ import { groundAt } from './ground.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 10;
+export const BUILD = 11;
 
 const m4 = new THREE.Matrix4();
 const q = new THREE.Quaternion();
@@ -661,19 +661,25 @@ function buildTyreWalls(scene, runs, { belt = false } = {}) {
   tyres.castShadow = tyres.receiveShadow = true;
   scene.add(tyres);
   // the panels: one per stack, red and white in turn, standing just in front of the front row
-  let panels = null;
-  if (belt) {
-    panels = new THREE.InstancedMesh(new THREE.BoxGeometry(STEP - 0.02, 0.86, 0.05), new THREE.MeshStandardMaterial({ roughness: 0.6 }), columns.length);
-    columns.forEach((c, i) => panels.setColorAt(i, new THREE.Color(i % 2 ? 0xf2f2ee : 0xc8201c)));
-    panels.castShadow = panels.receiveShadow = true;
-    scene.add(panels);
-  }
+  // THE BOARDS: a continuous board along the front of every wall and another along the back,
+  // holding the stacks together (as real ones nearly always have); each stack's piece of it
+  // rides with that stack, so a hit bends the board where it struck. The front one at the big
+  // stops (belt) in long red and white lengths, elsewhere in plain dark rubber
+  void belt;
+  const panels = new THREE.InstancedMesh(new THREE.BoxGeometry(STEP + 0.012, 0.9, 0.04), new THREE.MeshStandardMaterial({ roughness: 0.6 }), columns.length * 2);
+  columns.forEach((c, i) => {
+    panels.setColorAt(i * 2, new THREE.Color(belt ? (Math.floor(i * STEP / 3) % 2 ? 0xf2f2ee : 0xc8201c) : 0x2b2d31));
+    panels.setColorAt(i * 2 + 1, new THREE.Color(0x2b2d31));
+  });
+  panels.castShadow = panels.receiveShadow = true;
+  scene.add(panels);
   const drawPanels = () => {
     if (!panels) return;
     columns.forEach((c, i) => {
-      const a = across(c.angle), o = -R - 0.04 + c.push, top = c.tyres.reduce((t, ty) => Math.max(t, ty.tilt), 0);
+      const a = across(c.angle), top = c.tyres.reduce((t, ty) => Math.max(t, ty.tilt), 0);
       q.setFromAxisAngle(UP, c.angle).premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(Math.sin(c.angle), 0, Math.cos(c.angle)), top * 0.6 * Math.sign(c.push || 1)));
-      panels.setMatrixAt(i, m4.compose(pos.set(c.x + a.x * o, groundAt(c.x, c.z) + 0.45, c.z + a.z * o), q, scl.set(1, 1, 1)));
+      const g = groundAt(c.x, c.z) + 0.47;
+      for (const [k, o] of [[0, -R - 0.03 + c.push], [1, (ROWS - 1) * STEP + R + 0.03 + c.push * 0.6]]) panels.setMatrixAt(i * 2 + k, m4.compose(pos.set(c.x + a.x * o, g, c.z + a.z * o), q, scl.set(1, 1, 1)));
     });
     panels.instanceMatrix.needsUpdate = true;
   };
@@ -733,7 +739,7 @@ function buildTyreWalls(scene, runs, { belt = false } = {}) {
     tyres.instanceMatrix.needsUpdate = true;
     drawPanels();
   }
-  drawPanels();
+  redrawTyres();          // (sat on the ground where they are: the hills)
   // Repaired: the stacks pushed back into line and the tyres straightened
   const restackAt = (point, k) => {
     let left = 0;
