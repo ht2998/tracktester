@@ -3298,7 +3298,7 @@ function collide(now) {
         for (let k = 0; k < folds; k++) {
           const f = 1 - k * 0.3, back = k * (IS_F1 ? 0.6 : 0.45);
           // (a car with a crush frame: the wall driven into it, once, and the body follows)
-          if (crushFrame) { if (k === 0 && hitSpeed > 4.5) { const lp = carModel.car.worldToLocal(_cfp.set(k0px, 0.4, k0pz)); if (crushFrame.impact(lp.x, 0.4, lp.z, nl, nf, hitSpeed) > 0) { reshapeBody(crushFrame.reach); crushBreaks(); tearChunks(); } } continue; }
+          if (crushFrame) { if (k === 0 && hitSpeed > 4.5) { const lp = carModel.car.worldToLocal(_cfp.set(k0px, vehicleGroundY() + 0.4, k0pz)); if (crushFrame.impact(lp.x, 0.4, lp.z, nl, nf, hitSpeed) > 0) { reshapeBody(crushFrame.reach); crushBreaks(); tearChunks(); } } continue; }
           if (zone === 'front' && IS_F1 && k === 0) noseCrush = Math.min(1.2, noseCrush + (hitSpeed - 3) * 0.022 * Math.max(0, -nf));
           if (zone === 'front') dentBody(Math.max(-0.28, Math.min(0.28, across)) * f, 0.4, NOSE - back, nl, nf, depth * f, radius);
           else if (zone === 'rear') dentBody(Math.max(-0.7, Math.min(0.7, across)) * f, 0.52, TAIL + back, nl, nf, depth * 0.9 * f, radius);
