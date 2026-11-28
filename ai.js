@@ -23,7 +23,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 17;
+export const BUILD = 18;
 
 import * as THREE from 'three';
 import { CarPhysics, CATERHAM } from './physics.js';
@@ -320,6 +320,7 @@ export class AIField {
   // --- the race board on screen: lap, position, the order and gaps ---
   buildBoard() {
     this.board = document.createElement('div');
+    this.board.id = 'race-board';
     this.board.style.cssText = 'position:fixed;left:calc(10px + env(safe-area-inset-left));top:42%;min-width:150px;padding:6px 10px;border-radius:10px;background:rgba(14,16,19,0.62);color:#f2efe6;font:600 13px system-ui,sans-serif;pointer-events:none;display:none;z-index:14;font-variant-numeric:tabular-nums';
     document.body.appendChild(this.board);
     this.lights = document.createElement('div');

@@ -63,7 +63,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 130;
+const BUILD = 131;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -3391,6 +3391,18 @@ info.innerHTML =
   (HAS_LIGHTS ? 'F: horn · G: lights · ' : '') + 'M: mute · C: camera (drag to look around in the on-car views) · Backspace: reset<br>' +
   '<span id="soundhint" style="color:#ffd76a">Press any key or tap for sound</span>';
 const soundHint = document.getElementById('soundhint');
+// The lap timing sits under the controls guide, and the race order under the lap timing
+// (re-placed every quarter second, since the guide's height changes with the window and the sound hint)
+setInterval(() => {
+  const stack = (el, above) => {
+    if (!el || !above || getComputedStyle(above).display === 'none') return above;
+    const z = parseFloat(getComputedStyle(el).zoom) || 1;
+    el.style.top = ((above.getBoundingClientRect().bottom + 8) / z) + 'px';
+    return el;
+  };
+  const lap = stack(document.getElementById('lap-panel'), info);
+  stack(document.getElementById('race-board'), lap || info);
+}, 250);
 
 // PHONES AND TABLETS: the menus and the timing drawn smaller, so they
 // don't fill the screen (the dash and the driving controls keep their size)
