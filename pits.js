@@ -26,7 +26,7 @@
 // a smashed radiator): the team retire the car. DNF on the standings, and
 // they push it back into the garage.
 // =====================================================================
-export const BUILD = 28;
+export const BUILD = 29;
 
 import * as THREE from 'three';
 
@@ -35,8 +35,8 @@ const PENALTY_S = 5;
 // Sepang's pit lane (see sepang.js): between the pit wall (x 12.2) and the
 // garages (x 24), from z 175 (entry end; cars drive towards -z) to z -215
 export const SEPANG_PIT = {
-  laneX: 12.4, garageX: 24, z1: 175, z0: -215, entryZ: 245, exitZ: -265,
-  box: { x: 20.6, z: 3, h: Math.PI },     // our box: in the working lane, in front of the garage at z 3
+  laneX: 12.4, garageX: 29, z1: 175, z0: -215, entryZ: 245, exitZ: -265,
+  box: { x: 25.6, z: 3, h: Math.PI },     // our box: in the working lane, in front of the garage at z 3 (the lane 5 m wider)
 };
 
 // ---- the crew: simple jointed people in team overalls ----

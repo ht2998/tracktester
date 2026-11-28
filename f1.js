@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 117;
+export const BUILD = 118;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -3004,6 +3004,7 @@ export function buildF1Cockpit(car, { paddles = false, wheelTilt = -0.5, suit = 
   const gripPt = new THREE.Vector3(), knobPt = new THREE.Vector3();
   return {
     group,
+    wheel: column,                                 // (the steering wheel on its column: taken off after a win)
     driverParts: [chest, back, neck, ...feet, ...legs.flatMap((l) => [l.thigh, l.shin, l.knee]), ...arms.flatMap((a) => [a.upper, a.fore, a.elbow, a.hand])],   // (him, without the wheel: for climbing out)
     head,                                          // how far his head is thrown about (car's frame): add to the eye
     // a gear change: his right hand goes to the lever

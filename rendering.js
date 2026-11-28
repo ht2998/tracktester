@@ -63,7 +63,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 135;
+const BUILD = 136;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -4907,10 +4907,11 @@ function clearWasherParty() {
   washerParty = null;
 }
 // THE TTF-05's WIN AT THE JAPANESE CIRCUIT: a celebration (a tribute to a famous one there):
-// out front of the car as he weaves it left and right on the slow-down; then up on its nose,
-// arms out like wings, balanced on one leg with the other tucked up, looking down; held, then
-// two punches, a step onto the right front tyre, a tuck jump off it, a run, a spin like a
-// footballer's roulette, and over the fence into the crowd
+// over the line, flicking the car left and right, seen from 30 m out in front; then parc ferme
+// in the pit lane: he stops behind the "1" board, undoes his belts, takes the wheel off and puts
+// it on the nose, pushes himself up, steps over it onto the nose, walks forward, and there:
+// arms out like wings, balanced on one leg with the other tucked up, looking down; two seconds;
+// two punches out to the sides; onto the right front tyre and a tuck jump off it to the right
 let crane = null;
 const craneBars = (() => {
   const st = document.createElement('style');
@@ -4976,172 +4977,142 @@ function craneLine() {
   const p = sepang.line[i];
   return { h: Math.atan2(p.ux, p.uz), lat: (physics.x - p.x) * p.lx + (physics.z - p.z) * p.lz, half: p.width / 2, p };
 }
+// over the line: flicking it left and right, fast, again and again, as he slows
 function craneInput(input) {
   if (!crane) return;
   input.clutch = false; input.handbrake = false;
   if (crane.phase !== 'drive') { input.throttle = 0; input.brake = 1; input.steer = 0; return; }
   const L = craneLine(), v = Math.hypot(physics.vx, physics.vy), t = crane.t;
   let d = L.h - physics.heading; d = Math.atan2(Math.sin(d), Math.cos(d));
-  let steer = Math.max(-1, Math.min(1, d * 2.2 - (L.lat + 2) * 0.12));        // (holding a line a little right of the middle)
-  const weave = crane.weaveT != null;
-  if (!weave && v < 17) crane.weaveT = 0;
-  if (weave) {
-    crane.weaveT += 0; // (counted in updateCrane)
-    const k = crane.weaveT / 1.25;
-    if (k < 4) steer += 0.55 * Math.sin(k * Math.PI * 2);
-  }
-  const want = weave && crane.weaveT >= 5 ? 0 : 14;
-  input.steer = Math.max(-1, Math.min(1, steer));
-  input.throttle = v < want - 1 ? 0.35 : 0;
-  input.brake = v > want + 2 ? (v > 30 ? 0.6 : 0.3) : want === 0 ? 0.5 : 0;
-  void t;
+  const hold = d * 2.2 - L.lat * 0.12;
+  input.steer = Math.max(-1, Math.min(1, hold + (t > 0.4 ? 0.75 * Math.sin(t * Math.PI * 2 / 0.55) : 0)));     // (a flick each way about every quarter second)
+  input.throttle = v < 22 ? 0.3 : 0;
+  input.brake = v > 30 ? 0.5 : 0;
 }
 function updateCrane(dt) {
   const C = crane; if (!C) return;
   C.t += dt;
-  const v = Math.hypot(physics.vx, physics.vy);
-  if (C.phase === 'drive') {
-    if (C.weaveT != null) C.weaveT += dt;
-    if ((C.weaveT != null && C.weaveT > 5 && v < 0.3) || C.t > 40) craneStage();
-    return;
-  }
+  if (C.phase === 'drive') { if (C.t > 4.2) craneStage(); return; }
   C.st += dt;
-  const P = C.person;
-  // the roulette: a full turn on the spot, foot out
-  if (C.spin != null) { C.spin += dt / 0.75; P.face = C.spinFrom + Math.min(1, C.spin) * Math.PI * 2 * C.spinDir; if (C.spin >= 1) C.spin = null; }
-  P.update(dt, groundAt);
-  // the crowd: bobbing, more and with their arms up once he's flying at them
-  const hype = C.landed ? 1 : C.st > 7 ? 0.5 : 0.15;
-  C.crowd.forEach((f, k) => {
-    const b = Math.max(0, Math.sin(C.st * f.rate + f.ph)) * 0.25 * hype;
-    craneM4.makeRotationY(f.face); craneM4.setPosition(f.x, f.y + b, f.z);
-    C.bodies.setMatrixAt(k, craneM4);
-    craneM4.makeRotationY(f.face); craneM4.setPosition(f.x, f.y + b + (hype > 0.4 ? 0.35 : 0), f.z);
-    C.arms.setMatrixAt(k, craneM4);
-  });
-  C.bodies.instanceMatrix.needsUpdate = true; C.arms.instanceMatrix.needsUpdate = true;
+  // rolling into parc ferme: the car eased to a stop behind the marker
+  if (C.roll < 1) {
+    C.roll = Math.min(1, C.st / 2.6); const e = 1 - (1 - C.roll) ** 3;
+    physics.x = C.from[0] + (C.stop[0] - C.from[0]) * e; physics.z = C.from[1] + (C.stop[1] - C.from[1]) * e;
+  } else { physics.x = C.stop[0]; physics.z = C.stop[1]; }
+  physics.heading = C.h; physics.vx = physics.vy = 0; physics.yawRate = 0;
+  if (C.person) C.person.update(dt, groundAt);
   if (C.st > C.endAt) endCrane();
 }
-const craneM4 = new THREE.Matrix4();
 function craneStage() {
   const C = crane;
-  C.phase = 'show'; C.st = 0;
-  physics.vx = physics.vy = 0;
-  driverInCar(false);
-  const h = physics.heading, f = [Math.sin(h), Math.cos(h)], l = [Math.cos(h), -Math.sin(h)];
-  const W = (fw, lt) => [physics.x + f[0] * fw + l[0] * lt, physics.z + f[1] * fw + l[1] * lt];
+  C.phase = 'show'; C.st = 0; C.roll = 0;
+  // PARC FERME: in the pit lane, behind the "1" board
+  const h = Math.PI, laneX = 21, stopZ = -20;
+  C.h = h; C.stop = [laneX, stopZ]; C.from = [laneX, stopZ + 16];
+  physics.x = C.from[0]; physics.z = C.from[1]; physics.heading = h; physics.vx = physics.vy = 0;
+  if (physics.ground) physics.ground.synced = false;
+  teleportGrace = 1;
+  const f = [Math.sin(h), Math.cos(h)], l = [Math.cos(h), -Math.sin(h)];
+  const W = (fw, lt) => [C.stop[0] + f[0] * fw + l[0] * lt, C.stop[1] + f[1] * fw + l[1] * lt];
+  // the board: a "1" on a post, just in front of where he stops
+  C.props = new THREE.Group();
+  { const cv = document.createElement('canvas'); cv.width = 128; cv.height = 128; const g = cv.getContext('2d');
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, 128, 128); g.fillStyle = '#c8201c'; g.fillRect(0, 0, 128, 14); g.fillRect(0, 114, 128, 14);
+    g.fillStyle = '#111'; g.font = 'bold 96px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('1', 64, 70);
+    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
+    const [bx, bz] = W(FRONT_AXLE + 2.8, 0), gy = groundAt(bx, bz);
+    const postM = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1.5, 8), new THREE.MeshStandardMaterial({ color: 0x8a8f94, metalness: 0.6, roughness: 0.4 }));
+    postM.position.set(bx, gy + 0.75, bz); C.props.add(postM);
+    const board = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.03), [0, 0, 0, 0, 1, 1].map((k) => (k ? new THREE.MeshStandardMaterial({ map: tex, roughness: 0.5 }) : new THREE.MeshStandardMaterial({ color: 0xdddddd }))));
+    board.position.set(bx, gy + 1.75, bz); board.rotation.y = h; C.props.add(board);
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.28, 0.06, 14), postM.material); base.position.set(bx, gy + 0.03, bz); C.props.add(base); }
+  scene.add(C.props);
+  // the shot: off the car's right, level with its front wing, 7 m out
+  const camAt = W(FRONT_AXLE + 0.6, -7), aim = W(0.6, 0);
+  C.shot = (cam) => { cam.position.set(camAt[0], groundAt(camAt[0], camAt[1]) + 1.25, camAt[1]); cam.lookAt(aim[0], groundAt(aim[0], aim[1]) + 0.95, aim[1]); };
+  // once it's stopped: him
+  C.after = setTimeout(() => { if (crane === C) craneDriver(W, h); }, 2700);
+  C.endAt = 60;
+}
+function craneDriver(W, h) {
+  const C = crane;
+  physics.x = C.stop[0]; physics.z = C.stop[1];
+  carModel.car.position.x = C.stop[0]; carModel.car.position.z = C.stop[1];
   carModel.car.updateMatrixWorld(true);
-  const noseZ = FRONT_AXLE - 0.25, noseH = carTopAt(0, noseZ, 0.55), tyreH = carTopAt(-TRACK_HALF, FRONT_AXLE, 0.66);
-  // the fence and the crowd: off to the right, past the edge of the track
-  const L = craneLine(), out = Math.max(7, L.half + L.lat + 5);
-  C.fence = new THREE.Group();
-  const post = new THREE.MeshStandardMaterial({ color: 0x8a8f94, metalness: 0.6, roughness: 0.4 });
-  const mesh = new THREE.MeshStandardMaterial({ color: 0xc8ccd0, transparent: true, opacity: 0.35, side: THREE.DoubleSide, metalness: 0.5, roughness: 0.5 });
-  const FL = 16;
-  for (let k = 0; k <= FL; k += 2) {
-    const [x, z] = W(7 - FL / 2 + k, -out);
-    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.15, 6), post); m.position.set(x, groundAt(x, z) + 0.575, z); C.fence.add(m);
-  }
-  { const [x, z] = W(7, -out); const g = groundAt(x, z);
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, FL), post); rail.position.set(x, g + 1.12, z); rail.rotation.y = h; C.fence.add(rail);
-    const pane = new THREE.Mesh(new THREE.PlaneGeometry(FL, 1.1), mesh); pane.position.set(x, g + 0.56, z); pane.rotation.y = h + Math.PI / 2; C.fence.add(pane); }
-  scene.add(C.fence);
-  // (the crowd: simple people in rows behind it, in all sorts of colours)
-  C.crowd = [];
-  for (let row = 0; row < 5; row++) for (let k = 0; k < 17; k++) {
-    const [x, z] = W(7 - FL / 2 + 0.5 + k * 0.92 + (row % 2) * 0.45 + (Math.random() - 0.5) * 0.25, -out - 0.9 - row * 0.85);
-    C.crowd.push({ x, z, y: groundAt(x, z), face: h - Math.PI / 2 + (Math.random() - 0.5) * 0.6, rate: 7 + Math.random() * 4, ph: Math.random() * 6 });
-  }
-  const bodyGeo = new THREE.CapsuleGeometry(0.2, 0.9, 3, 8).translate(0, 0.65, 0);
-  const headGeo = new THREE.SphereGeometry(0.12, 10, 8).translate(0, 1.45, 0);
-  const merged = mergeCraneGeos([bodyGeo, headGeo]);
-  C.bodies = new THREE.InstancedMesh(merged, new THREE.MeshStandardMaterial({ roughness: 0.85 }), C.crowd.length);
-  C.arms = new THREE.InstancedMesh(new THREE.BoxGeometry(0.62, 0.09, 0.09).translate(0, 1.05, 0), new THREE.MeshStandardMaterial({ color: 0xd9b08c, roughness: 0.8 }), C.crowd.length);
-  const tint = new THREE.Color(), cols = [0x2f9be0, 0xf2c200, 0xffffff, 0xd8302a, 0x1d4fbf, 0x222222, 0xf07818, 0x3aa34a];
-  C.crowd.forEach((p, k) => C.bodies.setColorAt(k, tint.set(cols[k % cols.length])));
-  C.bodies.castShadow = true; scene.add(C.bodies, C.arms);
-  // HIM: up on the nose
+  driverInCar(false);
+  const top = (z, x = 0, fb = 0.5) => carTopAt(x, z, fb);
+  const noseZ = FRONT_AXLE - 0.3, noseH = top(noseZ, 0, 0.55), tyreH = top(FRONT_AXLE, -TRACK_HALF, 0.66);
+  const wheelZ = 0.8, wheelH = top(wheelZ, 0, 0.5), stepZ = 1.05, stepH = top(stepZ, 0, 0.5);
+  // the steering wheel: taken off the column and carried
+  const wheelOnCar = f1Cockpit?.wheel || null;
+  const prop = new THREE.Group();
+  { const carbon = new THREE.MeshStandardMaterial({ color: 0x1a1b1e, roughness: 0.45 }), grip = new THREE.MeshStandardMaterial({ color: 0x222224, roughness: 0.9 });
+    prop.add(new THREE.Mesh(new THREE.BoxGeometry(0.27, 0.12, 0.03), carbon));
+    for (const s of [1, -1]) { const g = new THREE.Mesh(new THREE.CapsuleGeometry(0.024, 0.08, 4, 8), grip); g.position.x = s * 0.15; prop.add(g); }
+    const scr = new THREE.Mesh(new THREE.PlaneGeometry(0.07, 0.035), new THREE.MeshStandardMaterial({ color: 0x0a1a10, emissive: 0x30ff70, emissiveIntensity: 0.35 })); scr.position.set(0, 0.02, 0.016); prop.add(scr); }
   const P = C.person = new PersonFigure(driverMats, 0); scene.add(P.root);
-  const nose = W(noseZ, 0), tyre = W(FRONT_AXLE, -TRACK_HALF), land = W(FRONT_AXLE + 0.4, -TRACK_HALF - 1.6);
-  P.place(nose[0], nose[1], h);
-  const CRANE = { rate: 6, shL: 0.15, shR: 0.15, outL: 1.75, outR: 1.75, elL: 0.15, elR: 0.15, thR: 1.55, knR: 2.3, thL: 0, knL: 0.05, lean: 0.12, head: 0.5 };
-  const CHAMBER = { shL: 0.55, shR: 0.55, elL: 1.9, elR: 1.9, outL: 0.15, outR: 0.15, thL: 0.1, knL: 0.15, thR: 0.1, knR: 0.15, lean: -0.05 };
-  const PUNCH = { shL: 1.55, shR: 1.55, elL: 0.05, elR: 0.05, outL: 0.1, outR: 0.1, thL: 0.1, knL: 0.15, thR: 0.1, knR: 0.15, lean: -0.1, head: -0.15 };
+  const seat = W(-0.1, 0);
+  P.place(seat[0], seat[1], h);
+  const sit = 0.95 - 0.3;
+  const SIT = { drop: sit, lean: -0.15, thL: 1.5, thR: 1.5, knL: 0.25, knR: 0.25, shL: 1.15, shR: 1.15, elL: 0.6, elR: 0.6 };
+  const BELT = { ...SIT, shL: 0.45, shR: 0.45, elL: 2.1, elR: 2.1, outL: -0.25, outR: -0.25, head: 0.45 };
+  const BELT2 = { ...SIT, shL: 0.5, shR: 0.5, elL: 1.1, elR: 1.1, outL: 0.55, outR: 0.55, head: 0.3 };
+  const LIFT = { ...SIT, lean: 0.25, shL: 1.55, shR: 1.55, elL: 0.35, elR: 0.35, head: 0.15 };
+  const PUT = { ...SIT, lean: 0.6, shL: 1.25, shR: 1.25, elL: 0.05, elR: 0.05, head: 0.45 };
+  const SIDES = { ...SIT, lean: 0.05, knL: 0.6, knR: 0.6, shL: 0.25, shR: 0.25, outL: 0.55, outR: 0.55, elL: 0.35, elR: 0.35 };
+  const PUSH = { drop: sit * 0.55, lean: 0.35, thL: 1.3, thR: 1.2, knL: 1.6, knR: 1.6, shL: 0.1, shR: 0.1, outL: 0.45, outR: 0.45, elL: 0.05, elR: 0.05 };
+  const UP = { drop: 0.05, lean: 0.2, thL: 0.2, knL: 0.3, shL: 0.35, shR: 0.35, outL: 0.5, outR: 0.5, elL: 0.2, elR: 0.2 };
+  const OVER = { lean: 0.3, thL: 1.5, knL: 1.7, thR: 0.1, knR: 0.15, shL: 0.5, shR: 0.5, outL: 0.6, outR: 0.6, elL: 0.2, elR: 0.2 };
+  const BAL = { drop: 0.1, lean: 0.2, thL: 0.45, knL: 0.7, thR: 0.5, knR: 0.8, shL: 0.4, shR: 0.4, outL: 0.7, outR: 0.7, elL: 0.2, elR: 0.2 };
+  const WALK1 = { thL: 0.45, knL: 0.3, thR: -0.25, knR: 0.35, shL: 0.2, shR: 0.2, outL: 0.35, outR: 0.35 };
+  const WALK2 = { thR: 0.45, knR: 0.3, thL: -0.25, knL: 0.35, shL: 0.2, shR: 0.2, outL: 0.35, outR: 0.35 };
+  const CRANE = { shL: 0.15, shR: 0.15, outL: 1.75, outR: 1.75, elL: 0.15, elR: 0.15, thR: 1.55, knR: 2.3, thL: 0, knL: 0.05, lean: 0.12, head: 0.5 };
+  const CHAMB = { shL: 0.2, shR: 0.2, elL: 1.9, elR: 1.9, outL: 0.35, outR: 0.35, lean: 0, head: 0 };
+  const SIDEP = { shL: 0, shR: 0, elL: 0.05, elR: 0.05, outL: 1.6, outR: 1.6, lean: -0.05, head: -0.1 };
+  const STEP = { thR: 0.9, knR: 1.1, shL: 0.4, shR: 0.4, outL: 0.6, outR: 0.6, lean: 0.15 };
   const CROUCH = { drop: 0.3, lean: 0.4, thL: 0.95, knL: 1.5, thR: 0.95, knR: 1.5, shL: -0.4, shR: -0.4, elL: 0.2, elR: 0.2 };
   const TUCK = { lean: 0.25, thL: 1.75, knL: 2.35, thR: 1.75, knR: 2.35, shL: 1.0, shR: 1.0, elL: 1.4, elR: 1.4, outL: 0.25, outR: 0.25, head: 0.2 };
-  const STEP = { thR: 0.9, knR: 1.1, shL: 0.4, shR: 0.4, outL: 0.6, outR: 0.6, lean: 0.15 };
-  const mid = [(tyre[0] + land[0]) / 2, (tyre[1] + land[1]) / 2];
-  const keys = [
-    { t: 0, pose: 'STAND', at: nose, lift: noseH },
-    { t: 0.6, pose: CRANE, at: nose, lift: noseH },
-    { t: 2.1, pose: CRANE, at: nose, lift: noseH },        // (held, a second and a half)
-    { t: 2.5, pose: 'STAND', at: nose, lift: noseH },
-    { t: 2.68, pose: CHAMBER, at: nose, lift: noseH },
-    { t: 2.82, pose: PUNCH, at: nose, lift: noseH },
-    { t: 3.0, pose: CHAMBER, at: nose, lift: noseH },
-    { t: 3.14, pose: PUNCH, at: nose, lift: noseH },
-    { t: 3.4, pose: 'STAND', at: nose, lift: noseH },
-    { t: 3.75, pose: STEP, at: [(nose[0] + tyre[0]) / 2, (nose[1] + tyre[1]) / 2], lift: Math.max(noseH, tyreH) + 0.12 },
-    { t: 4.05, pose: 'STAND', at: tyre, lift: tyreH },
-    { t: 4.3, pose: CROUCH, at: tyre, lift: tyreH },
-    { t: 4.6, pose: TUCK, at: mid, lift: tyreH + 0.85 },
-    { t: 4.9, pose: CROUCH, at: land, lift: 0 },
-    { t: 5.2, pose: 'STAND', at: land, lift: 0 },
-  ];
-  const roul = W(4.5, -out * 0.55), runUp = W(6.5, -out + 1.6), over = W(7, -out), inn = W(7.3, -out - 1.8), deep = W(7.6, -out - 3.6);
-  const DIVE = { tilt: 0.9, shL: 2.6, shR: 2.6, elL: 0.2, elR: 0.2, thL: -0.3, thR: 0.3, knL: 0.6, knR: 0.3 };
-  const SURF = { tilt: -1.45, shL: 2.4, shR: 2.4, outL: 0.5, outR: 0.5, elL: 0.3, elR: 0.3, thL: 0.2, knL: 0.3, thR: 0.1, knR: 0.2, head: -0.2 };
-  PERSON_POSES.SURF = SURF; PERSON_POSES.SURF_UP = { ...SURF, lift: 1.8 }; PERSON_POSES.ROULETTE = { rate: 12, thR: 0.5, knR: 0.3, outL: 0.6, outR: 0.6, shL: 0.4, shR: 0.4, lean: 0.15 };
-  const sideH = Math.atan2(roul[0] - land[0], roul[1] - land[1]);
+  const nose = W(noseZ, 0), tyre = W(FRONT_AXLE, -TRACK_HALF), land = W(FRONT_AXLE, -TRACK_HALF - 1.9), mid = [(tyre[0] + land[0]) / 2, (tyre[1] + land[1]) / 2];
+  const at = (z) => W(z, 0);
+  const K = (list) => ({ keys: list, face2: h, after: list[list.length - 1].pose });
+  // (a pose object as a named one, so he holds it after each stage)
+  PERSON_POSES.C_SIT = SIT; PERSON_POSES.C_PUT = PUT; PERSON_POSES.C_BAL = BAL; PERSON_POSES.C_STAND = {};
   P.run([
-    { keys, after: 'STAND', face2: h },
-    { go: roul, run: true },
-    { fn: () => { C.spin = 0; C.spinFrom = P.face; C.spinDir = 1; P.want = 'ROULETTE'; } },
-    { wait: 0.75 },
-    { fn: () => { P.want = 'STAND'; } },
-    { go: runUp, run: true },
-    { keys: [
-      { t: 0, pose: CROUCH, at: runUp, lift: 0 },
-      { t: 0.35, pose: DIVE, at: over, lift: 1.7 },
-      { t: 0.75, pose: SURF, at: inn, lift: 1.75 },
-      { t: 5, pose: SURF, at: deep, lift: 1.8 },
-    ], face2: Math.atan2(over[0] - runUp[0], over[1] - runUp[1]), after: 'SURF_UP' },
+    // sat in it, hands on the wheel; the belts undone
+    K([{ t: 0, pose: SIT, at: seat }, { t: 0.7, pose: SIT, at: seat }, { t: 1.2, pose: BELT, at: seat }, { t: 1.6, pose: BELT2, at: seat }, { t: 1.9, pose: BELT, at: seat }, { t: 2.3, pose: BELT2, at: seat }, { t: 2.8, pose: 'C_SIT', at: seat }]),
+    // the wheel off: pulled off its column, lifted out over the front of the cockpit
+    { fn: () => { if (wheelOnCar) wheelOnCar.visible = false; prop.position.set(0, -0.1, 0.06); prop.rotation.set(-Math.PI / 2, 0, 0); P.hold(prop, 'hand'); } },
+    K([{ t: 0, pose: SIT, at: seat }, { t: 0.5, pose: LIFT, at: seat }, { t: 1.1, pose: 'C_PUT', at: seat }]),
+    // and put down flat on the nose, right in front of him
+    { fn: () => { P.held = P.held.filter((o) => o !== prop); prop.removeFromParent(); const [wx, wz] = W(wheelZ, 0); prop.position.set(wx, groundAt(wx, wz) + wheelH + 0.02, wz); prop.rotation.set(-Math.PI / 2 + 0.05, 0, h, 'YXZ'); prop.rotation.set(-Math.PI / 2, 0, 0); prop.rotateOnWorldAxis(new THREE.Vector3(0, 1, 0), h); scene.add(prop); C.wheelProp = prop; } },
+    // hands on the cockpit sides, pushing himself up, stood in it; a leg over the wheel, onto the nose
+    K([{ t: 0, pose: PUT, at: seat }, { t: 0.4, pose: SIDES, at: seat }, { t: 0.85, pose: PUSH, at: seat }, { t: 1.25, pose: UP, at: seat },
+      { t: 1.75, pose: OVER, at: at(0.45), lift: Math.max(0, top(0.45, 0, 0.4) - 0.1), keepFace: true },
+      { t: 2.2, pose: 'C_BAL', at: at(stepZ), lift: stepH, keepFace: true }]),
+    // up straight, and walking forward along the nose
+    K([{ t: 0, pose: BAL, at: at(stepZ), lift: stepH }, { t: 0.4, pose: 'C_STAND', at: at(stepZ), lift: stepH },
+      { t: 0.8, pose: WALK1, at: at((stepZ * 2 + noseZ) / 3), lift: (stepH * 2 + noseH) / 3 }, { t: 1.2, pose: WALK2, at: at((stepZ + noseZ * 2) / 3), lift: (stepH + noseH * 2) / 3 },
+      { t: 1.6, pose: 'C_STAND', at: nose, lift: noseH }]),
+    // THE POSE: arms out like wings, on one leg, the other tucked up, looking down; two seconds;
+    // then two punches out to the sides; a step onto the right front tyre and a tuck jump off to the right
+    K([{ t: 0, pose: {}, at: nose, lift: noseH }, { t: 0.6, pose: CRANE, at: nose, lift: noseH }, { t: 2.6, pose: CRANE, at: nose, lift: noseH },
+      { t: 2.9, pose: {}, at: nose, lift: noseH },
+      { t: 3.08, pose: CHAMB, at: nose, lift: noseH }, { t: 3.22, pose: SIDEP, at: nose, lift: noseH }, { t: 3.42, pose: CHAMB, at: nose, lift: noseH }, { t: 3.56, pose: SIDEP, at: nose, lift: noseH },
+      { t: 3.85, pose: {}, at: nose, lift: noseH },
+      { t: 4.2, pose: STEP, at: [(nose[0] + tyre[0]) / 2, (nose[1] + tyre[1]) / 2], lift: Math.max(noseH, tyreH) + 0.12 },
+      { t: 4.5, pose: {}, at: tyre, lift: tyreH }, { t: 4.75, pose: CROUCH, at: tyre, lift: tyreH },
+      { t: 5.05, pose: TUCK, at: mid, lift: tyreH + 0.85 }, { t: 5.35, pose: CROUCH, at: land, lift: 0 }, { t: 5.65, pose: 'C_STAND', at: land, lift: 0 }]),
+    { fn: () => { C.endAt = C.st + 2.5; } },
   ]);
-  void sideH;
-  C.over = 0; C.endAt = 30;
-  // the shots: out in front, low, looking up at him on the nose; then wide, following him
-  const at1 = W(noseZ + 4.2, -1.3), at2 = W(-3.5, 6.5);
-  C.shot = (cam, dt) => {
-    const st = C.st;
-    if (st < 2.55) {
-      cam.position.set(at1[0], groundAt(at1[0], at1[1]) + 0.9, at1[1]);
-      cam.lookAt(nose[0], groundAt(nose[0], nose[1]) + noseH + 1.05, nose[1]);
-      return;
-    }
-    if (!C.wide) { C.wide = true; cam.position.set(at2[0], groundAt(at2[0], at2[1]) + 2.4, at2[1]); C.lookP = new THREE.Vector3(P.x, P.root.position.y + 1, P.z); }
-    C.lookP.lerp(new THREE.Vector3(P.x, P.root.position.y + 1, P.z), Math.min(1, dt * 4));
-    cam.lookAt(C.lookP);
-  };
-  // (landed in the crowd: they go up, and a few seconds later it's over)
-  const watch = setInterval(() => { if (!crane) { clearInterval(watch); return; } if (P.root.position.y > groundAt(P.x, P.z) + 1.6 && Math.hypot(P.x - inn[0], P.z - inn[1]) < 1.2) { C.landed = true; C.endAt = Math.min(C.endAt, C.st + 3.5); clearInterval(watch); } }, 100);
-}
-function mergeCraneGeos(geos) {
-  const pos = [], nor = [], idx = []; let off = 0;
-  for (const g0 of geos) { const g = g0.index ? g0 : g0; const p = g.attributes.position, n = g.attributes.normal;
-    for (let i = 0; i < p.count; i++) { pos.push(p.getX(i), p.getY(i), p.getZ(i)); nor.push(n.getX(i), n.getY(i), n.getZ(i)); }
-    for (let i = 0; i < g.index.count; i++) idx.push(g.index.getX(i) + off); off += p.count; }
-  const out = new THREE.BufferGeometry();
-  out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); out.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); out.setIndex(idx);
-  return out;
 }
 function craneCamera(cam, dt) {
   const C = crane; if (!C) return false;
   if (C.phase === 'drive') {
-    // out in front, low, looking back at it as it weaves
+    // 30 m out in front, looking back at it
     const L = craneLine(), fx = Math.sin(L.h), fz = Math.cos(L.h);
-    const ax = physics.x + fx * 10, az = physics.z + fz * 10;
-    desiredCam.set(ax, groundAt(ax, az) + 1.1, az);
-    if (!C.camSet) { cam.position.copy(desiredCam); C.camSet = true; } else cam.position.lerp(desiredCam, Math.min(1, dt * 5));
+    const ax = physics.x + fx * 30, az = physics.z + fz * 30;
+    desiredCam.set(ax, groundAt(ax, az) + 1.6, az);
+    if (!C.camSet) { cam.position.copy(desiredCam); C.camSet = true; } else cam.position.lerp(desiredCam, Math.min(1, dt * 6));
     cam.lookAt(physics.x, vehicleGroundY() + 0.6, physics.z);
     return true;
   }
@@ -5150,9 +5121,11 @@ function craneCamera(cam, dt) {
 }
 function endCrane() {
   const C = crane; if (!C) return;
+  clearTimeout(C.after);
   if (C.person) scene.remove(C.person.root);
-  if (C.fence) scene.remove(C.fence);
-  if (C.bodies) scene.remove(C.bodies, C.arms);
+  if (C.props) scene.remove(C.props);
+  if (C.wheelProp) scene.remove(C.wheelProp);
+  if (f1Cockpit?.wheel) f1Cockpit.wheel.visible = true;
   driverInCar(true);
   if (C.trans !== physics.transmission) physics.setTransmission(C.trans);
   if (C.cam !== cameraMode) { cameraMode = C.cam; applyCamera(); }
@@ -5161,7 +5134,7 @@ function endCrane() {
 }
 // (for testing it: the console can start it)
 window.__craneTest = () => startCrane();
-// (any key ends it early)
+// (Esc ends it early)
 window.addEventListener('keydown', (e) => { if (crane && crane.phase === 'show' && e.code === 'Escape') endCrane(); });
 function clearDriverOut() {
   clearWasherParty();
