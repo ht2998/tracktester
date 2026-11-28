@@ -21,7 +21,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 116;
+export const BUILD = 117;
 
 import * as THREE from 'three';
 import { CATERHAM } from './physics.js';
@@ -1420,7 +1420,8 @@ export function buildF05Body(car, addPanel) {
   const visor = add(new THREE.SphereGeometry(0.137, 20, 10, -0.9 + Math.PI / 2, 1.8, 1.1, 0.5).scale(1, 1.05, 1.12).translate(0, 0.73, -0.02), MAT.visor);
   const chinMat = new THREE.MeshPhysicalMaterial({ color: 0x43aaea, roughness: 0.2, clearcoat: 1 });
   const stripe = add(new THREE.SphereGeometry(0.1, 18, 10).scale(1.08, 0.62, 0.95).translate(0, 0.655, 0.045), chinMat);     // (the chin guard)
-  { const lip = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.012, 0.035).rotateX(-0.35).translate(0, 0.83, -0.165), MAT.navy); stripe.add(lip); }   // (the lip on the back)
+  { const lip = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.012, 0.035).rotateX(-0.35).translate(0, 0.83, -0.165), MAT.navy); helmet.add(lip); }   // (the lip on the back)
+  stripe.geometry = new THREE.BufferGeometry();     // (no chin guard: the user's call; kept as an empty part so the rest still finds it)
 
   for (const s of [1, -1]) {
     // THE GILLS: a row of louvres down the upper rear of each pod, over its crown and
