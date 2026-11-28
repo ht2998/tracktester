@@ -22,7 +22,7 @@ import { groundAt } from './ground.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 9;
+export const BUILD = 10;
 
 const m4 = new THREE.Matrix4();
 const q = new THREE.Quaternion();
@@ -625,7 +625,9 @@ function buildArmco(scene, runs) {
 
 // Tyre barrier: stacks of old tyres, bolted together, with a belt of
 // conveyor rubber across the front (here: the stacks, 4 high, 2 deep)
-function buildTyreWalls(scene, runs) {
+// belt: red-and-white panels across the front (the kind put on the walls at the big stops):
+// each panel rides with its stack, shoved back and knocked askew with it when hit
+function buildTyreWalls(scene, runs, { belt = false } = {}) {
   const R = 0.32, STEP = 0.62, HIGH = 4, ROWS = 2;
   const columns = [];
   const spots = runs.flatMap(([ax, az, bx, bz]) => {
@@ -658,6 +660,23 @@ function buildTyreWalls(scene, runs) {
   });
   tyres.castShadow = tyres.receiveShadow = true;
   scene.add(tyres);
+  // the panels: one per stack, red and white in turn, standing just in front of the front row
+  let panels = null;
+  if (belt) {
+    panels = new THREE.InstancedMesh(new THREE.BoxGeometry(STEP - 0.02, 0.86, 0.05), new THREE.MeshStandardMaterial({ roughness: 0.6 }), columns.length);
+    columns.forEach((c, i) => panels.setColorAt(i, new THREE.Color(i % 2 ? 0xf2f2ee : 0xc8201c)));
+    panels.castShadow = panels.receiveShadow = true;
+    scene.add(panels);
+  }
+  const drawPanels = () => {
+    if (!panels) return;
+    columns.forEach((c, i) => {
+      const a = across(c.angle), o = -R - 0.04 + c.push, top = c.tyres.reduce((t, ty) => Math.max(t, ty.tilt), 0);
+      q.setFromAxisAngle(UP, c.angle).premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(Math.sin(c.angle), 0, Math.cos(c.angle)), top * 0.6 * Math.sign(c.push || 1)));
+      panels.setMatrixAt(i, m4.compose(pos.set(c.x + a.x * o, groundAt(c.x, c.z) + 0.45, c.z + a.z * o), q, scl.set(1, 1, 1)));
+    });
+    panels.instanceMatrix.needsUpdate = true;
+  };
 
   // Squashing back: a hit shoves the stacks near the impact back (the
   // front row squashes into the back row), and knocks the tyres askew,
@@ -712,7 +731,9 @@ function buildTyreWalls(scene, runs) {
       tyres.setMatrixAt(i, m4.compose(pos.set(t.x + a.x * shift + t.jx, groundAt(t.x, t.z) + t.y, t.z + a.z * shift + t.jz), q, scl.set(1, 1.15 * (1 - Math.abs(shift) * 0.25 * row), 1)));
     });
     tyres.instanceMatrix.needsUpdate = true;
+    drawPanels();
   }
+  drawPanels();
   // Repaired: the stacks pushed back into line and the tyres straightened
   const restackAt = (point, k) => {
     let left = 0;

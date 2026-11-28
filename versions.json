@@ -3,7 +3,7 @@
   "files": {
     "cockpit.js": 15,
     "godrays.js": 1,
-    "scenery.js": 9,
+    "scenery.js": 10,
     "updates.js": 192,
     "debris.js": 5,
     "effects.js": 6,
@@ -21,7 +21,7 @@
     "skids.js": 5,
     "tyres.js": 4,
     "suzuka.js": 4,
-    "sepang.js": 16,
+    "sepang.js": 17,
     "flora.js": 13,
     "racingline.js": 6,
     "ground.js": 2,
