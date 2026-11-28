@@ -1,3 +1,4 @@
+import { openGlobe } from './globe.js';
 // =====================================================================
 // HUD: the dashboard on screen.
 //   - Rev counter (tachometer) with the gear shown at the bottom
@@ -9,7 +10,7 @@
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-export const BUILD = 19;
+export const BUILD = 20;
 
 const COLORS = {
   face: '#15181c',
@@ -1011,11 +1012,12 @@ export class Hud {
     trackHeading.textContent = 'Track';
     const trackBox = document.createElement('div');
     trackBox.className = 'tyre-box';
-    const trackSel = document.createElement('select');
-    trackSel.setAttribute('aria-label', 'Track');
-    trackSel.innerHTML = '<option value="test">Test area</option><option value="sepang">Sepang</option><option value="suzuka">Suzuka</option>';
-    trackSel.value = track;
-    trackSel.addEventListener('change', () => { trackSel.blur(); onTrack?.(trackSel.value); });
+    // (a globe with a pin at each circuit: no circuit names anywhere)
+    const trackSel = document.createElement('button');
+    trackSel.type = 'button';
+    trackSel.className = 'tyre-fresh';
+    trackSel.textContent = track === 'test' ? 'Test area · pick on the globe' : 'Circuit · pick on the globe';
+    trackSel.addEventListener('click', () => { trackSel.blur(); openGlobe(track, (t) => onTrack?.(t)); });
     const trackNote = document.createElement('span');
     trackNote.className = 'gb-note';
     trackNote.textContent = 'Changing reloads the game';

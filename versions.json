@@ -10,7 +10,7 @@
     "sky.js": 6,
     "rendering.js": 132,
     "rain.js": 4,
-    "hud.js": 19,
+    "hud.js": 20,
     "physics.js": 30,
     "oil.js": 6,
     "sound.js": 28,
@@ -20,8 +20,8 @@
     "touch.js": 6,
     "skids.js": 5,
     "tyres.js": 4,
-    "suzuka.js": 4,
-    "sepang.js": 20,
+    "suzuka.js": 7,
+    "sepang.js": 22,
     "flora.js": 13,
     "racingline.js": 8,
     "ground.js": 2,
@@ -33,6 +33,7 @@
     "assets.js": 1,
     "racecontrol.js": 13,
     "softbody.js": 4,
-    "tuning.js": 3
+    "tuning.js": 3,
+    "globe.js": 1
   }
 }
