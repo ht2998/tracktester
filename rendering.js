@@ -38,7 +38,7 @@ import { AIField, BUILD as AI_BUILD } from './ai.js';
 import { Garage, BUILD as GARAGE_BUILD } from './garage.js';
 import { TuningSheet, withTune, loadTune, BUILD as TUNING_BUILD } from './tuning.js';
 import { CrushFrame, tearPanel, mendPanel, BUILD as SOFTBODY_BUILD } from './softbody.js';
-import { PitStop, SEPANG_PIT, Person as PersonFigure, climbOutKeys, makeAxe, BUILD as PITS_BUILD } from './pits.js';
+import { PitStop, SEPANG_PIT, Person as PersonFigure, POSES as PERSON_POSES, climbOutKeys, makeAxe, BUILD as PITS_BUILD } from './pits.js';
 import { RaceControl, BUILD as RACECONTROL_BUILD } from './racecontrol.js';
 import { weldNormals, buildF1Body, buildF05Body, bodyForKind, WHEEL_LAYOUT, DRIVER_SUITS, RIM_STYLES, suitTorsoMaterial, helmetMaterial, F94_DRIVER_DZ, F72_DRIVER_DZ, F20_DRIVER_DZ, F88_DRIVER_DZ, P70_DRIVER_DZ, buildF1Cockpit, buildF1RimGeometry, tyreGeometry, F1_CAR, CATERHAM_CAR, ENGINES, withEngine, STOCK_ENGINE, specForKind, BUILD as F1_BUILD } from './f1.js';
 import * as groundFile from './ground.js';
@@ -63,7 +63,7 @@ import * as touchFile from './touch.js';
 
 // Version stamp: goes up by one every time this file changes, so the game
 // can tell if your browser loaded an old saved copy (see updates.js)
-const BUILD = 133;
+const BUILD = 134;
 
 // What's new + the old-file check. (A file too old to have a stamp counts as 0.)
 const updateScreen = startUpdates({
@@ -3467,8 +3467,8 @@ cockpit.useHudDials(hud.parts);
 // In the cameras fixed to the car (bonnet, cockpit, T-cam) you can drag to
 // look around, even straight up at the sky.
 // ---------------------------------------------------------------------
-const CAMERA_MODES = ['chase', 'close', 'bonnet', 'turret', 'cockpit', 'tcam', 'showroom'];   // ('turret': the heavy's crew view only)
-const CAMERA_FOV = { chase: 50, close: 58, bonnet: 66, turret: 80, cockpit: 70, tcam: 62, showroom: 50 };
+const CAMERA_MODES = ['chase', 'close', 'bonnet', 'turret', 'cockpit', 'tcam', 'showroom', 'spectator'];   // ('spectator': fly about freely, the car left parked)   // ('turret': the heavy's crew view only)
+const CAMERA_FOV = { chase: 50, close: 58, bonnet: 66, turret: 80, cockpit: 70, tcam: 62, showroom: 50, spectator: 60 };
 // Cameras fixed to the car: where they sit, and how far they look down
 // =====================================================================
 // THE HEAVY'S GUN: left-click (a click, not a drag) fires the
@@ -4078,6 +4078,9 @@ function updateCamera(dt) {
   carPos.set(physics.x, gy, physics.z);
   forward.set(Math.sin(physics.heading), 0, Math.cos(physics.heading));
   // (the washing machine's win: a camera out front, looking back at it and him)
+  if (craneCamera(camera, dt)) return;
+  if (cameraMode !== 'spectator') spec.on = false;
+  if (cameraMode === 'spectator') { spectatorCamera(dt); return; }
   if (washerParty?.cam) {
     const c = washerParty.cam;
     desiredCam.set(c.at[0], groundAt(c.at[0], c.at[1]) + 1.7, c.at[1]);
@@ -4598,6 +4601,7 @@ function updateExplosion(dt) {
   updateHeadG(dt);
   updateDeath(dt);
   updateWasherParty(dt);
+  updateCrane(dt);
 }
 // THE DRIVER GETS OUT, as a real one would. Three ways:
 //   - the car's on fire (or blown up round him): he unclips, climbs out
@@ -4902,6 +4906,263 @@ function clearWasherParty() {
   if (washerBody) washerBody.door.rotation.y = 0;
   washerParty = null;
 }
+// THE TTF-05's WIN AT THE JAPANESE CIRCUIT: a celebration (a tribute to a famous one there):
+// out front of the car as he weaves it left and right on the slow-down; then up on its nose,
+// arms out like wings, balanced on one leg with the other tucked up, looking down; held, then
+// two punches, a step onto the right front tyre, a tuck jump off it, a run, a spin like a
+// footballer's roulette, and over the fence into the crowd
+let crane = null;
+const craneBars = (() => {
+  const st = document.createElement('style');
+  st.textContent = `body.cutscene > *:not(#game):not(#crane-bars) { visibility: hidden !important; }
+    body.cutscene #game > *:not(canvas) { visibility: hidden !important; }
+    #crane-bars { position: fixed; inset: 0; pointer-events: none; z-index: 400; display: none; }
+    #crane-bars::before, #crane-bars::after { content: ''; position: absolute; left: 0; right: 0; height: 11vh; background: #000; }
+    #crane-bars::before { top: 0; } #crane-bars::after { bottom: 0; }`;
+  document.head.appendChild(st);
+  const d = document.createElement('div'); d.id = 'crane-bars'; document.body.appendChild(d);
+  return d;
+})();
+// how high the top of the car is at a point on it (local x, z), above the road under it
+function carTopAt(lx, lz, fallback) {
+  const ray = new THREE.Raycaster(), from = carModel.car.localToWorld(new THREE.Vector3(lx, 3, lz));
+  ray.set(from, new THREE.Vector3(0, -1, 0));
+  const hits = ray.intersectObject(carModel.car, true).filter((h) => h.object.visible && h.object.isMesh);
+  return hits.length ? hits[0].point.y - groundAt(from.x, from.z) : fallback;
+}
+// THE SPECTATOR CAMERA: fly anywhere round the circuit while the car waits. W / S forward and
+// back, A / D sideways, Space up and Shift down (hold Ctrl to go faster); drag to look about
+// (on a phone: drag to look, two fingers to fly forward)
+const spec = { on: false, yaw: 0, pitch: -0.25, keys: new Set(), drag: null, two: false };
+window.addEventListener('keydown', (e) => { if (cameraMode === 'spectator') spec.keys.add(e.code); });
+window.addEventListener('keyup', (e) => spec.keys.delete(e.code));
+renderer.domElement.addEventListener('pointerdown', (e) => { if (cameraMode !== 'spectator') return; spec.drag = { x: e.clientX, y: e.clientY, id: e.pointerId }; });
+window.addEventListener('pointermove', (e) => {
+  if (cameraMode !== 'spectator' || !spec.drag || e.pointerId !== spec.drag.id) return;
+  spec.yaw -= (e.clientX - spec.drag.x) * 0.004; spec.pitch = Math.max(-1.5, Math.min(1.4, spec.pitch - (e.clientY - spec.drag.y) * 0.004));
+  spec.drag.x = e.clientX; spec.drag.y = e.clientY;
+});
+window.addEventListener('pointerup', (e) => { if (spec.drag?.id === e.pointerId) spec.drag = null; });
+renderer.domElement.addEventListener('touchstart', (e) => { spec.two = e.touches.length >= 2; }, { passive: true });
+renderer.domElement.addEventListener('touchend', (e) => { spec.two = e.touches.length >= 2; }, { passive: true });
+function spectatorCamera(dt) {
+  if (!spec.on) {
+    // (starting from up behind the car)
+    spec.on = true; spec.yaw = physics.heading + Math.PI; spec.pitch = -0.35;
+    camera.position.set(physics.x - Math.sin(physics.heading) * 12, vehicleGroundY() + 7, physics.z - Math.cos(physics.heading) * 12);
+  }
+  const k = spec.keys, fast = k.has('ControlLeft') || k.has('ControlRight') ? 4 : 1;
+  const v = 22 * fast * dt;
+  const fx = -Math.sin(spec.yaw) * Math.cos(spec.pitch), fy = Math.sin(spec.pitch), fz = -Math.cos(spec.yaw) * Math.cos(spec.pitch);
+  const rx = Math.cos(spec.yaw), rz = -Math.sin(spec.yaw);
+  const go = (k.has('KeyW') || k.has('ArrowUp') || spec.two ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
+  const side = (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0);
+  const up = (k.has('Space') ? 1 : 0) - (k.has('ShiftLeft') || k.has('ShiftRight') ? 1 : 0);
+  camera.position.x += (fx * go + rx * side) * v; camera.position.z += (fz * go + rz * side) * v; camera.position.y += (fy * go + up) * v;
+  camera.position.y = Math.max(groundAt(camera.position.x, camera.position.z) + 0.6, Math.min(400, camera.position.y));
+  camera.rotation.set(spec.pitch, spec.yaw, 0, 'YXZ');
+}
+function startCrane() {
+  if (crane) return;
+  crane = { phase: 'drive', t: 0, trans: physics.transmission, cam: cameraMode };
+  if (physics.transmission !== 'auto') physics.setTransmission('auto');
+  if (cameraMode !== 'chase') { cameraMode = 'chase'; applyCamera(); }
+  document.body.classList.add('cutscene'); craneBars.style.display = 'block';
+}
+// the line under the car: its direction, and how far the car is to its left
+function craneLine() {
+  const i = trackside?.nearestLine?.(physics.x, physics.z, 60) ?? -1;
+  if (i < 0) return { h: physics.heading, lat: 0, half: 6 };
+  const p = sepang.line[i];
+  return { h: Math.atan2(p.ux, p.uz), lat: (physics.x - p.x) * p.lx + (physics.z - p.z) * p.lz, half: p.width / 2, p };
+}
+function craneInput(input) {
+  if (!crane) return;
+  input.clutch = false; input.handbrake = false;
+  if (crane.phase !== 'drive') { input.throttle = 0; input.brake = 1; input.steer = 0; return; }
+  const L = craneLine(), v = Math.hypot(physics.vx, physics.vy), t = crane.t;
+  let d = L.h - physics.heading; d = Math.atan2(Math.sin(d), Math.cos(d));
+  let steer = Math.max(-1, Math.min(1, d * 2.2 - (L.lat + 2) * 0.12));        // (holding a line a little right of the middle)
+  const weave = crane.weaveT != null;
+  if (!weave && v < 17) crane.weaveT = 0;
+  if (weave) {
+    crane.weaveT += 0; // (counted in updateCrane)
+    const k = crane.weaveT / 1.25;
+    if (k < 4) steer += 0.55 * Math.sin(k * Math.PI * 2);
+  }
+  const want = weave && crane.weaveT >= 5 ? 0 : 14;
+  input.steer = Math.max(-1, Math.min(1, steer));
+  input.throttle = v < want - 1 ? 0.35 : 0;
+  input.brake = v > want + 2 ? (v > 30 ? 0.6 : 0.3) : want === 0 ? 0.5 : 0;
+  void t;
+}
+function updateCrane(dt) {
+  const C = crane; if (!C) return;
+  C.t += dt;
+  const v = Math.hypot(physics.vx, physics.vy);
+  if (C.phase === 'drive') {
+    if (C.weaveT != null) C.weaveT += dt;
+    if ((C.weaveT != null && C.weaveT > 5 && v < 0.3) || C.t > 40) craneStage();
+    return;
+  }
+  C.st += dt;
+  const P = C.person;
+  // the roulette: a full turn on the spot, foot out
+  if (C.spin != null) { C.spin += dt / 0.75; P.face = C.spinFrom + Math.min(1, C.spin) * Math.PI * 2 * C.spinDir; if (C.spin >= 1) C.spin = null; }
+  P.update(dt, groundAt);
+  // the crowd: bobbing, more and with their arms up once he's flying at them
+  const hype = C.landed ? 1 : C.st > 7 ? 0.5 : 0.15;
+  C.crowd.forEach((f, k) => {
+    const b = Math.max(0, Math.sin(C.st * f.rate + f.ph)) * 0.25 * hype;
+    craneM4.makeRotationY(f.face); craneM4.setPosition(f.x, f.y + b, f.z);
+    C.bodies.setMatrixAt(k, craneM4);
+    craneM4.makeRotationY(f.face); craneM4.setPosition(f.x, f.y + b + (hype > 0.4 ? 0.35 : 0), f.z);
+    C.arms.setMatrixAt(k, craneM4);
+  });
+  C.bodies.instanceMatrix.needsUpdate = true; C.arms.instanceMatrix.needsUpdate = true;
+  if (C.st > C.endAt) endCrane();
+}
+const craneM4 = new THREE.Matrix4();
+function craneStage() {
+  const C = crane;
+  C.phase = 'show'; C.st = 0;
+  physics.vx = physics.vy = 0;
+  driverInCar(false);
+  const h = physics.heading, f = [Math.sin(h), Math.cos(h)], l = [Math.cos(h), -Math.sin(h)];
+  const W = (fw, lt) => [physics.x + f[0] * fw + l[0] * lt, physics.z + f[1] * fw + l[1] * lt];
+  carModel.car.updateMatrixWorld(true);
+  const noseZ = FRONT_AXLE - 0.25, noseH = carTopAt(0, noseZ, 0.55), tyreH = carTopAt(-TRACK_HALF, FRONT_AXLE, 0.66);
+  // the fence and the crowd: off to the right, past the edge of the track
+  const L = craneLine(), out = Math.max(7, L.half + L.lat + 5);
+  C.fence = new THREE.Group();
+  const post = new THREE.MeshStandardMaterial({ color: 0x8a8f94, metalness: 0.6, roughness: 0.4 });
+  const mesh = new THREE.MeshStandardMaterial({ color: 0xc8ccd0, transparent: true, opacity: 0.35, side: THREE.DoubleSide, metalness: 0.5, roughness: 0.5 });
+  const FL = 16;
+  for (let k = 0; k <= FL; k += 2) {
+    const [x, z] = W(7 - FL / 2 + k, -out);
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.15, 6), post); m.position.set(x, groundAt(x, z) + 0.575, z); C.fence.add(m);
+  }
+  { const [x, z] = W(7, -out); const g = groundAt(x, z);
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, FL), post); rail.position.set(x, g + 1.12, z); rail.rotation.y = h; C.fence.add(rail);
+    const pane = new THREE.Mesh(new THREE.PlaneGeometry(FL, 1.1), mesh); pane.position.set(x, g + 0.56, z); pane.rotation.y = h + Math.PI / 2; C.fence.add(pane); }
+  scene.add(C.fence);
+  // (the crowd: simple people in rows behind it, in all sorts of colours)
+  C.crowd = [];
+  for (let row = 0; row < 5; row++) for (let k = 0; k < 17; k++) {
+    const [x, z] = W(7 - FL / 2 + 0.5 + k * 0.92 + (row % 2) * 0.45 + (Math.random() - 0.5) * 0.25, -out - 0.9 - row * 0.85);
+    C.crowd.push({ x, z, y: groundAt(x, z), face: h - Math.PI / 2 + (Math.random() - 0.5) * 0.6, rate: 7 + Math.random() * 4, ph: Math.random() * 6 });
+  }
+  const bodyGeo = new THREE.CapsuleGeometry(0.2, 0.9, 3, 8).translate(0, 0.65, 0);
+  const headGeo = new THREE.SphereGeometry(0.12, 10, 8).translate(0, 1.45, 0);
+  const merged = mergeCraneGeos([bodyGeo, headGeo]);
+  C.bodies = new THREE.InstancedMesh(merged, new THREE.MeshStandardMaterial({ roughness: 0.85 }), C.crowd.length);
+  C.arms = new THREE.InstancedMesh(new THREE.BoxGeometry(0.62, 0.09, 0.09).translate(0, 1.05, 0), new THREE.MeshStandardMaterial({ color: 0xd9b08c, roughness: 0.8 }), C.crowd.length);
+  const tint = new THREE.Color(), cols = [0x2f9be0, 0xf2c200, 0xffffff, 0xd8302a, 0x1d4fbf, 0x222222, 0xf07818, 0x3aa34a];
+  C.crowd.forEach((p, k) => C.bodies.setColorAt(k, tint.set(cols[k % cols.length])));
+  C.bodies.castShadow = true; scene.add(C.bodies, C.arms);
+  // HIM: up on the nose
+  const P = C.person = new PersonFigure(driverMats, 0); scene.add(P.root);
+  const nose = W(noseZ, 0), tyre = W(FRONT_AXLE, -TRACK_HALF), land = W(FRONT_AXLE + 0.4, -TRACK_HALF - 1.6);
+  P.place(nose[0], nose[1], h);
+  const CRANE = { rate: 6, shL: 0.15, shR: 0.15, outL: 1.75, outR: 1.75, elL: 0.15, elR: 0.15, thR: 1.55, knR: 2.3, thL: 0, knL: 0.05, lean: 0.12, head: 0.5 };
+  const CHAMBER = { shL: 0.55, shR: 0.55, elL: 1.9, elR: 1.9, outL: 0.15, outR: 0.15, thL: 0.1, knL: 0.15, thR: 0.1, knR: 0.15, lean: -0.05 };
+  const PUNCH = { shL: 1.55, shR: 1.55, elL: 0.05, elR: 0.05, outL: 0.1, outR: 0.1, thL: 0.1, knL: 0.15, thR: 0.1, knR: 0.15, lean: -0.1, head: -0.15 };
+  const CROUCH = { drop: 0.3, lean: 0.4, thL: 0.95, knL: 1.5, thR: 0.95, knR: 1.5, shL: -0.4, shR: -0.4, elL: 0.2, elR: 0.2 };
+  const TUCK = { lean: 0.25, thL: 1.75, knL: 2.35, thR: 1.75, knR: 2.35, shL: 1.0, shR: 1.0, elL: 1.4, elR: 1.4, outL: 0.25, outR: 0.25, head: 0.2 };
+  const STEP = { thR: 0.9, knR: 1.1, shL: 0.4, shR: 0.4, outL: 0.6, outR: 0.6, lean: 0.15 };
+  const mid = [(tyre[0] + land[0]) / 2, (tyre[1] + land[1]) / 2];
+  const keys = [
+    { t: 0, pose: 'STAND', at: nose, lift: noseH },
+    { t: 0.6, pose: CRANE, at: nose, lift: noseH },
+    { t: 2.1, pose: CRANE, at: nose, lift: noseH },        // (held, a second and a half)
+    { t: 2.5, pose: 'STAND', at: nose, lift: noseH },
+    { t: 2.68, pose: CHAMBER, at: nose, lift: noseH },
+    { t: 2.82, pose: PUNCH, at: nose, lift: noseH },
+    { t: 3.0, pose: CHAMBER, at: nose, lift: noseH },
+    { t: 3.14, pose: PUNCH, at: nose, lift: noseH },
+    { t: 3.4, pose: 'STAND', at: nose, lift: noseH },
+    { t: 3.75, pose: STEP, at: [(nose[0] + tyre[0]) / 2, (nose[1] + tyre[1]) / 2], lift: Math.max(noseH, tyreH) + 0.12 },
+    { t: 4.05, pose: 'STAND', at: tyre, lift: tyreH },
+    { t: 4.3, pose: CROUCH, at: tyre, lift: tyreH },
+    { t: 4.6, pose: TUCK, at: mid, lift: tyreH + 0.85 },
+    { t: 4.9, pose: CROUCH, at: land, lift: 0 },
+    { t: 5.2, pose: 'STAND', at: land, lift: 0 },
+  ];
+  const roul = W(4.5, -out * 0.55), runUp = W(6.5, -out + 1.6), over = W(7, -out), inn = W(7.3, -out - 1.8), deep = W(7.6, -out - 3.6);
+  const DIVE = { tilt: 0.9, shL: 2.6, shR: 2.6, elL: 0.2, elR: 0.2, thL: -0.3, thR: 0.3, knL: 0.6, knR: 0.3 };
+  const SURF = { tilt: -1.45, shL: 2.4, shR: 2.4, outL: 0.5, outR: 0.5, elL: 0.3, elR: 0.3, thL: 0.2, knL: 0.3, thR: 0.1, knR: 0.2, head: -0.2 };
+  PERSON_POSES.SURF = SURF; PERSON_POSES.SURF_UP = { ...SURF, lift: 1.8 }; PERSON_POSES.ROULETTE = { rate: 12, thR: 0.5, knR: 0.3, outL: 0.6, outR: 0.6, shL: 0.4, shR: 0.4, lean: 0.15 };
+  const sideH = Math.atan2(roul[0] - land[0], roul[1] - land[1]);
+  P.run([
+    { keys, after: 'STAND', face2: h },
+    { go: roul, run: true },
+    { fn: () => { C.spin = 0; C.spinFrom = P.face; C.spinDir = 1; P.want = 'ROULETTE'; } },
+    { wait: 0.75 },
+    { fn: () => { P.want = 'STAND'; } },
+    { go: runUp, run: true },
+    { keys: [
+      { t: 0, pose: CROUCH, at: runUp, lift: 0 },
+      { t: 0.35, pose: DIVE, at: over, lift: 1.7 },
+      { t: 0.75, pose: SURF, at: inn, lift: 1.75 },
+      { t: 5, pose: SURF, at: deep, lift: 1.8 },
+    ], face2: Math.atan2(over[0] - runUp[0], over[1] - runUp[1]), after: 'SURF_UP' },
+  ]);
+  void sideH;
+  C.over = 0; C.endAt = 30;
+  // the shots: out in front, low, looking up at him on the nose; then wide, following him
+  const at1 = W(noseZ + 4.2, -1.3), at2 = W(-3.5, 6.5);
+  C.shot = (cam, dt) => {
+    const st = C.st;
+    if (st < 2.55) {
+      cam.position.set(at1[0], groundAt(at1[0], at1[1]) + 0.9, at1[1]);
+      cam.lookAt(nose[0], groundAt(nose[0], nose[1]) + noseH + 1.05, nose[1]);
+      return;
+    }
+    if (!C.wide) { C.wide = true; cam.position.set(at2[0], groundAt(at2[0], at2[1]) + 2.4, at2[1]); C.lookP = new THREE.Vector3(P.x, P.root.position.y + 1, P.z); }
+    C.lookP.lerp(new THREE.Vector3(P.x, P.root.position.y + 1, P.z), Math.min(1, dt * 4));
+    cam.lookAt(C.lookP);
+  };
+  // (landed in the crowd: they go up, and a few seconds later it's over)
+  const watch = setInterval(() => { if (!crane) { clearInterval(watch); return; } if (P.root.position.y > groundAt(P.x, P.z) + 1.6 && Math.hypot(P.x - inn[0], P.z - inn[1]) < 1.2) { C.landed = true; C.endAt = Math.min(C.endAt, C.st + 3.5); clearInterval(watch); } }, 100);
+}
+function mergeCraneGeos(geos) {
+  const pos = [], nor = [], idx = []; let off = 0;
+  for (const g0 of geos) { const g = g0.index ? g0 : g0; const p = g.attributes.position, n = g.attributes.normal;
+    for (let i = 0; i < p.count; i++) { pos.push(p.getX(i), p.getY(i), p.getZ(i)); nor.push(n.getX(i), n.getY(i), n.getZ(i)); }
+    for (let i = 0; i < g.index.count; i++) idx.push(g.index.getX(i) + off); off += p.count; }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); out.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); out.setIndex(idx);
+  return out;
+}
+function craneCamera(cam, dt) {
+  const C = crane; if (!C) return false;
+  if (C.phase === 'drive') {
+    // out in front, low, looking back at it as it weaves
+    const L = craneLine(), fx = Math.sin(L.h), fz = Math.cos(L.h);
+    const ax = physics.x + fx * 10, az = physics.z + fz * 10;
+    desiredCam.set(ax, groundAt(ax, az) + 1.1, az);
+    if (!C.camSet) { cam.position.copy(desiredCam); C.camSet = true; } else cam.position.lerp(desiredCam, Math.min(1, dt * 5));
+    cam.lookAt(physics.x, vehicleGroundY() + 0.6, physics.z);
+    return true;
+  }
+  C.shot(cam, dt);
+  return true;
+}
+function endCrane() {
+  const C = crane; if (!C) return;
+  if (C.person) scene.remove(C.person.root);
+  if (C.fence) scene.remove(C.fence);
+  if (C.bodies) scene.remove(C.bodies, C.arms);
+  driverInCar(true);
+  if (C.trans !== physics.transmission) physics.setTransmission(C.trans);
+  if (C.cam !== cameraMode) { cameraMode = C.cam; applyCamera(); }
+  document.body.classList.remove('cutscene'); craneBars.style.display = 'none';
+  crane = null;
+}
+// (for testing it: the console can start it)
+window.__craneTest = () => startCrane();
+// (any key ends it early)
+window.addEventListener('keydown', (e) => { if (crane && crane.phase === 'show' && e.code === 'Escape') endCrane(); });
 function clearDriverOut() {
   clearWasherParty();
   if (driverOut) { scene.remove(driverOut.person.root); if (driverOut.later?.marshal) scene.remove(driverOut.later.marshal.root); driverOut = null; }
@@ -5210,7 +5471,7 @@ const aiField = racing ? new AIField(scene, {
   },
   // a time penalty (a jump start, track limits)
   onPenalty: (sec, why) => showToast(sec === 'drive' ? `${why}: DRIVE-THROUGH PENALTY` : `${why}: ${sec} SECOND TIME PENALTY`),
-  onPlayerFinish: (pos) => { if (WASHER && pos === 1) startWasherParty(); },   // (the washing machine's trophy)
+  onPlayerFinish: (pos) => { if (WASHER && pos === 1) startWasherParty(); else if (IS_F05 && SUZUKA && pos === 1) startCrane(); },   // (the washing machine's trophy)
   // the race grid: you go to the back of it, stopped and straightened up
   onPlacePlayer: (x, z, heading) => {
     teleportGrace = 0.6;
@@ -5452,6 +5713,8 @@ renderer.setAnimationLoop(() => {
   // it and the brakes let go: that's a jump start)
   if (aiField?.holdPlayer && !(input.throttle > 0.05 && !input.clutch)) input.brake = 1;
   if (driverOut || driverDead || washerParty) { input.throttle = 0; input.brake = 1; input.steer = 0; }     // (nobody in it, or nobody alive, or he's out with his trophy)
+  craneInput(input);
+  if (cameraMode === 'spectator' && !crane) { input.throttle = 0; input.brake = 1; input.steer = 0; }     // (flying about: the car waits)
   if (WASHER) { physics.damageOff = true; if (!physics.spec.washer) physics.spec = washerTuned(physics.spec); }      // (the washing machine can't be hurt, and grips like nothing else)
   // the pit lane: the limiter, the team guiding you in, the car held on its marks
   const pitHold = pits && !heavyMode ? pits.control(input, dt) : false;
