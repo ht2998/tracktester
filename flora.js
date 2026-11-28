@@ -16,7 +16,7 @@
 // area gets broadleaf trees and conifers round its edges.
 import * as THREE from 'three';
 
-export const BUILD = 13;
+export const BUILD = 14;
 
 // The same random numbers every time (so the forest is always the same)
 function seeded(seed) {
@@ -186,7 +186,7 @@ function tube(B, pts, sides, colour) {
 }
 function growTree(rand, kind, { lite = false } = {}) {
   const sp = SPECIES[kind], trunkB = new Builder(), leafB = new Builder();
-  const H = sp.h[0] + rand() * (sp.h[1] - sp.h[0]), R = H * sp.wide * (0.85 + rand() * 0.3);
+  const H = sp.h[0] + rand() * (sp.h[1] - sp.h[0]) - 0.5, R = H * sp.wide * (0.85 + rand() * 0.3);
   const base = H * sp.crown[0], cy = (base + H) / 2, ry = (H - base) / 2 * sp.flat + (H - base) / 2 * (1 - sp.flat) * 0.5;
   const bark = col(sp.bark), leafCols = sp.leaf.map(col);
   const barkCol = (x, y) => shade(bark, y, 0, H, 0.6);
@@ -292,7 +292,7 @@ function frondTexture() {
 function palm(rand, { height = 8, simple = false } = {}) {
   const trunkB = new Builder(), leafB = new Builder();
   const bark = col(0x6b5a44), boot = col(0x7a6a46), greens = [col(0x4f7a2c), col(0x5a8432), col(0x46702a)];
-  const H = Math.min(8.5, Math.max(5, height * (0.85 + rand() * 0.25)));
+  const H = Math.min(8.5, Math.max(5, height * (0.85 + rand() * 0.25))) - 0.5;   // (half a metre shorter)
   const lean = [(rand() - 0.5) * 0.08, (rand() - 0.5) * 0.08];
   // the trunk: flared foot, tapering, leaning a touch and curving back up
   const pts = [], TN = simple ? 4 : 10;
@@ -438,14 +438,15 @@ export function buildFlora(scene, { isMobile = false, style = 'tropical', area, 
   // (each tree grown from its own seed: several of each kind, so no two stands look alike)
   // (by the track half again as many trees as there were: TREES_NEAR; 3 was too slow)
   const TREES_NEAR = 1.5;
-  const grow = (kind, n, count, opts) => { for (let k = 0; k < n; k++) addKind('tree', growTree(rand, kind, { lite: forest }), count / n * (forest ? 1 : TREES_NEAR), opts); };
+  // (one model per kind now, every tree of it an instance of that one: far fewer draw calls)
+  const grow = (kind, n, count, opts) => { n = 1; for (let k = 0; k < n; k++) addKind('tree', growTree(rand, kind, { lite: forest }), count / n * (forest ? 1 : TREES_NEAR), opts); };
   if (forest) {
     const tropical = style === 'tropical';
-    for (let k = 0; k < 3; k++) if (tropical) addKind('palm', palm(rand, { height: 8 + k * 1.5, simple: true }), 900, { gap: 6, clear: 0, trunkR: 0.3 });
+    if (tropical) addKind('palm', palm(rand, { height: 9.5, simple: true }), 2700, { gap: 6, clear: 0, trunkR: 0.3 });
     if (tropical) grow('rain', 4, 3300, { gap: 8, clear: 0, trunkR: 0.45 });
     else { grow('oak', 2, 1300, { gap: 8, clear: 0, trunkR: 0.45 }); grow('beech', 2, 1200, { gap: 8, clear: 0, trunkR: 0.4 }); grow('pine', 2, 1100, { gap: 7, clear: 0, trunkR: 0.35 }); }
   } else if (style === 'tropical') {
-    for (let k = 0; k < 3; k++) addKind('palm', palm(rand, { height: 7 + k * 1.5 }), 380 * TREES_NEAR, { gap: 7, clear: 16, trunkR: 0.3 });
+    addKind('palm', palm(rand, { height: 8.5 }), 3 * 380 * TREES_NEAR, { gap: 7, clear: 16, trunkR: 0.3 });
     grow('rain', 4, 640, { gap: 10, clear: 18, trunkR: 0.45 });
     grow('plane', 2, 260, { gap: 9, clear: 18, trunkR: 0.4 });
     addKind('shrub', shrub(rand, { size: 1.3 }), 900, { gap: 4, clear: 9 });
